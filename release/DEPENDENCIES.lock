@@ -1,0 +1,35 @@
+# Release dependency lock
+# Update source URL, immutable version/commit and hash together.
+
+ffmpeg-hw.commit=ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
+wiliwili.commit=88e5876bea9502d06f46a8656e3530684d3aaf7d
+wiliwili.ffmpeg-patch.sha256=2d38529d10c74560db3909cf8c2f3e359b128c04fb29f6dd0085770ed81cef6c
+ffmpeg-sw.version=8.1.2
+ffmpeg-sw.source.sha256=464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c
+curl.version=8.21.0
+curl.source.sha256=aa1b66a70eace83dc624508745646c08ae561de512ab403adffb93ac87fc72e6
+mbedtls.version=3.6.5
+mbedtls.source.sha256=4a11f1777bb95bf4ad96721cac945a26e04bf19f57d905f241fe77ebeddf46d8
+mbedtls.vita_patch.sha256=9a035c50864c082c95240ffe39327fb30086c3b30c9b3a81e4f65e51e2b9bbe8
+vitasdk.packages.commit=3c2a993afd5f30cb820cb900e7bc7f4d2b45d308
+certifi.version=2026.07.22
+certifi.cacert.sha256=9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f
+libssh2.version=1.11.1
+libssh2.source.sha256=d9ec76cbe34db98eec3539fe2c899d26b0c837cb3eb466a56b0f109cabf658f7
+libssh2.crypto_backend=Mbed TLS
+libsmb2.version=6.1
+libxml2.version=2.15.3
+mpg123.version=1.33.5
+freetype.version=2.14.3
+libpng.version=1.6.58
+libjpeg-turbo.version=3.2.0
+bzip2.version=1.0.8
+zlib.version=1.3.2
+zlib.source.sha256=d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3
+zstd.version=1.5.7
+zstd.source.sha256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+vita2d.commit=a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed
+pthread-embedded.commit=11d2e5722d98c86f33c908fc47b2cf6e55205db5
+reavplayer-source.commit=abff24a21ffec3e57fc1cd3b1d17dc26666251b0
+vita-media-player-module.commit=0b5e7c933196227f955588c806c51b0b66c10654
+reavplayer-module.sha256=8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850

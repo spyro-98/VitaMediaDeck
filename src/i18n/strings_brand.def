@@ -1,0 +1,9 @@
+/* Localizable brand UI strings. Format:
+ * VT_STR(KEY_NAME, "Italian text", "English text")
+ * Keep printf specifiers (%s, %d, %u...) in the same order in both columns;
+ * positional arguments are not available.
+ *
+ * "VitaTube" is a brand name and intentionally remains literal in code, like
+ * the "English"/"Italiano" endonyms in strings_settings_screen.def. */
+VT_STR(BRAND_TEXT_INPUT_TITLE, "Inserisci testo", "Enter text")
+VT_STR(BRAND_TEXT_INPUT_HINT, "Usa la tastiera di sistema per confermare il valore", "Use the system keyboard to confirm the value")

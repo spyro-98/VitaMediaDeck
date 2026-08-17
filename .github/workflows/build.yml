@@ -1,0 +1,158 @@
+name: Build VPK
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vitatube-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-audit:
+    name: Public source guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Reject retired or unlicensed release files
+        shell: bash
+        run: |
+          test ! -e sce_sys/psvitaframe.png
+          test ! -e vendor/ffmpeg-vita/libavcodec.a
+          test ! -e vendor/ffmpeg-vita/libavformat.a
+          ! git grep -InE 'BotGuard|innertube|youtubei/v1|AIza[0-9A-Za-z_-]{20,}' -- src CMakeLists.txt assets sce_sys
+          find tools -maxdepth 1 -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+  build:
+    name: VitaSDK Release build
+    if: ${{ vars.VITATUBE_HW_REPOSITORY != '' && vars.VITATUBE_SW_REPOSITORY != '' && vars.VITATUBE_HTTPS_REPOSITORY != '' }}
+    runs-on: ubuntu-latest
+    container:
+      image: vitasdk/vitasdk:latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          path: VitaTube
+
+      - name: Check out hardware decoder
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.VITATUBE_HW_REPOSITORY }}
+          path: vita-hw-decoder
+
+      - name: Check out software decoder
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.VITATUBE_SW_REPOSITORY }}
+          path: vita-sw-decoder
+
+      - name: Check out HTTPS transport
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.VITATUBE_HTTPS_REPOSITORY }}
+          path: vita-https
+
+      - name: Install host build tools
+        run: |
+          apk add --no-cache \
+            build-base ca-certificates cmake curl git patch pkgconf \
+            tar unzip wget xz bzip2
+
+      - name: Install missing Vita port libraries
+        run: |
+          vita_lib="$VITASDK/arm-vita-eabi/lib"
+          missing=0
+          for archive in \
+            libvita2d.a libfreetype.a libjpeg.a libpng.a libbz2.a libz.a \
+            libmpg123.a libmbedtls.a libmbedx509.a libmbedcrypto.a libxml2.a \
+            libzstd.a libsmb2.a; do
+            if [[ ! -f "$vita_lib/$archive" ]]; then
+              missing=1
+              break
+            fi
+          done
+          if [[ "$missing" == 1 ]]; then
+            git clone --depth 1 https://github.com/vitasdk/vdpm.git "$RUNNER_TEMP/vdpm"
+            "$RUNNER_TEMP/vdpm/vdpm" \
+              libvita2d freetype libpng libjpeg-turbo zlib bzip2 mpg123 \
+              mbedtls zstd libxml2 libsmb2
+          fi
+
+      - name: Restore pinned HTTPS stack
+        id: https-cache
+        uses: actions/cache@v5
+        with:
+          path: vita-https/build/deps/curl-mbedtls
+          key: curl-mbedtls-${{ hashFiles('vita-https/tools/build-curl-mbedtls.sh', 'vita-https/patches/mbedtls-vita.patch') }}
+
+      - name: Build pinned HTTPS stack
+        if: steps.https-cache.outputs.cache-hit != 'true'
+        working-directory: vita-https
+        run: ./tools/build-curl-mbedtls.sh
+
+      - name: Restore pinned libssh2
+        id: libssh2-cache
+        uses: actions/cache@v5
+        with:
+          path: VitaTube/build/deps/libssh2-vita
+          key: libssh2-mbedtls-vita-${{ hashFiles('VitaTube/tools/build-libssh2-vita.sh') }}
+
+      - name: Build pinned libssh2
+        if: steps.libssh2-cache.outputs.cache-hit != 'true'
+        working-directory: VitaTube
+        run: ./tools/build-libssh2-vita.sh
+
+      - name: Restore pinned FFmpeg backend
+        id: ffmpeg-cache
+        uses: actions/cache@v5
+        with:
+          path: VitaTube/build/deps/ffmpeg-vita-hw
+          key: ffmpeg-h264-vita-${{ hashFiles('VitaTube/tools/build-ffmpeg-vita-hw.sh') }}
+
+      - name: Build pinned FFmpeg backend
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        working-directory: VitaTube
+        env:
+          VITATUBE_FFMPEG_JOBS: "2"
+        run: ./tools/build-ffmpeg-vita-hw.sh
+
+      - name: Prepare release licenses and sources
+        working-directory: VitaTube
+        run: ./tools/prepare-release-licenses.sh
+
+      - name: Configure Release build
+        working-directory: VitaTube
+        run: cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build VPK
+        working-directory: VitaTube
+        run: cmake --build build-ci --parallel 2
+
+      - name: Validate VPK container
+        working-directory: VitaTube
+        run: ./tools/release-audit.sh --vpk build-ci/VitaTube.vpk
+
+      - name: Package corresponding source
+        working-directory: VitaTube
+        run: ./tools/package-corresponding-source.sh build-ci/VitaTube-Corresponding-Source.tar.gz
+
+      - name: Upload VPK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VitaTube-VPK
+          path: |
+            VitaTube/build-ci/VitaTube.vpk
+            VitaTube/build-ci/VitaTube-Corresponding-Source.tar.gz
+          if-no-files-found: error

@@ -1,0 +1,9 @@
+#ifndef VITATUBE_APP_PATHS_H
+#define VITATUBE_APP_PATHS_H
+
+#define VITATUBE_DATA_DIR "ux0:data/VitaTube"
+#define VITATUBE_NETWORK_DIR VITATUBE_DATA_DIR "/network"
+#define VITATUBE_KNOWN_HOSTS_PATH VITATUBE_NETWORK_DIR "/known_hosts"
+#define VITATUBE_SESSION_LOG_PATH VITATUBE_DATA_DIR "/session_log.txt"
+
+#endif

@@ -1,0 +1,10 @@
+/* Compact string catalog for the local and authenticated-network client. */
+VT_STR(NONE, "", "")
+
+#include "i18n/strings_about.def"
+#include "i18n/strings_brand.def"
+#include "i18n/strings_local_media_screen.def"
+#include "i18n/strings_loading_screen.def"
+#include "i18n/strings_mini_player.def"
+#include "i18n/strings_music_player.def"
+#include "i18n/strings_settings_screen.def"
