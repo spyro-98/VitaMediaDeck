@@ -1,0 +1,136 @@
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: VitaTube-hardened-release
+DocumentNamespace: urn:uuid:6fe4d09e-a2a4-4b9e-a267-8672854f5bb3
+Creator: Tool: VitaTube release hardening manifest
+Created: 2026-08-14T00:00:00Z
+DocumentComment: Versions and immutable checksums are recorded in release/DEPENDENCIES.lock. The selected publication location is intentionally unspecified.
+
+##### Package: VitaTube
+
+PackageName: VitaTube
+SPDXID: SPDXRef-Package-VitaTube
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-VitaTube
+
+##### Package: vita-hw-decoder
+
+PackageName: vita-hw-decoder
+SPDXID: SPDXRef-Package-VitaHwDecoder
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-VitaHwDecoder
+
+##### Package: vita-sw-decoder
+
+PackageName: vita-sw-decoder
+SPDXID: SPDXRef-Package-VitaSwDecoder
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-VitaSwDecoder
+
+##### Package: vita-https
+
+PackageName: vita-https
+SPDXID: SPDXRef-Package-VitaHttps
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-VitaHttps
+
+##### Package: FFmpeg hardware build
+
+PackageName: FFmpeg-h264-vita
+SPDXID: SPDXRef-Package-FFmpegHw
+PackageVersion: ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
+PackageDownloadLocation: git+https://github.com/FFmpeg/FFmpeg.git@ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: LGPL-2.1-or-later AND GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaHwDecoder DEPENDS_ON SPDXRef-Package-FFmpegHw
+
+##### Package: FFmpeg software build
+
+PackageName: FFmpeg
+SPDXID: SPDXRef-Package-FFmpegSw
+PackageVersion: 8.1.2
+PackageDownloadLocation: https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
+FilesAnalyzed: false
+PackageLicenseConcluded: LGPL-2.1-or-later
+PackageLicenseDeclared: LGPL-2.1-or-later
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaSwDecoder DEPENDS_ON SPDXRef-Package-FFmpegSw
+
+##### Package: curl
+
+PackageName: curl
+SPDXID: SPDXRef-Package-curl
+PackageVersion: 8.21.0
+PackageDownloadLocation: https://curl.se/download/curl-8.21.0.tar.xz
+FilesAnalyzed: false
+PackageLicenseConcluded: curl
+PackageLicenseDeclared: curl
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaHttps DEPENDS_ON SPDXRef-Package-curl
+
+##### Package: Mbed TLS
+
+PackageName: Mbed-TLS
+SPDXID: SPDXRef-Package-MbedTLS
+PackageVersion: 3.6.5
+PackageDownloadLocation: https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.5/mbedtls-3.6.5.tar.bz2
+FilesAnalyzed: false
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: Apache-2.0 OR GPL-2.0-or-later
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-curl DEPENDS_ON SPDXRef-Package-MbedTLS
+
+##### Package: certifi CA bundle
+
+PackageName: certifi
+SPDXID: SPDXRef-Package-certifi
+PackageVersion: 2026.07.22
+PackageDownloadLocation: https://pypi.org/project/certifi/2026.7.22/
+FilesAnalyzed: false
+PackageLicenseConcluded: MPL-2.0
+PackageLicenseDeclared: MPL-2.0
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaHttps DEPENDS_ON SPDXRef-Package-certifi
+
+##### Package: libssh2
+
+PackageName: libssh2
+SPDXID: SPDXRef-Package-libssh2
+PackageVersion: 1.11.1
+PackageDownloadLocation: https://www.libssh2.org/download/libssh2-1.11.1.tar.xz
+FilesAnalyzed: false
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-libssh2
+
+##### Package: remaining runtime libraries
+
+PackageName: VitaTube-runtime-libraries
+SPDXID: SPDXRef-Package-RuntimeLibraries
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: NOASSERTION
+PackageComment: Includes libsmb2 6.1, libxml2 2.15.3, mpg123 1.33.5, vita2d a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed, FreeType 2.14.3, libjpeg-turbo 3.2.0, libpng 1.6.58, bzip2 1.0.8, zlib 1.3.2, zstd 1.5.7, pthread-embedded 11d2e5722d98c86f33c908fc47b2cf6e55205db5, ReAvPlayer abff24a21ffec3e57fc1cd3b1d17dc26666251b0 and Poppins. Full license texts and exact source inputs accompany the release.
+Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-RuntimeLibraries

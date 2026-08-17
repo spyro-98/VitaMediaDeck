@@ -1,0 +1,11 @@
+build/
+dist/
+.vitasdk-src/
+.claude/
+datamirror/
+logmirror/
+
+# Hardware test artifacts, not source files.
+*.mp4
+*.psp2dmp
+.DS_Store
