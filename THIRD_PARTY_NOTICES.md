@@ -51,8 +51,9 @@ ReAvPlayer upstream: https://github.com/SonicMastr/ReAvPlayer
 
 ## Font
 
-Poppins is bundled under the SIL Open Font License 1.1. Its text is stored in
-`assets/fonts/OFL.txt` and packaged as `licenses/Poppins-OFL.txt`.
+Inter 4.1 Medium and SemiBold are bundled under the SIL Open Font License 1.1.
+Its text is stored in `assets/fonts/Inter-OFL.txt` and packaged as
+`licenses/Inter-OFL.txt`.
 
 ## VitaSDK
 

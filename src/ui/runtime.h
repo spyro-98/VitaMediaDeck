@@ -17,9 +17,10 @@ void ui_runtime_load_assets(void);
 void ui_runtime_term(void);
 int ui_runtime_is_ready(void);
 
-/* Three separate instances of the same TTF: libvita2d stores each glyph in
- * its own atlas at the first size it's used at, so reusing a single instance
- * at different sizes would reintroduce blurry scaling. */
+/* Native-resolution type scale. Latin, Greek and Cyrillic use Inter; CJK uses
+ * the matching Vita system PGF. Three TTF instances are intentional because
+ * libvita2d caches each glyph at its first requested size and would otherwise
+ * blur later sizes by scaling an existing atlas bitmap. */
 #define UI_FONT_SMALL   16
 #define UI_FONT_BODY    20
 #define UI_FONT_DISPLAY 28

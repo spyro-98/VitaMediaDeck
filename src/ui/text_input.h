@@ -9,13 +9,18 @@
  * its centered editor. sceImeUpdate() is called outside the
  * GXM scene, before the framebuffer swap.
  *
- * `initial` is UTF-8 and is converted internally to UTF-16. The text typed
- * by the user is converted back from UTF-16 to UTF-8 into `out` (truncated
- * to out_max-1 bytes) — Basic Multilingual Plane ONLY, no surrogate pairs:
- * enough for normal source names and paths, not a full UTF-16 decoder.
+ * `initial` is validated UTF-8 and converted internally to UTF-16. The text
+ * typed by the user is converted back to UTF-8, including surrogate pairs.
+ * A value that cannot fit in out is rejected instead of being silently cut.
  *
  * Returns 1 if the user confirmed with ENTER and out holds non-empty text,
- * 0 if they cancelled or confirmed empty, <0 if sceImeOpen() fails. */
+ * 0 if they cancelled or confirmed empty, <0 on IME/conversion failure. */
 int ui_text_input(const char *title, const char *initial, char *out, size_t out_max);
+
+/* Password/secret variant. The confirmed UTF-8 value is unchanged, while the
+ * app-owned live field shows one bullet per Unicode scalar and IME assistance
+ * is disabled so typed secrets are not exposed through suggestions. */
+int ui_text_input_secure(const char *title, const char *initial,
+	                     char *out, size_t out_max);
 
 #endif /* VITATUBE_UI_TEXT_INPUT_H */

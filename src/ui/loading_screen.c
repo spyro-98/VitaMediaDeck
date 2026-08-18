@@ -12,6 +12,7 @@
 
 #include "common/text_log.h"
 #include "i18n/i18n.h"
+#include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
@@ -48,6 +49,7 @@ static int loading_task_thread(SceSize args, void *argp) {
 	UiTaskThreadArgs *thread_args = (UiTaskThreadArgs *)argp;
 	UiTaskState *state = thread_args->state;
 	state->result = state->task(state->ctx);
+	__sync_synchronize();
 	state->done = 1;
 	return sceKernelExitThread(0);
 }
@@ -73,9 +75,8 @@ static void draw_centered_text(int y, unsigned int color,
 	                           unsigned int size, const char *text) {
 	vita2d_font *font = ui_runtime_font(size);
 	if (!font || !text) return;
-	int width = ui_font_text_width(font, size, text);
-	int x = (SCREEN_WIDTH - width) / 2;
-	ui_font_draw_text(font, x, y, color, size, text);
+	ui_font_draw_text_centered(font, SCREEN_WIDTH / 2, y, SCREEN_WIDTH - 96,
+	                           color, size, text);
 }
 
 static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
@@ -83,7 +84,9 @@ static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 	                          float idle_radius) {
 	const int dots = 10;
 	const float tau = 6.28318530718f;
-	int active = (int)((now_us / 90000ULL) % (uint64_t)dots);
+	int reduced_motion = vt_preferences_reduce_motion();
+	int active = reduced_motion ? 0 :
+	             (int)((now_us / 90000ULL) % (uint64_t)dots);
 
 	for (int i = 0; i < dots; i++) {
 		float angle = tau * (float)i / (float)dots - 1.57079632679f;
@@ -93,14 +96,14 @@ static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 		unsigned int color;
 		float dot_radius;
 		if (age == 0) {
-			color = COLOR_ACCENT;
+			color = COLOR_BUFFER;
 			dot_radius = active_radius;
 		} else {
-			int shade = 150 - age * 9;
-			if (shade < 62) shade = 62;
-			color = RGBA8(shade, shade, shade + 6, 255);
+			color = age <= 2 ? COLOR_ACCENT
+			      : (age <= 5 ? VT_THEME_BLUE : VT_THEME_BORDER);
 			dot_radius = idle_radius;
 		}
+		if (reduced_motion && age != 0) color = VT_THEME_BORDER;
 		vita2d_draw_fill_circle(x, y, dot_radius, color);
 	}
 
@@ -140,6 +143,10 @@ static void draw_loading_frame(const char *query, const char *message,
 			draw_centered_text(430, COLOR_MUTED, UI_FONT_BODY, percent);
 		}
 	}
+	if (cancellable) {
+		draw_centered_text(total > 0 ? 470 : 402, COLOR_MUTED, UI_FONT_SMALL,
+		                   vt_i18n_str(VT_STR_LOADING_CANCEL_HINT));
+	}
 
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
@@ -150,17 +157,8 @@ static void draw_clipped_line(vita2d_font *font, int x, int y, int max_width,
 	                          unsigned int size, unsigned int color,
 	                          const char *text) {
 	if (!font || !text || !text[0]) return;
-	char clipped[128];
-	size_t len = strlen(text);
-	if (len >= sizeof(clipped)) len = sizeof(clipped) - 1;
-	while (len > 0 && (((unsigned char)text[len] & 0xC0) == 0x80)) len--;
-	memcpy(clipped, text, len);
-	clipped[len] = '\0';
-	while (len > 0 && ui_font_text_width(font, size, clipped) > max_width) {
-		len--;
-		while (len > 0 && (((unsigned char)clipped[len] & 0xC0) == 0x80)) len--;
-		clipped[len] = '\0';
-	}
+	char clipped[256];
+	ui_font_fit_text(font, size, text, clipped, sizeof(clipped), max_width);
 	ui_font_draw_text(font, x, y, color, size, clipped);
 }
 
@@ -187,21 +185,23 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 
 	ui_draw_spinner(480.0f, 252.0f, now_us);
 	if (small) {
-		int status_w = ui_font_text_width(small, UI_FONT_SMALL, status);
-		ui_font_draw_text(small, (SCREEN_WIDTH - status_w) / 2, 324,
-		                       COLOR_TEXT, UI_FONT_SMALL, status);
+		ui_font_draw_text_centered(small, SCREEN_WIDTH / 2, 324,
+		                           SCREEN_WIDTH - 96, COLOR_TEXT,
+		                           UI_FONT_SMALL, status);
 		if (info && info->detail_text) {
 			char detail[160];
 			detail[0] = '\0';
 			info->detail_text(detail, sizeof(detail), info->detail_ctx, now_us);
 			if (detail[0]) {
-				int detail_w = ui_font_text_width(small, UI_FONT_SMALL, detail);
-				int detail_x = (SCREEN_WIDTH - detail_w) / 2;
-				if (detail_x < 24) detail_x = 24;
-				draw_clipped_line(small, detail_x, 358, SCREEN_WIDTH - detail_x * 2,
-				                  UI_FONT_SMALL, COLOR_BUFFER, detail);
+				ui_font_draw_text_centered(small, SCREEN_WIDTH / 2, 358,
+				                           SCREEN_WIDTH - 96, COLOR_BUFFER,
+				                           UI_FONT_SMALL, detail);
 			}
 		}
+		if (info && info->cancellable)
+			ui_font_draw_text_centered(
+				small, SCREEN_WIDTH / 2, 426, SCREEN_WIDTH - 96, COLOR_MUTED,
+				UI_FONT_SMALL, vt_i18n_str(VT_STR_LOADING_PLAYER_CANCEL_HINT));
 	}
 
 	long current = progress_current ? *progress_current : 0;
@@ -425,9 +425,11 @@ void ui_message_show(const char *message, const char *detail, int duration_ms) {
 	vita2d_clear_screen();
 	ui_brand_set_loading(0);
 	ui_brand_draw_header(NULL);
-	/* Even errors and confirmations stay a full page: no modal box breaking
+	/* Errors stay a full page: no modal box breaking
 	 * the app's visual continuity. */
-	vita2d_draw_fill_circle(480.0f, 226.0f, 24.0f, COLOR_ACCENT);
+	vita2d_draw_fill_circle(480.0f, 226.0f, 25.0f, VT_THEME_DANGER);
+	vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, COLOR_TEXT);
+	vita2d_draw_fill_circle(480.0f, 237.0f, 2.5f, COLOR_TEXT);
 	draw_centered_text(312, COLOR_TEXT, UI_FONT_DISPLAY,
 	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_ERROR_MESSAGE));
 	if (detail && detail[0]) {

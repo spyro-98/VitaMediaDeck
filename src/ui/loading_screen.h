@@ -68,7 +68,7 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
                           const volatile long *progress_current,
                           const volatile long *progress_total);
 
-/* Short graphical message for errors or final states. */
+/* Short, interruptible full-page error message. */
 void ui_message_show(const char *message, const char *detail, int duration_ms);
 
 /* Primitive shared with the grid: VitaTube orbital indicator. Must be

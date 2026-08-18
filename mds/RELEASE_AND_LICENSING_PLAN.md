@@ -14,7 +14,7 @@ A public release should contain:
 - source for the exact tagged revision;
 - reproducible dependency build scripts and pinned revisions;
 - `VitaTube.vpk` and SHA-256 checksum;
-- GPLv3, FFmpeg LGPL, ReAvPlayer MIT, libssh2 BSD, Poppins OFL, and consolidated
+- GPLv3, FFmpeg LGPL, ReAvPlayer MIT, libssh2 BSD, Inter OFL, and consolidated
   third-party notices inside the package;
 - a hardware/server validation summary;
 - known limitations and configuration instructions.

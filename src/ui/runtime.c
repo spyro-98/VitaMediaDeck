@@ -30,19 +30,24 @@ int ui_runtime_init(void) {
 
 void ui_runtime_load_assets(void) {
 	if (!g_runtime_ready) return;
-	/* Keep the packaged TTF only as a best-effort fallback. ui/font.c routes
-	 * normal text through the console PGFs so Latin/Cyrillic and the dedicated
-	 * Japanese, Chinese and Korean faces retain their native Vita metrics. */
-	if (!g_font_small) g_font_small = vita2d_load_font_file("app0:fonts/Poppins-Regular.ttf");
-	if (!g_font_body) g_font_body = vita2d_load_font_file("app0:fonts/Poppins-Regular.ttf");
-	if (!g_font_display) g_font_display = vita2d_load_font_file("app0:fonts/Poppins-Regular.ttf");
+	/* Keep the system PGFs available for complete Japanese/Chinese/Korean
+	 * coverage and for codepoints absent from the packaged face. */
 	if (!ui_font_fallback_ready()) {
 		int fallback_ret = ui_font_fallback_init();
-		log_printf("system font: PGF Latin/Cyrillic/J/C/K -> 0x%08X mask=0x%X",
+		log_printf("system font: Latin/J/C/K fallback -> 0x%08X mask=0x%X",
 		           (unsigned)fallback_ret,
 		           (unsigned)ui_font_fallback_language_mask());
 	}
+	/* libvita2d's atlas key does not include pixel size. These must stay three
+	 * independent instances, otherwise the first cached bitmap is rescaled by
+	 * the GPU and later sizes become soft. */
+	if (!g_font_small) g_font_small = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_font_body) g_font_body = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_font_display) g_font_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	if (!g_font_small || !g_font_body || !g_font_display)
+		log_printf("ui asset warning: one or more Inter font instances unavailable");
 	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/vitatubelogoalpha.png");
+	if (!g_logo) log_printf("ui asset warning: brand logo unavailable, using vector fallback");
 }
 
 void ui_runtime_term(void) {
@@ -69,10 +74,16 @@ int ui_runtime_is_ready(void) {
 }
 
 vita2d_font *ui_runtime_font(unsigned int size) {
-	if (size == UI_FONT_SMALL) return g_font_small;
-	if (size == UI_FONT_BODY) return g_font_body;
-	if (size == UI_FONT_DISPLAY) return g_font_display;
-	return NULL;
+	vita2d_font *preferred = size == UI_FONT_SMALL ? g_font_small
+	                       : size == UI_FONT_BODY ? g_font_body
+	                       : size == UI_FONT_DISPLAY ? g_font_display : NULL;
+	if (preferred) return preferred;
+	/* A single allocation failure must not blank an entire text tier.  Reusing
+	 * another exact-face instance is a degraded (potentially softer) fallback,
+	 * but remains readable and lets the mixed renderer reach the system PGFs. */
+	if (g_font_body) return g_font_body;
+	if (g_font_small) return g_font_small;
+	return g_font_display;
 }
 
 vita2d_texture *ui_runtime_logo(void) {

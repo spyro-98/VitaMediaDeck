@@ -1,5 +1,6 @@
 #include "ui/mini_player.h"
 
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,6 +14,7 @@
 #include "media/player_input_lock.h"
 #include "settings/preferences.h"
 #include "system/display_awake.h"
+#include "ui/components.h"
 #include "ui/loading_screen.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
@@ -29,12 +31,27 @@
 #define MINI_VIDEO_COMPACT_H 43.0f
 #define MINI_VIDEO_EXPANDED_W ((float)SCREEN_WIDTH * 0.25f)
 #define MINI_VIDEO_EXPANDED_MARGIN 8.0f
+#define MINI_CONTROL_FEEDBACK_US 170000ULL
+#define MINI_TRANSPORT_BACK_X 732.0f
+#define MINI_TRANSPORT_PLAY_X 800.0f
+#define MINI_TRANSPORT_FORWARD_X 868.0f
+#define MINI_TRANSPORT_CLOSE_X 922.0f
+
+enum {
+	MINI_CONTROL_NONE = 0,
+	MINI_CONTROL_BACK,
+	MINI_CONTROL_PLAY,
+	MINI_CONTROL_FORWARD,
+	MINI_CONTROL_CLOSE
+};
 
 static vita2d_texture *g_artwork;
 static char g_artwork_video_id[VT_BACKGROUND_MEDIA_ID_MAX];
+static int g_artwork_attempted;
 static PlayerInputLock g_mini_input_lock;
 static uint64_t g_mini_lock_visible_until_us;
 static float g_mini_lock_animation;
+static uint64_t g_mini_lock_animation_last_us;
 static char g_marquee_title[128];
 static uint64_t g_marquee_started_us;
 static VtBackgroundPlaybackSnapshot g_cached_snapshot;
@@ -46,10 +63,21 @@ static int g_mini_video_expanded;
 static float g_mini_video_expansion;
 static char g_mini_layout_video_id[VT_BACKGROUND_MEDIA_ID_MAX];
 static uint32_t g_mini_layout_activation_serial;
+static int g_mini_control_feedback;
+static uint64_t g_mini_control_feedback_until_us;
 
 typedef struct {
 	float x, y, width, height;
 } MiniVideoRect;
+
+static float mini_slide_eased(void) {
+	float progress = g_mini_animation;
+	if (progress < 0.0f) progress = 0.0f;
+	if (progress > 1.0f) progress = 1.0f;
+	/* Smoothstep keeps both ends quiet while preserving the fixed 220 ms
+	 * duration.  This is also the value used by hit-testing and page clipping. */
+	return progress * progress * (3.0f - 2.0f * progress);
+}
 
 static MiniVideoRect mini_video_rect(const VtBackgroundPlaybackSnapshot *snapshot,
 	                                  float bar_y, float expansion) {
@@ -90,11 +118,24 @@ static int mini_video_hit(const MiniVideoRect *rect, int x, int y) {
 	       (float)y >= rect->y && (float)y <= rect->y + rect->height;
 }
 
+static int ends_with_ci(const char *text, const char *suffix) {
+	if (!text || !suffix) return 0;
+	size_t text_len = strlen(text), suffix_len = strlen(suffix);
+	if (suffix_len > text_len) return 0;
+	const char *tail = text + text_len - suffix_len;
+	for (size_t i = 0; i < suffix_len; i++)
+		if (tolower((unsigned char)tail[i]) != tolower((unsigned char)suffix[i]))
+			return 0;
+	return 1;
+}
+
 static void artwork_start(const VtBackgroundPlaybackSnapshot *snapshot) {
 	if (!snapshot || !snapshot->thumbnail_url[0]) return;
 	/* Artwork is intentionally file-only. The local mini-player must never
 	 * create an implicit network request behind the current screen. */
-	g_artwork = vita2d_load_JPEG_file(snapshot->thumbnail_url);
+	g_artwork = ends_with_ci(snapshot->thumbnail_url, ".png")
+	          ? vita2d_load_PNG_file(snapshot->thumbnail_url)
+	          : vita2d_load_JPEG_file(snapshot->thumbnail_url);
 }
 
 static void artwork_pump(const VtBackgroundPlaybackSnapshot *snapshot) {
@@ -102,10 +143,14 @@ static void artwork_pump(const VtBackgroundPlaybackSnapshot *snapshot) {
 	if (strcmp(g_artwork_video_id, snapshot->video_id) != 0) {
 		if (g_artwork) vita2d_free_texture(g_artwork);
 		g_artwork = NULL;
+		g_artwork_attempted = 0;
 		snprintf(g_artwork_video_id, sizeof(g_artwork_video_id), "%s",
 		         snapshot->video_id);
 	}
-	if (!g_artwork) artwork_start(snapshot);
+	if (!g_artwork && !g_artwork_attempted && snapshot->thumbnail_url[0]) {
+		g_artwork_attempted = 1;
+		artwork_start(snapshot);
+	}
 }
 
 static void draw_artwork_cover(const vita2d_texture *texture,
@@ -124,19 +169,10 @@ static void draw_artwork_cover(const vita2d_texture *texture,
 	vita2d_disable_clipping();
 }
 
-static void clipped(vita2d_font *font, const char *source, char out[128],
-	                int max_width) {
+static void clipped(vita2d_font *font, unsigned size, const char *source,
+	                char out[128], int max_width) {
 	if (!font || !source) { out[0] = '\0'; return; }
-	size_t len = strlen(source);
-	if (len > 127) len = 127;
-	while (len > 0 && (((unsigned char)source[len] & 0xC0) == 0x80)) len--;
-	memcpy(out, source, len);
-	out[len] = '\0';
-	while (len > 0 && ui_font_text_width(font, UI_FONT_SMALL, out) > max_width) {
-		len--;
-		while (len > 0 && (((unsigned char)out[len] & 0xC0) == 0x80)) len--;
-		out[len] = '\0';
-	}
+	ui_font_fit_text(font, size, source, out, 128, max_width);
 }
 
 static void draw_solid_triangle(float center_x, float center_y, float height,
@@ -168,6 +204,12 @@ static void draw_title_marquee(vita2d_font *font, const char *title,
 	if (title_w <= (float)MINI_TITLE_W) {
 		ui_font_draw_text(font, MINI_TITLE_X, bar_y + 27,
 		                      VT_THEME_TEXT, UI_FONT_BODY, title);
+	} else if (vt_preferences_reduce_motion()) {
+		char fitted[128];
+		ui_font_fit_text(font, UI_FONT_BODY, title, fitted, sizeof(fitted),
+		                 MINI_TITLE_W);
+		ui_font_draw_text(font, MINI_TITLE_X, bar_y + 27,
+		                  VT_THEME_TEXT, UI_FONT_BODY, fitted);
 	} else {
 		uint64_t elapsed_us = now_us - g_marquee_started_us;
 		float offset = 0.0f;
@@ -214,16 +256,26 @@ void ui_mini_player_draw(void) {
 		return;
 	}
 	uint64_t now_us = sceKernelGetProcessTimeWide();
+	uint64_t lock_delta_us = now_us >= g_mini_lock_animation_last_us
+	                       ? now_us - g_mini_lock_animation_last_us : 0;
+	if (!g_mini_lock_animation_last_us) lock_delta_us = 0;
+	if (lock_delta_us > 50000ULL) lock_delta_us = 50000ULL;
+	g_mini_lock_animation_last_us = now_us;
 	int lock_visible = g_mini_input_lock.locked &&
 	                   now_us < g_mini_lock_visible_until_us;
-	g_mini_lock_animation += ((lock_visible ? 1.0f : 0.0f) -
-	                          g_mini_lock_animation) * 0.22f;
+	if (vt_preferences_reduce_motion())
+		g_mini_lock_animation = lock_visible ? 1.0f : 0.0f;
+	else {
+		float blend = 1.0f - expf(-18.0f *
+		                            ((float)lock_delta_us / 1000000.0f));
+		g_mini_lock_animation += ((lock_visible ? 1.0f : 0.0f) -
+		                          g_mini_lock_animation) * blend;
+	}
 	if (!lock_visible && g_mini_lock_animation < 0.01f)
 		g_mini_lock_animation = 0.0f;
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	const int y = 544 -
-	              (int)((float)UI_MINI_PLAYER_HEIGHT * g_mini_animation + 0.5f);
+	const int y = ui_mini_player_top();
 
 	/* Shadow, dark glass, and double PS Vita accent. */
 	vita2d_draw_rectangle(0, y - 4, SCREEN_WIDTH, 4, RGBA8(0, 0, 0, 112));
@@ -267,7 +319,7 @@ void ui_mini_player_draw(void) {
 	const char *title = snapshot.title[0] ? snapshot.title
 	                                      : vt_i18n_str(VT_STR_MINI_DEFAULT_TITLE);
 	char channel[128];
-	clipped(small, snapshot.channel, channel, 390);
+	clipped(small, UI_FONT_SMALL, snapshot.channel, channel, 390);
 	if (expects_visual) {
 		draw_title_marquee(body, title, y, now_us);
 		if (small) ui_font_draw_text(small, 72, y + 51,
@@ -275,7 +327,9 @@ void ui_mini_player_draw(void) {
 		                                channel);
 	} else if (body) {
 		char centered[192];
-		clipped(body, title, centered, 490);
+		char fitted[128];
+		clipped(body, UI_FONT_BODY, title, fitted, 490);
+		snprintf(centered, sizeof(centered), "%s", fitted);
 		int width = ui_font_text_width(body, UI_FONT_BODY, centered);
 		ui_font_draw_text(body, 24 + (504 - width) / 2, y + 31,
 		                  VT_THEME_TEXT, UI_FONT_BODY, centered);
@@ -311,33 +365,61 @@ void ui_mini_player_draw(void) {
 	                                VT_THEME_TEXT_MUTED, UI_FONT_SMALL,
 	                                timing);
 
-	/* Compact transport: previous, play/pause, next, close. Touch keeps the
-	 * useful +/-10 s behavior without baking numbers into the symbols. */
-	const float transport_x[4] = { 744.0f, 800.0f, 856.0f, 918.0f };
-	for (int i = 0; i < 3; i++)
+	/* Compact transport: seek back, play/pause, seek forward, close. The
+	 * chevrons leave a little more breathing room around the primary action. */
+	const float transport_x[4] = {
+		MINI_TRANSPORT_BACK_X, MINI_TRANSPORT_PLAY_X,
+		MINI_TRANSPORT_FORWARD_X, MINI_TRANSPORT_CLOSE_X
+	};
+	unsigned transport_fill[3];
+	unsigned transport_foreground[3];
+	for (int i = 0; i < 3; i++) {
+		transport_fill[i] = g_mini_control_feedback == i + 1 &&
+		                    now_us < g_mini_control_feedback_until_us
+		                  ? VT_THEME_BLUE_LIGHT : VT_THEME_BLUE;
+		transport_foreground[i] = ui_contrast_bw(transport_fill[i]);
 		vita2d_draw_fill_circle(transport_x[i], y + 33.0f, 21.0f,
-		                        VT_THEME_BLUE);
-	draw_solid_triangle(744.0f, y + 33.0f, 19.0f, 0,
-	                    RGBA8(255, 255, 255, 255));
-	draw_solid_triangle(856.0f, y + 33.0f, 19.0f, 1,
-	                    RGBA8(255, 255, 255, 255));
-	if (snapshot.state == VT_BACKGROUND_PAUSED) {
-		draw_solid_triangle(800.0f, y + 33.0f, 21.0f, 1,
-		                    RGBA8(255, 255, 255, 255));
-	} else {
-		vita2d_draw_rectangle(792, y + 22, 5, 22, RGBA8(255, 255, 255, 255));
-		vita2d_draw_rectangle(803, y + 22, 5, 22, RGBA8(255, 255, 255, 255));
+		                        transport_fill[i]);
 	}
-	vita2d_draw_fill_circle(918.0f, y + 33.0f, 21.0f, RGBA8(54, 31, 48, 255));
-	vita2d_draw_line(911, y + 26, 925, y + 40, RGBA8(255, 165, 177, 255));
-	vita2d_draw_line(925, y + 26, 911, y + 40, RGBA8(255, 165, 177, 255));
+	if (small) {
+		const char *back = "<", *forward = ">";
+		int back_w = ui_font_text_width(small, UI_FONT_SMALL, back);
+		int forward_w = ui_font_text_width(small, UI_FONT_SMALL, forward);
+		ui_font_draw_text(small, (int)transport_x[0] - back_w / 2, y + 40,
+		                  transport_foreground[0], UI_FONT_SMALL, back);
+		ui_font_draw_text(small, (int)transport_x[2] - forward_w / 2, y + 40,
+		                  transport_foreground[2], UI_FONT_SMALL, forward);
+	}
+	if (snapshot.state == VT_BACKGROUND_PREPARING ||
+	    snapshot.state == VT_BACKGROUND_BUFFERING) {
+		ui_draw_spinner_compact(MINI_TRANSPORT_PLAY_X, y + 33.0f, now_us);
+	} else if (snapshot.state == VT_BACKGROUND_ERROR) {
+		vita2d_draw_rectangle(797, y + 22, 6, 16, transport_foreground[1]);
+		vita2d_draw_fill_circle(800, y + 43, 3, transport_foreground[1]);
+	} else if (snapshot.state == VT_BACKGROUND_PAUSED) {
+		draw_solid_triangle(MINI_TRANSPORT_PLAY_X, y + 33.0f, 21.0f, 1,
+		                    transport_foreground[1]);
+	} else {
+		vita2d_draw_rectangle(792, y + 22, 5, 22, transport_foreground[1]);
+		vita2d_draw_rectangle(803, y + 22, 5, 22, transport_foreground[1]);
+	}
+	unsigned close_fill = g_mini_control_feedback == MINI_CONTROL_CLOSE &&
+	                      now_us < g_mini_control_feedback_until_us
+	                    ? VT_THEME_DANGER : RGBA8(54, 31, 48, 255);
+	vita2d_draw_fill_circle(MINI_TRANSPORT_CLOSE_X, y + 33.0f, 21.0f, close_fill);
+	vita2d_draw_line(MINI_TRANSPORT_CLOSE_X - 7, y + 26,
+	                 MINI_TRANSPORT_CLOSE_X + 7, y + 40,
+	                 RGBA8(255, 165, 177, 255));
+	vita2d_draw_line(MINI_TRANSPORT_CLOSE_X + 7, y + 26,
+	                 MINI_TRANSPORT_CLOSE_X - 7, y + 40,
+	                 RGBA8(255, 165, 177, 255));
 	if (g_mini_lock_animation > 0.01f) {
 		unsigned int lock_color = RGBA8(84, 158, 218,
 		    (unsigned int)(255.0f * g_mini_lock_animation));
-		vita2d_draw_rectangle(704, y + 26, 16, 14, lock_color);
-		vita2d_draw_line(708, y + 26, 708, y + 20, lock_color);
-		vita2d_draw_line(716, y + 26, 716, y + 20, lock_color);
-		vita2d_draw_line(708, y + 20, 716, y + 20, lock_color);
+		vita2d_draw_rectangle(682, y + 26, 16, 14, lock_color);
+		vita2d_draw_line(686, y + 26, 686, y + 20, lock_color);
+		vita2d_draw_line(694, y + 26, 694, y + 20, lock_color);
+		vita2d_draw_line(686, y + 20, 694, y + 20, lock_color);
 	}
 
 	float progress = snapshot.duration_ms > 0
@@ -350,10 +432,6 @@ void ui_mini_player_draw(void) {
 	vita2d_draw_rectangle(0, y + UI_MINI_PLAYER_HEIGHT - 3,
 	                      SCREEN_WIDTH * progress, 3,
 	                      VT_THEME_BLUE_LIGHT);
-	if (snapshot.state == VT_BACKGROUND_PREPARING ||
-	    snapshot.state == VT_BACKGROUND_BUFFERING)
-		ui_draw_spinner_compact(526.0f, y + 31.0f,
-		                         sceKernelGetProcessTimeWide());
 }
 
 void ui_mini_player_pump(void) {
@@ -373,6 +451,8 @@ void ui_mini_player_pump(void) {
 			g_mini_video_expanded =
 			    vt_preferences_mini_player_expanded_default();
 			g_mini_video_expansion = g_mini_video_expanded ? 1.0f : 0.0f;
+			g_mini_control_feedback = MINI_CONTROL_NONE;
+			g_mini_control_feedback_until_us = 0;
 		}
 		g_cached_snapshot = snapshot;
 		g_cached_snapshot_valid = 1;
@@ -419,8 +499,9 @@ void ui_mini_player_pump(void) {
 		if (g_artwork) {
 			vita2d_free_texture(g_artwork);
 			g_artwork = NULL;
-			g_artwork_video_id[0] = '\0';
 		}
+		g_artwork_video_id[0] = '\0';
+		g_artwork_attempted = 0;
 	}
 }
 
@@ -428,6 +509,10 @@ int ui_mini_player_visible(void) {
 	VtBackgroundPlaybackSnapshot snapshot;
 	return vt_background_playback_snapshot(&snapshot) != 0 ||
 	       g_mini_target_visible || g_mini_animation > 0.001f;
+}
+
+int ui_mini_player_top(void) {
+	return 544 - (int)((float)UI_MINI_PLAYER_HEIGHT * mini_slide_eased() + 0.5f);
 }
 
 int ui_mini_player_input_locked(void) {
@@ -441,6 +526,12 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 		memset(&g_mini_input_lock, 0, sizeof(g_mini_input_lock));
 		g_mini_lock_visible_until_us = 0;
 		g_mini_lock_animation = 0.0f;
+		/* The last 220 ms still cover the page visually. Consume controller
+		 * input until the bar has fully left, matching drawer modal ownership. */
+		if (pressed && g_mini_animation > 0.001f) {
+			*pressed = 0;
+			return 1;
+		}
 		return 0;
 	}
 	SceCtrlData current;
@@ -474,8 +565,13 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 int ui_mini_player_handle_touch(unsigned int touch_flags,
 	                            const UiTouchEvent *touch) {
 	VtBackgroundPlaybackSnapshot snapshot;
-	if (!touch || !vt_background_playback_snapshot(&snapshot)) return 0;
-	int bar_y = 544 - (int)((float)UI_MINI_PLAYER_HEIGHT * g_mini_animation + 0.5f);
+	if (!touch) return 0;
+	int active = vt_background_playback_snapshot(&snapshot) != 0;
+	if (!active) {
+		if (!g_cached_snapshot_valid || g_mini_animation <= 0.001f) return 0;
+		snapshot = g_cached_snapshot;
+	}
+	int bar_y = ui_mini_player_top();
 	MiniVideoRect video_rect = mini_video_rect(
 	    &snapshot, (float)bar_y, g_mini_video_expansion);
 	int began_in_bar = touch->down_y >= bar_y;
@@ -484,24 +580,58 @@ int ui_mini_player_handle_touch(unsigned int touch_flags,
 	int now_in_video = mini_video_hit(&video_rect, touch->x, touch->y);
 	if (g_mini_input_lock.locked) return 1;
 	if (!began_in_bar && !now_in_bar && !began_in_video && !now_in_video) return 0;
+	if (!active) return 1;
 	if ((touch_flags & UI_TOUCH_EVENT_TAP) && began_in_video && now_in_video) {
 		g_mini_video_expanded = !g_mini_video_expanded;
 		return 1;
 	}
 	if ((touch_flags & UI_TOUCH_EVENT_TAP) && began_in_bar && now_in_bar) {
-		if (touch->down_x >= MINI_TITLE_X &&
-		    touch->down_x < MINI_TITLE_X + MINI_TITLE_W &&
+		int expects_visual = (snapshot.video_width && snapshot.video_height) ||
+		                     g_artwork;
+		int title_x = expects_visual ? MINI_TITLE_X : 24;
+		int title_w = expects_visual ? MINI_TITLE_W : 504;
+		if (touch->down_x >= title_x &&
+		    touch->down_x < title_x + title_w &&
 		    touch->down_y < bar_y + 56) {
 			vt_background_playback_video_render_complete();
 			vt_background_playback_resume_fullscreen();
 		}
-		else if (touch->x >= 890) {
+		else if (ui_touch_hit_rect(
+		             touch->x, touch->y, (int)MINI_TRANSPORT_CLOSE_X - 26,
+		             bar_y + 7, 52, 52)) {
+			g_mini_control_feedback = MINI_CONTROL_CLOSE;
+			g_mini_control_feedback_until_us =
+			    sceKernelGetProcessTimeWide() + MINI_CONTROL_FEEDBACK_US;
 			vt_background_playback_video_render_complete();
 			vt_background_playback_request_stop();
 		}
-		else if (touch->x >= 828) vt_background_playback_seek_relative(10000);
-		else if (touch->x >= 772) vt_background_playback_toggle_pause();
-		else if (touch->x >= 716) vt_background_playback_seek_relative(-10000);
+		else if (ui_touch_hit_rect(
+		             touch->x, touch->y, (int)MINI_TRANSPORT_FORWARD_X - 26,
+		             bar_y + 7, 52, 52) && snapshot.duration_ms &&
+		         snapshot.state != VT_BACKGROUND_ERROR) {
+			g_mini_control_feedback = MINI_CONTROL_FORWARD;
+			g_mini_control_feedback_until_us =
+			    sceKernelGetProcessTimeWide() + MINI_CONTROL_FEEDBACK_US;
+			vt_background_playback_seek_relative(10000);
+		}
+		else if (ui_touch_hit_rect(
+		             touch->x, touch->y, (int)MINI_TRANSPORT_PLAY_X - 26,
+		             bar_y + 7, 52, 52) &&
+		         snapshot.state != VT_BACKGROUND_ERROR) {
+			g_mini_control_feedback = MINI_CONTROL_PLAY;
+			g_mini_control_feedback_until_us =
+			    sceKernelGetProcessTimeWide() + MINI_CONTROL_FEEDBACK_US;
+			vt_background_playback_toggle_pause();
+		}
+		else if (ui_touch_hit_rect(
+		             touch->x, touch->y, (int)MINI_TRANSPORT_BACK_X - 26,
+		             bar_y + 7, 52, 52) && snapshot.duration_ms &&
+		         snapshot.state != VT_BACKGROUND_ERROR) {
+			g_mini_control_feedback = MINI_CONTROL_BACK;
+			g_mini_control_feedback_until_us =
+			    sceKernelGetProcessTimeWide() + MINI_CONTROL_FEEDBACK_US;
+			vt_background_playback_seek_relative(-10000);
+		}
 	}
 	return 1;
 }
@@ -511,6 +641,7 @@ void ui_mini_player_shutdown(void) {
 	if (g_artwork) vita2d_free_texture(g_artwork);
 	g_artwork = NULL;
 	g_artwork_video_id[0] = '\0';
+	g_artwork_attempted = 0;
 	g_marquee_title[0] = '\0';
 	g_marquee_started_us = 0;
 	g_cached_snapshot_valid = 0;
@@ -523,4 +654,7 @@ void ui_mini_player_shutdown(void) {
 	g_mini_layout_activation_serial = 0;
 	g_mini_lock_visible_until_us = 0;
 	g_mini_lock_animation = 0.0f;
+	g_mini_lock_animation_last_us = 0;
+	g_mini_control_feedback = MINI_CONTROL_NONE;
+	g_mini_control_feedback_until_us = 0;
 }

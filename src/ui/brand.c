@@ -13,6 +13,7 @@
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
+#include "settings/preferences.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
 
@@ -32,7 +33,7 @@
  * The optional title/editor field is horizontally centred on the 960px screen
  * and the status indicators are pinned to the right edge:
  *
- *   left block   : logo 18..66, then "VitaTube" from x=80 in Poppins 28px.
+ *   left block   : logo 18..66, then "VitaTube" from x=80 in Inter 28px.
  *                  8 glyphs, worst-case ~0.7em advance -> ~157px, ends ~237.
  *   search field : 430px wide (UNCHANGED: it still fits), centred ->
  *                  x = (960-430)/2 = 265, right edge 695.
@@ -40,7 +41,7 @@
  *   status block : leftmost possible x is
  *                    960 - 16 (right margin)
  *                        - 33 (battery incl. positive terminal)
- *                        - 14 (gap) - 96 (worst-case clock text width)
+ *                        - 14 (gap) - 86 (worst-case clock text width)
  *                        - 14 (gap) - 25 (Wi-Fi bars)          = 762.
  *                  Gap to the search field: 762 - 695 = 67px minimum. OK.
  *
@@ -85,8 +86,9 @@ static int g_brand_loading;
  * hole where 12h mode ("12:59 PM") would need room. CLOCK_MAX_W only bounds
  * the layout for the overlap proof above and clamps a pathological font. */
 #define CLOCK_RIGHT (BATT_X - STATUS_GAP)                              /* 897 */
-#define CLOCK_MAX_W 96
-#define CLOCK_BASELINE ((UI_BRAND_HEADER_HEIGHT + UI_FONT_BODY) / 2 - 3)
+#define CLOCK_FONT_SIZE UI_FONT_SMALL
+#define CLOCK_MAX_W 86
+#define CLOCK_BASELINE ((UI_BRAND_HEADER_HEIGHT + CLOCK_FONT_SIZE) / 2 - 2)
 
 #define WIFI_BARS      4
 #define WIFI_BAR_W     4
@@ -258,7 +260,7 @@ static void draw_battery(const header_status *st, float opacity) {
 static int draw_clock(const header_status *st, float opacity) {
 	if (!st->clock_valid) return CLOCK_RIGHT;  /* silent degradation */
 
-	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
+	vita2d_font *font = ui_runtime_font(CLOCK_FONT_SIZE);
 	if (!font) return CLOCK_RIGHT;
 
 	char text[16];
@@ -274,12 +276,12 @@ static int draw_clock(const header_status *st, float opacity) {
 		snprintf(text, sizeof(text), "%02d:%02d", st->clock_hour, st->clock_minute);
 	}
 
-	int width = ui_font_text_width(font, UI_FONT_BODY, text);
+	int width = ui_font_text_width(font, CLOCK_FONT_SIZE, text);
 	if (width < 0) width = 0;
 	if (width > CLOCK_MAX_W) width = CLOCK_MAX_W;  /* keeps the overlap proof */
 	int x = CLOCK_RIGHT - width;
 	ui_font_draw_text(font, x, CLOCK_BASELINE,
-	                  status_color_alpha(COLOR_TEXT, opacity), UI_FONT_BODY, text);
+	                  status_color_alpha(COLOR_TEXT, opacity), CLOCK_FONT_SIZE, text);
 	return x;
 }
 
@@ -335,8 +337,10 @@ static unsigned int mix_rgb(unsigned int from, unsigned int to, int step, int st
 static void draw_gradient_bar(void) {
 	const int strips = 48;
 	const float strip_w = (float)SCREEN_WIDTH / (float)strips;
-	const unsigned int black = RGBA8(4, 6, 10, 255);
-	const unsigned int deep_blue = RGBA8(8, 45, 92, 255);
+	/* Quiet enough to sit behind status text, with the blue energy concentrated
+	 * in the lower rule instead of flooding the whole top bar. */
+	const unsigned int black = VT_THEME_BG_SOFT;
+	const unsigned int deep_blue = RGBA8(7, 29, 52, 255);
 	for (int i = 0; i < strips; i++) {
 		vita2d_draw_rectangle((float)i * strip_w, 0.0f, strip_w + 1.0f,
 		                       (float)UI_BRAND_HEADER_HEIGHT,
@@ -377,29 +381,28 @@ static void draw_logo(void) {
 
 static void fit_search_text(vita2d_font *font, const char *text,
 	                         char *out, size_t out_size) {
-	if (!out || out_size == 0) return;
-	size_t len = strlen(text);
-	if (len >= out_size) len = out_size - 1;
-	while (len > 0 && (((unsigned char)text[len] & 0xC0) == 0x80)) len--;
-	memcpy(out, text, len);
-	out[len] = '\0';
-	while (len > 0 && ui_font_text_width(font, UI_FONT_BODY, out) > SEARCH_BOX_W - 96) {
-		len--;
-		while (len > 0 && (((unsigned char)out[len] & 0xC0) == 0x80)) len--;
-		out[len] = '\0';
-	}
+	ui_font_fit_text(font, UI_FONT_BODY, text ? text : "", out, out_size,
+	                 SEARCH_BOX_W - 96);
 }
 
 static size_t utf8_next(const char *text, size_t index, size_t length) {
 	if (index >= length) return length;
 	unsigned char lead = (unsigned char)text[index];
-	size_t step = lead < 0x80 ? 1 : ((lead & 0xE0) == 0xC0 ? 2 : 3);
+	size_t step = 1;
+	if (lead >= 0xC2U && lead <= 0xDFU) step = 2;
+	else if (lead >= 0xE0U && lead <= 0xEFU) step = 3;
+	else if (lead >= 0xF0U && lead <= 0xF4U) step = 4;
+	if (index + step > length) return length;
+	for (size_t i = 1; i < step; i++) {
+		if (((unsigned char)text[index + i] & 0xC0U) != 0x80U) return index + 1;
+	}
 	return index + step <= length ? index + step : length;
 }
 
 static void fit_search_edit_text(vita2d_font *font, const char *text,
 	                              size_t caret_byte, char *out,
-	                              size_t out_size, int *caret_px) {
+	                              size_t out_size, int *caret_px,
+	                              int *hidden_left, int *hidden_right) {
 	if (!out || out_size == 0) return;
 	const int max_width = SEARCH_BOX_W - 96;
 	size_t length = text ? strlen(text) : 0;
@@ -441,6 +444,8 @@ static void fit_search_edit_text(vita2d_font *font, const char *text,
 	memcpy(before, text + start, before_count);
 	before[before_count] = '\0';
 	if (caret_px) *caret_px = ui_font_text_width(font, UI_FONT_BODY, before);
+	if (hidden_left) *hidden_left = start > 0;
+	if (hidden_right) *hidden_right = end < length;
 }
 
 static void draw_header(const char *query, int editing,
@@ -461,9 +466,12 @@ static void draw_header(const char *query, int editing,
 		if (g_brand_loading) {
 			int title_w = ui_font_text_width(title_font, title_size, "VitaTube");
 			float start_x = (float)(HEADER_NAME_X + title_w + 12);
-			uint64_t phase = sceKernelGetProcessTimeWide() / 140000ULL;
+			int reduce_motion = vt_preferences_reduce_motion();
+			uint64_t phase = reduce_motion ? 0 :
+			                 sceKernelGetProcessTimeWide() / 140000ULL;
 			for (int i = 0; i < 4; i++) {
-				int step = (int)((phase + (uint64_t)i) % 4ULL);
+				int step = reduce_motion ? (i == 0 ? 0 : 2) :
+				           (int)((phase + (uint64_t)i) % 4ULL);
 				float radius = step == 0 ? 3.8f : step == 1 ? 3.1f : 2.4f;
 				unsigned color = step == 0 ? VT_THEME_BLUE_LIGHT
 				               : step == 1 ? VT_THEME_BLUE_BRIGHT
@@ -484,24 +492,32 @@ static void draw_header(const char *query, int editing,
 			char fitted[256];
 			fit_search_text(font, source, fitted, sizeof(fitted));
 			int width = ui_font_text_width(font, UI_FONT_BODY, fitted);
+			unsigned int source_color = query && query[0] ? COLOR_TEXT : COLOR_MUTED;
 			ui_font_draw_text(font, (SCREEN_WIDTH - width) / 2,
-			                  SEARCH_BOX_Y + 36, COLOR_TEXT,
+			                  SEARCH_BOX_Y + 36, source_color,
 			                  UI_FONT_BODY, fitted);
 		}
 		g_brand_loading = 0;
 		return;
 	}
 
-	/* Text editor: a compact underline inside the shared top bar. */
+	/* Text editor: a distinct, high-contrast field inside the shared top bar.
+	 * It only appears while editing, so page titles never look interactive. */
+	vita2d_draw_rectangle((float)SEARCH_BOX_X, (float)(SEARCH_BOX_Y + 5),
+	                       (float)SEARCH_BOX_W, (float)(SEARCH_BOX_H - 10),
+	                       COLOR_FIELD);
 	vita2d_draw_rectangle((float)SEARCH_BOX_X, (float)(SEARCH_BOX_Y + SEARCH_BOX_H - 2),
 	                       (float)SEARCH_BOX_W, 2.0f, COLOR_BLUE);
 
 	if (font) {
 		char fitted[256];
 		int caret_px = 0;
+		int hidden_left = 0;
+		int hidden_right = 0;
 		if (editing) {
 			fit_search_edit_text(font, source, caret_byte, fitted,
-			                          sizeof(fitted), &caret_px);
+			                          sizeof(fitted), &caret_px,
+			                          &hidden_left, &hidden_right);
 		} else {
 			fit_search_text(font, source, fitted, sizeof(fitted));
 		}
@@ -510,9 +526,17 @@ static void draw_header(const char *query, int editing,
 		                       color, UI_FONT_BODY, fitted);
 		if (editing && caret_visible) {
 			float caret_x = (float)(SEARCH_BOX_X + 18 + caret_px + 1);
-			vita2d_draw_rectangle(caret_x, SEARCH_BOX_Y + 12.0f, 2.0f, 30.0f,
+			vita2d_draw_rectangle(caret_x, SEARCH_BOX_Y + 14.0f, 2.0f, 26.0f,
 			                       COLOR_TEXT);
 		}
+		/* Small edge marks disclose horizontal scrolling without competing with
+		 * the live caret or the clear control. */
+		if (hidden_left)
+			vita2d_draw_rectangle(SEARCH_BOX_X + 7.0f, SEARCH_BOX_Y + 17.0f,
+			                       2.0f, 20.0f, COLOR_BLUE);
+		if (hidden_right)
+			vita2d_draw_rectangle(SEARCH_CLEAR_X - 6.0f, SEARCH_BOX_Y + 17.0f,
+			                       2.0f, 20.0f, COLOR_BLUE);
 	}
 
 	if (query && query[0]) {
@@ -570,13 +594,12 @@ void ui_brand_draw_search_backdrop(const char *query) {
 		const char *title = vt_i18n_str(VT_STR_BRAND_TEXT_INPUT_TITLE);
 		const char *hint = vt_i18n_str(VT_STR_BRAND_TEXT_INPUT_HINT);
 		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		int title_w = ui_font_text_width(font, UI_FONT_DISPLAY, title);
-		int hint_w = small ? ui_font_text_width(small, UI_FONT_SMALL, hint) : 0;
-		ui_font_draw_text(font, (SCREEN_WIDTH - title_w) / 2, 180,
-		                       COLOR_TEXT, UI_FONT_DISPLAY, title);
+		ui_font_draw_text_centered(font, SCREEN_WIDTH / 2, 180, SCREEN_WIDTH - 96,
+		                           COLOR_TEXT, UI_FONT_DISPLAY, title);
 		if (small) {
-			ui_font_draw_text(small, (SCREEN_WIDTH - hint_w) / 2, 220,
-			                       COLOR_MUTED, UI_FONT_SMALL, hint);
+			ui_font_draw_text_centered(small, SCREEN_WIDTH / 2, 220,
+			                           SCREEN_WIDTH - 96, COLOR_MUTED,
+			                           UI_FONT_SMALL, hint);
 		}
 	}
 }
@@ -603,13 +626,12 @@ void ui_brand_draw_search_backdrop_editing_label(const char *query,
 		if (!title || !title[0]) title = vt_i18n_str(VT_STR_BRAND_TEXT_INPUT_TITLE);
 		if (!hint) hint = "";
 		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		int title_w = ui_font_text_width(font, UI_FONT_DISPLAY, title);
-		int hint_w = small ? ui_font_text_width(small, UI_FONT_SMALL, hint) : 0;
-		ui_font_draw_text(font, (SCREEN_WIDTH - title_w) / 2, 180,
-		                       COLOR_TEXT, UI_FONT_DISPLAY, title);
+		ui_font_draw_text_centered(font, SCREEN_WIDTH / 2, 180, SCREEN_WIDTH - 96,
+		                           COLOR_TEXT, UI_FONT_DISPLAY, title);
 		if (small) {
-			ui_font_draw_text(small, (SCREEN_WIDTH - hint_w) / 2, 220,
-			                       COLOR_MUTED, UI_FONT_SMALL, hint);
+			ui_font_draw_text_centered(small, SCREEN_WIDTH / 2, 220,
+			                           SCREEN_WIDTH - 96, COLOR_MUTED,
+			                           UI_FONT_SMALL, hint);
 		}
 	}
 }

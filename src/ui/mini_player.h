@@ -12,6 +12,9 @@ void ui_mini_player_pump(void);
 
 /* Returns whether the bottom bar currently occupies screen space. */
 int ui_mini_player_visible(void);
+/* Animated top edge in screen pixels (544 when fully hidden). Pages use this
+ * instead of snapping their viewport to UI_MINI_PLAYER_Y at animation start. */
+int ui_mini_player_top(void);
 int ui_mini_player_input_locked(void);
 
 /* START is reserved globally for mini-player mode. When a fullscreen resume

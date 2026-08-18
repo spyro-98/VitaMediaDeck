@@ -9,7 +9,9 @@
 
 #include "settings/preferences.h"
 #include "ui/brand.h"
+#include "ui/components.h"
 #include "ui/runtime.h"
+#include "ui/sections_sidebar.h"
 #include "ui/theme.h"
 #include "ui/touch.h"
 
@@ -34,9 +36,14 @@ typedef struct {
 static TextReaderLine g_reader_lines[TEXT_READER_MAX_LINES];
 static int g_reader_line_count;
 
-static size_t utf8_character_length(unsigned char lead) {
-	return lead < 0x80 ? 1 : (lead & 0xE0) == 0xC0 ? 2
-	     : (lead & 0xF0) == 0xE0 ? 3 : 4;
+static size_t utf8_character_length(const char *text) {
+	unsigned char lead = (unsigned char)text[0];
+	size_t length = lead < 0x80 ? 1 : (lead & 0xE0) == 0xC0 ? 2
+	              : (lead & 0xF0) == 0xE0 ? 3
+	              : (lead & 0xF8) == 0xF0 ? 4 : 1;
+	for (size_t i = 1; i < length; i++)
+		if (!text[i] || ((unsigned char)text[i] & 0xc0U) != 0x80U) return 1;
+	return length;
 }
 
 static void index_text(vita2d_font *font, const char *text) {
@@ -56,7 +63,7 @@ static void index_text(vita2d_font *font, const char *text) {
 		char measured[512];
 		int measured_length = 0;
 		while (text[offset] && text[offset] != '\r' && text[offset] != '\n') {
-			size_t char_length = utf8_character_length((unsigned char)text[offset]);
+			size_t char_length = utf8_character_length(text + offset);
 			if (measured_length + (int)char_length >= (int)sizeof(measured)) break;
 			memcpy(measured + measured_length, text + offset, char_length);
 			measured_length += (int)char_length;
@@ -106,12 +113,15 @@ static void draw_reader(const char *parent_title, const char *title,
 	int text_top = tabbed ? TEXT_READER_TABBED_TOP : TEXT_READER_TOP;
 	vita2d_start_drawing();
 	vita2d_clear_screen();
+	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
 	ui_brand_draw_header(NULL);
 	if (tabbed)
 		draw_reader_tabs(body, parent_title, title);
 	else if (body)
 		ui_font_draw_text(body, 44, 91, VT_THEME_TEXT, UI_FONT_BODY,
-		                       title && title[0] ? title : "Video");
+		                       title && title[0] ? title : "VitaTube");
+	ui_panel(32, tabbed ? 124 : 98, 896, tabbed ? 394 : 420,
+	         VT_THEME_SURFACE, VT_THEME_BLUE_BRIGHT, 0);
 	vita2d_set_clip_rectangle(40, tabbed ? 122 : 96, 920, 522);
 	vita2d_enable_clipping();
 	for (int row = 0; row < visible_lines; row++) {
@@ -164,8 +174,8 @@ static void text_reader_run_internal(const char *parent_title, const char *title
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	unsigned int repeat_button = 0;
-	uint64_t repeat_at = 0;
+	UiNavRepeat nav_repeat;
+	ui_nav_repeat_reset(&nav_repeat);
 	int touch_y = 0;
 	ui_touch_reset();
 	for (;;) {
@@ -174,21 +184,11 @@ static void text_reader_run_internal(const char *parent_title, const char *title
 		previous = ctrl;
 		if (pressed & SCE_CTRL_CIRCLE) break;
 		if (tabbed && (pressed & (SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT))) break;
-		uint64_t now = sceKernelGetProcessTimeWide();
-		unsigned int held = 0;
-		if ((ctrl.buttons & SCE_CTRL_UP) || ctrl.ly < 48) held = SCE_CTRL_UP;
-		else if ((ctrl.buttons & SCE_CTRL_DOWN) || ctrl.ly > 207) held = SCE_CTRL_DOWN;
-		if (!held) repeat_button = 0;
-		else if (held != repeat_button) {
-			repeat_button = held;
-			repeat_at = now + 280000ULL;
-			pressed |= held;
-		} else if (now >= repeat_at) {
-			repeat_at = now + 70000ULL;
-			pressed |= held;
-		}
-		if ((pressed & SCE_CTRL_UP) && first_line > 0) first_line--;
-		if ((pressed & SCE_CTRL_DOWN) && first_line < max_first) first_line++;
+		unsigned int nav = ui_nav_repeat_update(
+		    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+		    SCE_CTRL_UP | SCE_CTRL_DOWN);
+		if ((nav & SCE_CTRL_UP) && first_line > 0) first_line--;
+		if ((nav & SCE_CTRL_DOWN) && first_line < max_first) first_line++;
 		UiTouchEvent touch;
 		unsigned int flags = ui_touch_poll(&touch);
 		if (tabbed && (flags & UI_TOUCH_EVENT_TAP) &&
@@ -196,6 +196,16 @@ static void text_reader_run_internal(const char *parent_title, const char *title
 		                      TEXT_READER_TAB_Y, TEXT_READER_TAB_W,
 		                      TEXT_READER_TAB_H))
 			break;
+		if ((flags & UI_TOUCH_EVENT_TAP) && touch.x >= 900) {
+			int track_top = tabbed ? 134 : 106;
+			int track_height = tabbed ? 374 : 402;
+			if (touch.y >= track_top && touch.y < track_top + track_height &&
+			    max_first > 0) {
+				first_line = (touch.y - track_top) * max_first / track_height;
+				if (first_line < 0) first_line = 0;
+				if (first_line > max_first) first_line = max_first;
+			}
+		}
 		if (flags & UI_TOUCH_EVENT_DOWN) touch_y = touch.y;
 		if (flags & (UI_TOUCH_EVENT_MOVE | UI_TOUCH_EVENT_HOLD)) {
 			int delta = touch_y - touch.y;
