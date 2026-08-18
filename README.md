@@ -122,12 +122,15 @@ The essential mapping is:
 | D-pad / left stick | Move focus | Seek left/right | Navigate/seek |
 | Cross | Open/confirm | Pause/resume | Pause/resume |
 | Circle | Back | Stop | Back/minimize |
-| L1 | Open/close sections | — | — |
+| L1 | Open/close sections | Sections panel | Sections panel |
+| R1 | Context actions | Playback/info panel | Playback/options panel |
 | Right stick | — | Volume | Volume |
 | Touch timeline | — | Seek | Seek |
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
 saved server definition. Passwords are requested again when a source is opened.
+Settings can swap the player-only L1/R1 panel mapping with D-pad Left/Right;
+the historical L1/R1 panel mapping is the default.
 The complete context-sensitive reference is in [CONTROLS.md](mds/CONTROLS.md).
 
 ## Data layout

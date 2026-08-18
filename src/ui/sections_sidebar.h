@@ -21,7 +21,24 @@ typedef struct {
 	float focus_cursor;
 	unsigned int repeat_button;
 	uint64_t repeat_next_us;
+	uint64_t animation_last_us;
 } UiSectionsSidebar;
+
+/* Shared directional repeat for screens that accept both the d-pad and the
+ * left stick. Keeping the thresholds and cadence in one place prevents the
+ * stick from feeling different between grids, lists and modal menus. */
+typedef struct {
+	unsigned int direction;
+	uint64_t repeat_next_us;
+} UiNavRepeat;
+
+void ui_nav_repeat_reset(UiNavRepeat *repeat);
+unsigned int ui_nav_repeat_update(UiNavRepeat *repeat,
+	                              unsigned int pressed,
+	                              unsigned int held_buttons,
+	                              unsigned char analog_x,
+	                              unsigned char analog_y,
+	                              unsigned int allowed_directions);
 
 void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active);
 

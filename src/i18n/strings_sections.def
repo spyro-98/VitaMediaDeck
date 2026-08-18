@@ -1,0 +1,6 @@
+VT_STR(SECTIONS_TITLE, "Sezioni", "Sections")
+VT_STR(SECTIONS_HOME, "Home", "Home")
+VT_STR(SECTIONS_NETWORK, "Sorgenti di rete", "Network sources")
+VT_STR(SECTIONS_SETTINGS, "Impostazioni", "Settings")
+VT_STR(SECTIONS_ABOUT, "Informazioni", "About")
+VT_STR(SECTIONS_FOOTER_HINT, "X apri  -  CERCHIO chiudi", "X open  -  CIRCLE close")

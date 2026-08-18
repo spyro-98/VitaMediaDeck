@@ -13,6 +13,7 @@
 #include "i18n/i18n.h"
 #include "media/background_playback.h"
 #include "media/hw_player_screen.h"
+#include "media/video_thumbnail.h"
 #include "network/network_source.h"
 #include "settings/preferences.h"
 #include "ui/about_screen.h"
@@ -63,7 +64,8 @@ static int rename_local_media(VtLocalMediaItem *item) {
 	if (!item) return -1;
 	char name[VT_LOCAL_MEDIA_NAME_MAX];
 	snprintf(name, sizeof(name), "%s", item->name);
-	if (ui_text_input("Rename media", name, name, sizeof(name)) <= 0) return 1;
+	if (ui_text_input(vt_i18n_str(VT_STR_MAIN_RENAME_MEDIA),
+	                  name, name, sizeof(name)) <= 0) return 1;
 	if (!valid_filename(name)) return -1;
 	const char *slash = strrchr(item->path, '/');
 	if (!slash) return -1;
@@ -84,7 +86,9 @@ static int rename_local_media(VtLocalMediaItem *item) {
 	if (sceIoGetstat(target, &collision) >= 0) return -1;
 	int ret = sceIoRename(item->path, target);
 	if (ret < 0) return ret;
-	static const char *const suffixes[] = { ".jpg", ".meta", ".srt", ".vtt" };
+	static const char *const suffixes[] = {
+		".jpg", ".jpeg", ".png", ".meta", ".srt", ".vtt"
+	};
 	for (unsigned int i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
 		char from[VT_LOCAL_MEDIA_PATH_MAX], to[VT_LOCAL_MEDIA_PATH_MAX];
 		if (sidecar_path(item->path, suffixes[i], from, sizeof(from)) == 0 &&
@@ -98,7 +102,9 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 	if (!item) return -1;
 	int ret = sceIoRemove(item->path);
 	if (ret < 0) return ret;
-	static const char *const suffixes[] = { ".jpg", ".meta", ".srt", ".vtt" };
+	static const char *const suffixes[] = {
+		".jpg", ".jpeg", ".png", ".meta", ".srt", ".vtt"
+	};
 	for (unsigned int i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
 		char path[VT_LOCAL_MEDIA_PATH_MAX];
 		if (sidecar_path(item->path, suffixes[i], path, sizeof(path)) == 0)
@@ -117,7 +123,8 @@ static int play_local_audio(VtLocalMediaItem item) {
 		    item.artwork_path[0] ? item.artwork_path : NULL, item.duration_ms);
 		if (ret == 0) ret = vt_background_playback_activate(0);
 		if (ret < 0) {
-			ui_message_show("Playback failed", "This audio file could not be opened", 2800);
+			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
+			                vt_i18n_str(VT_STR_MAIN_AUDIO_OPEN_FAILED), 2800);
 			return 0;
 		}
 		uint32_t bitrate = item.duration_ms && item.size <= UINT64_MAX / 8ULL
@@ -144,7 +151,7 @@ static int play_local_video(const VtLocalMediaItem *item) {
 	VtHwPlayerScreenSource source = {
 		.stream = factory,
 		.title = item->name,
-		.location = "Local media",
+		.location = vt_i18n_str(VT_STR_LOCAL_MEDIA_TITLE),
 		.authenticated_remote = 0,
 		.start_position_ms = vt_playback_history_position(id, item->duration_ms),
 		.expected_width = 0,
@@ -156,8 +163,10 @@ static int play_local_video(const VtLocalMediaItem *item) {
 	log_save(VITATUBE_SESSION_LOG_PATH);
 	vt_playback_history_update(id, last_position, item->duration_ms);
 	if (ret < 0)
-		ui_message_show("Unsupported media",
-		                "Playback requires an H.264 video track and AAC audio", 3200);
+		ui_message_show(vt_i18n_str(VT_STR_MAIN_UNSUPPORTED_MEDIA),
+		                vt_i18n_str(VT_STR_MAIN_UNSUPPORTED_DETAIL), 3200);
+	if (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE)
+		return ret - VT_HW_PLAYER_ACTION_SECTION_BASE;
 	return UI_SECTION_LOCAL_MEDIA;
 }
 
@@ -170,12 +179,14 @@ static int browse_local(void) {
 		if (action == UI_LOCAL_MEDIA_ACTION_BACK) return UI_SECTION_LOCAL_MEDIA;
 		if (action == UI_LOCAL_MEDIA_ACTION_RENAME) {
 			if (rename_local_media(&item) < 0)
-				ui_message_show("Rename failed", "The file was not changed", 2400);
+				ui_message_show(vt_i18n_str(VT_STR_MAIN_RENAME_FAILED),
+				                vt_i18n_str(VT_STR_MAIN_RENAME_UNCHANGED), 2400);
 			continue;
 		}
 		if (action == UI_LOCAL_MEDIA_ACTION_DELETE) {
 			if (delete_local_media(&item) < 0)
-				ui_message_show("Delete failed", "The file was not removed", 2400);
+				ui_message_show(vt_i18n_str(VT_STR_MAIN_DELETE_FAILED),
+				                vt_i18n_str(VT_STR_MAIN_DELETE_UNCHANGED), 2400);
 			continue;
 		}
 		if (action == UI_LOCAL_MEDIA_ACTION_PLAY) {
@@ -183,7 +194,8 @@ static int browse_local(void) {
 				int section = play_local_audio(item);
 				if (section != UI_SECTION_LOCAL_MEDIA) return section;
 			} else {
-				play_local_video(&item);
+				int section = play_local_video(&item);
+				if (section != UI_SECTION_LOCAL_MEDIA) return section;
 			}
 		}
 	}
@@ -191,7 +203,8 @@ static int browse_local(void) {
 
 static int browse_network(void) {
 	if (!g_network_ready) {
-		ui_message_show("Network unavailable", "Local media remains available", 2600);
+		ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
+		                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 		return UI_SECTION_NETWORK;
 	}
 	for (;;) {
@@ -217,8 +230,10 @@ static int browse_network(void) {
 		memset(&selection.credential, 0, sizeof(selection.credential));
 		memset(&remote.credential, 0, sizeof(remote.credential));
 		if (ret < 0)
-			ui_message_show("Streaming failed",
-			                "Check access, seek support and the H.264/AAC tracks", 3200);
+			ui_message_show(vt_i18n_str(VT_STR_MAIN_STREAMING_FAILED),
+			                vt_i18n_str(VT_STR_MAIN_STREAMING_DETAIL), 3200);
+		if (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE)
+			return ret - VT_HW_PLAYER_ACTION_SECTION_BASE;
 	}
 }
 
@@ -227,13 +242,18 @@ static int run_application(void) {
 	vt_playback_history_init();
 	g_network_ready = vita_https_init() >= 0;
 	if (g_network_ready) g_network_ready = vt_network_init() >= 0;
+	if (!vt_preferences_startup_controls_seen()) {
+		ui_settings_show_controls_reference();
+		vt_preferences_set_startup_controls_seen(1);
+		ui_touch_reset();
+	}
 	int section = UI_SECTION_LOCAL_MEDIA;
 	for (;;) {
 		if (section == UI_SECTION_LOCAL_MEDIA) section = browse_local();
 		else if (section == UI_SECTION_NETWORK) {
 			if (!g_network_ready) {
-				ui_message_show("Network unavailable",
-				                "Local media remains available", 2600);
+				ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
+				                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 				section = UI_SECTION_LOCAL_MEDIA;
 			} else section = browse_network();
 		} else if (section == UI_SECTION_SETTINGS) {
@@ -260,7 +280,12 @@ int main(int argc, char *argv[]) {
 	ui_loading_present(NULL);
 	ui_runtime_load_assets();
 	ui_touch_init();
+	int thumbnail_ret = vt_video_thumbnail_init();
+	if (thumbnail_ret < 0)
+		log_printf("video thumbnail worker unavailable: 0x%08X",
+		           (unsigned)thumbnail_ret);
 	run_application();
+	vt_video_thumbnail_shutdown();
 	vt_background_playback_shutdown();
 	ui_mini_player_shutdown();
 	vt_network_shutdown();

@@ -2,17 +2,53 @@
 
 #include <math.h>
 
+#include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 
 #include "settings/preferences.h"
 #include "ui/theme.h"
 
+void ui_focus_motion_reset(UiFocusMotion *motion) {
+	if (!motion) return;
+	motion->x = motion->y = motion->width = motion->height = 0.0f;
+	motion->last_tick_us = 0;
+	motion->initialized = 0;
+}
+
+void ui_focus_motion_tick(UiFocusMotion *motion, float x, float y,
+	                      float width, float height) {
+	if (!motion) return;
+	uint64_t now = sceKernelGetProcessTimeWide();
+	if (!motion->initialized || vt_preferences_reduce_motion()) {
+		motion->x = x;
+		motion->y = y;
+		motion->width = width;
+		motion->height = height;
+		motion->last_tick_us = now;
+		motion->initialized = 1;
+		return;
+	}
+	float delta_seconds = motion->last_tick_us
+	                    ? (float)(now - motion->last_tick_us) / 1000000.0f
+	                    : 1.0f / 60.0f;
+	motion->last_tick_us = now;
+	if (delta_seconds < 0.0f) delta_seconds = 0.0f;
+	if (delta_seconds > 0.05f) delta_seconds = 0.05f;
+	/* Roughly 165 ms to settle at 95%, independent of frame pacing: quick
+	 * enough for repeated D-pad/stick input, but visibly continuous. */
+	float blend = 1.0f - expf(-18.0f * delta_seconds);
+	motion->x += (x - motion->x) * blend;
+	motion->y += (y - motion->y) * blend;
+	motion->width += (width - motion->width) * blend;
+	motion->height += (height - motion->height) * blend;
+}
+
 static unsigned int halo_color(int layer, int alpha) {
 	if (alpha < 0) alpha = 0;
 	if (alpha > 255) alpha = 255;
-	if (layer == 0) return RGBA8(6, 42, 78, alpha);
-	if (layer == 1) return RGBA8(12, 66, 119, alpha);
-	return RGBA8(26, 92, 153, alpha);
+	if (layer == 0) return RGBA8(7, 48, 82, alpha);
+	if (layer == 1) return RGBA8(18, 88, 139, alpha);
+	return RGBA8(42, 143, 212, alpha);
 }
 
 void ui_focus_glow_draw(float x, float y, float width, float height,

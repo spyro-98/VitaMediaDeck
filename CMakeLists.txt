@@ -189,6 +189,11 @@ add_subdirectory("${VITATUBE_SW_DECODER_PACKAGE}"
 add_subdirectory("${VITATUBE_HTTPS_PACKAGE}"
                  "${CMAKE_BINARY_DIR}/packages/vita-https")
 
+# vita-https carries a conservative private -O2 default. Keep VitaTube's
+# explicit release contract authoritative by appending -O3 after the package
+# has declared its own options; GCC applies the last optimization level.
+target_compile_options(vita_https PRIVATE $<$<CONFIG:Release>:-O3>)
+
 add_executable(${PROJECT_NAME}
   src/main.c
   src/common/debugScreen.c
@@ -203,6 +208,7 @@ add_executable(${PROJECT_NAME}
   src/media/audio_volume.c
   src/media/avplayer_init.c
   src/media/vita_decoder.c
+  src/media/video_thumbnail.c
   src/media/hw_player_screen.c
   src/media/music_metadata.c
   src/history/playback_history.c
@@ -275,7 +281,7 @@ target_link_libraries(${PROJECT_NAME}
   ScePgf_stub         # sceFont* weak imports used by libvita2d system PGF CJK fallback
   jpeg                # vita2d image decoder dependency
   ## libpng depends on zlib; both are required by the PNG header/logo path.
-  freetype            # Poppins TTF rasterization at native UI sizes
+  freetype            # Inter TTF rasterization at exact native UI sizes
   bz2                 # FreeType static dependency
   png
   z
@@ -338,8 +344,9 @@ vita_create_vpk(${VITATUBE_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY_DIR}
   NAME ${VITA_APP_NAME}
   FILE sce_sys/icon0.png sce_sys/icon0.png
   FILE sce_sys/vitatubelogoalpha.png sce_sys/vitatubelogoalpha.png
-  FILE assets/fonts/Poppins-Regular.ttf fonts/Poppins-Regular.ttf
-  FILE assets/fonts/OFL.txt licenses/Poppins-OFL.txt
+  FILE assets/fonts/Inter-Medium.ttf fonts/Inter-Medium.ttf
+  FILE assets/fonts/Inter-SemiBold.ttf fonts/Inter-SemiBold.ttf
+  FILE assets/fonts/Inter-OFL.txt licenses/Inter-OFL.txt
   FILE LICENSE licenses/VitaTube-GPLv3.txt
   FILE THIRD_PARTY_NOTICES.md licenses/THIRD_PARTY_NOTICES.md
   FILE release/VitaTube.spdx licenses/VitaTube.spdx

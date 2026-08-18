@@ -14,6 +14,8 @@
 #include "app_paths.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
+#include "ui/components.h"
+#include "ui/focus_glow.h"
 #include "ui/mini_player.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
@@ -24,7 +26,7 @@
 #define SCREEN_HEIGHT 544
 #define LOG_TAIL_MAX (48 * 1024)
 #define LOG_LINE_MAX_CHARS 88
-#define LOG_MAX_LINES 2048
+#define LOG_MAX_LINES (LOG_TAIL_MAX / 2 + 1)
 #define LOG_VISIBLE_LINES 16
 #define TAB_Y             (UI_BRAND_HEADER_HEIGHT + 10)
 #define TAB_H             40
@@ -103,6 +105,10 @@ static void index_log_lines(int start) {
 			pos++;
 			chars++;
 		}
+		/* Never begin the next visual row in the middle of a UTF-8 sequence. */
+		while (pos > begin && pos < length &&
+		       ((unsigned char)g_log_text[pos] & 0xc0U) == 0x80U)
+			pos--;
 		g_log_lines[g_log_line_count].offset = begin;
 		g_log_lines[g_log_line_count].length = pos - begin;
 		g_log_line_count++;
@@ -148,7 +154,7 @@ static void draw_tabs(void) {
 	for (int i = 0; i < 2; i++) {
 		int x = 36 + i * 190;
 		vita2d_draw_rectangle(x, TAB_Y, 178, TAB_H,
-		                      i == 1 ? RGBA8(13, 55, 94, 255) : COLOR_CARD);
+		                      i == 1 ? VT_THEME_SURFACE_RAISED : COLOR_CARD);
 		if (i == 1) vita2d_draw_rectangle(x, TAB_UNDERLINE_Y, 178, 3, COLOR_CYAN);
 		if (font) ui_font_draw_text(font, x + 18, TAB_BASELINE_Y,
 		                                 i == 1 ? COLOR_TEXT : COLOR_MUTED,
@@ -157,19 +163,27 @@ static void draw_tabs(void) {
 }
 
 static void draw_log_screen(int cursor, int viewing, int first_line,
+	                        const UiFocusMotion *focus_motion,
 	                        const UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	vita2d_start_drawing();
 	vita2d_clear_screen();
+	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
 	ui_brand_draw_header(NULL);
 	draw_tabs();
+	int page_has_focus = !ui_mini_player_input_locked() &&
+	                     (!sidebar || (!sidebar->open &&
+	                                      sidebar->animation <= 0.01f));
 	if (!viewing) {
+		if (page_has_focus && focus_motion)
+			ui_focus_glow_draw(focus_motion->x, focus_motion->y,
+			                   focus_motion->width, focus_motion->height,
+			                   sceKernelGetProcessTimeWide(), LOG_LIST_Y, 490);
 		for (int i = 0; i < (int)(sizeof(g_entries) / sizeof(g_entries[0])); i++) {
 			int y = LOG_LIST_Y + i * LOG_ROW_H;
-			vita2d_draw_rectangle(36, y, 888, 48,
-			                      i == cursor ? RGBA8(15, 45, 78, 255) : COLOR_CARD);
-			vita2d_draw_rectangle(36, y, 4, 48, i == cursor ? COLOR_CYAN : COLOR_BLUE);
+			ui_panel(36, y, 888, 48,
+			         COLOR_CARD, COLOR_BLUE, 0);
 			uint64_t size = 0;
 			int available = log_size(i, &size);
 			if (body) ui_font_draw_text(body, 58, y + 30,
@@ -211,17 +225,31 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 			memcpy(text, g_log_text + line.offset, len);
 			text[len] = '\0';
 			if (small) ui_font_draw_text(small, 40, LOG_TEXT_Y + row * 20,
-			                                 COLOR_MUTED, UI_FONT_SMALL, text);
+			                                 COLOR_TEXT, UI_FONT_SMALL, text);
 		}
 		vita2d_disable_clipping();
+		if (g_log_line_count > LOG_VISIBLE_LINES) {
+			const float track_y = (float)LOG_CLIP_TOP + 6.0f;
+			const float track_h = 478.0f - track_y - 8.0f;
+			float thumb_h = track_h * (float)LOG_VISIBLE_LINES /
+			                (float)g_log_line_count;
+			if (thumb_h < 28.0f) thumb_h = 28.0f;
+			int max_first = g_log_line_count - LOG_VISIBLE_LINES;
+			float thumb_y = track_y + (track_h - thumb_h) *
+			                (float)first_line / (float)max_first;
+			vita2d_draw_rectangle(930, track_y, 4, track_h,
+			                      VT_THEME_SURFACE_FOCUS);
+			vita2d_draw_rectangle(930, thumb_y, 4, thumb_h,
+			                      VT_THEME_BLUE_LIGHT);
+		}
 		if (small) ui_font_draw_text(small, 40, 507, COLOR_MUTED,
 		                                 UI_FONT_SMALL,
 		                                 vt_i18n_str(VT_STR_ABOUT_LOG_VIEW_HINT));
 	}
+	ui_mini_player_draw();
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar->cursor, sidebar->animation,
-		                         sidebar->focus_cursor);
-	ui_mini_player_draw();
+		                         sidebar->open ? sidebar->focus_cursor : -1.0f);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
@@ -231,17 +259,20 @@ int ui_log_viewer_screen(void) {
 	int cursor = 0;
 	int viewing = 0;
 	int first_line = 0;
-	int direction_state = 0;
-	uint64_t next_repeat_us = 0;
+	UiNavRepeat nav_repeat;
+	ui_nav_repeat_reset(&nav_repeat);
 	int drag_active = 0, drag_y = 0, drag_line = 0;
 	UiSectionsSidebar sidebar;
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_INFO);
+	UiFocusMotion focus_motion;
+	ui_focus_motion_reset(&focus_motion);
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	ui_touch_reset();
 	for (;;) {
+		ui_mini_player_pump();
 		sceCtrlPeekBufferPositive(0, &ctrl, 1);
 		unsigned int pressed = ctrl.buttons & ~previous.buttons;
 		previous = ctrl;
@@ -253,49 +284,50 @@ int ui_log_viewer_screen(void) {
 		}
 		UiTouchEvent touch;
 		unsigned int touch_flags = ui_touch_poll(&touch);
-		if (ui_mini_player_handle_touch(touch_flags, &touch))
-			touch_flags = UI_TOUCH_EVENT_NONE;
 		int was_open = sidebar.open;
 		int section = ui_sections_sidebar_handle_buttons(
 		    &sidebar, &pressed, ctrl.buttons, ctrl.ly);
-		if (sidebar.open || was_open) {
+		int sidebar_owned_frame = sidebar.open || was_open;
+		if (sidebar_owned_frame) {
 			int touched = ui_sections_sidebar_handle_touch(
 			    &sidebar, touch_flags, touch.x, touch.y);
 			if (touched != UI_SECTION_NONE) section = touched;
 			touch_flags = UI_TOUCH_EVENT_NONE;
-		}
+		} else if (sidebar.animation <= 0.01f &&
+		           ui_mini_player_handle_touch(touch_flags, &touch))
+			touch_flags = UI_TOUCH_EVENT_NONE;
 		ui_sections_sidebar_tick(&sidebar);
 		if (section != UI_SECTION_NONE) return section;
+		if (!sidebar.open && sidebar.animation > 0.01f) {
+			ui_touch_reset();
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
+		int page_owns_input = !sidebar_owned_frame && !sidebar.open &&
+		                      sidebar.animation <= 0.01f;
+		if (!page_owns_input) {
+			pressed = 0;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 
-		if (!viewing && !sidebar.open &&
-		    ((pressed & SCE_CTRL_LEFT) || ctrl.lx < 48 ||
+		if (!viewing && page_owns_input &&
+		    ((pressed & SCE_CTRL_LEFT) || ctrl.lx < 64 ||
 		     ((touch_flags & UI_TOUCH_EVENT_TAP) &&
 		      ui_touch_hit_rect(touch.x, touch.y, 36, TAB_Y, 178, TAB_H))))
 			return UI_LOG_VIEWER_TO_SPECS;
-		if (pressed & SCE_CTRL_CIRCLE) {
+		if (page_owns_input && (pressed & SCE_CTRL_CIRCLE)) {
 			if (viewing) { viewing = 0; first_line = 0; }
 			else return UI_SECTION_NONE;
 		}
 
-		uint64_t now = sceKernelGetProcessTimeWide();
 		int direction = 0;
-		if (!sidebar.open) {
-			if (ctrl.buttons & SCE_CTRL_UP) direction = -1;
-			else if (ctrl.buttons & SCE_CTRL_DOWN) direction = 1;
-			else if (ctrl.ly < 48) direction = -1;
-			else if (ctrl.ly > 207) direction = 1;
-		}
-		int navigate = 0;
-		if (!direction) direction_state = 0;
-		else if (direction != direction_state) {
-			direction_state = direction;
-			next_repeat_us = now + 280000ULL;
-			navigate = 1;
-		} else if (now >= next_repeat_us) {
-			next_repeat_us = now + 95000ULL;
-			navigate = 1;
-		}
-		if (navigate) {
+		if (page_owns_input) {
+			unsigned int nav = ui_nav_repeat_update(
+			    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+			    SCE_CTRL_UP | SCE_CTRL_DOWN);
+			if (nav & SCE_CTRL_UP) direction = -1;
+			else if (nav & SCE_CTRL_DOWN) direction = 1;
+		} else ui_nav_repeat_reset(&nav_repeat);
+		if (direction) {
 			if (viewing) {
 				first_line += direction;
 				int max_first = g_log_line_count > LOG_VISIBLE_LINES
@@ -309,6 +341,9 @@ int ui_log_viewer_screen(void) {
 					cursor = (int)(sizeof(g_entries) / sizeof(g_entries[0])) - 1;
 			}
 		}
+		if (!viewing)
+			ui_focus_motion_tick(&focus_motion, 36,
+			                     LOG_LIST_Y + cursor * LOG_ROW_H, 888, 48);
 		if (!viewing && (pressed & SCE_CTRL_CROSS) && load_log(cursor) == 0) {
 			viewing = 1;
 			first_line = g_log_line_count > LOG_VISIBLE_LINES
@@ -345,6 +380,6 @@ int ui_log_viewer_screen(void) {
 		}
 		if (touch_flags & UI_TOUCH_EVENT_UP) drag_active = 0;
 
-		draw_log_screen(cursor, viewing, first_line, &sidebar);
+		draw_log_screen(cursor, viewing, first_line, &focus_motion, &sidebar);
 	}
 }

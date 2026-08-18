@@ -7,3 +7,4 @@
  * the "English"/"Italiano" endonyms in strings_settings_screen.def. */
 VT_STR(BRAND_TEXT_INPUT_TITLE, "Inserisci testo", "Enter text")
 VT_STR(BRAND_TEXT_INPUT_HINT, "Usa la tastiera di sistema per confermare il valore", "Use the system keyboard to confirm the value")
+VT_STR(BRAND_TEXT_INPUT_TOO_LONG, "Testo troppo lungo: riducilo prima di confermare", "Text too long: shorten it before confirming")

@@ -16,6 +16,10 @@ typedef struct {
 	int expected_fps;
 } VtHwPlayerScreenSource;
 
+/* A player can hand navigation back to the application's shared sections
+ * through its L1 sidebar without conflating that with decoder errors. */
+#define VT_HW_PLAYER_ACTION_SECTION_BASE 100
+
 int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms);
 

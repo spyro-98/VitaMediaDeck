@@ -17,6 +17,7 @@
 #include "i18n/i18n.h"
 #include "settings/preferences.h"
 #include "media/music_metadata.h"
+#include "media/video_thumbnail.h"
 #include "ui/brand.h"
 #include "ui/components.h"
 #include "ui/focus_glow.h"
@@ -36,10 +37,57 @@
 #define LOCAL_GROUP_VIDEO_TEMP "ux0:data/VitaTube/local_video.tmp"
 #define LOCAL_GROUP_AUDIO_TEMP "ux0:data/VitaTube/local_audio.tmp"
 #define LIST_X 52
-#define LIST_Y 132
+#define LIST_Y 122
 #define LIST_W 856
 #define ROW_H 52
 #define VISIBLE_ROWS 7
+#define GRID_COLS 3
+#define GRID_CARD_W 276
+#define GRID_CARD_H 200
+#define GRID_GAP_X 16
+#define GRID_GAP_Y 8
+#define GRID_THUMB_H 148
+
+static int local_viewport_bottom(void) {
+	int mini_top = ui_mini_player_top();
+	return mini_top < 532 ? mini_top : 532;
+}
+
+static int local_list_visible_rows(void) {
+	int rows = (local_viewport_bottom() - LIST_Y + 6) / ROW_H;
+	if (rows < 1) rows = 1;
+	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
+	return rows;
+}
+
+static int local_list_render_rows(void) {
+	int rows = (local_viewport_bottom() - LIST_Y + ROW_H - 1) / ROW_H;
+	if (rows < 1) rows = 1;
+	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
+	return rows;
+}
+
+static int local_grid_visible_rows(void) {
+	int step = GRID_CARD_H + GRID_GAP_Y;
+	int rows = (local_viewport_bottom() - LIST_Y + GRID_GAP_Y) / step;
+	if (rows < 1) rows = 1;
+	if (rows > 2) rows = 2;
+	return rows;
+}
+
+static int local_grid_render_rows(void) {
+	int step = GRID_CARD_H + GRID_GAP_Y;
+	int rows = (local_viewport_bottom() - LIST_Y + step - 1) / step;
+	if (rows < 1) rows = 1;
+	if (rows > 2) rows = 2;
+	return rows;
+}
+
+static int grid_top_for_selection(int selected) {
+	int selected_row = selected / GRID_COLS;
+	int visible = local_grid_visible_rows();
+	return selected_row >= visible ? selected_row - visible + 1 : 0;
+}
 
 typedef struct {
 	unsigned char magic[8];
@@ -74,11 +122,19 @@ typedef struct {
 } LocalArtworkCache;
 static LocalArtworkCache g_artwork[LOCAL_ART_CACHE];
 
+static int ends_with_ci(const char *name, const char *suffix);
+
 static void artwork_clear(void) {
 	for (int i = 0; i < LOCAL_ART_CACHE; i++) {
 		if (g_artwork[i].texture) vita2d_free_texture(g_artwork[i].texture);
 		memset(&g_artwork[i], 0, sizeof(g_artwork[i]));
 	}
+}
+
+static int local_media_leave(int action) {
+	vt_video_thumbnail_suspend();
+	artwork_clear();
+	return action;
 }
 
 static vita2d_texture *artwork_get(const char *path) {
@@ -96,7 +152,12 @@ static vita2d_texture *artwork_get(const char *path) {
 			slot = i;
 	if (g_artwork[slot].texture) vita2d_free_texture(g_artwork[slot].texture);
 	memset(&g_artwork[slot], 0, sizeof(g_artwork[slot]));
-	g_artwork[slot].texture = vita2d_load_JPEG_file(path);
+	/* A sidecar poster can be JPG/JPEG or PNG.  The old JPEG-only loader made a
+	 * perfectly valid cover silently disappear for common media-library naming
+	 * conventions. */
+	g_artwork[slot].texture = ends_with_ci(path, ".png")
+	                       ? vita2d_load_PNG_file(path)
+	                       : vita2d_load_JPEG_file(path);
 	if (!g_artwork[slot].texture) return NULL;
 	snprintf(g_artwork[slot].path, sizeof(g_artwork[slot].path), "%s", path);
 	g_artwork[slot].used = now;
@@ -114,6 +175,26 @@ static void draw_artwork_contain(vita2d_texture *texture, float x, float y,
 	                          x + (width - tw * scale) * .5f,
 	                          y + (height - th * scale) * .5f,
 	                          scale, scale);
+}
+
+static void draw_artwork_cover(vita2d_texture *texture, float x, float y,
+	                           float width, float height) {
+	if (!texture) return;
+	float tw = (float)vita2d_texture_get_width(texture);
+	float th = (float)vita2d_texture_get_height(texture);
+	if (tw <= 0 || th <= 0) return;
+	float source_x = 0.0f, source_y = 0.0f;
+	float source_w = tw, source_h = th;
+	if (tw / th > width / height) {
+		source_w = th * width / height;
+		source_x = (tw - source_w) * .5f;
+	} else {
+		source_h = tw * height / width;
+		source_y = (th - source_h) * .5f;
+	}
+	vita2d_draw_texture_part_scale(texture, x, y, source_x, source_y,
+	                               source_w, source_h,
+	                               width / source_w, height / source_h);
 }
 
 static int ends_with_ci(const char *name, const char *suffix) {
@@ -151,14 +232,45 @@ static void finish_external_item(VtLocalMediaItem *item) {
 	if (!item) return;
 	const char *slash = strrchr(item->path, '/');
 	snprintf(item->name, sizeof(item->name), "%s", slash ? slash + 1 : item->path);
-	snprintf(item->artwork_path, sizeof(item->artwork_path), "%s", item->path);
-	char *dot = strrchr(item->artwork_path, '.');
-	if (dot) snprintf(dot, (size_t)(item->artwork_path +
-	                               sizeof(item->artwork_path) - dot), ".jpg");
-	SceIoStat art_stat;
-	memset(&art_stat, 0, sizeof(art_stat));
-	if (!dot || sceIoGetstat(item->artwork_path, &art_stat) < 0)
-		item->artwork_path[0] = '\0';
+	/* Prefer a title-matched poster, then the conventional folder/cover image.
+	 * Libraries commonly use any of these forms, and all are cheap stat calls
+	 * made while the indexer is already traversing the directory. */
+	static const char *const extensions[] = { ".jpg", ".jpeg", ".png" };
+	static const char *const folder_names[] = {
+		"poster", "cover", "folder", "thumb", "landscape"
+	};
+	char base[VT_LOCAL_MEDIA_PATH_MAX];
+	snprintf(base, sizeof(base), "%s", item->path);
+	char *dot = strrchr(base, '.');
+	if (dot) *dot = '\0';
+	char directory[VT_LOCAL_MEDIA_PATH_MAX];
+	snprintf(directory, sizeof(directory), "%s", item->path);
+	char *slash_for_dir = strrchr(directory, '/');
+	if (slash_for_dir) *slash_for_dir = '\0';
+	item->artwork_path[0] = '\0';
+	for (unsigned i = 0; i < sizeof(extensions) / sizeof(extensions[0]) &&
+	                     !item->artwork_path[0]; i++) {
+		char candidate[VT_LOCAL_MEDIA_PATH_MAX];
+		SceIoStat stat;
+		snprintf(candidate, sizeof(candidate), "%s%s", base, extensions[i]);
+		memset(&stat, 0, sizeof(stat));
+		if (sceIoGetstat(candidate, &stat) >= 0)
+			snprintf(item->artwork_path, sizeof(item->artwork_path), "%s", candidate);
+	}
+	for (unsigned name = 0; name < sizeof(folder_names) / sizeof(folder_names[0]) &&
+	                           !item->artwork_path[0]; name++) {
+		for (unsigned ext = 0; ext < sizeof(extensions) / sizeof(extensions[0]); ext++) {
+			char candidate[VT_LOCAL_MEDIA_PATH_MAX];
+			SceIoStat stat;
+			snprintf(candidate, sizeof(candidate), "%s/%s%s", directory,
+			         folder_names[name], extensions[ext]);
+			memset(&stat, 0, sizeof(stat));
+			if (sceIoGetstat(candidate, &stat) >= 0) {
+				snprintf(item->artwork_path, sizeof(item->artwork_path), "%s", candidate);
+				break;
+			}
+		}
+	}
 	if (item->type == VT_LOCAL_MEDIA_AUDIO) {
 		VtMusicMetadata metadata;
 		if (vt_music_metadata_load(item->path, &metadata) == 0) {
@@ -464,16 +576,9 @@ int ui_local_media_next_audio(const char *current_path, int direction,
 	return 0;
 }
 
-static void clip_text(vita2d_font *font, const char *text, char out[128], int width) {
-	size_t len = strlen(text);
-	if (len >= 128) len = 127;
-	while (len > 0 && (((unsigned char)text[len] & 0xC0U) == 0x80U)) len--;
-	memcpy(out, text, len); out[len] = '\0';
-	while (len > 0 && ui_font_text_width(font, UI_FONT_BODY, out) > width) {
-		len--;
-		while (len > 0 && (((unsigned char)out[len] & 0xC0U) == 0x80U)) len--;
-		out[len] = '\0';
-	}
+static void clip_text(vita2d_font *font, unsigned int size, const char *text,
+	                  char out[128], int width) {
+	ui_font_fit_text(font, size, text ? text : "", out, 128, width);
 }
 
 static void media_format_label(const VtLocalMediaItem *item, char out[8]) {
@@ -508,23 +613,67 @@ static int draw_media_badge(vita2d_font *font, const char *label,
 	return width;
 }
 
+static void format_card_duration(uint64_t milliseconds, char out[24]) {
+	uint64_t seconds = milliseconds / 1000ULL;
+	if (seconds >= 3600ULL)
+		snprintf(out, 24, "%llu:%02llu:%02llu",
+		         (unsigned long long)(seconds / 3600ULL),
+		         (unsigned long long)((seconds / 60ULL) % 60ULL),
+		         (unsigned long long)(seconds % 60ULL));
+	else
+		snprintf(out, 24, "%llu:%02llu",
+		         (unsigned long long)(seconds / 60ULL),
+		         (unsigned long long)(seconds % 60ULL));
+}
+
+static void tick_right_drawer(int open, int cursor, float *animation,
+	                          float *focus, uint64_t *last_tick_us) {
+	if (!animation || !focus || !last_tick_us) return;
+	float animation_target = open ? 1.0f : 0.0f;
+	float focus_target = (float)cursor;
+	uint64_t now = sceKernelGetProcessTimeWide();
+	uint64_t elapsed = *last_tick_us && now > *last_tick_us
+	                 ? now - *last_tick_us : 16667ULL;
+	if (elapsed > 50000ULL) elapsed = 50000ULL;
+	*last_tick_us = now;
+	if (vt_preferences_reduce_motion()) {
+		*animation = animation_target;
+		*focus = focus_target;
+	} else {
+		float animation_alpha = (float)elapsed /
+		                        (60000.0f + (float)elapsed);
+		float focus_alpha = (float)elapsed / (50000.0f + (float)elapsed);
+		*animation += (animation_target - *animation) * animation_alpha;
+		*focus += (focus_target - *focus) * focus_alpha;
+	}
+	if (!open && *animation < 0.025f) *animation = 0.0f;
+}
+
 static void draw_screen(int filter, int selected, int top, int grid_mode,
-	                    int right_open, int right_cursor, int focus_tabs,
+	                    int right_open, int right_cursor, float right_animation,
+	                    float right_focus, int focus_tabs,
 	                    int delete_confirm,
+	                    const UiFocusMotion *focus_motion,
 	                    const UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	ui_mini_player_pump();
+	vt_video_thumbnail_pump();
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
 	ui_brand_draw_header(NULL);
+	int page_has_focus = !ui_mini_player_input_locked() && !delete_confirm &&
+	                     right_animation <= 0.01f &&
+	                     (!sidebar || (!sidebar->open &&
+	                                  sidebar->animation <= 0.01f));
+	int content_has_focus = page_has_focus && !focus_tabs;
 	if (body)
 		ui_font_draw_text(body, 42, 94, VT_THEME_TEXT, UI_FONT_BODY,
 		                  vt_i18n_str(VT_STR_HOME_TITLE));
 	if (small) {
 		char summary[64];
-		snprintf(summary, sizeof(summary), "%u video  /  %u audio",
+		snprintf(summary, sizeof(summary), vt_i18n_str(VT_STR_LOCAL_MEDIA_SUMMARY),
 		         g_index.video_count, g_index.audio_count);
 		ui_font_draw_text(small, 42, 116, VT_THEME_TEXT,
 		                  UI_FONT_SMALL, summary);
@@ -534,48 +683,62 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_VIDEO),
 		vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_AUDIO)
 	};
+	if (page_has_focus && focus_tabs && focus_motion)
+		ui_focus_glow_draw(focus_motion->x, focus_motion->y,
+		                   focus_motion->width, focus_motion->height,
+		                   sceKernelGetProcessTimeWide(), 64, 112);
 	for (int i = 0; i < 3; i++) {
 		int x = 416 + i * 166;
 		vita2d_draw_rectangle(x, 68, 154, 38,
-		                      filter == i ? VT_THEME_SURFACE_FOCUS : VT_THEME_SURFACE);
+		                      filter == i ? VT_THEME_SURFACE_RAISED
+		                                  : VT_THEME_SURFACE);
 		if (filter == i) vita2d_draw_rectangle(x, 103, 154, 3, VT_THEME_BLUE_LIGHT);
-		if (focus_tabs && filter == i)
-			ui_focus_glow_draw(x - 3, 65, 160, 44,
-			                   sceKernelGetProcessTimeWide(), 64, 112);
 		if (small) {
 			char tab_text[128];
-			clip_text(small, tabs[i], tab_text, 138);
+			clip_text(small, UI_FONT_SMALL, tabs[i], tab_text, 138);
 			ui_font_draw_text(small, x + 8, 94,
 			                  filter == i ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
 			                  UI_FONT_SMALL, tab_text);
 		}
 	}
 	int count = screen_count(filter);
-	int viewport_bottom = ui_mini_player_visible() ? UI_MINI_PLAYER_Y : 532;
+	int viewport_bottom = local_viewport_bottom();
 	if (count == 0) {
-		if (body) ui_font_draw_text(body, 250, 285, VT_THEME_TEXT_MUTED,
+		ui_panel(208, 202, 544, 140, VT_THEME_SURFACE,
+		         VT_THEME_BLUE_LIGHT, 0);
+		if (body) ui_font_draw_text(body, 244, 254, VT_THEME_TEXT,
 		                               UI_FONT_BODY,
 		                               vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY));
+		if (small) ui_font_draw_text(small, 244, 288, VT_THEME_TEXT_MUTED,
+		                                UI_FONT_SMALL,
+		                                vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY_DETAIL));
 	} else if (!grid_mode) {
-		int y = LIST_Y + (selected - top) * ROW_H;
-		ui_focus_glow_draw(LIST_X, y, LIST_W, ROW_H - 6,
-		                   sceKernelGetProcessTimeWide(), LIST_Y, viewport_bottom);
+		if (content_has_focus)
+			ui_focus_glow_draw(focus_motion ? focus_motion->x : LIST_X,
+			                   focus_motion ? focus_motion->y : LIST_Y + (selected - top) * ROW_H,
+			                   focus_motion ? focus_motion->width : LIST_W,
+			                   focus_motion ? focus_motion->height : ROW_H - 6,
+			                   sceKernelGetProcessTimeWide(), LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
-		for (int pos = top; pos < count && pos < top + VISIBLE_ROWS; pos++) {
+		for (int pos = top; pos < count &&
+		                      pos < top + local_list_render_rows(); pos++) {
 			int row_y = LIST_Y + (pos - top) * ROW_H;
 			int index = screen_local_index(filter, pos);
 			if (index < 0) continue;
 			const VtLocalMediaItem *item = &g_items[index];
 			ui_panel(LIST_X, row_y, LIST_W, ROW_H - 6,
-			         pos == selected ? VT_THEME_SURFACE_FOCUS : VT_THEME_SURFACE,
+			         VT_THEME_SURFACE,
 			         item->type == VT_LOCAL_MEDIA_VIDEO
 			             ? VT_THEME_BLUE_BRIGHT : VT_THEME_BLUE_LIGHT,
-			         pos == selected);
+			         0);
 			vita2d_texture *art = artwork_get(item->artwork_path);
+			if (!art && item->type == VT_LOCAL_MEDIA_VIDEO)
+				art = vt_video_thumbnail_get(item->path, item->size);
 			if (art) draw_artwork_contain(art, LIST_X + 10, row_y + 4, 38, 38);
 			if (body) {
-				char clipped[128]; clip_text(body, item->name, clipped, 520);
+				char clipped[128];
+				clip_text(body, UI_FONT_BODY, item->name, clipped, 520);
 				ui_font_draw_text(body, LIST_X + (art ? 58 : 24), row_y + 31, VT_THEME_TEXT,
 				                  UI_FONT_BODY, clipped);
 			}
@@ -602,36 +765,57 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		}
 		vita2d_disable_clipping();
 	} else {
-		const int cols = 3, card_w = 276, card_h = 154, gap = 16;
+		const int cols = GRID_COLS;
 		int first_row = top;
-		int viewport_bottom = ui_mini_player_visible() ? UI_MINI_PLAYER_Y : 532;
+		int viewport_bottom = local_viewport_bottom();
+		if (content_has_focus)
+			ui_focus_glow_draw(focus_motion ? focus_motion->x : LIST_X - 2,
+			                   focus_motion ? focus_motion->y : LIST_Y - 2,
+			                   focus_motion ? focus_motion->width : GRID_CARD_W + 4,
+			                   focus_motion ? focus_motion->height : GRID_CARD_H + 4,
+			                   sceKernelGetProcessTimeWide(), LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
-		for (int pos = first_row * cols; pos < count && pos < (first_row + 2) * cols; pos++) {
+		int visible_grid_rows = local_grid_render_rows();
+		for (int pos = first_row * cols; pos < count &&
+		                      pos < (first_row + visible_grid_rows) * cols; pos++) {
 			int index = filtered_index(filter, pos);
+			if (index < 0) continue;
 			int col = pos % cols, row = pos / cols - first_row;
-			int x = LIST_X + col * (card_w + gap), y = LIST_Y + row * (card_h + 14);
-			ui_panel(x, y, card_w, card_h,
-			         pos == selected ? VT_THEME_SURFACE_FOCUS : VT_THEME_SURFACE,
+			int x = LIST_X + col * (GRID_CARD_W + GRID_GAP_X);
+			int y = LIST_Y + row * (GRID_CARD_H + GRID_GAP_Y);
+			ui_panel(x, y, GRID_CARD_W, GRID_CARD_H,
+			         VT_THEME_SURFACE,
 			         g_items[index].type == VT_LOCAL_MEDIA_AUDIO
 			             ? VT_THEME_BLUE_LIGHT : VT_THEME_BLUE_BRIGHT,
-			         pos == selected);
+			         0);
 			const VtLocalMediaItem *item = &g_items[index];
 			vita2d_texture *art = artwork_get(item->artwork_path);
-			if (art) draw_artwork_contain(art, x + 7, y + 7, card_w - 14, 94);
+			if (!art && item->type == VT_LOCAL_MEDIA_VIDEO)
+				art = vt_video_thumbnail_get(item->path, item->size);
+			vita2d_draw_rectangle(x + 6, y + 6, GRID_CARD_W - 12, GRID_THUMB_H,
+			                      VT_THEME_MEDIA_BACKDROP);
+			if (art && item->type == VT_LOCAL_MEDIA_VIDEO)
+				draw_artwork_cover(art, x + 6, y + 6, GRID_CARD_W - 12, GRID_THUMB_H);
+			else if (art)
+				draw_artwork_contain(art, x + 6, y + 6, GRID_CARD_W - 12, GRID_THUMB_H);
 			else if (item->type == VT_LOCAL_MEDIA_AUDIO) {
-				if (small) {
-					char centered[128];
-					clip_text(small, item->name, centered, card_w - 32);
-					int width = ui_font_text_width(small, UI_FONT_SMALL, centered);
-					ui_font_draw_text(small, x + (card_w - width) / 2, y + 65,
-					                  VT_THEME_TEXT, UI_FONT_SMALL, centered);
-				}
-			} else {
-				vita2d_draw_fill_circle(x + 46.0f, y + 54.0f, 30.0f,
+				vita2d_draw_fill_circle(x + GRID_CARD_W * .5f, y + 68.0f, 38.0f,
 				                        VT_THEME_SURFACE_RAISED);
-				vita2d_draw_fill_circle(x + 46.0f, y + 54.0f, 8.0f,
+				vita2d_draw_fill_circle(x + GRID_CARD_W * .5f, y + 68.0f, 12.0f,
 				                        VT_THEME_BLUE_LIGHT);
+			} else {
+				for (int stripe = 0; stripe < 6; stripe++)
+					vita2d_draw_rectangle(x + 6 + stripe * 48, y + 6, 24,
+					                      GRID_THUMB_H, stripe & 1
+					                          ? RGBA8(9, 27, 47, 255)
+					                          : RGBA8(5, 16, 29, 255));
+				vita2d_draw_fill_circle(x + GRID_CARD_W * .5f, y + 68.0f, 31.0f,
+				                        RGBA8(2, 8, 17, 210));
+				for (int line = 0; line < 26; line++)
+					vita2d_draw_rectangle(x + GRID_CARD_W * .5f - 8,
+					                      y + 55 + line, 10 + line / 2, 1,
+					                      VT_THEME_TEXT);
 			}
 			if (small) {
 				char format[8];
@@ -644,59 +828,94 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				draw_media_badge(small, format, badge_x, y + 12,
 				                 item->type == VT_LOCAL_MEDIA_AUDIO
 				                     ? VT_THEME_BLUE_LIGHT : VT_THEME_BLUE_BRIGHT);
-				if (art || item->type != VT_LOCAL_MEDIA_AUDIO) {
-					char title[128]; clip_text(small, item->name, title, card_w - 26);
-					ui_font_draw_text(small, x + 13, y + 118, VT_THEME_TEXT,
-					                  UI_FONT_SMALL, title);
+				if (item->duration_ms) {
+					char duration[24];
+					format_card_duration(item->duration_ms, duration);
+					int duration_w = ui_font_text_width(small, UI_FONT_SMALL, duration) + 12;
+					vita2d_draw_rectangle(x + GRID_CARD_W - duration_w - 12,
+					                      y + GRID_THUMB_H - 18, duration_w, 24,
+					                      RGBA8(2, 7, 14, 226));
+					ui_font_draw_text(small, x + GRID_CARD_W - duration_w - 6,
+					                  y + GRID_THUMB_H, VT_THEME_TEXT,
+					                  UI_FONT_SMALL, duration);
 				}
+				char title[128];
+				clip_text(small, UI_FONT_SMALL, item->name, title, GRID_CARD_W - 26);
+				ui_font_draw_text(small, x + 13, y + 174, VT_THEME_TEXT,
+				                  UI_FONT_SMALL, title);
+				char detail[128];
+				unsigned long long mb10 = item->size * 10ULL / (1024ULL * 1024ULL);
+				char size_text[32];
+				snprintf(size_text, sizeof(size_text), "%llu.%llu MB",
+				         mb10 / 10ULL, mb10 % 10ULL);
+				const char *metadata = item->type == VT_LOCAL_MEDIA_AUDIO && item->artist[0]
+				                     ? item->artist : format;
+				snprintf(detail, sizeof(detail),
+				         vt_i18n_str(VT_STR_LOCAL_MEDIA_CARD_DETAILS), metadata, size_text);
+				char clipped_detail[128];
+				clip_text(small, UI_FONT_SMALL, detail, clipped_detail, GRID_CARD_W - 26);
+				ui_font_draw_text(small, x + 13, y + 195, VT_THEME_TEXT_MUTED,
+				                  UI_FONT_SMALL, clipped_detail);
 			}
 		}
 		vita2d_disable_clipping();
 	}
-	if (right_open) {
-		vita2d_draw_rectangle(620, UI_BRAND_HEADER_HEIGHT, 340,
-		                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(3, 8, 15, 250));
-		vita2d_draw_rectangle(620, UI_BRAND_HEADER_HEIGHT, 4,
-		                      544 - UI_BRAND_HEADER_HEIGHT, VT_THEME_BLUE_BRIGHT);
-		if (body) ui_font_draw_text(body, 650, 112, VT_THEME_TEXT,
+	/* Draw persistent playback first so modal drawers and confirmations remain
+	 * true full-height layers above it. */
+	ui_mini_player_draw();
+	if (right_animation > 0.01f) {
+		/* Modal drawers cover the complete display edge, including the brand bar.
+		 * This prevents the panel from reading as a detached card. */
+		float panel_x = 960.0f - 340.0f * right_animation;
+		vita2d_draw_rectangle(panel_x, 0, 340, 544, RGBA8(3, 8, 15, 250));
+		vita2d_draw_rectangle(panel_x, 0, 4, 544, VT_THEME_BLUE_BRIGHT);
+		if (body) ui_font_draw_text(body, (int)panel_x + 30, 92, VT_THEME_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
 		const char *actions[3] = {
-			vt_i18n_str(grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_GRID
-			                             : VT_STR_LOCAL_MEDIA_VIEW_LIST),
+			vt_i18n_str(grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_LIST
+			                             : VT_STR_LOCAL_MEDIA_VIEW_GRID),
 			vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_RENAME),
 			vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_DELETE)
 		};
+		if (right_open && !delete_confirm) {
+			float marker_y = 124.0f + right_focus * 62.0f;
+			ui_panel(panel_x + 18, marker_y, 298, 52,
+			         VT_THEME_SURFACE_FOCUS, VT_THEME_BLUE_LIGHT, 0);
+		}
 		for (int i = 0; i < 3; i++) {
-			int ay = 148 + i * 62;
-			vita2d_draw_rectangle(642, ay, 294, 54,
-			                      right_cursor == i ? VT_THEME_SURFACE_FOCUS
-			                                        : VT_THEME_SURFACE);
-			if (body) ui_font_draw_text(body, 662, ay + 35,
-			                            i == 2 ? RGBA8(255, 150, 165, 255)
-			                                   : VT_THEME_TEXT,
-			                            UI_FONT_BODY, actions[i]);
+			int ay = 124 + i * 62;
+			ui_action_button((int)panel_x + 22, ay, 294, 52,
+			                 i == 2 ? VT_THEME_DANGER : VT_THEME_SURFACE,
+			                 i == 0 ? "Left/Right" : "Cross", actions[i],
+			                 0);
 		}
 	}
 	if (delete_confirm) {
-		vita2d_draw_rectangle(208, 190, 544, 152, RGBA8(3, 8, 15, 248));
-		vita2d_draw_rectangle(208, 190, 5, 152, RGBA8(225, 62, 88, 255));
-		if (body) ui_font_draw_text(body, 244, 240, VT_THEME_TEXT, UI_FONT_BODY,
+		vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
+		                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(0, 3, 7, 186));
+		ui_panel(208, 174, 544, 190, RGBA8(3, 8, 15, 255),
+		         VT_THEME_DANGER, 0);
+		if (body) ui_font_draw_text(body, 244, 224, VT_THEME_TEXT, UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_DELETE_TITLE));
-		if (small) ui_font_draw_text(small, 244, 280, VT_THEME_TEXT_MUTED,
+		if (small) ui_font_draw_text(small, 244, 258, VT_THEME_TEXT_MUTED,
 		                              UI_FONT_SMALL,
 		                              vt_i18n_str(VT_STR_LOCAL_MEDIA_DELETE_DETAIL));
+		ui_action_button(236, 294, 226, 48, VT_THEME_SURFACE,
+		                 "Circle", vt_i18n_str(VT_STR_LOCAL_MEDIA_CANCEL), 0);
+		ui_action_button(480, 294, 244, 48, VT_THEME_DANGER,
+		                 "Cross", vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_DELETE), 1);
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar->cursor, sidebar->animation,
-		                         sidebar->focus_cursor);
-	ui_mini_player_draw();
+		                         sidebar->open ? sidebar->focus_cursor : -1.0f);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
 }
 
 int ui_local_media_screen(VtLocalMediaItem *selected_out) {
+	vt_video_thumbnail_resume();
 	int refreshed = local_scan_finish();
 	LocalMediaIndexHeader cached;
 	if (local_index_load(&cached) == 0) {
@@ -714,14 +933,22 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		if (ret == 0) local_index_publish(&initial);
 	}
 	int filter = 0, selected = 0, top = 0;
+	int library_grid = 1;
 	int right_open = 0, right_cursor = 0, focus_tabs = 0, delete_confirm = 0;
+	float right_animation = 0.0f, right_focus = 0.0f;
+	uint64_t right_motion_tick_us = 0;
+	UiFocusMotion focus_motion;
+	ui_focus_motion_reset(&focus_motion);
 	UiSectionsSidebar sidebar;
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	unsigned int repeat = 0; uint64_t repeat_at = 0;
+	UiNavRepeat page_repeat, right_repeat;
+	ui_nav_repeat_reset(&page_repeat);
+	ui_nav_repeat_reset(&right_repeat);
+	int right_horizontal_latch = 0;
 	for (;;) {
 		if (local_scan_finish() > 0) {
 			int refreshed_count = screen_count(filter);
@@ -732,82 +959,151 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		sceCtrlPeekBufferPositive(0, &ctrl, 1);
 		unsigned int pressed = ctrl.buttons & ~previous.buttons;
 		previous = ctrl;
+		UiTouchEvent touch; unsigned flags = ui_touch_poll(&touch);
+		int grid_mode = filter == 0 ? library_grid
+		              : (filter == 2 ? vt_preferences_local_music_grid()
+		                             : vt_preferences_local_video_grid());
+		if (delete_confirm) {
+			if ((flags & UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x, touch.y, 236, 294, 226, 48))
+				pressed |= SCE_CTRL_CIRCLE;
+			if ((flags & UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x, touch.y, 480, 294, 244, 48))
+				pressed |= SCE_CTRL_CROSS;
+			if (pressed & SCE_CTRL_CROSS) {
+				int index = screen_local_index(filter, selected);
+				if (index >= 0 && selected_out) *selected_out = g_items[index];
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_DELETE);
+			}
+			if (pressed & SCE_CTRL_CIRCLE) delete_confirm = 0;
+			ui_sections_sidebar_tick(&sidebar);
+			tick_right_drawer(right_open, right_cursor, &right_animation,
+			                  &right_focus, &right_motion_tick_us);
+			draw_screen(filter, selected, top, grid_mode, right_open, right_cursor,
+			            right_animation, right_focus, focus_tabs, delete_confirm,
+			            &focus_motion, &sidebar);
+			continue;
+		}
 		ui_mini_player_handle_buttons(&pressed);
 		if (ui_mini_player_input_locked()) {
 			pressed = 0;
+			flags = UI_TOUCH_EVENT_NONE;
 			ctrl.buttons &= SCE_CTRL_SELECT;
 			ctrl.lx = ctrl.ly = ctrl.rx = ctrl.ry = 128;
 		}
-		UiTouchEvent touch; unsigned flags = ui_touch_poll(&touch);
-		if (ui_mini_player_handle_touch(flags, &touch)) flags = 0;
+		int right_layer_was_visible = right_open || right_animation > 0.01f;
 		int was_open = sidebar.open;
-		int section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed,
-		                                                 ctrl.buttons, ctrl.ly);
-		if (sidebar.open || was_open) {
+		int section = UI_SECTION_NONE;
+		if (!right_layer_was_visible)
+			section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed,
+			                                             ctrl.buttons, ctrl.ly);
+		else
+			pressed &= ~SCE_CTRL_LTRIGGER;
+		int sidebar_owned_frame = sidebar.open || was_open;
+		if (sidebar_owned_frame) {
 			int touched = ui_sections_sidebar_handle_touch(&sidebar, flags,
 			                                                touch.x, touch.y);
 			if (touched != UI_SECTION_NONE) section = touched;
 			flags = 0;
-		}
+		} else if (!right_layer_was_visible && sidebar.animation <= 0.01f &&
+		           ui_mini_player_handle_touch(flags, &touch)) flags = 0;
 		ui_sections_sidebar_tick(&sidebar);
 		if (section != UI_SECTION_NONE) {
-			artwork_clear();
-			return UI_LOCAL_MEDIA_ACTION_SECTION_BASE + section;
+			return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE + section);
 		}
-		int grid_mode = filter == 0 ? 0
-		              : (filter == 2 ? vt_preferences_local_music_grid()
-		                             : vt_preferences_local_video_grid());
-		if (pressed & SCE_CTRL_RTRIGGER) {
+		if (!sidebar_owned_frame && sidebar.animation <= 0.01f &&
+		    (pressed & SCE_CTRL_RTRIGGER)) {
 			right_open = !right_open;
-			right_cursor = 0;
+			if (right_open) right_cursor = 0;
+			ui_nav_repeat_reset(&right_repeat);
+			right_horizontal_latch = 0;
 			pressed &= ~SCE_CTRL_RTRIGGER;
 		}
-		if (delete_confirm) {
-			if (pressed & (SCE_CTRL_CROSS | SCE_CTRL_SQUARE)) {
-				int index = screen_local_index(filter, selected);
-				if (index >= 0 && selected_out) *selected_out = g_items[index];
-				artwork_clear();
-				return UI_LOCAL_MEDIA_ACTION_DELETE;
-			}
-			if (pressed & SCE_CTRL_CIRCLE) delete_confirm = 0;
-			pressed = 0;
-		}
 		if (right_open) {
-			if ((pressed & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
-			if ((pressed & SCE_CTRL_DOWN) && right_cursor < 2) right_cursor++;
-			if (filter != 0 && ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) ||
-			    ((pressed & SCE_CTRL_CROSS) && right_cursor == 0))) {
+			float panel_x = 960.0f - 340.0f * right_animation;
+			if (flags & UI_TOUCH_EVENT_TAP) {
+				if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
+				                      124, 294, 52)) {
+					right_cursor = 0;
+					pressed |= SCE_CTRL_CROSS;
+				} else if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
+				                             186, 294, 52)) {
+					right_cursor = 1;
+					pressed |= SCE_CTRL_CROSS;
+				} else if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
+				                             248, 294, 52)) {
+					right_cursor = 2;
+					pressed |= SCE_CTRL_CROSS;
+				} else if (touch.x < panel_x) {
+					pressed |= SCE_CTRL_CIRCLE;
+				}
+			}
+			unsigned int drawer_nav = ui_nav_repeat_update(
+			    &right_repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+			    SCE_CTRL_UP | SCE_CTRL_DOWN);
+			unsigned int horizontal_step =
+			    pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
+			int analog_horizontal = ctrl.lx < 64 ? -1 : ctrl.lx > 191 ? 1 : 0;
+			if (!analog_horizontal) right_horizontal_latch = 0;
+			else if (analog_horizontal != right_horizontal_latch) {
+				right_horizontal_latch = analog_horizontal;
+				horizontal_step = analog_horizontal < 0
+				                ? SCE_CTRL_LEFT : SCE_CTRL_RIGHT;
+			}
+			if ((drawer_nav & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
+			if ((drawer_nav & SCE_CTRL_DOWN) && right_cursor < 2) right_cursor++;
+			if (right_cursor == 0 &&
+			    (horizontal_step ||
+			     (pressed & SCE_CTRL_CROSS))) {
 				grid_mode = !grid_mode;
-				if (filter == 2) vt_preferences_set_local_music_grid(grid_mode);
+				if (filter == 0) library_grid = grid_mode;
+				else if (filter == 2) vt_preferences_set_local_music_grid(grid_mode);
 				else vt_preferences_set_local_video_grid(grid_mode);
 				selected = top = 0;
 			}
 			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 1) {
 				int index = screen_local_index(filter, selected);
 				if (index >= 0 && selected_out) *selected_out = g_items[index];
-				artwork_clear();
-				return UI_LOCAL_MEDIA_ACTION_RENAME;
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
 			}
 			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 2)
 				delete_confirm = 1;
 			if (pressed & SCE_CTRL_CIRCLE) right_open = 0;
 			pressed = 0;
+			/* The drawer is modal: never let a tap fall through to a poster. */
+			flags = 0;
+		}
+		if (!right_open) right_horizontal_latch = 0;
+		tick_right_drawer(right_open, right_cursor, &right_animation,
+		                  &right_focus, &right_motion_tick_us);
+		if ((!sidebar.open && sidebar.animation > 0.01f) ||
+		    (!right_open && right_animation > 0.01f)) {
+			ui_touch_reset();
+			flags = UI_TOUCH_EVENT_NONE;
+		}
+		int overlay_owns_input = sidebar_owned_frame || sidebar.open ||
+		                         sidebar.animation > 0.01f || right_open ||
+		                         right_animation > 0.01f;
+		if (overlay_owns_input) {
+			pressed = 0;
+			flags = UI_TOUCH_EVENT_NONE;
+			ui_nav_repeat_reset(&page_repeat);
 		}
 		int old_filter = filter;
-		if (focus_tabs && (pressed & SCE_CTRL_LEFT))
+		unsigned int nav = ui_nav_repeat_update(
+		    &page_repeat, pressed, overlay_owns_input ? 0 : ctrl.buttons,
+		    overlay_owns_input ? 128 : ctrl.lx,
+		    overlay_owns_input ? 128 : ctrl.ly,
+		    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
+		if (focus_tabs && (nav & SCE_CTRL_LEFT))
 			filter = filter > 0 ? filter - 1 : 2;
-		if (focus_tabs && (pressed & SCE_CTRL_RIGHT))
+		if (focus_tabs && (nav & SCE_CTRL_RIGHT))
 			filter = filter < 2 ? filter + 1 : 0;
 		if (old_filter != filter) selected = top = 0;
-		unsigned int held = 0;
-		if (ctrl.buttons & SCE_CTRL_UP || ctrl.ly < 48) held = SCE_CTRL_UP;
-		else if (ctrl.buttons & SCE_CTRL_DOWN || ctrl.ly > 207) held = SCE_CTRL_DOWN;
-		uint64_t now = sceKernelGetProcessTimeWide();
-		unsigned int nav = pressed;
-		if (!held) repeat = 0;
-		else if (held != repeat) { repeat = held; repeat_at = now + 280000; nav |= held; }
-		else if (now >= repeat_at) { repeat_at = now + 95000; nav |= held; }
 		int count = screen_count(filter);
+		/* An empty result set has no page item that can own focus. Keep the
+		 * selector on the filters instead of leaving an invisible focus target. */
+		if (count == 0) focus_tabs = 1;
 		if (!focus_tabs && (nav & SCE_CTRL_UP) &&
 		    (selected < (grid_mode ? 3 : 1))) {
 			focus_tabs = 1;
@@ -818,8 +1114,8 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			nav &= ~SCE_CTRL_DOWN;
 		}
 		if (!focus_tabs && grid_mode) {
-			if ((pressed & SCE_CTRL_LEFT) && selected > 0) selected--;
-			if ((pressed & SCE_CTRL_RIGHT) && selected + 1 < count) selected++;
+			if ((nav & SCE_CTRL_LEFT) && selected > 0) selected--;
+			if ((nav & SCE_CTRL_RIGHT) && selected + 1 < count) selected++;
 			if ((nav & SCE_CTRL_UP) && selected >= 3) selected -= 3;
 			if ((nav & SCE_CTRL_DOWN) && selected + 3 < count) selected += 3;
 		} else if (!focus_tabs) {
@@ -827,26 +1123,43 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
 		}
 		if (!grid_mode) {
+			int visible = local_list_visible_rows();
 			if (selected < top) top = selected;
-			if (selected >= top + VISIBLE_ROWS) top = selected - VISIBLE_ROWS + 1;
+			if (selected >= top + visible) top = selected - visible + 1;
 		} else {
-			top = selected / 3 > 1 ? selected / 3 - 1 : 0;
+			top = grid_top_for_selection(selected);
+		}
+		/* Animate the selector itself instead of delaying input: the new item is
+		 * immediately actionable while the blue rim glides across the grid. */
+		if (focus_tabs) {
+			int tab_x = 416 + filter * 166;
+			ui_focus_motion_tick(&focus_motion, tab_x - 3, 65, 160, 44);
+		} else if (grid_mode) {
+			int row = selected / GRID_COLS - top;
+			int column = selected % GRID_COLS;
+			ui_focus_motion_tick(&focus_motion,
+			                     LIST_X + column * (GRID_CARD_W + GRID_GAP_X) - 2,
+			                     LIST_Y + row * (GRID_CARD_H + GRID_GAP_Y) - 2,
+			                     GRID_CARD_W + 4, GRID_CARD_H + 4);
+		} else {
+			ui_focus_motion_tick(&focus_motion, LIST_X,
+			                     LIST_Y + (selected - top) * ROW_H,
+			                     LIST_W, ROW_H - 6);
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_CROSS) && count > 0) {
 			int index = screen_local_index(filter, selected);
 			if (selected_out) *selected_out = g_items[index];
-			artwork_clear();
-			return UI_LOCAL_MEDIA_ACTION_PLAY;
+			return local_media_leave(UI_LOCAL_MEDIA_ACTION_PLAY);
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_TRIANGLE) && count > 0) {
 			int index = screen_local_index(filter, selected);
 			if (index >= 0 && selected_out) *selected_out = g_items[index];
-			artwork_clear();
-			return UI_LOCAL_MEDIA_ACTION_RENAME;
+			return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_SQUARE) && count > 0)
 			delete_confirm = 1;
-		if (pressed & SCE_CTRL_CIRCLE) { artwork_clear(); return UI_LOCAL_MEDIA_ACTION_BACK; }
+		if (pressed & SCE_CTRL_CIRCLE)
+			return local_media_leave(UI_LOCAL_MEDIA_ACTION_BACK);
 		if ((flags & UI_TOUCH_EVENT_UP) && !(flags & UI_TOUCH_EVENT_TAP) &&
 		    !focus_tabs && count > 0) {
 			int dy = touch.y - touch.down_y;
@@ -856,36 +1169,39 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if (selected < 0) selected = 0;
 			if (selected >= count) selected = count - 1;
 			if (!grid_mode) {
+				int visible = local_list_visible_rows();
 				if (selected < top) top = selected;
-				if (selected >= top + VISIBLE_ROWS)
-					top = selected - VISIBLE_ROWS + 1;
-			} else top = selected / 3 > 1 ? selected / 3 - 1 : 0;
+				if (selected >= top + visible)
+					top = selected - visible + 1;
+			} else top = grid_top_for_selection(selected);
 		}
 		if (flags & UI_TOUCH_EVENT_TAP) {
 			for (int i = 0; i < 3; i++) if (ui_touch_hit_rect(touch.x, touch.y,
 			    416 + i * 166, 68, 154, 38)) {
 					filter = i; selected = top = 0; focus_tabs = 1;
 				}
-			int touch_slots = grid_mode ? 6 : VISIBLE_ROWS;
+			int touch_slots = grid_mode ? local_grid_visible_rows() * GRID_COLS
+			                            : local_list_visible_rows();
 			for (int slot = 0; slot < touch_slots; slot++) {
 				int pos = grid_mode ? top * 3 + slot : top + slot;
 				if (pos >= count) break;
 				int hit = grid_mode
-				        ? ui_touch_hit_rect(touch.x, touch.y,
-				              LIST_X + (slot % 3) * 292,
-				              LIST_Y + (slot / 3) * 168, 276, 154)
+					        ? ui_touch_hit_rect(touch.x, touch.y,
+					              LIST_X + (slot % GRID_COLS) * (GRID_CARD_W + GRID_GAP_X),
+					              LIST_Y + (slot / GRID_COLS) * (GRID_CARD_H + GRID_GAP_Y),
+					              GRID_CARD_W, GRID_CARD_H)
 				        : ui_touch_hit_rect(touch.x, touch.y, LIST_X,
 				              LIST_Y + slot * ROW_H, LIST_W, ROW_H - 6);
 				if (hit) {
 					selected = pos;
 					int index = screen_local_index(filter, selected);
 					if (selected_out) *selected_out = g_items[index];
-					artwork_clear();
-					return UI_LOCAL_MEDIA_ACTION_PLAY;
+					return local_media_leave(UI_LOCAL_MEDIA_ACTION_PLAY);
 				}
 			}
 		}
 		draw_screen(filter, selected, top, grid_mode, right_open, right_cursor,
-		            focus_tabs, delete_confirm, &sidebar);
+		            right_animation, right_focus, focus_tabs, delete_confirm,
+		            &focus_motion, &sidebar);
 	}
 }
