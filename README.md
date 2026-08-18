@@ -2,6 +2,11 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
+> [!IMPORTANT]
+> **Public beta** — VitaTube is available publicly, but remains in active
+> development. Expect rough edges and validate playback, network sources, and
+> UI behavior on your own PlayStation Vita before relying on it day to day.
+
 <p align="center">
   <img src="sce_sys/vitatubelogoalpha.png" width="320" alt="VitaTube logo">
 </p>
