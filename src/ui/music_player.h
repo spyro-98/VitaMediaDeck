@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_MUSIC_PLAYER_H
-#define VITATUBE_UI_MUSIC_PLAYER_H
+#ifndef VITAWAVE_UI_MUSIC_PLAYER_H
+#define VITAWAVE_UI_MUSIC_PLAYER_H
 
 #include <stdint.h>
 

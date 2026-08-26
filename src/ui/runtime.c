@@ -46,7 +46,7 @@ void ui_runtime_load_assets(void) {
 	if (!g_font_display) g_font_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_font_small || !g_font_body || !g_font_display)
 		log_printf("ui asset warning: one or more Inter font instances unavailable");
-	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/vitatubelogoalpha.png");
+	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/vitawavelogoalpha.png");
 	if (!g_logo) log_printf("ui asset warning: brand logo unavailable, using vector fallback");
 }
 

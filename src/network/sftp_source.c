@@ -41,7 +41,7 @@ static void sftp_disconnect(SftpConnection *connection) {
 	if (connection->file) libssh2_sftp_close(connection->file);
 	if (connection->sftp) libssh2_sftp_shutdown(connection->sftp);
 	if (connection->session) {
-		libssh2_session_disconnect(connection->session, "VitaTube closed the connection");
+		libssh2_session_disconnect(connection->session, "VitaWave closed the connection");
 		libssh2_session_free(connection->session);
 	}
 	if (connection->socket_fd >= 0) close(connection->socket_fd);

@@ -99,8 +99,30 @@ static xmlNode *descendant_named(xmlNode *parent, const char *name) {
 	return NULL;
 }
 
+static char *decoded_url_path(const char *value) {
+	if (!value) return NULL;
+	const char *path = value;
+	const char *scheme = strstr(value, "://");
+	if (scheme) {
+		path = strchr(scheme + 3, '/');
+		if (!path) path = "/";
+	}
+	size_t encoded_length = strcspn(path, "?#");
+	char encoded[2048];
+	if (encoded_length >= sizeof(encoded)) return NULL;
+	memcpy(encoded, path, encoded_length);
+	encoded[encoded_length] = '\0';
+	size_t decoded_length = 0;
+	char *decoded = vita_https_unescape(encoded, &decoded_length);
+	if (!decoded) return NULL;
+	while (decoded_length > 1 && decoded[decoded_length - 1] == '/')
+		decoded[--decoded_length] = '\0';
+	return decoded;
+}
+
 static int parse_propfind(const unsigned char *data, size_t size,
-	                      const char *current_path, VtNetworkEntry *entries,
+	                      const char *request_url, const char *current_path,
+	                      VtNetworkEntry *entries,
 	                      int capacity) {
 	xmlDoc *document = xmlReadMemory((const char *)data, (int)size,
 	                                 "webdav.xml", NULL,
@@ -112,6 +134,7 @@ static int parse_propfind(const unsigned char *data, size_t size,
 		xmlFreeDoc(document);
 		return -1;
 	}
+	char *requested_path = decoded_url_path(request_url);
 	int count = 0;
 	for (xmlNode *response = root->children;
 	     response && count < capacity; response = response->next) {
@@ -121,13 +144,16 @@ static int parse_propfind(const unsigned char *data, size_t size,
 		if (!href_node) continue;
 		xmlChar *href_value = xmlNodeGetContent(href_node);
 		if (!href_value) continue;
-		size_t decoded_length = 0;
-		char *decoded = vita_https_unescape((const char *)href_value,
-		                                    &decoded_length);
+		char *decoded = decoded_url_path((const char *)href_value);
 		xmlFree(href_value);
-		if (!decoded || decoded_length == 0) { vita_https_free(decoded); continue; }
-		while (decoded_length > 1 && decoded[decoded_length - 1] == '/')
-			decoded[--decoded_length] = '\0';
+		if (!decoded || !decoded[0]) { vita_https_free(decoded); continue; }
+		/* A Depth: 1 response normally starts with the requested collection.
+		 * Treating that self response as a child created a fake recursive folder
+		 * such as movies/movies on standards-compliant WebDAV servers. */
+		if (requested_path && strcmp(decoded, requested_path) == 0) {
+			vita_https_free(decoded);
+			continue;
+		}
 		char *name = strrchr(decoded, '/');
 		name = name ? name + 1 : decoded;
 		if (!name[0]) { vita_https_free(decoded); continue; }
@@ -158,8 +184,51 @@ static int parse_propfind(const unsigned char *data, size_t size,
 		entry->is_video = !is_dir && !is_audio;
 		vita_https_free(decoded);
 	}
+	vita_https_free(requested_path);
 	xmlFreeDoc(document);
 	return count;
+}
+
+static void webdav_client_config(const VtNetworkSource *source,
+	                             const VtNetworkCredential *credential,
+	                             VitaHttpsClientConfig *config) {
+	memset(config, 0, sizeof(*config));
+	config->user_agent = "VitaWave/1.1";
+	config->username = source->username;
+	config->password = credential ? credential->password : "";
+	if (source->tls_public_key_sha256[0]) {
+		config->pinned_public_key = source->tls_public_key_sha256;
+		config->allow_untrusted_ca_with_pin = 1;
+	}
+}
+
+static int webdav_transport_result(int result) {
+	if (result == VITA_HTTPS_ERROR_UNTRUSTED_CERTIFICATE)
+		return VT_NETWORK_TLS_TRUST_REQUIRED;
+	if (result == VITA_HTTPS_ERROR_PIN_MISMATCH)
+		return VT_NETWORK_TLS_PIN_MISMATCH;
+	return -1;
+}
+
+int vt_webdav_probe_public_key(const VtNetworkSource *source,
+	                           const VtNetworkCredential *credential,
+	                           char *pin, size_t pin_size,
+	                           char *detail, size_t detail_size) {
+	if (!source || !pin || !pin_size) return -1;
+	char url[2048];
+	if (webdav_url(source, "", url, sizeof(url)) < 0) return -1;
+	VitaHttpsClientConfig config;
+	webdav_client_config(source, credential, &config);
+	/* The probe must observe the current certificate rather than an old pin. */
+	config.pinned_public_key = NULL;
+	config.allow_untrusted_ca_with_pin = 0;
+	VitaHttpsClient *client = vita_https_client_create(&config);
+	if (!client) return -1;
+	int result = vita_https_probe_public_key(client, url, pin, pin_size);
+	if (result < 0 && detail && detail_size)
+		snprintf(detail, detail_size, "%s", vita_https_error_string(result));
+	vita_https_client_destroy(client);
+	return result;
 }
 
 int vt_webdav_list(const VtNetworkSource *source,
@@ -168,11 +237,8 @@ int vt_webdav_list(const VtNetworkSource *source,
 	               char *detail, size_t detail_size) {
 	char url[2048];
 	if (webdav_url(source, path, url, sizeof(url)) < 0) return -1;
-	VitaHttpsClientConfig config = {
-		.user_agent = "VitaTube/1.1",
-		.username = source->username,
-		.password = credential ? credential->password : ""
-	};
+	VitaHttpsClientConfig config;
+	webdav_client_config(source, credential, &config);
 	VitaHttpsClient *client = vita_https_client_create(&config);
 	if (!client) return -1;
 	MemoryBuffer response = { 0 };
@@ -198,13 +264,14 @@ int vt_webdav_list(const VtNetworkSource *source,
 	int result = vita_https_perform(client, &request, &transport);
 	int ret = -1;
 	if (result == 0 && transport.status_code == 207)
-		ret = parse_propfind(response.data, response.size, path,
+		ret = parse_propfind(response.data, response.size, url, path,
 		                     entries, capacity);
 	else if (detail && detail_size)
 		snprintf(detail, detail_size, "WebDAV HTTP %ld: %s",
 		         transport.status_code, vita_https_error_string(result));
 	free(response.data);
 	vita_https_client_destroy(client);
+	if (result < 0) return webdav_transport_result(result);
 	return ret;
 }
 
@@ -240,11 +307,8 @@ int vt_webdav_open_stream(const VtNetworkSource *source,
 		webdav_stream_close(stream);
 		return -1;
 	}
-	VitaHttpsClientConfig config = {
-		.user_agent = "VitaTube/1.1",
-		.username = source->username,
-		.password = credential ? credential->password : ""
-	};
+	VitaHttpsClientConfig config;
+	webdav_client_config(source, credential, &config);
 	stream->client = vita_https_client_create(&config);
 	if (!stream->client) {
 		webdav_stream_close(stream);
@@ -255,7 +319,7 @@ int vt_webdav_open_stream(const VtNetworkSource *source,
 	if (result < 0) {
 		webdav_stream_close(stream);
 		return result == VITA_HTTPS_ERROR_RANGE_UNSUPPORTED
-		     ? VT_NETWORK_RANGE_UNSUPPORTED : -1;
+		     ? VT_NETWORK_RANGE_UNSUPPORTED : webdav_transport_result(result);
 	}
 	memset(out, 0, sizeof(*out));
 	out->opaque = stream;

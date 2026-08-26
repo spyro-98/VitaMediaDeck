@@ -2,7 +2,7 @@
 
 ## Outcome
 
-VitaTube uses the complete public `h264_vita` backend carried by wiliwili's
+VitaWave uses the complete public `h264_vita` backend carried by wiliwili's
 FFmpeg Vita patch. It is built from pinned, hash-verified source and linked
 against public VitaSDK decoder interfaces. FFmpeg software H.264 remains a
 fallback.

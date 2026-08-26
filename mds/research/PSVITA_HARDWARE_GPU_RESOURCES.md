@@ -49,7 +49,7 @@ GXM is appropriate for texture/surface setup, sampling, scaling, color conversio
 - [`ScePower` documentation](https://docs.vitasdk.org/group__ScePower.html)
 - [PSVshell](https://github.com/Electry/PSVshell)
 
-VitaTube offers either an exact application profile or zero clock writes so PSVshell remains fully authoritative. Debug data should report read-back values rather than assuming a requested clock was applied.
+VitaWave offers either an exact application profile or zero clock writes so PSVshell remains fully authoritative. Debug data should report read-back values rather than assuming a requested clock was applied.
 
 ## CPU: Cortex-A9 and NEON
 
@@ -73,7 +73,7 @@ The SGX architecture is tile-based deferred rendering. This can make normal game
 
 ## Multimedia accelerator
 
-Public Vita software and hardware analysis identifies a dedicated multimedia/video capability in the Vita SoC/package, often discussed under Toshiba's “Venezia” lineage. Public detail is incomplete. For VitaTube, the actionable interface is not a speculative block diagram; it is the validated VitaSDK video-decoder contract used by the open-source `h264_vita` backend.
+Public Vita software and hardware analysis identifies a dedicated multimedia/video capability in the Vita SoC/package, often discussed under Toshiba's “Venezia” lineage. Public detail is incomplete. For VitaWave, the actionable interface is not a speculative block diagram; it is the validated VitaSDK video-decoder contract used by the open-source `h264_vita` backend.
 
 References and implementation evidence:
 

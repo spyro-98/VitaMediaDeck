@@ -1,4 +1,4 @@
-# VitaTube toolchain setup
+# VitaWave toolchain setup
 
 ## Host prerequisites
 
@@ -68,26 +68,26 @@ MOV/MP4 pieces, builds with Cortex-A9/NEON `-O3` and LTO, verifies the
 Optional custom prefixes:
 
 ```sh
-export VITATUBE_H264_VITA_ROOT=/absolute/ffmpeg-prefix
+export VITAWAVE_H264_VITA_ROOT=/absolute/ffmpeg-prefix
 ./tools/build-ffmpeg-vita-hw.sh
 
 cmake -S . -B build \
-  -DVITATUBE_H264_VITA_ROOT="$VITATUBE_H264_VITA_ROOT" \
-  -DVITATUBE_LIBSSH2_ROOT=/absolute/libssh2-prefix \
-  -DVITATUBE_HTTPS_CURL_ROOT=/absolute/curl-mbedtls-prefix
+  -DVITAWAVE_H264_VITA_ROOT="$VITAWAVE_H264_VITA_ROOT" \
+  -DVITAWAVE_LIBSSH2_ROOT=/absolute/libssh2-prefix \
+  -DVITAWAVE_HTTPS_CURL_ROOT=/absolute/curl-mbedtls-prefix
 ```
 
-## Build VitaTube
+## Build VitaWave
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-unzip -t build/VitaTube.vpk
-shasum -a 256 build/VitaTube.vpk
+unzip -t build/VitaWave.vpk
+shasum -a 256 build/VitaWave.vpk
 ```
 
-Expected outputs include `build/vitatube`, `build/vitatube.self`, and
-`build/VitaTube.vpk`.
+Expected outputs include `build/vitawave`, `build/vitawave.self`, and
+`build/VitaWave.vpk`.
 
 ## Packaging profile
 
@@ -106,7 +106,7 @@ archive. Run the corresponding `vdpm` package or pinned builder again.
 ### Missing `libssh2.a`
 
 Run `tools/build-libssh2-vita.sh`, or pass the matching prefix with
-`-DVITATUBE_LIBSSH2_ROOT=...`.
+`-DVITAWAVE_LIBSSH2_ROOT=...`.
 
 ### Missing `h264_vita`
 

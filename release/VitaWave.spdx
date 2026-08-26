@@ -1,22 +1,22 @@
 SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
-DocumentName: VitaTube-hardened-release
+DocumentName: VitaWave-hardened-release
 DocumentNamespace: urn:uuid:6fe4d09e-a2a4-4b9e-a267-8672854f5bb3
-Creator: Tool: VitaTube release hardening manifest
+Creator: Tool: VitaWave release hardening manifest
 Created: 2026-08-14T00:00:00Z
 DocumentComment: Versions and immutable checksums are recorded in release/DEPENDENCIES.lock. The selected publication location is intentionally unspecified.
 
-##### Package: VitaTube
+##### Package: VitaWave
 
-PackageName: VitaTube
-SPDXID: SPDXRef-Package-VitaTube
+PackageName: VitaWave
+SPDXID: SPDXRef-Package-VitaWave
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-VitaTube
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-VitaWave
 
 ##### Package: vita-hw-decoder
 
@@ -27,7 +27,7 @@ FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-VitaHwDecoder
+Relationship: SPDXRef-Package-VitaWave DEPENDS_ON SPDXRef-Package-VitaHwDecoder
 
 ##### Package: vita-sw-decoder
 
@@ -38,7 +38,7 @@ FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-VitaSwDecoder
+Relationship: SPDXRef-Package-VitaWave DEPENDS_ON SPDXRef-Package-VitaSwDecoder
 
 ##### Package: vita-https
 
@@ -49,7 +49,7 @@ FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-VitaHttps
+Relationship: SPDXRef-Package-VitaWave DEPENDS_ON SPDXRef-Package-VitaHttps
 
 ##### Package: FFmpeg hardware build
 
@@ -121,11 +121,11 @@ FilesAnalyzed: false
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: BSD-3-Clause
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-libssh2
+Relationship: SPDXRef-Package-VitaWave DEPENDS_ON SPDXRef-Package-libssh2
 
 ##### Package: remaining runtime libraries
 
-PackageName: VitaTube-runtime-libraries
+PackageName: VitaWave-runtime-libraries
 SPDXID: SPDXRef-Package-RuntimeLibraries
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
@@ -133,4 +133,4 @@ PackageLicenseConcluded: NOASSERTION
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 PackageComment: Includes libsmb2 6.1, libxml2 2.15.3, mpg123 1.33.5, vita2d a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed, FreeType 2.14.3, libjpeg-turbo 3.2.0, libpng 1.6.58, bzip2 1.0.8, zlib 1.3.2, zstd 1.5.7, pthread-embedded 11d2e5722d98c86f33c908fc47b2cf6e55205db5, ReAvPlayer abff24a21ffec3e57fc1cd3b1d17dc26666251b0 and Inter 4.1. Full license texts and exact source inputs accompany the release.
-Relationship: SPDXRef-Package-VitaTube DEPENDS_ON SPDXRef-Package-RuntimeLibraries
+Relationship: SPDXRef-Package-VitaWave DEPENDS_ON SPDXRef-Package-RuntimeLibraries

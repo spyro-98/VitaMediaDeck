@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_COMPONENTS_H
-#define VITATUBE_UI_COMPONENTS_H
+#ifndef VITAWAVE_UI_COMPONENTS_H
+#define VITAWAVE_UI_COMPONENTS_H
 
 #include <vita2d.h>
 
@@ -18,4 +18,4 @@ void ui_action_button(float x, float y, float width, float height,
 	                  unsigned int fill, const char *key, const char *label,
 	                  int active);
 
-#endif /* VITATUBE_UI_COMPONENTS_H */
+#endif /* VITAWAVE_UI_COMPONENTS_H */

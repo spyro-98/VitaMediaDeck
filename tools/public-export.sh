@@ -2,8 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-version="${VITATUBE_EXPORT_VERSION:-snapshot}"
-output="${1:-$repo_root/build/public/VitaTube-${version}-source.tar.gz}"
+version="${VITAWAVE_EXPORT_VERSION:-snapshot}"
+output="${1:-$repo_root/build/public/VitaWave-${version}-source.tar.gz}"
 mode="${2:---head}"
 mkdir -p "$(dirname "$output")"
 
@@ -13,10 +13,10 @@ case "$mode" in
       echo "Refusing HEAD export from a dirty tree" >&2; exit 1;
     }
     git -C "$repo_root" archive --format=tar \
-      --prefix="VitaTube-${version}/" HEAD | gzip -n > "$output"
+      --prefix="VitaWave-${version}/" HEAD | gzip -n > "$output"
     ;;
   --worktree)
-    list="$(mktemp "${TMPDIR:-/tmp}/vitatube-export.XXXXXX")"
+    list="$(mktemp "${TMPDIR:-/tmp}/vitawave-export.XXXXXX")"
     trap 'rm -f "$list"' EXIT
     git -C "$repo_root" ls-files --cached --others --exclude-standard | \
       while IFS= read -r path; do [[ -e "$repo_root/$path" ]] && printf '%s\n' "$path"; done > "$list"

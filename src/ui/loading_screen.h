@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_LOADING_SCREEN_H
-#define VITATUBE_UI_LOADING_SCREEN_H
+#ifndef VITAWAVE_UI_LOADING_SCREEN_H
+#define VITAWAVE_UI_LOADING_SCREEN_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -71,9 +71,9 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 /* Short, interruptible full-page error message. */
 void ui_message_show(const char *message, const char *detail, int duration_ms);
 
-/* Primitive shared with the grid: VitaTube orbital indicator. Must be
+/* Primitive shared with the grid: VitaWave orbital indicator. Must be
  * called inside an already-open vita2d scene. */
 void ui_draw_spinner(float center_x, float center_y, uint64_t now_us);
 void ui_draw_spinner_compact(float center_x, float center_y, uint64_t now_us);
 
-#endif /* VITATUBE_UI_LOADING_SCREEN_H */
+#endif /* VITAWAVE_UI_LOADING_SCREEN_H */

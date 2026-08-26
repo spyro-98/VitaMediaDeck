@@ -55,7 +55,7 @@ typedef struct {
 } LogLine;
 
 static const LogEntry g_entries[] = {
-	{ VT_STR_ABOUT_LOG_SESSION, VITATUBE_SESSION_LOG_PATH }
+	{ VT_STR_ABOUT_LOG_SESSION, VITAWAVE_SESSION_LOG_PATH }
 };
 
 static char g_log_text[LOG_TAIL_MAX + 1];

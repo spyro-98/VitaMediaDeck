@@ -1,11 +1,11 @@
-#ifndef VITATUBE_UI_TEXT_INPUT_H
-#define VITATUBE_UI_TEXT_INPUT_H
+#ifndef VITAWAVE_UI_TEXT_INPUT_H
+#define VITAWAVE_UI_TEXT_INPUT_H
 
 #include <stddef.h>
 
 /* Low-level on-screen keyboard (sceImeOpen/Update/Close). Unlike
  * SceImeDialog it does not create the white page and does not own a text
- * view: VitaTube keeps drawing its own header and shows the live text in
+ * view: VitaWave keeps drawing its own header and shows the live text in
  * its centered editor. sceImeUpdate() is called outside the
  * GXM scene, before the framebuffer swap.
  *
@@ -23,4 +23,4 @@ int ui_text_input(const char *title, const char *initial, char *out, size_t out_
 int ui_text_input_secure(const char *title, const char *initial,
 	                     char *out, size_t out_max);
 
-#endif /* VITATUBE_UI_TEXT_INPUT_H */
+#endif /* VITAWAVE_UI_TEXT_INPUT_H */

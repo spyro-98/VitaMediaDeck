@@ -1,5 +1,5 @@
-#ifndef VITATUBE_MEDIA_VITA_DECODER_H
-#define VITATUBE_MEDIA_VITA_DECODER_H
+#ifndef VITAWAVE_MEDIA_VITA_DECODER_H
+#define VITAWAVE_MEDIA_VITA_DECODER_H
 
 #include <stddef.h>
 #include <stdint.h>

@@ -466,7 +466,7 @@ int vt_background_playback_prepare_local(const char *media_path,
 	          artwork_path);
 	job->snapshot.duration_ms = duration_ms;
 	job->snapshot.state = VT_BACKGROUND_PREPARING;
-	job->thid = sceKernelCreateThread("VitaTubeLocalAudio", background_thread,
+	job->thid = sceKernelCreateThread("VitaWaveLocalAudio", background_thread,
 	                                  BACKGROUND_THREAD_PRIORITY,
 	                                  BACKGROUND_THREAD_STACK, 0, 0, NULL);
 	if (job->thid < 0) return job->thid;

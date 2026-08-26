@@ -94,6 +94,20 @@ static int fingerprint_task(void *opaque) {
 	                                         task->detail, sizeof(task->detail));
 }
 
+typedef struct {
+	const VtNetworkSource *source;
+	const VtNetworkCredential *credential;
+	char pin[VT_NETWORK_TLS_PIN_MAX];
+	char detail[192];
+} WebDavPinTask;
+
+static int webdav_pin_task(void *opaque) {
+	WebDavPinTask *task = opaque;
+	return vt_network_webdav_probe_public_key(
+		task->source, task->credential, task->pin, sizeof(task->pin),
+		task->detail, sizeof(task->detail));
+}
+
 static void clip(vita2d_font *font, unsigned size, const char *source,
 	             char *out, size_t out_size, int width) {
 	ui_font_fit_text(font, size, source ? source : "", out, out_size, width);
@@ -236,6 +250,10 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			                     ? vt_i18n_str(source->host_key_sha256[0]
 			                           ? VT_STR_NETWORK_HOST_KEY_PINNED
 			                           : VT_STR_NETWORK_HOST_KEY_UNVERIFIED)
+			                     : source->protocol == VT_NETWORK_WEBDAV
+			                           ? vt_i18n_str(source->tls_public_key_sha256[0]
+			                                 ? VT_STR_NETWORK_TLS_PINNED
+			                                 : VT_STR_NETWORK_TLS_CA_VERIFIED)
 			                     : vt_i18n_str(VT_STR_NETWORK_AUTH_SESSION), 256);
 		}
 		ui_action_button(642, 314, 272, 42, VT_THEME_BLUE_BRIGHT,
@@ -384,12 +402,30 @@ static int editor_fields(VtNetworkProtocol protocol, EditorField fields[8]) {
 	fields[count++] = EDITOR_PROTOCOL;
 	fields[count++] = EDITOR_NAME;
 	fields[count++] = EDITOR_HOST;
-	if (protocol != VT_NETWORK_SMB) fields[count++] = EDITOR_PORT;
+	fields[count++] = EDITOR_PORT;
 	if (protocol == VT_NETWORK_SMB) fields[count++] = EDITOR_SHARE;
 	fields[count++] = EDITOR_ROOT;
 	fields[count++] = EDITOR_USERNAME;
 	if (protocol == VT_NETWORK_SMB) fields[count++] = EDITOR_DOMAIN;
 	return count;
+}
+
+static int editor_field_step(int field_count) {
+	return field_count >= 8 ? 42 : 46;
+}
+
+static int editor_field_height(int field_count) {
+	return field_count >= 8 ? 36 : 40;
+}
+
+static int editor_field_y(int field_count, int row) {
+	return 82 + row * editor_field_step(field_count);
+}
+
+static void clear_transport_trust(VtNetworkSource *source) {
+	if (!source) return;
+	source->host_key_sha256[0] = '\0';
+	source->tls_public_key_sha256[0] = '\0';
 }
 
 static const char *editor_field_label(EditorField field) {
@@ -428,6 +464,7 @@ static void editor_change_protocol(VtNetworkSource *draft, int direction) {
 	if (protocol < VT_NETWORK_WEBDAV) protocol = VT_NETWORK_SMB;
 	if (protocol > VT_NETWORK_SMB) protocol = VT_NETWORK_WEBDAV;
 	draft->protocol = (VtNetworkProtocol)protocol;
+	clear_transport_trust(draft);
 	if (draft->protocol == VT_NETWORK_WEBDAV) draft->port = 443;
 	else if (draft->protocol == VT_NETWORK_SFTP) draft->port = 22;
 	else draft->port = 445;
@@ -436,14 +473,20 @@ static void editor_change_protocol(VtNetworkSource *draft, int direction) {
 static void editor_edit_field(VtNetworkSource *draft, EditorField field) {
 	if (field == EDITOR_NAME)
 		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_NAME), draft->name, sizeof(draft->name));
-	else if (field == EDITOR_HOST)
-		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_HOST), draft->host, sizeof(draft->host));
+	else if (field == EDITOR_HOST) {
+		if (edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_HOST), draft->host,
+		              sizeof(draft->host)) > 0)
+			clear_transport_trust(draft);
+	}
 	else if (field == EDITOR_PORT) {
 		char value[16];
 		snprintf(value, sizeof(value), "%u", draft->port);
 		if (edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_PORT), value, sizeof(value)) > 0) {
 			unsigned long port = strtoul(value, NULL, 10);
-			if (port > 0 && port <= 65535) draft->port = (uint16_t)port;
+			if (port > 0 && port <= 65535) {
+				draft->port = (uint16_t)port;
+				clear_transport_trust(draft);
+			}
 		}
 	} else if (field == EDITOR_ROOT)
 		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_ROOT), draft->root_path, sizeof(draft->root_path));
@@ -478,7 +521,9 @@ static int source_editor(VtNetworkSource *source, int is_new) {
 		int field_count = editor_fields(draft.protocol, fields);
 		if (cursor > field_count) cursor = field_count;
 		if (cursor < field_count)
-			ui_focus_motion_tick(&focus_motion, 304, 82 + cursor * 46, 622, 40);
+			ui_focus_motion_tick(&focus_motion, 304,
+			                     editor_field_y(field_count, cursor), 622,
+			                     editor_field_height(field_count));
 		else
 			ui_focus_motion_tick(&focus_motion, 304, 420, 622, 46);
 		ui_mini_player_pump();
@@ -531,10 +576,11 @@ static int source_editor(VtNetworkSource *source, int is_new) {
 			                   focus_motion.width, focus_motion.height,
 			                   sceKernelGetProcessTimeWide(), 64, 476);
 		for (int i = 0; i < field_count; i++) {
-			int y = 82 + i * 46;
-			ui_panel(304, y, 622, 40, VT_THEME_SURFACE,
+			int y = editor_field_y(field_count, i);
+			int height = editor_field_height(field_count);
+			ui_panel(304, y, 622, height, VT_THEME_SURFACE,
 			         VT_THEME_BLUE_BRIGHT, 0);
-			if (small) ui_font_draw_text(small, 322, y + 26, VT_THEME_TEXT,
+			if (small) ui_font_draw_text(small, 322, y + height - 14, VT_THEME_TEXT,
 			                             UI_FONT_SMALL, editor_field_label(fields[i]));
 			char port[16];
 			const char *raw_value = editor_field_value(&draft, fields[i], port);
@@ -544,7 +590,7 @@ static int source_editor(VtNetworkSource *source, int is_new) {
 				                  ? raw_value : vt_i18n_str(VT_STR_NETWORK_NOT_SET);
 				clip(body, UI_FONT_BODY, shown, value, sizeof(value), 350);
 				int width = ui_font_text_width(body, UI_FONT_BODY, value);
-				ui_font_draw_text(body, 904 - width, y + 29,
+				ui_font_draw_text(body, 904 - width, y + height - 11,
 				                  raw_value[0] ? VT_THEME_TEXT : VT_THEME_TEXT_FAINT,
 				                  UI_FONT_BODY, value);
 			}
@@ -579,7 +625,8 @@ static int source_editor(VtNetworkSource *source, int is_new) {
 			int touched_field = -1;
 			for (int row = 0; row < field_count; row++) {
 				if (ui_touch_hit_rect(touch.x, touch.y, 304,
-				                      82 + row * 46, 622, 40)) {
+				                      editor_field_y(field_count, row), 622,
+				                      editor_field_height(field_count))) {
 					touched_field = row;
 					break;
 				}
@@ -628,13 +675,36 @@ static int load_directory(const VtNetworkSource *source,
 	int ret = ui_loading_run(vt_i18n_str(VT_STR_NETWORK_READING_FOLDER), list_task, &task,
 	                         NULL, NULL, NULL);
 	if (ret < 0 || task.result < 0) {
-		ui_message_show(vt_i18n_str(VT_STR_NETWORK_CONNECTION_FAILED),
-		                task.detail[0] ? task.detail
-		                               : vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 2800);
+		if (task.result != VT_NETWORK_TLS_TRUST_REQUIRED)
+			ui_message_show(vt_i18n_str(VT_STR_NETWORK_CONNECTION_FAILED),
+			                task.detail[0] ? task.detail
+			                               : vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 2800);
 		return task.result < 0 ? task.result : ret;
 	}
 	*count = task.result;
 	return 0;
+}
+
+static int prepare_webdav_trust(VtNetworkSource *source,
+	                            const VtNetworkCredential *credential) {
+	if (source->protocol != VT_NETWORK_WEBDAV ||
+	    source->tls_public_key_sha256[0]) return 0;
+	WebDavPinTask task = { source, credential, { 0 }, { 0 } };
+	int ret = ui_loading_run(vt_i18n_str(VT_STR_NETWORK_CHECKING_TLS),
+	                         webdav_pin_task, &task, NULL, NULL, NULL);
+	if (ret < 0 || !task.pin[0]) {
+		ui_message_show(vt_i18n_str(VT_STR_NETWORK_TLS_UNAVAILABLE),
+		                task.detail[0] ? task.detail
+		                               : vt_i18n_str(VT_STR_NETWORK_TLS_FAILED), 2800);
+		return -1;
+	}
+	char confirmed[VT_NETWORK_TLS_PIN_MAX];
+	int accepted = ui_text_input(vt_i18n_str(VT_STR_NETWORK_VERIFY_TLS_PIN),
+	                            task.pin, confirmed, sizeof(confirmed));
+	if (accepted <= 0 || strcmp(confirmed, task.pin) != 0) return -1;
+	snprintf(source->tls_public_key_sha256,
+	         sizeof(source->tls_public_key_sha256), "%s", task.pin);
+	return 1;
 }
 
 static int prepare_sftp_trust(VtNetworkSource *source) {
@@ -668,9 +738,10 @@ static int browse_source(const VtNetworkSource *source,
 	}
 	char path[VT_NETWORK_PATH_MAX] = "";
 	int count = 0;
-	if (load_directory(source, credential, path, entries, &count) < 0) {
+	int load_result = load_directory(source, credential, path, entries, &count);
+	if (load_result < 0) {
 		free(entries);
-		return 0;
+		return load_result;
 	}
 	int selected = 0, top = 0;
 	UiFocusMotion focus_motion;
@@ -943,6 +1014,20 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				}
 				int browse_result = browse_source(&sources[selected], &credential,
 				                                  selection);
+				if (browse_result == VT_NETWORK_TLS_TRUST_REQUIRED &&
+				    sources[selected].protocol == VT_NETWORK_WEBDAV &&
+				    !sources[selected].tls_public_key_sha256[0]) {
+					int tls_trust = prepare_webdav_trust(&sources[selected],
+					                                     &credential);
+					if (tls_trust > 0) {
+						if (vt_network_sources_save(sources, count) < 0)
+							ui_message_show(
+								vt_i18n_str(VT_STR_NETWORK_SAVE_FAILED_TITLE),
+								vt_i18n_str(VT_STR_NETWORK_SAVE_FAILED_DETAIL), 2600);
+						browse_result = browse_source(&sources[selected], &credential,
+						                              selection);
+					}
+				}
 				memset(&credential, 0, sizeof(credential));
 				network_resync_input(&previous, &nav_repeat);
 				if (browse_result == UI_NETWORK_ACTION_PLAY)

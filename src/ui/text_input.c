@@ -48,10 +48,10 @@ static void secure_zero(void *memory, size_t size) {
 static void ime_diag_log(const char *fmt, ...) {
 	static int first_call = 1;
 	if (!vt_preferences_disk_logs_enabled()) return;
-	sceIoMkdir(VITATUBE_DATA_DIR, 0777);
+	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
 	int flags = SCE_O_WRONLY | SCE_O_CREAT | (first_call ? SCE_O_TRUNC : SCE_O_APPEND);
 	first_call = 0;
-	SceUID fd = sceIoOpen(VITATUBE_DATA_DIR "/ime_diag_log.txt", flags, 0777);
+	SceUID fd = sceIoOpen(VITAWAVE_DATA_DIR "/ime_diag_log.txt", flags, 0777);
 	if (fd < 0) return;
 	char buf[192];
 	va_list ap;
@@ -288,7 +288,7 @@ static int text_input_run(const char *title, const char *initial,
 		vita2d_wait_rendering_done();
 
 		/* The IME is updated outside the GXM scene and immediately before
-		 * the swap, while the VitaTube field stays in the app's framebuffer. */
+		 * the swap, while the VitaWave field stays in the app's framebuffer. */
 		int update_ret = sceImeUpdate();
 		vita2d_swap_buffers();
 		sceDisplayWaitVblankStart();

@@ -1,11 +1,11 @@
-#ifndef VITATUBE_SYSTEM_BACKGROUND_AUDIO_H
-#define VITATUBE_SYSTEM_BACKGROUND_AUDIO_H
+#ifndef VITAWAVE_SYSTEM_BACKGROUND_AUDIO_H
+#define VITAWAVE_SYSTEM_BACKGROUND_AUDIO_H
 
 /* Lease for the system BGM port.
  *
  * sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, ...) selects the audio
  * output type, but on its own it doesn't ask the shell to keep it active
- * when VitaTube isn't the foreground app. sceAppMgrAcquireBgmPort() is the
+ * when VitaWave isn't the foreground app. sceAppMgrAcquireBgmPort() is the
  * public VitaSDK contract meant expressly for that case.
  *
  * The lease is deliberately kept separate from the sceAudioOut port: the
@@ -24,4 +24,4 @@ int vt_background_audio_acquire(VtBackgroundAudioLease *lease);
 /* No-op if the acquisition wasn't successful. Returns the sceAppMgr result. */
 int vt_background_audio_release(VtBackgroundAudioLease *lease);
 
-#endif /* VITATUBE_SYSTEM_BACKGROUND_AUDIO_H */
+#endif /* VITAWAVE_SYSTEM_BACKGROUND_AUDIO_H */

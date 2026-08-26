@@ -1,4 +1,4 @@
-## VitaTube CMake project.
+## VitaWave CMake project.
 ##
 ## Structure verified against the official VitaSDK samples:
 ## https://github.com/vitasdk/samples/blob/master/hello_world/CMakeLists.txt
@@ -19,121 +19,121 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(vitatube C)
+project(vitawave C)
 
 ## Complete public hardware-decoder backend from wiliwili's FFmpeg-vita
 ## patch.  This is deliberately a whole FFmpeg codec implementation, not the
 ## old hand-written sequence of individual SceAvcdec calls.  The reproducible
 ## builder pins both upstream revisions and installs headers/libraries below
 ## build/deps, keeping generated third-party objects out of git.
-option(VITATUBE_ENABLE_H264_VITA
+option(VITAWAVE_ENABLE_H264_VITA
   "Use the complete FFmpeg h264_vita hardware decoder" ON)
-if(NOT VITATUBE_ENABLE_H264_VITA)
+if(NOT VITAWAVE_ENABLE_H264_VITA)
   message(FATAL_ERROR
-    "The packaged VitaTube playback stack requires vita-hw-decoder; "
+    "The packaged VitaWave playback stack requires vita-hw-decoder; "
     "software fallback is selected at runtime, not as a build replacement.")
 endif()
-set(VITATUBE_H264_VITA_ROOT
+set(VITAWAVE_H264_VITA_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/build/deps/ffmpeg-vita-hw"
   CACHE PATH "Prefix produced by tools/build-ffmpeg-vita-hw.sh")
 
 ## Standalone packages live in independent sibling repositories by default.
 ## Override these cache paths when using submodules or an installed layout.
-set(VITATUBE_HW_DECODER_PACKAGE
+set(VITAWAVE_HW_DECODER_PACKAGE
   "${CMAKE_CURRENT_SOURCE_DIR}/../vita-hw-decoder"
   CACHE PATH "Path to the vita-hw-decoder repository")
-set(VITATUBE_SW_DECODER_PACKAGE
+set(VITAWAVE_SW_DECODER_PACKAGE
   "${CMAKE_CURRENT_SOURCE_DIR}/../vita-sw-decoder"
   CACHE PATH "Path to the vita-sw-decoder repository")
-set(VITATUBE_HTTPS_PACKAGE
+set(VITAWAVE_HTTPS_PACKAGE
   "${CMAKE_CURRENT_SOURCE_DIR}/../vita-https"
   CACHE PATH "Path to the vita-https repository")
-set(VITATUBE_HTTPS_CURL_ROOT
-  "${VITATUBE_HTTPS_PACKAGE}/build/deps/curl-mbedtls"
+set(VITAWAVE_HTTPS_CURL_ROOT
+  "${VITAWAVE_HTTPS_PACKAGE}/build/deps/curl-mbedtls"
   CACHE PATH "Pinned curl/Mbed TLS prefix produced by vita-https")
 foreach(package_root IN ITEMS
-    "${VITATUBE_HW_DECODER_PACKAGE}"
-    "${VITATUBE_SW_DECODER_PACKAGE}"
-    "${VITATUBE_HTTPS_PACKAGE}")
+    "${VITAWAVE_HW_DECODER_PACKAGE}"
+    "${VITAWAVE_SW_DECODER_PACKAGE}"
+    "${VITAWAVE_HTTPS_PACKAGE}")
   if(NOT EXISTS "${package_root}/CMakeLists.txt")
-    message(FATAL_ERROR "Missing VitaTube package repository: ${package_root}")
+    message(FATAL_ERROR "Missing VitaWave package repository: ${package_root}")
   endif()
 endforeach()
 
-set(VITATUBE_LIBSSH2_ROOT
+set(VITAWAVE_LIBSSH2_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/build/deps/libssh2-vita"
   CACHE PATH "Prefix produced by tools/build-libssh2-vita.sh")
-set(VITATUBE_LIBSSH2_ARCHIVE "${VITATUBE_LIBSSH2_ROOT}/lib/libssh2.a")
-if(NOT EXISTS "${VITATUBE_LIBSSH2_ARCHIVE}")
+set(VITAWAVE_LIBSSH2_ARCHIVE "${VITAWAVE_LIBSSH2_ROOT}/lib/libssh2.a")
+if(NOT EXISTS "${VITAWAVE_LIBSSH2_ARCHIVE}")
   message(FATAL_ERROR
-    "Missing ${VITATUBE_LIBSSH2_ARCHIVE}; run tools/build-libssh2-vita.sh before building VitaTube.")
+    "Missing ${VITAWAVE_LIBSSH2_ARCHIVE}; run tools/build-libssh2-vita.sh before building VitaWave.")
 endif()
-add_library(vitatube_libssh2 STATIC IMPORTED GLOBAL)
-set_target_properties(vitatube_libssh2 PROPERTIES
-  IMPORTED_LOCATION "${VITATUBE_LIBSSH2_ARCHIVE}"
+add_library(vitawave_libssh2 STATIC IMPORTED GLOBAL)
+set_target_properties(vitawave_libssh2 PROPERTIES
+  IMPORTED_LOCATION "${VITAWAVE_LIBSSH2_ARCHIVE}"
   INTERFACE_LINK_LIBRARIES "mbedtls;mbedx509;mbedcrypto;z")
 
-set(VITATUBE_RELEASE_LICENSE_ROOT
+set(VITAWAVE_RELEASE_LICENSE_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/build/release-licenses"
   CACHE PATH "License bundle produced by tools/prepare-release-licenses.sh")
-set(VITATUBE_REQUIRED_RELEASE_LICENSES
+set(VITAWAVE_REQUIRED_RELEASE_LICENSES
   libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt
   mpg123-COPYING.txt vita2d-MIT.txt FreeType-FTL.txt
   libjpeg-turbo-LICENSE.md libjpeg-turbo-README.ijg libpng-LICENSE.txt
   bzip2-LICENSE.txt pthread-embedded-COPYING.txt
   pthread-embedded-LGPL-2.1.txt pthread-embedded-Vita-MIT.txt)
-foreach(license_file IN LISTS VITATUBE_REQUIRED_RELEASE_LICENSES)
-  if(NOT EXISTS "${VITATUBE_RELEASE_LICENSE_ROOT}/${license_file}")
+foreach(license_file IN LISTS VITAWAVE_REQUIRED_RELEASE_LICENSES)
+  if(NOT EXISTS "${VITAWAVE_RELEASE_LICENSE_ROOT}/${license_file}")
     message(FATAL_ERROR
       "Missing release license ${license_file}; run "
-      "tools/prepare-release-licenses.sh before configuring VitaTube.")
+      "tools/prepare-release-licenses.sh before configuring VitaWave.")
   endif()
 endforeach()
 
 ## The pinned builder enables the real MOV/MP4 demuxer and the complete
 ## hardware decoder backend. Provenance is documented by the build script.
-set(VITATUBE_FFMPEG_ROOT "${VITATUBE_H264_VITA_ROOT}")
+set(VITAWAVE_FFMPEG_ROOT "${VITAWAVE_H264_VITA_ROOT}")
 
-set(VITATUBE_AVFORMAT_ARCHIVE "${VITATUBE_FFMPEG_ROOT}/lib/libavformat.a")
-if(NOT EXISTS "${VITATUBE_AVFORMAT_ARCHIVE}")
+set(VITAWAVE_AVFORMAT_ARCHIVE "${VITAWAVE_FFMPEG_ROOT}/lib/libavformat.a")
+if(NOT EXISTS "${VITAWAVE_AVFORMAT_ARCHIVE}")
   message(FATAL_ERROR
-    "Missing ${VITATUBE_AVFORMAT_ARCHIVE}; run tools/build-ffmpeg-vita-hw.sh before building VitaTube.")
+    "Missing ${VITAWAVE_AVFORMAT_ARCHIVE}; run tools/build-ffmpeg-vita-hw.sh before building VitaWave.")
 endif()
-add_library(vitatube_avformat STATIC IMPORTED GLOBAL)
-set_target_properties(vitatube_avformat PROPERTIES
-  IMPORTED_LOCATION "${VITATUBE_AVFORMAT_ARCHIVE}")
+add_library(vitawave_avformat STATIC IMPORTED GLOBAL)
+set_target_properties(vitawave_avformat PROPERTIES
+  IMPORTED_LOCATION "${VITAWAVE_AVFORMAT_ARCHIVE}")
 
-set(VITATUBE_AVCODEC_ARCHIVE "${VITATUBE_FFMPEG_ROOT}/lib/libavcodec.a")
-if(NOT EXISTS "${VITATUBE_AVCODEC_ARCHIVE}")
+set(VITAWAVE_AVCODEC_ARCHIVE "${VITAWAVE_FFMPEG_ROOT}/lib/libavcodec.a")
+if(NOT EXISTS "${VITAWAVE_AVCODEC_ARCHIVE}")
   message(FATAL_ERROR
-    "Missing ${VITATUBE_AVCODEC_ARCHIVE}; run tools/build-ffmpeg-vita-hw.sh before building VitaTube.")
+    "Missing ${VITAWAVE_AVCODEC_ARCHIVE}; run tools/build-ffmpeg-vita-hw.sh before building VitaWave.")
 endif()
-add_library(vitatube_avcodec STATIC IMPORTED GLOBAL)
-set_target_properties(vitatube_avcodec PROPERTIES
-  IMPORTED_LOCATION "${VITATUBE_AVCODEC_ARCHIVE}")
+add_library(vitawave_avcodec STATIC IMPORTED GLOBAL)
+set_target_properties(vitawave_avcodec PROPERTIES
+  IMPORTED_LOCATION "${VITAWAVE_AVCODEC_ARCHIVE}")
 
-set(VITATUBE_AVUTIL_ARCHIVE "${VITATUBE_FFMPEG_ROOT}/lib/libavutil.a")
-if(NOT EXISTS "${VITATUBE_AVUTIL_ARCHIVE}")
+set(VITAWAVE_AVUTIL_ARCHIVE "${VITAWAVE_FFMPEG_ROOT}/lib/libavutil.a")
+if(NOT EXISTS "${VITAWAVE_AVUTIL_ARCHIVE}")
   message(FATAL_ERROR
-    "Missing ${VITATUBE_AVUTIL_ARCHIVE}; run tools/build-ffmpeg-vita-hw.sh before building VitaTube.")
+    "Missing ${VITAWAVE_AVUTIL_ARCHIVE}; run tools/build-ffmpeg-vita-hw.sh before building VitaWave.")
 endif()
-add_library(vitatube_avutil STATIC IMPORTED GLOBAL)
-set_target_properties(vitatube_avutil PROPERTIES
-  IMPORTED_LOCATION "${VITATUBE_AVUTIL_ARCHIVE}")
-set(VITATUBE_AVUTIL_LINK vitatube_avutil)
-set(VITATUBE_FFMPEG_LICENSE
-    "${VITATUBE_FFMPEG_ROOT}/share/licenses/FFmpeg-LGPL-2.1.txt")
-if(NOT EXISTS "${VITATUBE_FFMPEG_LICENSE}")
+add_library(vitawave_avutil STATIC IMPORTED GLOBAL)
+set_target_properties(vitawave_avutil PROPERTIES
+  IMPORTED_LOCATION "${VITAWAVE_AVUTIL_ARCHIVE}")
+set(VITAWAVE_AVUTIL_LINK vitawave_avutil)
+set(VITAWAVE_FFMPEG_LICENSE
+    "${VITAWAVE_FFMPEG_ROOT}/share/licenses/FFmpeg-LGPL-2.1.txt")
+if(NOT EXISTS "${VITAWAVE_FFMPEG_LICENSE}")
   message(FATAL_ERROR
-    "Missing ${VITATUBE_FFMPEG_LICENSE}; rerun tools/build-ffmpeg-vita-hw.sh.")
+    "Missing ${VITAWAVE_FFMPEG_LICENSE}; rerun tools/build-ffmpeg-vita-hw.sh.")
 endif()
-set(VITATUBE_FFMPEG_LICENSE_RESOURCE
-    FILE "${VITATUBE_FFMPEG_LICENSE}" licenses/FFmpeg-LGPL-2.1.txt)
-set(VITATUBE_WILIWILI_LICENSE
-    "${VITATUBE_FFMPEG_ROOT}/share/licenses/wiliwili-GPL-3.0.txt")
-if(NOT EXISTS "${VITATUBE_WILIWILI_LICENSE}")
+set(VITAWAVE_FFMPEG_LICENSE_RESOURCE
+    FILE "${VITAWAVE_FFMPEG_LICENSE}" licenses/FFmpeg-LGPL-2.1.txt)
+set(VITAWAVE_WILIWILI_LICENSE
+    "${VITAWAVE_FFMPEG_ROOT}/share/licenses/wiliwili-GPL-3.0.txt")
+if(NOT EXISTS "${VITAWAVE_WILIWILI_LICENSE}")
   message(FATAL_ERROR
-    "Missing ${VITATUBE_WILIWILI_LICENSE}; rerun tools/build-ffmpeg-vita-hw.sh.")
+    "Missing ${VITAWAVE_WILIWILI_LICENSE}; rerun tools/build-ffmpeg-vita-hw.sh.")
 endif()
 
 ## Without an explicit default, documented `cmake -S/-B` commands produced an
@@ -152,10 +152,10 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 ## --- Application metadata ------------------------------------------------
 
 # Name displayed below the LiveArea bubble.
-set(VITA_APP_NAME "VitaTube")
+set(VITA_APP_NAME "VitaWave")
 
 # TITLEID must contain exactly nine characters.
-set(VITA_TITLEID  "VTUB00001")
+set(VITA_TITLEID  "VWAV00001")
 
 # LiveArea version; vita_create_vpk requires the ##.## format.
 set(VITA_VERSION  "01.01")
@@ -168,28 +168,28 @@ add_link_options("LINKER:-z,noexecstack")
 ## --- Include paths --------------------------------------------------------
 
 include_directories(
-  $<$<BOOL:${VITATUBE_ENABLE_H264_VITA}>:${VITATUBE_H264_VITA_ROOT}/include>
+  $<$<BOOL:${VITAWAVE_ENABLE_H264_VITA}>:${VITAWAVE_H264_VITA_ROOT}/include>
   ${CMAKE_CURRENT_SOURCE_DIR}/src
-  ${VITATUBE_LIBSSH2_ROOT}/include
+  ${VITAWAVE_LIBSSH2_ROOT}/include
   ${VITASDK}/arm-vita-eabi/include/libxml2
 )
 
 ## --- Sources --------------------------------------------------------------
 
-set(VITA_HW_DECODER_FFMPEG_ROOT "${VITATUBE_H264_VITA_ROOT}"
+set(VITA_HW_DECODER_FFMPEG_ROOT "${VITAWAVE_H264_VITA_ROOT}"
     CACHE PATH "FFmpeg prefix consumed by vita-hw-decoder" FORCE)
-set(VITA_SW_DECODER_FFMPEG_ROOT "${VITATUBE_H264_VITA_ROOT}"
+set(VITA_SW_DECODER_FFMPEG_ROOT "${VITAWAVE_H264_VITA_ROOT}"
     CACHE PATH "FFmpeg prefix consumed by vita-sw-decoder" FORCE)
-set(VITA_HTTPS_CURL_ROOT "${VITATUBE_HTTPS_CURL_ROOT}"
+set(VITA_HTTPS_CURL_ROOT "${VITAWAVE_HTTPS_CURL_ROOT}"
     CACHE PATH "curl/Mbed TLS prefix consumed by vita-https" FORCE)
-add_subdirectory("${VITATUBE_HW_DECODER_PACKAGE}"
+add_subdirectory("${VITAWAVE_HW_DECODER_PACKAGE}"
                  "${CMAKE_BINARY_DIR}/packages/vita-hw-decoder")
-add_subdirectory("${VITATUBE_SW_DECODER_PACKAGE}"
+add_subdirectory("${VITAWAVE_SW_DECODER_PACKAGE}"
                  "${CMAKE_BINARY_DIR}/packages/vita-sw-decoder")
-add_subdirectory("${VITATUBE_HTTPS_PACKAGE}"
+add_subdirectory("${VITAWAVE_HTTPS_PACKAGE}"
                  "${CMAKE_BINARY_DIR}/packages/vita-https")
 
-# vita-https carries a conservative private -O2 default. Keep VitaTube's
+# vita-https carries a conservative private -O2 default. Keep VitaWave's
 # explicit release contract authoritative by appending -O3 after the package
 # has declared its own options; GCC applies the last optimization level.
 target_compile_options(vita_https PRIVATE $<$<CONFIG:Release>:-O3>)
@@ -275,7 +275,7 @@ target_link_libraries(${PROJECT_NAME}
   SceRtc_stub
   ## --- Decode and render chain ---------------------------------------------
   ## vita2d precedes its dependencies because it is a static archive. The list
-  ## is reduced from the official sample to symbols used by VitaTube. JPEG and
+  ## is reduced from the official sample to symbols used by VitaWave. JPEG and
   ## PNG thumbnails are decoded by their software libraries, not SceJpeg.
   vita2d
   ScePgf_stub         # sceFont* weak imports used by libvita2d system PGF CJK fallback
@@ -288,11 +288,11 @@ target_link_libraries(${PROJECT_NAME}
   VitaHwDecoder::VitaHwDecoder
   VitaSwDecoder::VitaSwDecoder
   VitaHttps::VitaHttps
-  vitatube_avformat   # pinned FFmpeg with a registered MOV/MP4 demuxer
-  vitatube_avcodec    # complete h264_vita plus software H.264 fallback
-  ${VITATUBE_AVUTIL_LINK}
+  vitawave_avformat   # pinned FFmpeg with a registered MOV/MP4 demuxer
+  vitawave_avcodec    # complete h264_vita plus software H.264 fallback
+  ${VITAWAVE_AVUTIL_LINK}
   mpg123              # local MP3 playback
-  vitatube_libssh2    # authenticated SFTP with pinned host fingerprints
+  vitawave_libssh2    # authenticated SFTP with pinned host fingerprints
   smb2                # authenticated SMB2/SMB3 shares
   xml2                # namespace-safe WebDAV PROPFIND parser
   SceAvPlayer_stub    # sceAvPlayerInit/AddSource/GetVideoData/... (src/media/)
@@ -329,8 +329,8 @@ target_link_libraries(${PROJECT_NAME}
 ## wiliwili's production Vita build uses this exact public application
 ## profile for h264_vita: an unsafe homebrew SELF, no ASLR, and the maximum
 ## heap mode.  It does not request the custom SceShell auth ID or a PHYCONT
-## budget that made an earlier VitaTube experiment fail before main().
-if(VITATUBE_ENABLE_H264_VITA)
+## budget that made an earlier VitaWave experiment fail before main().
+if(VITAWAVE_ENABLE_H264_VITA)
   set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d ATTRIBUTE2=12")
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE NOASLR)
 else()
@@ -338,44 +338,44 @@ else()
 endif()
 
 # Installable homebrew package containing the SELF and application resources.
-set(VITATUBE_VPK_NAME "VitaTube.vpk")
-vita_create_vpk(${VITATUBE_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.self
+set(VITAWAVE_VPK_NAME "VitaWave.vpk")
+vita_create_vpk(${VITAWAVE_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE sce_sys/icon0.png sce_sys/icon0.png
-  FILE sce_sys/vitatubelogoalpha.png sce_sys/vitatubelogoalpha.png
+  FILE sce_sys/vitawavelogoalpha.png sce_sys/vitawavelogoalpha.png
   FILE assets/fonts/Inter-Medium.ttf fonts/Inter-Medium.ttf
   FILE assets/fonts/Inter-SemiBold.ttf fonts/Inter-SemiBold.ttf
   FILE assets/fonts/Inter-OFL.txt licenses/Inter-OFL.txt
-  FILE LICENSE licenses/VitaTube-GPLv3.txt
+  FILE LICENSE licenses/VitaWave-GPLv3.txt
   FILE THIRD_PARTY_NOTICES.md licenses/THIRD_PARTY_NOTICES.md
-  FILE release/VitaTube.spdx licenses/VitaTube.spdx
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/PROVENANCE.txt" licenses/release-provenance.txt
+  FILE release/VitaWave.spdx licenses/VitaWave.spdx
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/PROVENANCE.txt" licenses/release-provenance.txt
   FILE licenses/ReAvPlayer-MIT.txt licenses/ReAvPlayer-MIT.txt
   FILE licenses/REAVPLAYER_PROVENANCE.md licenses/REAVPLAYER_PROVENANCE.md
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/libsmb2-NOTICE.txt" licenses/libsmb2-NOTICE.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/libsmb2-LGPL-2.1.txt" licenses/libsmb2-LGPL-2.1.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/libxml2-MIT.txt" licenses/libxml2-MIT.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/mpg123-COPYING.txt" licenses/mpg123-COPYING.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/vita2d-MIT.txt" licenses/vita2d-MIT.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/FreeType-FTL.txt" licenses/FreeType-FTL.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/libjpeg-turbo-LICENSE.md" licenses/libjpeg-turbo-LICENSE.md
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/libjpeg-turbo-README.ijg" licenses/libjpeg-turbo-README.ijg
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/libpng-LICENSE.txt" licenses/libpng-LICENSE.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/bzip2-LICENSE.txt" licenses/bzip2-LICENSE.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/pthread-embedded-COPYING.txt" licenses/pthread-embedded-COPYING.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/pthread-embedded-LGPL-2.1.txt" licenses/pthread-embedded-LGPL-2.1.txt
-  FILE "${VITATUBE_RELEASE_LICENSE_ROOT}/pthread-embedded-Vita-MIT.txt" licenses/pthread-embedded-Vita-MIT.txt
-  FILE "${VITATUBE_HTTPS_CURL_ROOT}/share/licenses/curl.txt" licenses/curl.txt
-  FILE "${VITATUBE_HTTPS_CURL_ROOT}/share/licenses/Mbed-TLS.txt" licenses/Mbed-TLS.txt
-  FILE "${VITATUBE_HTTPS_CURL_ROOT}/share/licenses/zlib-header-with-license.txt" licenses/zlib.txt
-  FILE "${VITATUBE_HTTPS_CURL_ROOT}/share/licenses/zstd-package-notice.txt" licenses/zstd.txt
-  FILE "${VITATUBE_HTTPS_PACKAGE}/licenses/certifi-MPL-2.0.txt" licenses/certifi-MPL-2.0.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/libsmb2-NOTICE.txt" licenses/libsmb2-NOTICE.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/libsmb2-LGPL-2.1.txt" licenses/libsmb2-LGPL-2.1.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/libxml2-MIT.txt" licenses/libxml2-MIT.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/mpg123-COPYING.txt" licenses/mpg123-COPYING.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/vita2d-MIT.txt" licenses/vita2d-MIT.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/FreeType-FTL.txt" licenses/FreeType-FTL.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/libjpeg-turbo-LICENSE.md" licenses/libjpeg-turbo-LICENSE.md
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/libjpeg-turbo-README.ijg" licenses/libjpeg-turbo-README.ijg
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/libpng-LICENSE.txt" licenses/libpng-LICENSE.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/bzip2-LICENSE.txt" licenses/bzip2-LICENSE.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/pthread-embedded-COPYING.txt" licenses/pthread-embedded-COPYING.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/pthread-embedded-LGPL-2.1.txt" licenses/pthread-embedded-LGPL-2.1.txt
+  FILE "${VITAWAVE_RELEASE_LICENSE_ROOT}/pthread-embedded-Vita-MIT.txt" licenses/pthread-embedded-Vita-MIT.txt
+  FILE "${VITAWAVE_HTTPS_CURL_ROOT}/share/licenses/curl.txt" licenses/curl.txt
+  FILE "${VITAWAVE_HTTPS_CURL_ROOT}/share/licenses/Mbed-TLS.txt" licenses/Mbed-TLS.txt
+  FILE "${VITAWAVE_HTTPS_CURL_ROOT}/share/licenses/zlib-header-with-license.txt" licenses/zlib.txt
+  FILE "${VITAWAVE_HTTPS_CURL_ROOT}/share/licenses/zstd-package-notice.txt" licenses/zstd.txt
+  FILE "${VITAWAVE_HTTPS_PACKAGE}/licenses/certifi-MPL-2.0.txt" licenses/certifi-MPL-2.0.txt
   FILE build/deps/libssh2-vita/share/licenses/libssh2-BSD-3-Clause.txt licenses/libssh2-BSD-3-Clause.txt
-  ${VITATUBE_FFMPEG_LICENSE_RESOURCE}
-  FILE "${VITATUBE_WILIWILI_LICENSE}" licenses/wiliwili-GPL-3.0.txt
+  ${VITAWAVE_FFMPEG_LICENSE_RESOURCE}
+  FILE "${VITAWAVE_WILIWILI_LICENSE}" licenses/wiliwili-GPL-3.0.txt
   # Third-party MIT taiHEN compatibility module used instead of directly
   # loading SCE_SYSMODULE_AVPLAYER. See avplayer_init.c.
   FILE sce_modules/reAvPlayer.suprx modules/reAvPlayer.suprx
 )
-add_dependencies(${VITATUBE_VPK_NAME}-vpk ${PROJECT_NAME}.self-self)
+add_dependencies(${VITAWAVE_VPK_NAME}-vpk ${PROJECT_NAME}.self-self)

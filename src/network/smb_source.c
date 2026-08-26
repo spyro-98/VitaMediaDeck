@@ -15,6 +15,18 @@ typedef struct {
 	uint64_t size;
 } SmbStream;
 
+static void smb_server_address(const VtNetworkSource *source,
+	                           char *out, size_t out_size) {
+	uint16_t port = source->port ? source->port : 445;
+	if (port == 445 || strchr(source->host, ':')) {
+		/* Preserve an old host:port value saved before the editor exposed the
+		 * dedicated SMB port field. libsmb2 accepts that endpoint syntax. */
+		snprintf(out, out_size, "%s", source->host);
+	} else {
+		snprintf(out, out_size, "%s:%u", source->host, port);
+	}
+}
+
 static int smb_connect(const VtNetworkSource *source,
 	                   const VtNetworkCredential *credential,
 	                   struct smb2_context **out,
@@ -32,9 +44,11 @@ static int smb_connect(const VtNetworkSource *source,
 	smb2_set_user(context, source->username);
 	smb2_set_domain(context, source->domain);
 	smb2_set_password(context, credential ? credential->password : "");
-	/* Anonymous/guest access is deliberately outside VitaTube's network-source
+	/* Anonymous/guest access is deliberately outside VitaWave's network-source
 	 * contract. */
-	int ret = smb2_connect_share(context, source->host, source->share,
+	char server[VT_NETWORK_HOST_MAX + 16];
+	smb_server_address(source, server, sizeof(server));
+	int ret = smb2_connect_share(context, server, source->share,
 	                             source->username);
 	if (ret < 0) {
 		if (detail && detail_size)

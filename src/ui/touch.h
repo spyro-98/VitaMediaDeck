@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_TOUCH_H
-#define VITATUBE_UI_TOUCH_H
+#ifndef VITAWAVE_UI_TOUCH_H
+#define VITAWAVE_UI_TOUCH_H
 
 /*
  * Front-panel touch input for vita2d screens. This module doesn't draw and
@@ -52,4 +52,4 @@ unsigned int ui_touch_poll(UiTouchEvent *event);
 int ui_touch_hit_rect(int x, int y, int rect_x, int rect_y,
 	                  int rect_w, int rect_h);
 
-#endif /* VITATUBE_UI_TOUCH_H */
+#endif /* VITAWAVE_UI_TOUCH_H */

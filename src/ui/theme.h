@@ -1,9 +1,9 @@
-#ifndef VITATUBE_UI_THEME_H
-#define VITATUBE_UI_THEME_H
+#ifndef VITAWAVE_UI_THEME_H
+#define VITAWAVE_UI_THEME_H
 
 #include <vita2d.h>
 
-/* "Midnight Halo": sampled from the 2026-08-09 VitaTube icon.  The old
+/* "Midnight Halo": sampled from the 2026-08-09 VitaWave icon.  The old
  * red/yellow/green/blue brand corners are deliberately gone; decorative UI
  * uses only ink, steel-blue and the electric blue emitted by the play badge.
  * Green/amber/red remain reserved for semantic success/warning/error states. */
@@ -35,4 +35,4 @@
 #define VT_THEME_WARNING        RGBA8(236, 174, 76, 255)
 #define VT_THEME_DANGER         RGBA8(235, 93, 108, 255)
 
-#endif /* VITATUBE_UI_THEME_H */
+#endif /* VITAWAVE_UI_THEME_H */

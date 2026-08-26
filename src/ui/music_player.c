@@ -933,7 +933,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		draw_flow_background(palette, now, foreground);
 		ui_brand_draw_header(NULL);
 		/* The composition sits lower than the video HUD and leaves a quiet top
-		 * band for VitaTube's system header. */
+		 * band for VitaWave's system header. */
 		if (cover) draw_cover(cover, 368.0f, 92.0f, 224.0f, foreground);
 		draw_music_state(&snapshot, foreground, now, hud_opacity);
 		vita2d_font *display = ui_runtime_font(UI_FONT_DISPLAY);

@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_FONT_H
-#define VITATUBE_UI_FONT_H
+#ifndef VITAWAVE_UI_FONT_H
+#define VITAWAVE_UI_FONT_H
 
 #include <stddef.h>
 #include <vita2d.h>
@@ -44,4 +44,4 @@ int ui_font_draw_text_centered(vita2d_font *latin_font, int center_x, int y,
 	                           int max_width, unsigned int color,
 	                           unsigned int size, const char *text);
 
-#endif /* VITATUBE_UI_FONT_H */
+#endif /* VITAWAVE_UI_FONT_H */

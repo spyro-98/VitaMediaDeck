@@ -1,5 +1,5 @@
-#ifndef VITATUBE_SETTINGS_PREFERENCES_H
-#define VITATUBE_SETTINGS_PREFERENCES_H
+#ifndef VITAWAVE_SETTINGS_PREFERENCES_H
+#define VITAWAVE_SETTINGS_PREFERENCES_H
 
 #define VT_DEFAULT_QUALITY_360 360
 #define VT_DEFAULT_QUALITY_480 480
@@ -87,7 +87,7 @@ int vt_preferences_set_language(int language);
 int vt_preferences_startup_controls_seen(void);
 int vt_preferences_set_startup_controls_seen(int seen);
 
-/* Default keeps the original VitaTube mapping: L1/R1 open the two player
+/* Default keeps the original VitaWave mapping: L1/R1 open the two player
  * panels and D-pad left/right seek. The opt-in swaps those two roles. */
 int vt_preferences_player_swap_shoulders(void);
 int vt_preferences_set_player_swap_shoulders(int enabled);
@@ -147,7 +147,7 @@ int vt_preferences_stream_fallback_enabled(void);
 int vt_preferences_set_stream_fallback_enabled(int enabled);
 
 /* Explicit clock ownership. APP is the deterministic default and applies the
- * documented VitaTube video profile. PSVshell is an opt-in and means VitaTube
+ * documented VitaWave video profile. PSVshell is an opt-in and means VitaWave
  * never writes or restores any clock. */
 int vt_preferences_clock_source(void);
 int vt_preferences_set_clock_source(int source);
@@ -167,4 +167,4 @@ int vt_preferences_set_subtitle_max_width(int width);
 int vt_preferences_subtitle_position(void);
 int vt_preferences_set_subtitle_position(int position);
 
-#endif /* VITATUBE_SETTINGS_PREFERENCES_H */
+#endif /* VITAWAVE_SETTINGS_PREFERENCES_H */
