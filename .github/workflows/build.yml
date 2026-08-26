@@ -138,6 +138,20 @@ jobs:
           VITAWAVE_FFMPEG_JOBS: "2"
         run: ./tools/build-ffmpeg-vita-hw.sh
 
+      - name: Restore pinned software FFmpeg backend
+        id: ffmpeg-sw-cache
+        uses: actions/cache@v5
+        with:
+          path: vita-sw-decoder/build/deps/ffmpeg-vita-sw
+          key: ffmpeg-h264-vita-sw-${{ hashFiles('vita-sw-decoder/tools/build-ffmpeg.sh') }}
+
+      - name: Build pinned software FFmpeg backend
+        if: steps.ffmpeg-sw-cache.outputs.cache-hit != 'true'
+        working-directory: vita-sw-decoder
+        env:
+          VITA_SW_DECODER_FFMPEG_JOBS: "2"
+        run: ./tools/build-ffmpeg.sh
+
       - name: Prepare release licenses and sources
         working-directory: VitaWave
         run: ./tools/prepare-release-licenses.sh
