@@ -1,4 +1,4 @@
-# VitaTube controls
+# VitaWave controls
 
 ## Shared navigation
 

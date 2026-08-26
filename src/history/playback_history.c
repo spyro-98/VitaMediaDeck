@@ -8,9 +8,9 @@
 
 #include "app_paths.h"
 
-#define VT_PLAYBACK_HISTORY_PATH VITATUBE_DATA_DIR "/playback_history.bin"
-#define VT_PLAYBACK_HISTORY_TEMP VITATUBE_DATA_DIR "/playback_history.tmp"
-#define VT_PLAYBACK_HISTORY_BACKUP VITATUBE_DATA_DIR "/playback_history.bak"
+#define VT_PLAYBACK_HISTORY_PATH VITAWAVE_DATA_DIR "/playback_history.bin"
+#define VT_PLAYBACK_HISTORY_TEMP VITAWAVE_DATA_DIR "/playback_history.tmp"
+#define VT_PLAYBACK_HISTORY_BACKUP VITAWAVE_DATA_DIR "/playback_history.bak"
 #define VT_PLAYBACK_HISTORY_VERSION 1U
 #define VT_PLAYBACK_HISTORY_MAX 256
 #define VT_PLAYBACK_VIDEO_ID_MAX 16
@@ -94,7 +94,7 @@ static int save_database(void) {
 	g_disk.version = VT_PLAYBACK_HISTORY_VERSION;
 	g_disk.count = (uint32_t)g_count;
 	g_disk.checksum = checksum(&g_disk);
-	sceIoMkdir(VITATUBE_DATA_DIR, 0777);
+	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
 	sceIoRemove(VT_PLAYBACK_HISTORY_TEMP);
 	SceUID fd = sceIoOpen(VT_PLAYBACK_HISTORY_TEMP,
 	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);

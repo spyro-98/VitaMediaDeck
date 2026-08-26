@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_SETTINGS_SCREEN_H
-#define VITATUBE_UI_SETTINGS_SCREEN_H
+#ifndef VITAWAVE_UI_SETTINGS_SCREEN_H
+#define VITAWAVE_UI_SETTINGS_SCREEN_H
 
 /* Returns a UI_SECTION_* destination selected from the L1 sidebar, or
  * UI_SECTION_NONE when leaving with CIRCLE. START is reserved for mini-player. */
@@ -9,4 +9,4 @@ int ui_settings_screen(void);
  * startup onboarding shown after a fresh install or 1.0 -> 1.0.1 upgrade. */
 void ui_settings_show_controls_reference(void);
 
-#endif /* VITATUBE_UI_SETTINGS_SCREEN_H */
+#endif /* VITAWAVE_UI_SETTINGS_SCREEN_H */

@@ -192,7 +192,7 @@ static void draw_screen(int tab, int cursor, float focus,
 			draw_value(small, y, language_label(rows[i].value));
 		else if (rows[i].kind == ROW_CLOCK)
 			draw_value(small, y, rows[i].value == VT_CLOCK_SOURCE_APP
-			                       ? "VitaTube 444/222/222/111"
+			                       ? "VitaWave 444/222/222/111"
 			                       : vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_PSVSHELL));
 		else if (rows[i].kind == ROW_MAPPING)
 			draw_value(small, y, vt_i18n_str(rows[i].value

@@ -1,8 +1,8 @@
-#ifndef VITATUBE_SYSTEM_DISPLAY_AWAKE_H
-#define VITATUBE_SYSTEM_DISPLAY_AWAKE_H
+#ifndef VITAWAVE_SYSTEM_DISPLAY_AWAKE_H
+#define VITAWAVE_SYSTEM_DISPLAY_AWAKE_H
 
 /* Refreshes every display-related idle timer while video is visibly playing.
  * Internally rate-limited, so callers may invoke it once per rendered frame. */
 void vt_display_keep_awake_tick(void);
 
-#endif /* VITATUBE_SYSTEM_DISPLAY_AWAKE_H */
+#endif /* VITAWAVE_SYSTEM_DISPLAY_AWAKE_H */

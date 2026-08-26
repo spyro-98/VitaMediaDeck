@@ -1,7 +1,7 @@
 /* Localizable mini-player strings. Format:
  * VT_STR(KEY_NAME, "Italian text", "English text"). Keep printf specifiers
  * in the same order in both columns. */
-VT_STR(MINI_DEFAULT_TITLE, "Riproduzione VitaTube", "VitaTube playback")
+VT_STR(MINI_DEFAULT_TITLE, "Riproduzione VitaWave", "VitaWave playback")
 VT_STR(MINI_STATE_PREPARING, "Carico audio", "Loading audio")
 VT_STR(MINI_STATE_BUFFERING, "Preparo il buffer", "Preparing buffer")
 VT_STR(MINI_STATE_READY, "Pronto", "Ready")

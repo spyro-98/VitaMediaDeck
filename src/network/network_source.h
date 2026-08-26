@@ -1,5 +1,5 @@
-#ifndef VITATUBE_NETWORK_SOURCE_H
-#define VITATUBE_NETWORK_SOURCE_H
+#ifndef VITAWAVE_NETWORK_SOURCE_H
+#define VITAWAVE_NETWORK_SOURCE_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -14,6 +14,7 @@
 #define VT_NETWORK_USER_MAX 96
 #define VT_NETWORK_SECRET_MAX 192
 #define VT_NETWORK_FINGERPRINT_MAX 96
+#define VT_NETWORK_TLS_PIN_MAX 64
 
 typedef enum {
 	VT_NETWORK_WEBDAV = 1,
@@ -31,6 +32,9 @@ typedef struct {
 	char username[VT_NETWORK_USER_MAX];
 	char domain[VT_NETWORK_NAME_MAX];
 	char host_key_sha256[VT_NETWORK_FINGERPRINT_MAX];
+	/* Optional sha256// SPKI pin confirmed by the user for a private WebDAV
+	 * server whose certificate is not issued by the bundled public CAs. */
+	char tls_public_key_sha256[VT_NETWORK_TLS_PIN_MAX];
 } VtNetworkSource;
 
 /* Secrets are session-only. The source database never serializes this
@@ -62,7 +66,9 @@ enum {
 	VT_NETWORK_HOST_KEY_REQUIRED = -3,
 	VT_NETWORK_HOST_KEY_MISMATCH = -4,
 	VT_NETWORK_RANGE_UNSUPPORTED = -5,
-	VT_NETWORK_UNSUPPORTED_MEDIA = -6
+	VT_NETWORK_UNSUPPORTED_MEDIA = -6,
+	VT_NETWORK_TLS_TRUST_REQUIRED = -7,
+	VT_NETWORK_TLS_PIN_MISMATCH = -8
 };
 
 int vt_network_init(void);
@@ -82,6 +88,13 @@ int vt_network_sftp_probe_fingerprint(const VtNetworkSource *source,
 	                                  char *fingerprint,
 	                                  size_t fingerprint_size,
 	                                  char *detail, size_t detail_size);
+
+/* Used only after normal CA validation reports an untrusted certificate. The
+ * returned pin must be shown to and explicitly confirmed by the user. */
+int vt_network_webdav_probe_public_key(const VtNetworkSource *source,
+	                                   const VtNetworkCredential *credential,
+	                                   char *pin, size_t pin_size,
+	                                   char *detail, size_t detail_size);
 
 int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	                               const VtNetworkSource *source,

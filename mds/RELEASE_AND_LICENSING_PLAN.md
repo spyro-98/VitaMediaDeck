@@ -2,7 +2,7 @@
 
 ## Repository license
 
-VitaTube is distributed under GPL-3.0-only. Source changes to the covered
+VitaWave is distributed under GPL-3.0-only. Source changes to the covered
 program must remain available under that license when binaries are distributed.
 Third-party components are not relicensed; their notices and source obligations
 remain in force.
@@ -13,7 +13,7 @@ A public release should contain:
 
 - source for the exact tagged revision;
 - reproducible dependency build scripts and pinned revisions;
-- `VitaTube.vpk` and SHA-256 checksum;
+- `VitaWave.vpk` and SHA-256 checksum;
 - GPLv3, FFmpeg LGPL, ReAvPlayer MIT, libssh2 BSD, Inter OFL, and consolidated
   third-party notices inside the package;
 - a hardware/server validation summary;
@@ -24,7 +24,7 @@ media indexes, logs, and private research worktrees must not be committed.
 
 ## Hardware player module
 
-The module currently belongs to the GPL-3.0-only VitaTube tree and can be
+The module currently belongs to the GPL-3.0-only VitaWave tree and can be
 published under the same license. Before a standalone release:
 
 1. move all required support sources under the module directory;
@@ -49,6 +49,6 @@ published under the same license. Before a standalone release:
 
 ## Trademark statement
 
-VitaTube is an independent homebrew project. PlayStation, PS Vita, Sony, and
+VitaWave is an independent homebrew project. PlayStation, PS Vita, Sony, and
 related marks belong to their respective owners. No affiliation or endorsement
 is claimed.

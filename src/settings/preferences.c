@@ -9,9 +9,9 @@
 #include "app_paths.h"
 
 #define VT_PREFERENCES_VERSION 2U
-#define VT_PREFERENCES_PATH VITATUBE_DATA_DIR "/settings.bin"
-#define VT_PREFERENCES_TEMP VITATUBE_DATA_DIR "/settings.tmp"
-#define VT_PREFERENCES_BACKUP VITATUBE_DATA_DIR "/settings.bak"
+#define VT_PREFERENCES_PATH VITAWAVE_DATA_DIR "/settings.bin"
+#define VT_PREFERENCES_TEMP VITAWAVE_DATA_DIR "/settings.tmp"
+#define VT_PREFERENCES_BACKUP VITAWAVE_DATA_DIR "/settings.bak"
 
 static const unsigned char g_preferences_magic[8] = {
 	'V', 'T', 'S', 'E', 'T', '0', '0', '1'
@@ -227,7 +227,7 @@ static int persist_record(int height, int frame_rate, int language,
 	disk.default_frame_rate = frame_rate;
 	disk.header.checksum = disk_v2_checksum(&disk);
 
-	sceIoMkdir(VITATUBE_DATA_DIR, 0777);
+	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
 	sceIoRemove(VT_PREFERENCES_TEMP);
 	SceUID fd = sceIoOpen(VT_PREFERENCES_TEMP,
 	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
@@ -477,7 +477,7 @@ int vt_preferences_set_stream_fallback_enabled(int enabled) {
 
 int vt_preferences_clock_source(void) {
 	if (!g_loaded) vt_preferences_init();
-	/* VitaTube's documented profile is the deterministic default.  PSVshell
+	/* VitaWave's documented profile is the deterministic default.  PSVshell
 	 * is deliberately an opt-in: when selected, the application performs no
 	 * clock writes at all.  Bit 4 was used by one development build for the
 	 * inverse representation; leaving it untouched preserves the rest of the

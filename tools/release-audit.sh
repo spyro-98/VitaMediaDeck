@@ -45,19 +45,19 @@ if [[ $check_history -eq 1 ]]; then
 fi
 
 require_file release/DEPENDENCIES.lock
-require_file release/VitaTube.spdx
+require_file release/VitaWave.spdx
 require_file licenses/REAVPLAYER_PROVENANCE.md
 require_file "$repo_root/build/release-licenses/PROVENANCE.txt"
 printf '%s  %s\n' \
   8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850 \
   sce_modules/reAvPlayer.suprx | shasum -a 256 -c - >/dev/null
 
-https_root="${VITATUBE_HTTPS_PACKAGE:-$repo_root/../vita-https}"
-curl_root="${VITATUBE_HTTPS_CURL_ROOT:-$https_root/build/deps/curl-mbedtls}"
+https_root="${VITAWAVE_HTTPS_PACKAGE:-$repo_root/../vita-https}"
+curl_root="${VITAWAVE_HTTPS_CURL_ROOT:-$https_root/build/deps/curl-mbedtls}"
 require_file "$curl_root/lib/libcurl.a"
 nm_tool="${VITASDK:?Set VITASDK before the release audit}/bin/arm-vita-eabi-gcc-nm"
 require_file "$nm_tool"
-nm_output="$(mktemp "${TMPDIR:-/tmp}/vitatube-curl-nm.XXXXXX")"
+nm_output="$(mktemp "${TMPDIR:-/tmp}/vitawave-curl-nm.XXXXXX")"
 trap 'rm -f "$nm_output"' EXIT
 "$nm_tool" -u "$curl_root/lib/libcurl.a" > "$nm_output"
 grep -q 'mbedtls_' "$nm_output" || fail "release curl is not linked to Mbed TLS"
@@ -86,7 +86,7 @@ if [[ -n "$vpk" ]]; then
   listing="$(unzip -Z1 "$vpk")"
   grep -qx 'licenses/Mbed-TLS.txt' <<<"$listing" || fail "VPK misses Mbed TLS license"
   grep -qx 'licenses/certifi-MPL-2.0.txt' <<<"$listing" || fail "VPK misses CA license notice"
-  grep -qx 'licenses/VitaTube.spdx' <<<"$listing" || fail "VPK misses SPDX SBOM"
+  grep -qx 'licenses/VitaWave.spdx' <<<"$listing" || fail "VPK misses SPDX SBOM"
   grep -qx 'licenses/release-provenance.txt' <<<"$listing" || fail "VPK misses dependency provenance"
   if grep -qx 'sce_sys/psvitaframe.png' <<<"$listing"; then
     fail "VPK still contains the unlicensed PS Vita frame"

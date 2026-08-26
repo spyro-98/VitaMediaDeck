@@ -33,7 +33,7 @@
  * The optional title/editor field is horizontally centred on the 960px screen
  * and the status indicators are pinned to the right edge:
  *
- *   left block   : logo 18..66, then "VitaTube" from x=80 in Inter 28px.
+ *   left block   : logo 18..66, then "VitaWave" from x=80 in Inter 28px.
  *                  8 glyphs, worst-case ~0.7em advance -> ~157px, ends ~237.
  *   search field : 430px wide (UNCHANGED: it still fits), centred ->
  *                  x = (960-430)/2 = 265, right edge 695.
@@ -462,9 +462,9 @@ static void draw_header(const char *query, int editing,
 		ui_font_draw_text(title_font, HEADER_NAME_X,
 		                       HEADER_NAME_BASELINE,
 		                       COLOR_TEXT, title_size,
-		                       "VitaTube");
+		                       "VitaWave");
 		if (g_brand_loading) {
-			int title_w = ui_font_text_width(title_font, title_size, "VitaTube");
+			int title_w = ui_font_text_width(title_font, title_size, "VitaWave");
 			float start_x = (float)(HEADER_NAME_X + title_w + 12);
 			int reduce_motion = vt_preferences_reduce_motion();
 			uint64_t phase = reduce_motion ? 0 :

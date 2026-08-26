@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_MINI_PLAYER_H
-#define VITATUBE_UI_MINI_PLAYER_H
+#ifndef VITAWAVE_UI_MINI_PLAYER_H
+#define VITAWAVE_UI_MINI_PLAYER_H
 
 #include "ui/touch.h"
 
@@ -34,4 +34,4 @@ int ui_mini_player_handle_touch(unsigned int touch_flags,
 /* Joins any pending cover fetch before closing network/GXM. */
 void ui_mini_player_shutdown(void);
 
-#endif /* VITATUBE_UI_MINI_PLAYER_H */
+#endif /* VITAWAVE_UI_MINI_PLAYER_H */

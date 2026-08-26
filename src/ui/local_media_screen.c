@@ -31,11 +31,11 @@
 #define LOCAL_MAX_ITEMS 65536
 #define LOCAL_PAGE_ITEMS 24
 #define LOCAL_SCAN_THREAD_STACK 0x40000
-#define LOCAL_INDEX_PATH "ux0:data/VitaTube/local_media.idx"
-#define LOCAL_INDEX_TEMP "ux0:data/VitaTube/local_media.tmp"
-#define LOCAL_INDEX_BACKUP "ux0:data/VitaTube/local_media.bak"
-#define LOCAL_GROUP_VIDEO_TEMP "ux0:data/VitaTube/local_video.tmp"
-#define LOCAL_GROUP_AUDIO_TEMP "ux0:data/VitaTube/local_audio.tmp"
+#define LOCAL_INDEX_PATH "ux0:data/VitaWave/local_media.idx"
+#define LOCAL_INDEX_TEMP "ux0:data/VitaWave/local_media.tmp"
+#define LOCAL_INDEX_BACKUP "ux0:data/VitaWave/local_media.bak"
+#define LOCAL_GROUP_VIDEO_TEMP "ux0:data/VitaWave/local_video.tmp"
+#define LOCAL_GROUP_AUDIO_TEMP "ux0:data/VitaWave/local_audio.tmp"
 #define LIST_X 52
 #define LIST_Y 122
 #define LIST_W 856
@@ -353,7 +353,7 @@ static int scan_media(LocalMediaIndexHeader *result_index) {
 	if (!result_index) return -1;
 	LocalMediaIndexHeader index;
 	memset(&index, 0, sizeof(index));
-	sceIoMkdir("ux0:data/VitaTube", 0777);
+	sceIoMkdir("ux0:data/VitaWave", 0777);
 	sceIoRemove(LOCAL_INDEX_TEMP);
 	sceIoRemove(LOCAL_GROUP_VIDEO_TEMP);
 	sceIoRemove(LOCAL_GROUP_AUDIO_TEMP);
@@ -471,7 +471,7 @@ static int local_scan_start(void) {
 	memset(&g_scan_job, 0, sizeof(g_scan_job));
 	g_scan_job.self = &g_scan_job;
 	g_scan_job.thid = sceKernelCreateThread(
-	    "VitaTubeMediaScan", local_scan_thread, 0x10000100,
+	    "VitaWaveMediaScan", local_scan_thread, 0x10000100,
 	    LOCAL_SCAN_THREAD_STACK, 0, 0, NULL);
 	if (g_scan_job.thid < 0) return g_scan_job.thid;
 	int ret = sceKernelStartThread(g_scan_job.thid, sizeof(g_scan_job.self),
@@ -1063,8 +1063,10 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			}
 			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 1) {
 				int index = screen_local_index(filter, selected);
-				if (index >= 0 && selected_out) *selected_out = g_items[index];
-				return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
+				if (index >= 0) {
+					if (selected_out) *selected_out = g_items[index];
+					return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
+				}
 			}
 			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 2)
 				delete_confirm = 1;
@@ -1099,7 +1101,15 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			filter = filter > 0 ? filter - 1 : 2;
 		if (focus_tabs && (nav & SCE_CTRL_RIGHT))
 			filter = filter < 2 ? filter + 1 : 0;
-		if (old_filter != filter) selected = top = 0;
+		if (old_filter != filter) {
+			selected = top = 0;
+			/* The destination tab may remember a different layout. Recompute it
+			 * in the same frame to avoid drawing or hit-testing one stale list/grid
+			 * frame after a tab switch. */
+			grid_mode = filter == 0 ? library_grid
+			          : (filter == 2 ? vt_preferences_local_music_grid()
+			                         : vt_preferences_local_video_grid());
+		}
 		int count = screen_count(filter);
 		/* An empty result set has no page item that can own focus. Keep the
 		 * selector on the filters instead of leaving an invisible focus target. */
@@ -1109,7 +1119,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			focus_tabs = 1;
 			nav &= ~SCE_CTRL_UP;
 		}
-		if (focus_tabs && (nav & SCE_CTRL_DOWN)) {
+		if (count > 0 && focus_tabs && (nav & SCE_CTRL_DOWN)) {
 			focus_tabs = 0;
 			nav &= ~SCE_CTRL_DOWN;
 		}
@@ -1148,13 +1158,17 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_CROSS) && count > 0) {
 			int index = screen_local_index(filter, selected);
-			if (selected_out) *selected_out = g_items[index];
-			return local_media_leave(UI_LOCAL_MEDIA_ACTION_PLAY);
+			if (index >= 0) {
+				if (selected_out) *selected_out = g_items[index];
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_PLAY);
+			}
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_TRIANGLE) && count > 0) {
 			int index = screen_local_index(filter, selected);
-			if (index >= 0 && selected_out) *selected_out = g_items[index];
-			return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
+			if (index >= 0) {
+				if (selected_out) *selected_out = g_items[index];
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
+			}
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_SQUARE) && count > 0)
 			delete_confirm = 1;
@@ -1163,7 +1177,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		if ((flags & UI_TOUCH_EVENT_UP) && !(flags & UI_TOUCH_EVENT_TAP) &&
 		    !focus_tabs && count > 0) {
 			int dy = touch.y - touch.down_y;
-			int step = grid_mode ? 3 : 3;
+			int step = grid_mode ? GRID_COLS : local_list_visible_rows();
 			if (dy < -36) selected += step;
 			else if (dy > 36) selected -= step;
 			if (selected < 0) selected = 0;
@@ -1179,6 +1193,11 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			for (int i = 0; i < 3; i++) if (ui_touch_hit_rect(touch.x, touch.y,
 			    416 + i * 166, 68, 154, 38)) {
 					filter = i; selected = top = 0; focus_tabs = 1;
+					grid_mode = filter == 0 ? library_grid
+					          : (filter == 2 ? vt_preferences_local_music_grid()
+					                         : vt_preferences_local_video_grid());
+					count = screen_count(filter);
+					break;
 				}
 			int touch_slots = grid_mode ? local_grid_visible_rows() * GRID_COLS
 			                            : local_list_visible_rows();
@@ -1195,8 +1214,10 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 				if (hit) {
 					selected = pos;
 					int index = screen_local_index(filter, selected);
-					if (selected_out) *selected_out = g_items[index];
-					return local_media_leave(UI_LOCAL_MEDIA_ACTION_PLAY);
+					if (index >= 0) {
+						if (selected_out) *selected_out = g_items[index];
+						return local_media_leave(UI_LOCAL_MEDIA_ACTION_PLAY);
+					}
 				}
 			}
 		}

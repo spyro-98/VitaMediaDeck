@@ -1,5 +1,5 @@
 /*
- * VitaTube - hardware decoder initialization (sceAvPlayer) + vita2d.
+ * VitaWave - hardware decoder initialization (sceAvPlayer) + vita2d.
  *
  * See avplayer_init.h for the list of verified sources. In summary, the
  * four "tricky" points of this module and their confirmation:
@@ -143,7 +143,7 @@ static void *av_allocate_texture(void *arg, uint32_t alignment, uint32_t size) {
 	opt.attr = SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT;
 	opt.alignment = alignment;
 
-	memblock = sceKernelAllocMemBlock("VitaTubeAvFrame",
+	memblock = sceKernelAllocMemBlock("VitaWaveAvFrame",
 	                                   SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW,
 	                                   size, &opt);
 	if (memblock < 0) {

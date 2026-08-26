@@ -1,8 +1,8 @@
-# VitaTube development status
+# VitaWave development status
 
 ## Current direction
 
-VitaTube is being developed as a local and authenticated-network media player.
+VitaWave is being developed as a local and authenticated-network media player.
 The application starts in Local Media and exposes only Local Media, Network
 Sources, Settings, and About from the shared sidebar.
 

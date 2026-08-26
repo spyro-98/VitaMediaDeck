@@ -1,5 +1,5 @@
-#ifndef VITATUBE_UI_RUNTIME_H
-#define VITATUBE_UI_RUNTIME_H
+#ifndef VITAWAVE_UI_RUNTIME_H
+#define VITAWAVE_UI_RUNTIME_H
 
 #include <vita2d.h>
 
@@ -29,4 +29,4 @@ int ui_runtime_is_ready(void);
 vita2d_font *ui_runtime_font(unsigned int size);
 vita2d_texture *ui_runtime_logo(void);
 
-#endif /* VITATUBE_UI_RUNTIME_H */
+#endif /* VITAWAVE_UI_RUNTIME_H */

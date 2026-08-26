@@ -1,9 +1,9 @@
-#ifndef VITATUBE_UI_BRAND_H
-#define VITATUBE_UI_BRAND_H
+#ifndef VITAWAVE_UI_BRAND_H
+#define VITAWAVE_UI_BRAND_H
 
 #include <stddef.h>
 
-/* VitaTube header shared by search, results, and the IME keyboard. */
+/* VitaWave header shared by search, results, and the IME keyboard. */
 void ui_brand_draw_header(const char *query);
 void ui_brand_draw_header_placeholder(const char *query, const char *placeholder);
 void ui_brand_set_loading(int loading);
@@ -33,4 +33,4 @@ void ui_brand_draw_status_indicators_alpha(float opacity);
 
 #define UI_BRAND_HEADER_HEIGHT 54
 
-#endif /* VITATUBE_UI_BRAND_H */
+#endif /* VITAWAVE_UI_BRAND_H */

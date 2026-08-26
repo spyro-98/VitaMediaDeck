@@ -1,0 +1,2 @@
+paramiko>=3.5,<5
+impacket==0.13.1

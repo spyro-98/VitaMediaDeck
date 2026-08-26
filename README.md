@@ -1,26 +1,26 @@
-# VitaTube
+# VitaWave
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 > [!IMPORTANT]
-> **Public beta** — VitaTube is available publicly, but remains in active
+> **Public beta** — VitaWave is available publicly, but remains in active
 > development. Expect rough edges and validate playback, network sources, and
 > UI behavior on your own PlayStation Vita before relying on it day to day.
 
 <p align="center">
-  <img src="sce_sys/vitatubelogoalpha.png" width="320" alt="VitaTube logo">
+  <img src="sce_sys/vitawavelogoalpha.png" width="320" alt="VitaWave logo">
 </p>
 
 <p align="center">
   <strong>A native local and authenticated-network media player for PlayStation Vita.</strong>
 </p>
 
-VitaTube plays video and music already owned and stored by the user. Media can
+VitaWave plays video and music already owned and stored by the user. Media can
 come from the Vita memory card or from an authenticated WebDAV, SFTP, or
 SMB server. Browsing, demuxing, hardware decoding, audio/video synchronization,
 and rendering all run on the console; no companion service is required.
 
-VitaTube does not discover, acquire, export, convert, or copy media from online
+VitaWave does not discover, acquire, export, convert, or copy media from online
 catalogues. It has no account integration with third-party media platforms and
 does not provide a download or audio-extraction feature.
 
@@ -58,7 +58,7 @@ does not provide a download or audio-extraction feature.
 | Source | Browsing and access contract | Current playback scope |
 | --- | --- | --- |
 | Local storage | Vita filesystem | Video and audio |
-| WebDAV | HTTPS only, username/password, verified CA, byte-range support | Remote video |
+| WebDAV | HTTPS only, username/password, public CA or explicitly confirmed SPKI pin, byte-range support | Remote video |
 | SFTP | Username/password plus explicitly confirmed SHA-256 host fingerprint | Remote video |
 | SMB | Authenticated SMB2/SMB3 share with message signing required | Remote video |
 
@@ -100,16 +100,18 @@ and presentation. This boundary lets new transports be added without coupling
 them to decoder internals.
 
 The three standalone package READMEs document their public APIs, lifecycle and
-copyable examples. VitaTube's `src/media/vita_decoder.c` is deliberately only a
+copyable examples. VitaWave's `src/media/vita_decoder.c` is deliberately only a
 small dispatcher: it opens the hardware package first and recreates the session
 through the software package on either startup or delayed runtime failure.
 
 ## Network security model
 
-- Saved source records contain protocol, endpoint, path, username, and the
-  approved SFTP fingerprint; passwords are not serialized.
-- WebDAV rejects clear-text `http://` endpoints and validates both the TLS
-  certificate chain and hostname against the bundled CA store.
+- Saved source records contain protocol, endpoint, path, username, and approved
+  SFTP/TLS fingerprints; passwords are not serialized.
+- WebDAV rejects clear-text `http://` endpoints. Public servers validate the TLS
+  certificate chain and hostname against the bundled CA store. A private or
+  self-signed server is accepted only after its displayed SPKI SHA-256 pin is
+  copied back and confirmed; a later key mismatch stops the session.
 - SFTP refuses authenticated I/O until the displayed SHA-256 server fingerprint
   is copied back and confirmed by the user. A later mismatch stops the session.
 - SMB guest access is not used and SMB message signing is required. Encryption
@@ -140,7 +142,7 @@ The complete context-sensitive reference is in [CONTROLS.md](mds/CONTROLS.md).
 
 ## Data layout
 
-Application state is stored below `ux0:data/VitaTube`:
+Application state is stored below `ux0:data/VitaWave`:
 
 ```text
 local_media.idx        paged local media index
@@ -178,11 +180,11 @@ Then build the application:
 
 ```sh
 # Keep the four repositories as siblings (or override the three
-# VITATUBE_*_PACKAGE CMake cache paths).
-# VitaTube/  vita-hw-decoder/  vita-sw-decoder/  vita-https/
+# VITAWAVE_*_PACKAGE CMake cache paths).
+# VitaWave/  vita-hw-decoder/  vita-sw-decoder/  vita-https/
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-unzip -t build/VitaTube.vpk
+unzip -t build/VitaWave.vpk
 ```
 
 Release builds use Cortex-A9/NEON optimization, `-O3`, LTO for the final
@@ -194,6 +196,14 @@ HTTPS and SFTP both use Mbed TLS in a releasable build.
 For a complete setup walkthrough, see
 [TOOLCHAIN_SETUP.md](mds/setup/TOOLCHAIN_SETUP.md).
 
+## Local streaming test servers
+
+Three read-only Python servers are included for testing the remote backends
+directly against a Mac on the same LAN: WebDAV HTTPS with byte ranges, SFTP and
+authenticated SMB2. Setup, copyable Terminal commands and the exact VitaWave
+source fields are documented in
+[tools/local_streaming/README.md](tools/local_streaming/README.md).
+
 ## Project structure
 
 ```text
@@ -204,7 +214,7 @@ src/media/               player UI, audio, presentation and local playback
 src/network/             WebDAV, SFTP and SMB stream factories
 src/ui/                  local library, network browser and application UI
 src/system/              clocks, display-awake and background-audio helpers
-tools/                   reproducible dependency builders
+tools/                   dependency builders and local streaming test servers
 mds/                     architecture, controls and development documents
 ```
 
@@ -216,8 +226,6 @@ mds/                     architecture, controls and development documents
 - The reusable player currently targets seekable H.264/AAC ISO-BMFF media.
 - Some local formats recognized by the library may still be rejected when they
   do not satisfy the active decoder/container contract.
-- SMB custom ports are not currently honored by the libsmb2 connection path;
-  use the standard server port.
 - The Vita display is 960×544. A 1280×720 source is decoded at source
   resolution and scaled only while GXM samples the NV12 surface for display.
 
@@ -232,19 +240,19 @@ mds/                     architecture, controls and development documents
 
 ## License
 
-VitaTube is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE).
+VitaWave is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE).
 Third-party components retain their own licenses and notices; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-VitaTube is an independent homebrew project. PlayStation, PS Vita, Sony, and
+VitaWave is an independent homebrew project. PlayStation, PS Vita, Sony, and
 their related marks belong to their respective owners.
 
 ## Release hardening
 
-Run `tools/release-audit.sh --vpk build/VitaTube.vpk` before distributing a
+Run `tools/release-audit.sh --vpk build/VitaWave.vpk` before distributing a
 binary. Every VPK must be accompanied by the archive produced by
 `tools/package-corresponding-source.sh` from the same checkout and dependency
-prefixes. `release/VitaTube.spdx` is the release SBOM and is embedded in both
+prefixes. `release/VitaWave.spdx` is the release SBOM and is embedded in both
 the VPK and the corresponding-source archive.
 
 The existing private development history contains retired experiments and is
@@ -252,6 +260,6 @@ not a publication artifact. `tools/public-export.sh` creates a history-free
 source snapshot. It does not push, publish or rewrite the local repository.
 
 The optional CI binary job remains disabled until the repository owner sets
-`VITATUBE_HW_REPOSITORY`, `VITATUBE_SW_REPOSITORY` and
-`VITATUBE_HTTPS_REPOSITORY`. This keeps hosting names and publication timing
+`VITAWAVE_HW_REPOSITORY`, `VITAWAVE_SW_REPOSITORY` and
+`VITAWAVE_HTTPS_REPOSITORY`. This keeps hosting names and publication timing
 under the owner's control.
