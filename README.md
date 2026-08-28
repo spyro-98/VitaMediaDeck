@@ -33,24 +33,24 @@ does not provide a download or audio-extraction feature.
 
 <table>
   <tr>
-    <td width="50%" align="center">
+    <td colspan="2" align="center">
       <img src="screenshots/hardware-decoder.jpeg" alt="VitaWave hardware H.264 decoder running on PlayStation Vita">
     </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Hardware H.264 decoder</sub></td>
+  </tr>
+  <tr>
     <td width="50%" align="center">
       <img src="screenshots/software-decoder.jpeg" alt="VitaWave software H.264 decoder running on PlayStation Vita">
     </td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Hardware H.264 decoder</sub></td>
-    <td align="center"><sub>Software FFmpeg decoder</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">
+    <td width="50%" align="center">
       <img src="screenshots/music-player.jpeg" alt="VitaWave music player running on PlayStation Vita">
     </td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><sub>Local music playback</sub></td>
+    <td align="center"><sub>Software FFmpeg decoder</sub></td>
+    <td align="center"><sub>Local music playback</sub></td>
   </tr>
 </table>
 
