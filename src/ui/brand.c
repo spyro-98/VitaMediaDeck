@@ -26,18 +26,18 @@
 #define HEADER_ICON_X 18
 #define HEADER_ICON_Y ((UI_BRAND_HEADER_HEIGHT - HEADER_ICON_SIZE) / 2)
 #define HEADER_NAME_X (HEADER_ICON_X + HEADER_ICON_SIZE + 14)
-#define HEADER_NAME_BASELINE ((UI_BRAND_HEADER_HEIGHT + UI_FONT_DISPLAY) / 2 - 3)
 
 /* --- Header layout -------------------------------------------------------
  *
  * The optional title/editor field is horizontally centred on the 960px screen
  * and the status indicators are pinned to the right edge:
  *
- *   left block   : logo 18..66, then "VitaWave" from x=80 in Inter 28px.
- *                  8 glyphs, worst-case ~0.7em advance -> ~157px, ends ~237.
+ *   left block   : logo 18..66, then "VitaMediaDeck" from x=80. The title
+ *                  size is reduced only as far as needed to preserve a 12px
+ *                  gap before the centred search field. Loading dots are
+ *                  included in that width budget.
  *   search field : 430px wide (UNCHANGED: it still fits), centred ->
  *                  x = (960-430)/2 = 265, right edge 695.
- *                  Gap to the title: 265 - 241 = 24px minimum. OK.
  *   status block : leftmost possible x is
  *                    960 - 16 (right margin)
  *                        - 33 (battery incl. positive terminal)
@@ -55,6 +55,8 @@
 #define SEARCH_CLEAR_SIZE 34
 #define SEARCH_CLEAR_X (SEARCH_BOX_X + SEARCH_BOX_W - SEARCH_CLEAR_SIZE - 8)
 #define SEARCH_CLEAR_Y (SEARCH_BOX_Y + (SEARCH_BOX_H - SEARCH_CLEAR_SIZE) / 2)
+#define HEADER_NAME_MAX_W (SEARCH_BOX_X - HEADER_NAME_X - 12)
+#define HEADER_LOADING_RESERVE_W 46
 
 #define COLOR_BG      VT_THEME_BG
 #define COLOR_TEXT    VT_THEME_TEXT
@@ -459,12 +461,20 @@ static void draw_header(const char *query, int editing,
 		vita2d_font *display = ui_runtime_font(UI_FONT_DISPLAY);
 		vita2d_font *title_font = display ? display : font;
 		unsigned title_size = display ? UI_FONT_DISPLAY : UI_FONT_BODY;
+		int reserved_width = g_brand_loading ? HEADER_LOADING_RESERVE_W : 0;
+		while (title_size > UI_FONT_SMALL &&
+		       ui_font_text_width(title_font, title_size, "VitaMediaDeck") +
+		           reserved_width > HEADER_NAME_MAX_W) {
+			title_size--;
+		}
+		float title_baseline =
+			(float)((UI_BRAND_HEADER_HEIGHT + (int)title_size) / 2 - 3);
 		ui_font_draw_text(title_font, HEADER_NAME_X,
-		                       HEADER_NAME_BASELINE,
+		                       title_baseline,
 		                       COLOR_TEXT, title_size,
-		                       "VitaWave");
+		                       "VitaMediaDeck");
 		if (g_brand_loading) {
-			int title_w = ui_font_text_width(title_font, title_size, "VitaWave");
+			int title_w = ui_font_text_width(title_font, title_size, "VitaMediaDeck");
 			float start_x = (float)(HEADER_NAME_X + title_w + 12);
 			int reduce_motion = vt_preferences_reduce_motion();
 			uint64_t phase = reduce_motion ? 0 :

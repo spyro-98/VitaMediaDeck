@@ -161,7 +161,7 @@ static int play_local_video(const VtLocalMediaItem *item) {
 	};
 	uint64_t last_position = 0;
 	int ret = vt_hw_player_screen_run(&source, &last_position);
-	log_save(VITAWAVE_SESSION_LOG_PATH);
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	vt_playback_history_update(id, last_position, item->duration_ms);
 	if (ret < 0)
 		ui_message_show(vt_i18n_str(VT_STR_MAIN_UNSUPPORTED_MEDIA),
@@ -236,7 +236,7 @@ static int browse_network(void) {
 		vt_background_playback_request_stop();
 		uint64_t ignored = 0;
 		int ret = vt_hw_player_screen_run(&source, &ignored);
-		log_save(VITAWAVE_SESSION_LOG_PATH);
+		log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 		memset(&selection.credential, 0, sizeof(selection.credential));
 		memset(&remote.credential, 0, sizeof(remote.credential));
 		if (ret < 0)

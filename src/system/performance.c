@@ -21,7 +21,7 @@ void vt_performance_begin_video(VtPerformanceClockGuard *guard,
 
 	int arm_ret = 0, bus_ret = 0, gpu_ret = 0, xbar_ret = 0;
 	/* App mode is an exact, reproducible profile, not a lower-bound hint.  The
-	 * previous implementation only raised clocks, so selecting VitaWave while
+	 * previous implementation only raised clocks, so selecting VitaMediaDeck while
 	 * a stale PSVshell value was higher looked as if the preference had been
 	 * ignored.  In PSVshell mode this whole block is skipped: no detection or
 	 * heuristic is allowed to change ownership behind the user's back. */
@@ -30,7 +30,7 @@ void vt_performance_begin_video(VtPerformanceClockGuard *guard,
 		arm_ret = scePowerSetArmClockFrequency(VT_VIDEO_DEFAULT_ARM_MHZ);
 		guard->changed_arm_clock = arm_ret >= 0;
 	}
-	/* VitaWave's deterministic profile is the same at every selectable quality:
+	/* VitaMediaDeck's deterministic profile is the same at every selectable quality:
 	 * CPU 444, ES4/GPU 222, BUS 222, XBAR 111 MHz. This avoids a session
 	 * silently inheriting a slower firmware clock merely because it is 30 fps. */
 	if (guard->app_owns_clocks) {

@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_I18N_STRINGS_H
-#define VITAWAVE_I18N_STRINGS_H
+#ifndef VITAMEDIADECK_I18N_STRINGS_H
+#define VITAMEDIADECK_I18N_STRINGS_H
 
 /* Localizable string-key list generated from the X-macro tables in
  * i18n/strings_*.def. Each UI module owns one file, allowing independent
@@ -13,4 +13,4 @@ typedef enum {
 	VT_STRING_COUNT
 } VtStringId;
 
-#endif /* VITAWAVE_I18N_STRINGS_H */
+#endif /* VITAMEDIADECK_I18N_STRINGS_H */

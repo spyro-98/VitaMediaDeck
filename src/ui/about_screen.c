@@ -214,7 +214,7 @@ int ui_about_screen(int player_context) {
 		}
 		if (display) {
 			ui_font_draw_text(display, 174, y + 38, COLOR_TEXT,
-			                     UI_FONT_DISPLAY, "VitaWave");
+			                     UI_FONT_DISPLAY, "VitaMediaDeck");
 		}
 		if (small) {
 			ui_font_draw_text(small, 174, y + 68, COLOR_MUTED, UI_FONT_SMALL,

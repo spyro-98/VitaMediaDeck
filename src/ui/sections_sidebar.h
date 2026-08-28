@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_UI_SECTIONS_SIDEBAR_H
-#define VITAWAVE_UI_SECTIONS_SIDEBAR_H
+#ifndef VITAMEDIADECK_UI_SECTIONS_SIDEBAR_H
+#define VITAMEDIADECK_UI_SECTIONS_SIDEBAR_H
 
 #include <stdint.h>
 
@@ -54,4 +54,4 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
 void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar);
 void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor);
 
-#endif /* VITAWAVE_UI_SECTIONS_SIDEBAR_H */
+#endif /* VITAMEDIADECK_UI_SECTIONS_SIDEBAR_H */

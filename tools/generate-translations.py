@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Generate complete VitaWave translation tables from the English catalog.
+"""Generate complete VitaMediaDeck translation tables from the English catalog.
 
-The generated files are reviewed artifacts used at build time; VitaWave never
+The generated files are reviewed artifacts used at build time; VitaMediaDeck never
 contacts a translation service at runtime. printf placeholders are replaced by
 opaque sentinels during translation and validated before any file is written.
 """

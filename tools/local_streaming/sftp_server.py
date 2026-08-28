@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only password-authenticated SFTP server for VitaWave hardware tests."""
+"""Read-only password-authenticated SFTP server for VitaMediaDeck hardware tests."""
 
 from __future__ import annotations
 
@@ -149,11 +149,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--media-dir", type=Path, default=default_media_dir())
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=2222)
-    parser.add_argument("--username", default="vitawave")
-    parser.add_argument("--password", default="vitawave")
+    parser.add_argument("--username", default="vitamediadeck")
+    parser.add_argument("--password", default="vitamediadeck")
     parser.add_argument(
         "--state-dir", type=Path,
-        default=Path.home() / "Library/Caches/VitaWave/local-streaming/sftp",
+        default=Path.home() / "Library/Caches/VitaMediaDeck/local-streaming/sftp",
     )
     return parser.parse_args()
 
@@ -186,13 +186,13 @@ def main() -> int:
     listener.settimeout(0.5)
     host = args.bind if args.bind not in ("0.0.0.0", "localhost") \
         else lan_ipv4_address()
-    print("\nSFTP VitaWave avviato")
+    print("\nSFTP VitaMediaDeck avviato")
     print(f"  Media:       {root}")
     print(f"  Endpoint:    {host}:{args.port}")
     print(f"  Utente:      {args.username}")
     print(f"  Password:    {args.password}")
     print(f"  Fingerprint: {fingerprint}")
-    print("\nIn VitaWave: SFTP, host = IP del Mac, porta = quella sopra, ")
+    print("\nIn VitaMediaDeck: SFTP, host = IP del Mac, porta = quella sopra, ")
     print("percorso iniziale = /. Confronta la fingerprint al primo accesso.")
     print("Interrompi il server con Ctrl-C.\n")
 

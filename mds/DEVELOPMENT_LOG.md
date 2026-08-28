@@ -1,8 +1,8 @@
-# VitaWave development status
+# VitaMediaDeck development status
 
 ## Current direction
 
-VitaWave is being developed as a local and authenticated-network media player.
+VitaMediaDeck is being developed as a local and authenticated-network media player.
 The application starts in Local Media and exposes only Local Media, Network
 Sources, Settings, and About from the shared sidebar.
 

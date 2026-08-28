@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_UI_TEXT_READER_H
-#define VITAWAVE_UI_TEXT_READER_H
+#ifndef VITAMEDIADECK_UI_TEXT_READER_H
+#define VITAMEDIADECK_UI_TEXT_READER_H
 
 /* Full, scrollable UTF-8 text view. The source remains owned by the caller
  * and is never copied into a smaller/truncated display buffer. */

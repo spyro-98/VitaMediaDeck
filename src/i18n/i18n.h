@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_I18N_I18N_H
-#define VITAWAVE_I18N_I18N_H
+#ifndef VITAMEDIADECK_I18N_I18N_H
+#define VITAMEDIADECK_I18N_I18N_H
 
 #include "i18n/strings.h"
 
@@ -32,4 +32,4 @@ int vt_i18n_set_language(int language);
 /* Localized string for the currently active language. */
 const char *vt_i18n_str(VtStringId id);
 
-#endif /* VITAWAVE_I18N_I18N_H */
+#endif /* VITAMEDIADECK_I18N_I18N_H */

@@ -10,8 +10,8 @@ if [[ -z "${VITASDK:-}" ]]; then
   exit 1
 fi
 vita_sdk="$VITASDK"
-prefix="${VITAWAVE_H264_VITA_ROOT:-$repo_root/build/deps/ffmpeg-vita-hw}"
-jobs="${VITAWAVE_FFMPEG_JOBS:-8}"
+prefix="${VITAMEDIADECK_H264_VITA_ROOT:-$repo_root/build/deps/ffmpeg-vita-hw}"
+jobs="${VITAMEDIADECK_FFMPEG_JOBS:-8}"
 
 ffmpeg_commit="ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2"
 wiliwili_commit="88e5876bea9502d06f46a8656e3530684d3aaf7d"
@@ -22,7 +22,7 @@ if [[ ! -x "$vita_sdk/bin/arm-vita-eabi-gcc" ]]; then
   exit 1
 fi
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/vitawave-ffmpeg-hw.XXXXXX")"
+work="$(mktemp -d "${TMPDIR:-/tmp}/vitamediadeck-ffmpeg-hw.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 git clone --quiet https://github.com/FFmpeg/FFmpeg.git "$work/ffmpeg"

@@ -1,4 +1,4 @@
-# VitaWave toolchain setup
+# VitaMediaDeck toolchain setup
 
 ## Host prerequisites
 
@@ -68,26 +68,26 @@ MOV/MP4/Matroska pieces, builds with Cortex-A9/NEON `-O3` and LTO, verifies the
 Optional custom prefixes:
 
 ```sh
-export VITAWAVE_H264_VITA_ROOT=/absolute/ffmpeg-prefix
+export VITAMEDIADECK_H264_VITA_ROOT=/absolute/ffmpeg-prefix
 ./tools/build-ffmpeg-vita-hw.sh
 
 cmake -S . -B build \
-  -DVITAWAVE_H264_VITA_ROOT="$VITAWAVE_H264_VITA_ROOT" \
-  -DVITAWAVE_LIBSSH2_ROOT=/absolute/libssh2-prefix \
-  -DVITAWAVE_HTTPS_CURL_ROOT=/absolute/curl-mbedtls-prefix
+  -DVITAMEDIADECK_H264_VITA_ROOT="$VITAMEDIADECK_H264_VITA_ROOT" \
+  -DVITAMEDIADECK_LIBSSH2_ROOT=/absolute/libssh2-prefix \
+  -DVITAMEDIADECK_HTTPS_CURL_ROOT=/absolute/curl-mbedtls-prefix
 ```
 
-## Build VitaWave
+## Build VitaMediaDeck
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-unzip -t build/VitaWave.vpk
-shasum -a 256 build/VitaWave.vpk
+unzip -t build/VitaMediaDeck.vpk
+shasum -a 256 build/VitaMediaDeck.vpk
 ```
 
-Expected outputs include `build/vitawave`, `build/vitawave.self`, and
-`build/VitaWave.vpk`.
+Expected outputs include `build/vitamediadeck`, `build/vitamediadeck.self`, and
+`build/VitaMediaDeck.vpk`.
 
 ## Packaging profile
 
@@ -106,7 +106,7 @@ archive. Run the corresponding `vdpm` package or pinned builder again.
 ### Missing `libssh2.a`
 
 Run `tools/build-libssh2-vita.sh`, or pass the matching prefix with
-`-DVITAWAVE_LIBSSH2_ROOT=...`.
+`-DVITAMEDIADECK_LIBSSH2_ROOT=...`.
 
 ### Missing `h264_vita`
 

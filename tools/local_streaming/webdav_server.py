@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only HTTPS WebDAV + byte-range server for VitaWave hardware tests."""
+"""Read-only HTTPS WebDAV + byte-range server for VitaMediaDeck hardware tests."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def ensure_certificate(state_dir: Path, addresses: list[str]) -> tuple[Path, Pat
             path.unlink(missing_ok=True)
         subprocess.run(
             [openssl, "req", "-x509", "-newkey", "rsa:2048", "-sha256",
-             "-nodes", "-days", "3650", "-subj", "/CN=VitaWave local WebDAV",
+             "-nodes", "-days", "3650", "-subj", "/CN=VitaMediaDeck local WebDAV",
              "-addext", "subjectAltName=" + ",".join(sans),
              "-keyout", str(temporary_key), "-out", str(temporary_certificate)],
             check=True,
@@ -109,8 +109,8 @@ def ensure_certificate(state_dir: Path, addresses: list[str]) -> tuple[Path, Pat
     return certificate, private_key, certificate_public_key_pin(openssl, certificate)
 
 
-class VitaWaveWebDavHandler(BaseHTTPRequestHandler):
-    server_version = "VitaWaveWebDAV/1.0"
+class VitaMediaDeckWebDavHandler(BaseHTTPRequestHandler):
+    server_version = "VitaMediaDeckWebDAV/1.0"
     protocol_version = "HTTP/1.1"
 
     @property
@@ -128,7 +128,7 @@ class VitaWaveWebDavHandler(BaseHTTPRequestHandler):
         if hmac.compare_digest(supplied, expected):
             return True
         self.send_response(401)
-        self.send_header("WWW-Authenticate", 'Basic realm="VitaWave local test"')
+        self.send_header("WWW-Authenticate", 'Basic realm="VitaMediaDeck local test"')
         self.send_header("Content-Length", "0")
         self.end_headers()
         return False
@@ -300,11 +300,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--media-dir", type=Path, default=default_media_dir())
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8443)
-    parser.add_argument("--username", default="vitawave")
-    parser.add_argument("--password", default="vitawave")
+    parser.add_argument("--username", default="vitamediadeck")
+    parser.add_argument("--password", default="vitamediadeck")
     parser.add_argument(
         "--state-dir", type=Path,
-        default=Path.home() / "Library/Caches/VitaWave/local-streaming/webdav",
+        default=Path.home() / "Library/Caches/VitaMediaDeck/local-streaming/webdav",
     )
     return parser.parse_args()
 
@@ -327,7 +327,7 @@ def main() -> int:
     except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
         print(f"Impossibile preparare TLS: {error}", file=sys.stderr)
         return 1
-    server = ThreadingHTTPServer((args.bind, args.port), VitaWaveWebDavHandler)
+    server = ThreadingHTTPServer((args.bind, args.port), VitaMediaDeckWebDavHandler)
     server.daemon_threads = True
     server.media_root = root  # type: ignore[attr-defined]
     server.username = args.username  # type: ignore[attr-defined]
@@ -338,13 +338,13 @@ def main() -> int:
     server.socket = context.wrap_socket(server.socket, server_side=True)
     host = args.bind if args.bind not in ("0.0.0.0", "localhost") else next(
         (item for item in addresses if not item.startswith("127.")), "127.0.0.1")
-    print("\nWebDAV HTTPS VitaWave avviato")
+    print("\nWebDAV HTTPS VitaMediaDeck avviato")
     print(f"  Media:      {root}")
     print(f"  URL:        https://{host}:{args.port}/")
     print(f"  Utente:     {args.username}")
     print(f"  Password:   {args.password}")
     print(f"  Pin TLS:    {pin}")
-    print("\nIn VitaWave: WebDAV, host = IP del Mac, porta = quella sopra, ")
+    print("\nIn VitaMediaDeck: WebDAV, host = IP del Mac, porta = quella sopra, ")
     print("percorso iniziale vuoto. Al primo accesso confronta e conferma il pin TLS.")
     print("Interrompi il server con Ctrl-C.\n")
     try:

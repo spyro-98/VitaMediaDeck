@@ -1,4 +1,4 @@
-# VitaWave controls
+# VitaMediaDeck controls
 
 ## Shared navigation
 
@@ -54,7 +54,7 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 
 The password can be entered in the add/edit form and is retained while the app
 is running. The System setting can optionally remember it in plaintext at
-`ux0:data/VitaWave/network/passwords.txt`; this is disabled by default and the
+`ux0:data/VitaMediaDeck/network/passwords.txt`; this is disabled by default and the
 file is removed when the option is disabled. The first SFTP connection presents
 the server SHA-256 fingerprint on a read-only confirmation page.
 

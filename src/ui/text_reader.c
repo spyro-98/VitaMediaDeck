@@ -119,7 +119,7 @@ static void draw_reader(const char *parent_title, const char *title,
 		draw_reader_tabs(body, parent_title, title);
 	else if (body)
 		ui_font_draw_text(body, 44, 91, VT_THEME_TEXT, UI_FONT_BODY,
-		                       title && title[0] ? title : "VitaWave");
+		                       title && title[0] ? title : "VitaMediaDeck");
 	ui_panel(32, tabbed ? 124 : 98, 896, tabbed ? 394 : 420,
 	         VT_THEME_SURFACE, VT_THEME_BLUE_BRIGHT, 0);
 	vita2d_set_clip_rectangle(40, tabbed ? 122 : 96, 920, 522);

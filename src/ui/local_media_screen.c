@@ -31,11 +31,11 @@
 #define LOCAL_MAX_ITEMS 65536
 #define LOCAL_PAGE_ITEMS 24
 #define LOCAL_SCAN_THREAD_STACK 0x40000
-#define LOCAL_INDEX_PATH "ux0:data/VitaWave/local_media.idx"
-#define LOCAL_INDEX_TEMP "ux0:data/VitaWave/local_media.tmp"
-#define LOCAL_INDEX_BACKUP "ux0:data/VitaWave/local_media.bak"
-#define LOCAL_GROUP_VIDEO_TEMP "ux0:data/VitaWave/local_video.tmp"
-#define LOCAL_GROUP_AUDIO_TEMP "ux0:data/VitaWave/local_audio.tmp"
+#define LOCAL_INDEX_PATH "ux0:data/VitaMediaDeck/local_media.idx"
+#define LOCAL_INDEX_TEMP "ux0:data/VitaMediaDeck/local_media.tmp"
+#define LOCAL_INDEX_BACKUP "ux0:data/VitaMediaDeck/local_media.bak"
+#define LOCAL_GROUP_VIDEO_TEMP "ux0:data/VitaMediaDeck/local_video.tmp"
+#define LOCAL_GROUP_AUDIO_TEMP "ux0:data/VitaMediaDeck/local_audio.tmp"
 #define LIST_X 52
 #define LIST_Y 122
 #define LIST_W 856
@@ -355,7 +355,7 @@ static int scan_media(LocalMediaIndexHeader *result_index) {
 	if (!result_index) return -1;
 	LocalMediaIndexHeader index;
 	memset(&index, 0, sizeof(index));
-	sceIoMkdir("ux0:data/VitaWave", 0777);
+	sceIoMkdir("ux0:data/VitaMediaDeck", 0777);
 	sceIoRemove(LOCAL_INDEX_TEMP);
 	sceIoRemove(LOCAL_GROUP_VIDEO_TEMP);
 	sceIoRemove(LOCAL_GROUP_AUDIO_TEMP);
@@ -473,7 +473,7 @@ static int local_scan_start(void) {
 	memset(&g_scan_job, 0, sizeof(g_scan_job));
 	g_scan_job.self = &g_scan_job;
 	g_scan_job.thid = sceKernelCreateThread(
-	    "VitaWaveMediaScan", local_scan_thread, 0x10000100,
+	    "VitaMediaDeckMediaScan", local_scan_thread, 0x10000100,
 	    LOCAL_SCAN_THREAD_STACK, 0, 0, NULL);
 	if (g_scan_job.thid < 0) return g_scan_job.thid;
 	int ret = sceKernelStartThread(g_scan_job.thid, sizeof(g_scan_job.self),

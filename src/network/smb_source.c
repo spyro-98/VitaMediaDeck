@@ -44,7 +44,7 @@ static int smb_connect(const VtNetworkSource *source,
 	smb2_set_user(context, source->username);
 	smb2_set_domain(context, source->domain);
 	smb2_set_password(context, credential ? credential->password : "");
-	/* Anonymous/guest access is deliberately outside VitaWave's network-source
+	/* Anonymous/guest access is deliberately outside VitaMediaDeck's network-source
 	 * contract. */
 	char server[VT_NETWORK_HOST_MAX + 16];
 	smb_server_address(source, server, sizeof(server));

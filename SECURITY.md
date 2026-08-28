@@ -14,5 +14,5 @@ network-source type and whether the issue exposes credentials or bypasses TLS,
 host-key, SMB signing or certificate validation. Remove personal media and
 secrets from logs and dumps.
 
-VitaWave intentionally has no option to disable TLS verification. A build that
+VitaMediaDeck intentionally has no option to disable TLS verification. A build that
 links the legacy VitaSDK OpenSSL libcurl is not a supported or releasable build.

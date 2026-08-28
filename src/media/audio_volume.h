@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_MEDIA_AUDIO_VOLUME_H
-#define VITAWAVE_MEDIA_AUDIO_VOLUME_H
+#ifndef VITAMEDIADECK_MEDIA_AUDIO_VOLUME_H
+#define VITAMEDIADECK_MEDIA_AUDIO_VOLUME_H
 
 /* Shared perceived volume for every audio backend. Values above 100 are
  * implemented by the decoder path as saturated PCM amplification. */

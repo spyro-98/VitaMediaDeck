@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_MEDIA_BACKGROUND_PLAYBACK_H
-#define VITAWAVE_MEDIA_BACKGROUND_PLAYBACK_H
+#ifndef VITAMEDIADECK_MEDIA_BACKGROUND_PLAYBACK_H
+#define VITAMEDIADECK_MEDIA_BACKGROUND_PLAYBACK_H
 
 #include <stdint.h>
 
@@ -69,4 +69,4 @@ int vt_background_playback_draw_video(float x, float y,
 	                                  float width, float height);
 void vt_background_playback_video_render_complete(void);
 
-#endif /* VITAWAVE_MEDIA_BACKGROUND_PLAYBACK_H */
+#endif /* VITAMEDIADECK_MEDIA_BACKGROUND_PLAYBACK_H */

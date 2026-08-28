@@ -1,11 +1,11 @@
 # Standalone package integration
 
-VitaWave consumes three independent repositories. The default layout keeps
+VitaMediaDeck consumes three independent repositories. The default layout keeps
 them side by side:
 
 ```text
 personale/
-├── VitaWave/
+├── VitaMediaDeck/
 ├── vita-hw-decoder/
 ├── vita-sw-decoder/
 └── vita-https/
@@ -15,19 +15,19 @@ The paths can instead be supplied during configuration:
 
 ```sh
 cmake -S . -B build \
-  -DVITAWAVE_HW_DECODER_PACKAGE=/absolute/path/vita-hw-decoder \
-  -DVITAWAVE_SW_DECODER_PACKAGE=/absolute/path/vita-sw-decoder \
-  -DVITAWAVE_HTTPS_PACKAGE=/absolute/path/vita-https
+  -DVITAMEDIADECK_HW_DECODER_PACKAGE=/absolute/path/vita-hw-decoder \
+  -DVITAMEDIADECK_SW_DECODER_PACKAGE=/absolute/path/vita-sw-decoder \
+  -DVITAMEDIADECK_HTTPS_PACKAGE=/absolute/path/vita-https
 ```
 
-## What VitaWave links
+## What VitaMediaDeck links
 
 ```cmake
-add_subdirectory("${VITAWAVE_HW_DECODER_PACKAGE}" ...)
-add_subdirectory("${VITAWAVE_SW_DECODER_PACKAGE}" ...)
-add_subdirectory("${VITAWAVE_HTTPS_PACKAGE}" ...)
+add_subdirectory("${VITAMEDIADECK_HW_DECODER_PACKAGE}" ...)
+add_subdirectory("${VITAMEDIADECK_SW_DECODER_PACKAGE}" ...)
+add_subdirectory("${VITAMEDIADECK_HTTPS_PACKAGE}" ...)
 
-target_link_libraries(vitawave PRIVATE
+target_link_libraries(vitamediadeck PRIVATE
   VitaHwDecoder::VitaHwDecoder
   VitaSwDecoder::VitaSwDecoder
   VitaHttps::VitaHttps)
@@ -54,18 +54,18 @@ deterministic and reusable.
 
 ## HTTPS ownership
 
-VitaWave calls `vita_https_init()` before network-source initialization and
+VitaMediaDeck calls `vita_https_init()` before network-source initialization and
 `vita_https_shutdown()` at application teardown. WebDAV listing uses
 `vita_https_perform()`. WebDAV playback uses
 `vita_https_open_range_stream()`, which verifies an actual one-byte `206`
-response and returns a cached seekable cursor. VitaWave does not initialize
+response and returns a cached seekable cursor. VitaMediaDeck does not initialize
 libcurl/Mbed TLS or embed a second CA bundle.
 
 SFTP and SMB keep their protocol libraries but share the network lifecycle
 initialized by `vita-https`.
 
 For release builds, `vita-https/tools/build-curl-mbedtls.sh` must run first and
-`VITAWAVE_HTTPS_CURL_ROOT` must identify its output. The ordinary VitaSDK
+`VITAMEDIADECK_HTTPS_CURL_ROOT` must identify its output. The ordinary VitaSDK
 libcurl/OpenSSL archives are not an accepted fallback. `tools/build-libssh2-vita.sh`
 also builds libssh2 with Mbed TLS so the final executable contains no legacy
 OpenSSL symbols.

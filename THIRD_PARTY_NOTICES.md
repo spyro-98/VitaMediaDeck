@@ -1,6 +1,6 @@
 # Third-party notices
 
-VitaWave is distributed under GPL-3.0-only. See `LICENSE`. The following
+VitaMediaDeck is distributed under GPL-3.0-only. See `LICENSE`. The following
 components remain governed by their own licenses and copyright notices.
 
 ## FFmpeg and h264_vita
@@ -22,13 +22,13 @@ and installs the FFmpeg LGPL text for inclusion in the VPK.
 - **libssh2**, BSD 3-Clause: https://github.com/libssh2/libssh2
 - **libsmb2**, LGPL-2.1-or-later: https://github.com/sahlberg/libsmb2
 - **libxml2**, MIT: https://gitlab.gnome.org/GNOME/libxml2
-- **Mbed TLS 3.6.5**, Apache-2.0 OR GPL-2.0-or-later; VitaWave selects
+- **Mbed TLS 3.6.5**, Apache-2.0 OR GPL-2.0-or-later; VitaMediaDeck selects
   Apache-2.0: https://github.com/Mbed-TLS/mbedtls
 - **zstd**, BSD 3-Clause or GPL-2.0: https://github.com/facebook/zstd
 - **zlib**, zlib license: https://zlib.net/
 
 libcurl and libssh2 are both built with the Mbed TLS backend. OpenSSL is not
-part of a releasable VitaWave binary. The pinned builders install licenses,
+part of a releasable VitaMediaDeck binary. The pinned builders install licenses,
 source archives and build provenance beside their generated libraries.
 
 ## Media, UI and runtime libraries
@@ -57,7 +57,7 @@ Its text is stored in `assets/fonts/Inter-OFL.txt` and packaged as
 
 ## VitaSDK
 
-VitaWave is built with VitaSDK, vita-toolchain, Vita headers, and VitaSDK port
+VitaMediaDeck is built with VitaSDK, vita-toolchain, Vita headers, and VitaSDK port
 packages. Each project and package keeps its own license:
 
 - https://vitasdk.org/
@@ -68,7 +68,7 @@ packages. Each project and package keeps its own license:
 
 Component license texts included in the VPK remain available in its
 `licenses/` directory. PlayStation, PS Vita, Sony, and related marks belong to
-their respective owners. VitaWave is an independent homebrew project.
+their respective owners. VitaMediaDeck is an independent homebrew project.
 
 The repository and VPK do not include Sony console photographs, system
 software, keys or proprietary SDK files. The application name and original

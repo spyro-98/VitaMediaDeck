@@ -1,26 +1,26 @@
-# VitaWave
+# VitaMediaDeck
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 > [!IMPORTANT]
-> **Public beta** — VitaWave is available publicly, but remains in active
+> **Public beta** — VitaMediaDeck is available publicly, but remains in active
 > development. Expect rough edges and validate playback, network sources, and
 > UI behavior on your own PlayStation Vita before relying on it day to day.
 
 <p align="center">
-  <img src="sce_sys/icon0.png" width="128" height="128" alt="VitaWave app icon">
+  <img src="sce_sys/icon0.png" width="128" height="128" alt="VitaMediaDeck app icon">
 </p>
 
 <p align="center">
   <strong>A native local and authenticated-network media player for PlayStation Vita.</strong>
 </p>
 
-VitaWave plays video and music already owned and stored by the user. Media can
+VitaMediaDeck plays video and music already owned and stored by the user. Media can
 come from the Vita memory card or from an authenticated WebDAV, SFTP, or
 SMB server. Browsing, demuxing, hardware decoding, audio/video synchronization,
 and rendering all run on the console; no companion service is required.
 
-VitaWave does not discover, acquire, export, convert, or copy media from online
+VitaMediaDeck does not discover, acquire, export, convert, or copy media from online
 catalogues. It has no account integration with third-party media platforms and
 does not provide a download or audio-extraction feature.
 
@@ -34,7 +34,7 @@ does not provide a download or audio-extraction feature.
 <table>
   <tr>
     <td colspan="2" align="center">
-      <img src="screenshots/hardware-decoder.jpeg" alt="VitaWave hardware H.264 decoder running on PlayStation Vita">
+      <img src="screenshots/hardware-decoder.jpeg" alt="VitaMediaDeck hardware H.264 decoder running on PlayStation Vita">
     </td>
   </tr>
   <tr>
@@ -42,10 +42,10 @@ does not provide a download or audio-extraction feature.
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/software-decoder.jpeg" alt="VitaWave software H.264 decoder running on PlayStation Vita">
+      <img src="screenshots/software-decoder.jpeg" alt="VitaMediaDeck software H.264 decoder running on PlayStation Vita">
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/music-player.jpeg" alt="VitaWave music player running on PlayStation Vita">
+      <img src="screenshots/music-player.jpeg" alt="VitaMediaDeck music player running on PlayStation Vita">
     </td>
   </tr>
   <tr>
@@ -81,7 +81,7 @@ does not provide a download or audio-extraction feature.
   repositories, each with an installable CMake target and minimal example.
 - **Privacy-conscious state:** remote passwords are session-only by default.
   An explicit Settings opt-in stores them unencrypted at
-  `ux0:data/VitaWave/network/passwords.txt`; the path and plaintext warning are
+  `ux0:data/VitaMediaDeck/network/passwords.txt`; the path and plaintext warning are
   displayed beside the toggle.
 
 ## Media sources
@@ -132,7 +132,7 @@ and presentation. This boundary lets new transports be added without coupling
 them to decoder internals.
 
 The three standalone package READMEs document their public APIs, lifecycle and
-copyable examples. VitaWave's `src/media/vita_decoder.c` is deliberately only a
+copyable examples. VitaMediaDeck's `src/media/vita_decoder.c` is deliberately only a
 small dispatcher: Auto opens the hardware package first and recreates the
 session through the software package on either startup or delayed runtime
 failure, while the two explicit Settings choices force one backend.
@@ -186,7 +186,7 @@ Dot-prefixed local files and folders stay hidden, matching Finder's default.
 
 ## Data layout
 
-Application state is stored below `ux0:data/VitaWave`:
+Application state is stored below `ux0:data/VitaMediaDeck`:
 
 ```text
 local_media.idx        paged local media index
@@ -225,11 +225,11 @@ Then build the application:
 
 ```sh
 # Keep the four repositories as siblings (or override the three
-# VITAWAVE_*_PACKAGE CMake cache paths).
-# VitaWave/  vita-hw-decoder/  vita-sw-decoder/  vita-https/
+# VITAMEDIADECK_*_PACKAGE CMake cache paths).
+# VitaMediaDeck/  vita-hw-decoder/  vita-sw-decoder/  vita-https/
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-unzip -t build/VitaWave.vpk
+unzip -t build/VitaMediaDeck.vpk
 ```
 
 Release builds use Cortex-A9/NEON optimization, `-O3`, LTO for the final
@@ -245,7 +245,7 @@ For a complete setup walkthrough, see
 
 Three read-only Python servers are included for testing the remote backends
 directly against a Mac on the same LAN: WebDAV HTTPS with byte ranges, SFTP and
-authenticated SMB2. Setup, copyable Terminal commands and the exact VitaWave
+authenticated SMB2. Setup, copyable Terminal commands and the exact VitaMediaDeck
 source fields are documented in
 [tools/local_streaming/README.md](tools/local_streaming/README.md).
 
@@ -286,19 +286,19 @@ mds/                     architecture, controls and development documents
 
 ## License
 
-VitaWave is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE).
+VitaMediaDeck is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE).
 Third-party components retain their own licenses and notices; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-VitaWave is an independent homebrew project. PlayStation, PS Vita, Sony, and
+VitaMediaDeck is an independent homebrew project. PlayStation, PS Vita, Sony, and
 their related marks belong to their respective owners.
 
 ## Release hardening
 
-Run `tools/release-audit.sh --vpk build/VitaWave.vpk` before distributing a
+Run `tools/release-audit.sh --vpk build/VitaMediaDeck.vpk` before distributing a
 binary. Every VPK must be accompanied by the archive produced by
 `tools/package-corresponding-source.sh` from the same checkout and dependency
-prefixes. `release/VitaWave.spdx` is the release SBOM and is embedded in both
+prefixes. `release/VitaMediaDeck.spdx` is the release SBOM and is embedded in both
 the VPK and the corresponding-source archive.
 
 The existing private development history contains retired experiments and is
@@ -306,6 +306,6 @@ not a publication artifact. `tools/public-export.sh` creates a history-free
 source snapshot. It does not push, publish or rewrite the local repository.
 
 The optional CI binary job remains disabled until the repository owner sets
-`VITAWAVE_HW_REPOSITORY`, `VITAWAVE_SW_REPOSITORY` and
-`VITAWAVE_HTTPS_REPOSITORY`. This keeps hosting names and publication timing
+`VITAMEDIADECK_HW_REPOSITORY`, `VITAMEDIADECK_SW_REPOSITORY` and
+`VITAMEDIADECK_HTTPS_REPOSITORY`. This keeps hosting names and publication timing
 under the owner's control.
