@@ -344,7 +344,6 @@ vita_create_vpk(${VITAWAVE_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY_DIR}
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE sce_sys/icon0.png sce_sys/icon0.png
-  FILE sce_sys/vitawavelogoalpha.png sce_sys/vitawavelogoalpha.png
   FILE assets/fonts/Inter-Medium.ttf fonts/Inter-Medium.ttf
   FILE assets/fonts/Inter-SemiBold.ttf fonts/Inter-SemiBold.ttf
   FILE assets/fonts/Inter-OFL.txt licenses/Inter-OFL.txt

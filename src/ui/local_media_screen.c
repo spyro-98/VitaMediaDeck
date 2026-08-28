@@ -298,7 +298,9 @@ static void scan_directory_to_index(const char *directory, int depth,
 		memset(&entry, 0, sizeof(entry));
 		int ret = sceIoDread(dfd, &entry);
 		if (ret <= 0) break;
-		if (!strcmp(entry.d_name, ".") || !strcmp(entry.d_name, "..")) continue;
+		/* Dot-prefixed files and directories are hidden in both the indexed
+		 * Library and direct filesystem browser. */
+		if (entry.d_name[0] == '.') continue;
 		char path[VT_LOCAL_MEDIA_PATH_MAX];
 		int len = snprintf(path, sizeof(path), "%s/%s", directory, entry.d_name);
 		if (len <= 0 || len >= (int)sizeof(path)) continue;
