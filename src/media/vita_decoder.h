@@ -27,6 +27,8 @@ typedef struct VtDecoderPlayer VtDecoderPlayer;
 
 typedef struct VtDecoderPlayerConfig {
 	VtDecoderStreamFactory stream;
+	/* NONE means automatic hardware-first selection with software fallback. */
+	VtDecoderBackend preferred_backend;
 	uint32_t expected_width;
 	uint32_t expected_height;
 	int expected_fps;
@@ -47,6 +49,7 @@ typedef struct VtDecoderPlayerStatus {
 	int fps;
 	uint32_t width;
 	uint32_t height;
+	uint64_t video_bitrate_bps;
 	uint64_t position_ms;
 	uint64_t duration_ms;
 	unsigned int frames_decoded;

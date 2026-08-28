@@ -172,8 +172,7 @@ int vt_sftp_list(const VtNetworkSource *source,
 		int is_dir = (attributes.flags & LIBSSH2_SFTP_ATTR_PERMISSIONS) &&
 		             LIBSSH2_SFTP_S_ISDIR(attributes.permissions);
 		int is_audio = 0;
-		if (!is_dir && !vt_network_is_supported_media(name, &is_audio)) continue;
-		if (!is_dir && is_audio) continue;
+		int supported = !is_dir && vt_network_is_supported_media(name, &is_audio);
 		VtNetworkEntry *entry = &entries[count++];
 		memset(entry, 0, sizeof(*entry));
 		snprintf(entry->name, sizeof(entry->name), "%s", name);
@@ -183,8 +182,8 @@ int vt_sftp_list(const VtNetworkSource *source,
 		entry->size = (attributes.flags & LIBSSH2_SFTP_ATTR_SIZE)
 		            ? attributes.filesize : 0;
 		entry->is_directory = is_dir;
-		entry->is_audio = !is_dir && is_audio;
-		entry->is_video = !is_dir && !is_audio;
+		entry->is_audio = supported && is_audio;
+		entry->is_video = supported && !is_audio;
 	}
 	libssh2_sftp_closedir(directory);
 	sftp_disconnect(&connection);

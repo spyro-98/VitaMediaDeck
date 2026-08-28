@@ -8,7 +8,7 @@
 > UI behavior on your own PlayStation Vita before relying on it day to day.
 
 <p align="center">
-  <img src="sce_sys/vitawavelogoalpha.png" width="320" alt="VitaWave logo">
+  <img src="sce_sys/icon0.png" width="128" height="128" alt="VitaWave app icon">
 </p>
 
 <p align="center">
@@ -35,10 +35,14 @@ does not provide a download or audio-extraction feature.
   `uma0:video`, `ux0:movies`, `uma0:movies`, `ux0:music`, and `uma0:music`
   without loading the whole
   collection into RAM.
+- **Finder-style folder browser:** explores `ux0:` and `uma0:` directly and
+  uses the same persistent grid/list choice as WebDAV, SFTP, and SMB folders.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
-- **Hardware H.264 decoding:** the complete public `h264_vita` FFmpeg backend is
-  preferred, with software H.264 retained as a compatibility fallback.
+- **Selectable H.264 decoding:** Settings offers Auto (hardware with software
+  fallback), HW H.264 only, or SW FFmpeg only.
+- **Live video information:** the player HUD and right-side information panel
+  show decoder, resolution, frame rate, and the stream-reported video bitrate.
 - **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled
   by GXM/vita2d instead of converting every frame to RGBA on the CPU.
 - **Audio-master synchronization:** bounded queues, presentation-time ordering,
@@ -50,8 +54,10 @@ does not provide a download or audio-extraction feature.
 - **Packaged playback stack:** hardware decode, software fallback and HTTPS/TLS
   live in the independent `vita-hw-decoder`, `vita-sw-decoder` and `vita-https`
   repositories, each with an installable CMake target and minimal example.
-- **Privacy-conscious state:** remote passwords live only for the active
-  session and are never written to the source database.
+- **Privacy-conscious state:** remote passwords are session-only by default.
+  An explicit Settings opt-in stores them unencrypted at
+  `ux0:data/VitaWave/network/passwords.txt`; the path and plaintext warning are
+  displayed beside the toggle.
 
 ## Media sources
 
@@ -62,14 +68,15 @@ does not provide a download or audio-extraction feature.
 | SFTP | Username/password plus explicitly confirmed SHA-256 host fingerprint | Remote video |
 | SMB | Authenticated SMB2/SMB3 share with message signing required | Remote video |
 
-Remote video currently requires a seekable MP4/M4V/MOV container with H.264
-video and AAC audio. WebDAV servers must answer an actual one-byte Range probe
-with `206 Partial Content`; an `Accept-Ranges` header alone is not accepted.
+Remote video currently requires a seekable MP4/M4V/MOV or Matroska (`.mkv`)
+container with H.264 video and optional AAC audio. WebDAV servers must answer
+an actual one-byte Range probe with `206 Partial Content`; an `Accept-Ranges`
+header alone is not accepted.
 Every protocol factory creates independent cursors for the audio and video
 demuxers.
 
 Local audio detection currently includes MP3, M4A, AAC, and WAV. Local video
-detection includes MP4, M4V, and MOV. Codec/container compatibility still
+detection includes MP4, M4V, MOV, and MKV. Codec/container compatibility still
 depends on the active Vita backend.
 
 ## Architecture
@@ -101,13 +108,15 @@ them to decoder internals.
 
 The three standalone package READMEs document their public APIs, lifecycle and
 copyable examples. VitaWave's `src/media/vita_decoder.c` is deliberately only a
-small dispatcher: it opens the hardware package first and recreates the session
-through the software package on either startup or delayed runtime failure.
+small dispatcher: Auto opens the hardware package first and recreates the
+session through the software package on either startup or delayed runtime
+failure, while the two explicit Settings choices force one backend.
 
 ## Network security model
 
 - Saved source records contain protocol, endpoint, path, username, and approved
-  SFTP/TLS fingerprints; passwords are not serialized.
+  SFTP/TLS fingerprints. Passwords are serialized only when the plaintext
+  remember-passwords option is enabled.
 - WebDAV rejects clear-text `http://` endpoints. Public servers validate the TLS
   certificate chain and hostname against the bundled CA store. A private or
   self-signed server is accepted only after its displayed SPKI SHA-256 pin is
@@ -130,15 +139,24 @@ The essential mapping is:
 | Cross | Open/confirm | Pause/resume | Pause/resume |
 | Circle | Back | Stop | Back/minimize |
 | L1 | Open/close sections | Sections panel | Sections panel |
-| R1 | Context actions | Playback/info panel | Playback/options panel |
+| R1 | Context actions or grid/list view | Playback/info panel | Playback/options panel |
 | Right stick | — | Volume | Volume |
 | Touch timeline | — | Seek | Seek |
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
-saved server definition. Passwords are requested again when a source is opened.
+saved server definition. A password can be entered in the add/edit form and is
+kept for the application session; if it is absent, the app requests it when the
+source is opened. The opt-in System setting can persist passwords unencrypted
+and clearly advertises the storage path.
 Settings can swap the player-only L1/R1 panel mapping with D-pad Left/Right;
 the historical L1/R1 panel mapping is the default.
 The complete context-sensitive reference is in [CONTROLS.md](mds/CONTROLS.md).
+
+The Library R1 panel includes **Browse folders** for direct local filesystem
+navigation. Local and remote folder browsers default to a four-column grid;
+R1 switches both to a compact list and remembers the shared choice.
+Folders and all files remain visible; compatible media uses the colored media
+accent and can be played, while unsupported files remain read-only.
 
 ## Data layout
 
@@ -149,6 +167,7 @@ local_media.idx        paged local media index
 playback_history.bin   local resume positions
 settings.bin           application preferences
 network/sources.bin    source definitions without passwords
+network/passwords.txt  optional plaintext passwords (explicit opt-in)
 session_log.txt        optional diagnostics when disk logging is enabled
 ```
 
@@ -212,7 +231,7 @@ source fields are documented in
 ../vita-https/           standalone HTTPS/TLS and Range-stream package
 src/media/               player UI, audio, presentation and local playback
 src/network/             WebDAV, SFTP and SMB stream factories
-src/ui/                  local library, network browser and application UI
+src/ui/                  local library, local/remote folder browsers and application UI
 src/system/              clocks, display-awake and background-audio helpers
 tools/                   dependency builders and local streaming test servers
 mds/                     architecture, controls and development documents
@@ -223,7 +242,8 @@ mds/                     architecture, controls and development documents
 - Remote backends and their cancellation/error paths need validation across a
   representative server matrix on real hardware.
 - Remote audio browsing is not exposed yet; the network section is video-only.
-- The reusable player currently targets seekable H.264/AAC ISO-BMFF media.
+- The reusable player currently targets seekable H.264 media in ISO-BMFF or
+  Matroska containers; AAC audio is supported when present.
 - Some local formats recognized by the library may still be rejected when they
   do not satisfy the active decoder/container contract.
 - The Vita display is 960×544. A 1280×720 source is decoded at source

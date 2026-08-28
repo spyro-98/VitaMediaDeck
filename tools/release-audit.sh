@@ -73,6 +73,12 @@ if grep -Eq 'OPENSSL_|SSL_(CTX|connect|read|write)' "$nm_output"; then
   fail "release libssh2 still references OpenSSL"
 fi
 
+ffmpeg_root="${VITAWAVE_H264_VITA_ROOT:-$repo_root/build/deps/ffmpeg-vita-hw}"
+require_file "$ffmpeg_root/lib/libavformat.a"
+"$nm_tool" -g --defined-only "$ffmpeg_root/lib/libavformat.a" > "$nm_output"
+grep -q 'ff_mov_demuxer' "$nm_output" || fail "release FFmpeg misses MOV/MP4 demuxing"
+grep -q 'ff_matroska_demuxer' "$nm_output" || fail "release FFmpeg misses Matroska demuxing"
+
 for license in libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt mpg123-COPYING.txt \
   vita2d-MIT.txt FreeType-FTL.txt libjpeg-turbo-LICENSE.md \
   libjpeg-turbo-README.ijg libpng-LICENSE.txt bzip2-LICENSE.txt pthread-embedded-COPYING.txt \

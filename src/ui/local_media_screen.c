@@ -208,7 +208,7 @@ static int ends_with_ci(const char *name, const char *suffix) {
 }
 
 static VtLocalMediaType media_type(const char *name) {
-	static const char *const video[] = { ".mp4", ".m4v", ".mov" };
+	static const char *const video[] = { ".mp4", ".m4v", ".mov", ".mkv" };
 	static const char *const audio[] = { ".mp3", ".m4a", ".aac", ".wav" };
 	for (unsigned i = 0; i < sizeof(video) / sizeof(video[0]); i++)
 		if (ends_with_ci(name, video[i])) return VT_LOCAL_MEDIA_VIDEO;
@@ -872,9 +872,10 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		if (body) ui_font_draw_text(body, (int)panel_x + 30, 92, VT_THEME_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
-		const char *actions[3] = {
+		const char *actions[4] = {
 			vt_i18n_str(grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_LIST
 			                             : VT_STR_LOCAL_MEDIA_VIEW_GRID),
+			vt_i18n_str(VT_STR_LOCAL_MEDIA_BROWSE_FILES),
 			vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_RENAME),
 			vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_DELETE)
 		};
@@ -883,10 +884,10 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			ui_panel(panel_x + 18, marker_y, 298, 52,
 			         VT_THEME_SURFACE_FOCUS, VT_THEME_BLUE_LIGHT, 0);
 		}
-		for (int i = 0; i < 3; i++) {
+		for (int i = 0; i < 4; i++) {
 			int ay = 124 + i * 62;
 			ui_action_button((int)panel_x + 22, ay, 294, 52,
-			                 i == 2 ? VT_THEME_DANGER : VT_THEME_SURFACE,
+			                 i == 3 ? VT_THEME_DANGER : VT_THEME_SURFACE,
 			                 i == 0 ? "Left/Right" : "Cross", actions[i],
 			                 0);
 		}
@@ -1031,8 +1032,12 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 					right_cursor = 1;
 					pressed |= SCE_CTRL_CROSS;
 				} else if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
-				                             248, 294, 52)) {
+			                             248, 294, 52)) {
 					right_cursor = 2;
+					pressed |= SCE_CTRL_CROSS;
+				} else if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
+				                             310, 294, 52)) {
+					right_cursor = 3;
 					pressed |= SCE_CTRL_CROSS;
 				} else if (touch.x < panel_x) {
 					pressed |= SCE_CTRL_CIRCLE;
@@ -1051,7 +1056,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 				                ? SCE_CTRL_LEFT : SCE_CTRL_RIGHT;
 			}
 			if ((drawer_nav & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
-			if ((drawer_nav & SCE_CTRL_DOWN) && right_cursor < 2) right_cursor++;
+			if ((drawer_nav & SCE_CTRL_DOWN) && right_cursor < 3) right_cursor++;
 			if (right_cursor == 0 &&
 			    (horizontal_step ||
 			     (pressed & SCE_CTRL_CROSS))) {
@@ -1062,13 +1067,16 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 				selected = top = 0;
 			}
 			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 1) {
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_BROWSE_FILES);
+			}
+			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 2) {
 				int index = screen_local_index(filter, selected);
 				if (index >= 0) {
 					if (selected_out) *selected_out = g_items[index];
 					return local_media_leave(UI_LOCAL_MEDIA_ACTION_RENAME);
 				}
 			}
-			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 2)
+			if ((pressed & SCE_CTRL_CROSS) && right_cursor == 3)
 				delete_confirm = 1;
 			if (pressed & SCE_CTRL_CIRCLE) right_open = 0;
 			pressed = 0;

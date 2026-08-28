@@ -145,6 +145,21 @@ static void draw_skip_button(vita2d_font *font, float center_x,
 	}
 }
 
+static void format_video_bitrate(uint64_t bitrate_bps, char out[32]) {
+	if (!bitrate_bps) {
+		snprintf(out, 32, "-- Mbps");
+		return;
+	}
+	uint64_t tenths = (bitrate_bps + 50000ULL) / 100000ULL;
+	if (tenths < 10ULL)
+		snprintf(out, 32, "%llu kbps",
+		         (unsigned long long)((bitrate_bps + 500ULL) / 1000ULL));
+	else
+		snprintf(out, 32, "%llu.%llu Mbps",
+		         (unsigned long long)(tenths / 10ULL),
+		         (unsigned long long)(tenths % 10ULL));
+}
+
 static void draw_hud(const VtHwPlayerScreenSource *source,
 	                 const VtDecoderPlayerStatus *status, int paused,
 	                 int volume, float hud_opacity, float volume_opacity,
@@ -183,9 +198,10 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 		vita2d_draw_rectangle(48, 431, 3, 32, fade_color(border, hud_opacity));
 		if (small) ui_font_draw_text(small, 60, 454, text,
 		                             UI_FONT_SMALL, decoder);
-		char quality[48];
-		snprintf(quality, sizeof(quality), "%up  %d fps",
-		         status->height, status->fps);
+		char bitrate[32], quality[80];
+		format_video_bitrate(status->video_bitrate_bps, bitrate);
+		snprintf(quality, sizeof(quality), "%up  %d fps  %s",
+		         status->height, status->fps, bitrate);
 		if (small) ui_font_draw_text(small, 154, 454, text,
 		                             UI_FONT_SMALL, quality);
 		draw_skip_button(small, PLAYER_BACK_X, "<", hud_opacity);
@@ -324,10 +340,11 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	}
 	vita2d_draw_rectangle(x + 18, 236, width - 36, 1, VT_THEME_BORDER);
 	if (small) {
-		char decoder[96];
+		char bitrate[32], decoder[128];
+		format_video_bitrate(status->video_bitrate_bps, bitrate);
 		snprintf(decoder, sizeof(decoder), vt_i18n_str(VT_STR_PLAYER_DECODER_INFO),
 		         status->hardware_accelerated ? "HW" : "SW",
-		         status->height, status->fps);
+		         status->height, status->fps, bitrate);
 		ui_font_draw_text(small, (int)x + 28, 276, VT_THEME_TEXT,
 		                  UI_FONT_SMALL, decoder);
 		ui_font_draw_text(small, (int)x + 28, 518, VT_THEME_TEXT_MUTED,
@@ -351,6 +368,13 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	memset(&open, 0, sizeof(open));
 	open.player = player;
 	open.config.stream = source->stream;
+	int decoder_preference = vt_preferences_video_decoder();
+	open.config.preferred_backend =
+	    decoder_preference == VT_VIDEO_DECODER_HW_H264
+	        ? VT_DECODER_BACKEND_HARDWARE
+	    : decoder_preference == VT_VIDEO_DECODER_SW_FFMPEG
+	        ? VT_DECODER_BACKEND_SOFTWARE
+	        : VT_DECODER_BACKEND_NONE;
 	open.config.expected_width = source->expected_width;
 	open.config.expected_height = source->expected_height;
 	open.config.expected_fps = source->expected_fps;
@@ -410,7 +434,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		VtDecoderPlayerStatus status;
 		vt_decoder_get_status(player, &status);
 		if (status.error) {
-			if (vt_decoder_backend(player) == VT_DECODER_BACKEND_HARDWARE) {
+			if (decoder_preference == VT_VIDEO_DECODER_AUTO &&
+			    vt_decoder_backend(player) == VT_DECODER_BACKEND_HARDWARE) {
 				SeekTask task = { player, status.position_ms };
 				cancel = 0;
 				loading.status = vt_i18n_str(VT_STR_PLAYER_FALLBACK_SOFTWARE);

@@ -7,7 +7,9 @@
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 
+#include "app_paths.h"
 #include "i18n/i18n.h"
+#include "network/network_source.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/components.h"
@@ -45,7 +47,14 @@ typedef struct {
 	int kind;
 } SettingRow;
 
-enum { ROW_TOGGLE, ROW_LANGUAGE, ROW_CLOCK, ROW_MAPPING, ROW_ACTION };
+enum {
+	ROW_TOGGLE,
+	ROW_LANGUAGE,
+	ROW_CLOCK,
+	ROW_MAPPING,
+	ROW_DECODER,
+	ROW_ACTION
+};
 
 static const char *tab_label(int tab) {
 	static const VtStringId labels[TAB_COUNT] = {
@@ -86,12 +95,24 @@ static const char *language_label(int language) {
 	                   ? labels[language] : labels[0]);
 }
 
+static const char *decoder_label(int decoder) {
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_DECODER_AUTO,
+		VT_STR_SETTINGS_DECODER_HW_H264,
+		VT_STR_SETTINGS_DECODER_SW_FFMPEG
+	};
+	return vt_i18n_str(decoder >= VT_VIDEO_DECODER_AUTO &&
+	                   decoder <= VT_VIDEO_DECODER_SW_FFMPEG
+	                   ? labels[decoder] : labels[VT_VIDEO_DECODER_AUTO]);
+}
+
 static int rows_for_tab(int tab, SettingRow rows[8]) {
 	if (tab == TAB_PLAYBACK) {
-		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_FILL_SCREEN), vt_preferences_fill_screen(), ROW_TOGGLE };
-		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_LOOP_PLAYBACK), vt_preferences_loop_enabled(), ROW_TOGGLE };
-		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_KEEP_MUSIC_AWAKE), vt_preferences_music_keep_display_awake(), ROW_TOGGLE };
-		return 3;
+		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_VIDEO_DECODER), vt_preferences_video_decoder(), ROW_DECODER };
+		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_FILL_SCREEN), vt_preferences_fill_screen(), ROW_TOGGLE };
+		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_LOOP_PLAYBACK), vt_preferences_loop_enabled(), ROW_TOGGLE };
+		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_KEEP_MUSIC_AWAKE), vt_preferences_music_keep_display_awake(), ROW_TOGGLE };
+		return 4;
 	}
 	if (tab == TAB_INTERFACE) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_LANGUAGE), vt_preferences_language(), ROW_LANGUAGE };
@@ -102,7 +123,8 @@ static int rows_for_tab(int tab, SettingRow rows[8]) {
 	if (tab == TAB_SYSTEM) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_CLOCK_CONTROL), vt_preferences_clock_source(), ROW_CLOCK };
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_WRITE_LOGS), vt_preferences_disk_logs_enabled(), ROW_TOGGLE };
-		return 2;
+		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_REMEMBER_NETWORK_PASSWORDS), vt_preferences_remember_network_passwords(), ROW_TOGGLE };
+		return 3;
 	}
 	rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_CONTROL_MAPPING),
 	                        vt_preferences_player_swap_shoulders(), ROW_MAPPING };
@@ -113,9 +135,18 @@ static int rows_for_tab(int tab, SettingRow rows[8]) {
 static int apply_row(int tab, int row, int direction) {
 	if (tab == TAB_PLAYBACK) {
 		switch (row) {
-			case 0: return vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
-			case 1: return vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
-			case 2: return vt_preferences_set_music_keep_display_awake(!vt_preferences_music_keep_display_awake());
+			case 0: {
+				int decoder = vt_preferences_video_decoder() +
+				              (direction < 0 ? -1 : 1);
+				if (decoder < VT_VIDEO_DECODER_AUTO)
+					decoder = VT_VIDEO_DECODER_SW_FFMPEG;
+				if (decoder > VT_VIDEO_DECODER_SW_FFMPEG)
+					decoder = VT_VIDEO_DECODER_AUTO;
+				return vt_preferences_set_video_decoder(decoder);
+			}
+			case 1: return vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
+			case 2: return vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
+			case 3: return vt_preferences_set_music_keep_display_awake(!vt_preferences_music_keep_display_awake());
 		}
 	} else if (tab == TAB_INTERFACE) {
 		if (row == 0) {
@@ -136,6 +167,13 @@ static int apply_row(int tab, int row, int direction) {
 			return vt_preferences_set_clock_source(value);
 		} else if (row == 1) {
 			return vt_preferences_set_disk_logs_enabled(!vt_preferences_disk_logs_enabled());
+		} else if (row == 2) {
+			int enabled = !vt_preferences_remember_network_passwords();
+			if (!enabled) {
+				int clear_result = vt_network_credentials_clear();
+				if (clear_result < 0) return clear_result;
+			}
+			return vt_preferences_set_remember_network_passwords(enabled);
 		}
 	} else if (tab == TAB_CONTROLS && row == 0) {
 		return vt_preferences_set_player_swap_shoulders(
@@ -198,7 +236,19 @@ static void draw_screen(int tab, int cursor, float focus,
 			draw_value(small, y, vt_i18n_str(rows[i].value
 			    ? VT_STR_SETTINGS_CONTROL_DPAD_PANELS
 			    : VT_STR_SETTINGS_CONTROL_SHOULDERS_PANELS));
+		else if (rows[i].kind == ROW_DECODER)
+			draw_value(small, y, decoder_label(rows[i].value));
 		else draw_value(small, y, vt_i18n_str(VT_STR_SETTINGS_OPEN));
+	}
+	if (tab == TAB_SYSTEM && small) {
+		char path[192];
+		snprintf(path, sizeof(path), vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PATH),
+		         VITAWAVE_NETWORK_PASSWORDS_PATH);
+		ui_font_draw_text(small, ROW_X + 12, 354, VT_THEME_WARNING,
+		                  UI_FONT_SMALL,
+		                  vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PLAINTEXT_WARNING));
+		ui_font_draw_text(small, ROW_X + 12, 382, VT_THEME_TEXT_MUTED,
+		                  UI_FONT_SMALL, path);
 	}
 	if (small)
 		ui_font_draw_text(small, ROW_X, 462, VT_THEME_TEXT_MUTED,

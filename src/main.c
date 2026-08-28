@@ -18,6 +18,7 @@
 #include "settings/preferences.h"
 #include "ui/about_screen.h"
 #include "ui/loading_screen.h"
+#include "ui/local_files_screen.h"
 #include "ui/local_media_screen.h"
 #include "ui/mini_player.h"
 #include "ui/music_player.h"
@@ -171,12 +172,21 @@ static int play_local_video(const VtLocalMediaItem *item) {
 }
 
 static int browse_local(void) {
+	int folder_browser = 0;
 	for (;;) {
 		VtLocalMediaItem item;
-		int action = ui_local_media_screen(&item);
+		int action = folder_browser ? ui_local_files_screen(&item)
+		                           : ui_local_media_screen(&item);
 		if (action >= UI_LOCAL_MEDIA_ACTION_SECTION_BASE)
 			return action - UI_LOCAL_MEDIA_ACTION_SECTION_BASE;
-		if (action == UI_LOCAL_MEDIA_ACTION_BACK) return UI_SECTION_LOCAL_MEDIA;
+		if (action == UI_LOCAL_MEDIA_ACTION_BACK) {
+			if (folder_browser) { folder_browser = 0; continue; }
+			return UI_SECTION_LOCAL_MEDIA;
+		}
+		if (action == UI_LOCAL_MEDIA_ACTION_BROWSE_FILES) {
+			folder_browser = 1;
+			continue;
+		}
 		if (action == UI_LOCAL_MEDIA_ACTION_RENAME) {
 			if (rename_local_media(&item) < 0)
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_RENAME_FAILED),

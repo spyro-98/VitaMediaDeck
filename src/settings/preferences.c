@@ -52,6 +52,7 @@ _Static_assert(sizeof(VtPreferencesDiskV2) == 36,
 
 #define VT_PLAYBACK_FLAG_LOOP        (1u << 0)
 #define VT_PLAYBACK_FLAG_FILL_SCREEN (1u << 1)
+#define VT_NETWORK_FLAG_REMEMBER_PASSWORDS (1u << 2)
 #define VT_UI_FLAG_REDUCE_MOTION      (1u << 3)
 #define VT_PERFORMANCE_FLAG_PSVSHELL_CLOCKS   (1u << 5)
 #define VT_UI_FLAG_PLAYER_DEBUG        (1u << 6)
@@ -75,6 +76,9 @@ _Static_assert(sizeof(VtPreferencesDiskV2) == 36,
 #define VT_SUBTITLE_FIELD_MASK(shift) (3u << (shift))
 #define VT_UI_FLAG_STARTUP_CONTROLS_SEEN (1u << 23)
 #define VT_PLAYBACK_FLAG_SWAP_SHOULDERS    (1u << 24)
+/* Stored inverted so upgraded installations open filesystem browsers in the
+ * new grid view while still allowing users to select a compact list. */
+#define VT_FILE_BROWSER_FLAG_LIST            (1u << 25)
 #define VT_LOCAL_VIDEO_FLAG_GRID             (1u << 26)
 #define VT_LOCAL_MUSIC_FLAG_GRID             (1u << 27)
 /* Enabled by default (stored inverted) so music playback behaves like video
@@ -82,6 +86,8 @@ _Static_assert(sizeof(VtPreferencesDiskV2) == 36,
  * user explicitly opts into the normal system timeout. */
 #define VT_MUSIC_FLAG_ALLOW_DISPLAY_SLEEP     (1u << 28)
 #define VT_UI_FLAG_MINI_PLAYER_EXPANDED        (1u << 29)
+#define VT_VIDEO_DECODER_SHIFT                   30u
+#define VT_VIDEO_DECODER_MASK                    (3u << VT_VIDEO_DECODER_SHIFT)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -357,6 +363,15 @@ int vt_preferences_set_player_swap_shoulders(int enabled) {
 	return set_playback_flag(VT_PLAYBACK_FLAG_SWAP_SHOULDERS, enabled);
 }
 
+int vt_preferences_file_browser_grid(void) {
+	if (!g_loaded) vt_preferences_init();
+	return (g_playback_flags & VT_FILE_BROWSER_FLAG_LIST) == 0;
+}
+
+int vt_preferences_set_file_browser_grid(int enabled) {
+	return set_playback_flag(VT_FILE_BROWSER_FLAG_LIST, !enabled);
+}
+
 int vt_preferences_local_video_grid(void) {
 	if (!g_loaded) vt_preferences_init();
 	return (g_playback_flags & VT_LOCAL_VIDEO_FLAG_GRID) != 0;
@@ -382,6 +397,27 @@ int vt_preferences_music_keep_display_awake(void) {
 
 int vt_preferences_set_music_keep_display_awake(int enabled) {
 	return set_playback_flag(VT_MUSIC_FLAG_ALLOW_DISPLAY_SLEEP, !enabled);
+}
+
+int vt_preferences_video_decoder(void) {
+	if (!g_loaded) vt_preferences_init();
+	unsigned int decoder =
+	    (g_playback_flags & VT_VIDEO_DECODER_MASK) >> VT_VIDEO_DECODER_SHIFT;
+	return decoder <= VT_VIDEO_DECODER_SW_FFMPEG
+	     ? (int)decoder : VT_VIDEO_DECODER_AUTO;
+}
+
+int vt_preferences_set_video_decoder(int decoder) {
+	if (decoder < VT_VIDEO_DECODER_AUTO ||
+	    decoder > VT_VIDEO_DECODER_SW_FFMPEG) return -1;
+	if (!g_loaded) vt_preferences_init();
+	uint32_t next = (g_playback_flags & ~VT_VIDEO_DECODER_MASK) |
+	                ((uint32_t)decoder << VT_VIDEO_DECODER_SHIFT);
+	if (next == g_playback_flags) return 0;
+	int ret = persist_record(g_default_quality, g_default_frame_rate,
+	                         g_language, next);
+	if (ret == 0) g_playback_flags = next;
+	return ret;
 }
 
 static int set_playback_flag(uint32_t bit, int enabled) {
@@ -464,6 +500,15 @@ int vt_preferences_disk_logs_enabled(void) {
 
 int vt_preferences_set_disk_logs_enabled(int enabled) {
 	return set_playback_flag(VT_DIAGNOSTICS_FLAG_DISK_LOGS, enabled);
+}
+
+int vt_preferences_remember_network_passwords(void) {
+	if (!g_loaded) vt_preferences_init();
+	return (g_playback_flags & VT_NETWORK_FLAG_REMEMBER_PASSWORDS) != 0;
+}
+
+int vt_preferences_set_remember_network_passwords(int enabled) {
+	return set_playback_flag(VT_NETWORK_FLAG_REMEMBER_PASSWORDS, enabled);
 }
 
 int vt_preferences_stream_fallback_enabled(void) {

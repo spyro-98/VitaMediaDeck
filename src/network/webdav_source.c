@@ -67,13 +67,35 @@ static int webdav_url(const VtNetworkSource *source, const char *path,
 	 * endpoint. */
 	if (!strncmp(host, "http://", 7)) return -1;
 	int has_scheme = !strncmp(host, "https://", 8);
-	int written;
-	if (has_scheme)
-		written = snprintf(out, out_size, "%s", host);
-	else if (source->port && source->port != 443)
-		written = snprintf(out, out_size, "https://%s:%u", host, source->port);
-	else written = snprintf(out, out_size, "https://%s", host);
+	const char *authority = has_scheme ? host + 8 : host;
+	if (!authority[0] || strchr(authority, '?') || strchr(authority, '#')) return -1;
+	const char *base_path = strchr(authority, '/');
+	size_t authority_length = base_path
+	                        ? (size_t)(base_path - authority) : strlen(authority);
+	if (!authority_length) return -1;
+	/* The editor keeps the port in its own field. When a user pastes
+	 * https://host instead of a bare host, keep honoring that port rather than
+	 * silently falling back to 443. An explicit port in the pasted authority
+	 * remains authoritative. */
+	int explicit_port = 0;
+	if (authority[0] == '[') {
+		const char *closing = memchr(authority, ']', authority_length);
+		explicit_port = closing && closing + 1 < authority + authority_length &&
+		                closing[1] == ':';
+	} else explicit_port = memchr(authority, ':', authority_length) != NULL;
+	int written = snprintf(out, out_size, "https://%.*s",
+	                       (int)authority_length, authority);
 	if (written < 0 || (size_t)written >= out_size) return -1;
+	if (!explicit_port && source->port && source->port != 443) {
+		size_t used = strlen(out);
+		written = snprintf(out + used, out_size - used, ":%u", source->port);
+		if (written < 0 || (size_t)written >= out_size - used) return -1;
+	}
+	if (base_path && base_path[0]) {
+		size_t used = strlen(out);
+		written = snprintf(out + used, out_size - used, "%s", base_path);
+		if (written < 0 || (size_t)written >= out_size - used) return -1;
+	}
 	size_t length = strlen(out);
 	while (length > 0 && out[length - 1] == '/') out[--length] = '\0';
 	if (append_encoded_path(out, out_size, source->root_path) < 0) return -1;
@@ -160,14 +182,7 @@ static int parse_propfind(const unsigned char *data, size_t size,
 		xmlNode *resource_type = descendant_named(response, "resourcetype");
 		int is_dir = child_named(resource_type, "collection") != NULL;
 		int is_audio = 0;
-		if (!is_dir && !vt_network_is_supported_media(name, &is_audio)) {
-			vita_https_free(decoded);
-			continue;
-		}
-		if (!is_dir && is_audio) {
-			vita_https_free(decoded);
-			continue;
-		}
+		int supported = !is_dir && vt_network_is_supported_media(name, &is_audio);
 		VtNetworkEntry *entry = &entries[count++];
 		memset(entry, 0, sizeof(*entry));
 		snprintf(entry->name, sizeof(entry->name), "%s", name);
@@ -180,8 +195,8 @@ static int parse_propfind(const unsigned char *data, size_t size,
 			if (value) { entry->size = strtoull((const char *)value, NULL, 10); xmlFree(value); }
 		}
 		entry->is_directory = is_dir;
-		entry->is_audio = !is_dir && is_audio;
-		entry->is_video = !is_dir && !is_audio;
+		entry->is_audio = supported && is_audio;
+		entry->is_video = supported && !is_audio;
 		vita_https_free(decoded);
 	}
 	vita_https_free(requested_path);
@@ -266,11 +281,18 @@ int vt_webdav_list(const VtNetworkSource *source,
 	if (result == 0 && transport.status_code == 207)
 		ret = parse_propfind(response.data, response.size, url, path,
 		                     entries, capacity);
-	else if (detail && detail_size)
-		snprintf(detail, detail_size, "WebDAV HTTP %ld: %s",
-		         transport.status_code, vita_https_error_string(result));
+	else if (detail && detail_size) {
+		if (transport.status_code == 401 || transport.status_code == 403)
+			snprintf(detail, detail_size, "WebDAV HTTP %ld: authentication failed",
+			         transport.status_code);
+		else
+			snprintf(detail, detail_size, "WebDAV HTTP %ld: %s",
+			         transport.status_code, vita_https_error_string(result));
+	}
 	free(response.data);
 	vita_https_client_destroy(client);
+	if (transport.status_code == 401 || transport.status_code == 403)
+		return VT_NETWORK_AUTH_FAILED;
 	if (result < 0) return webdav_transport_result(result);
 	return ret;
 }

@@ -90,7 +90,7 @@ foreach(license_file IN LISTS VITAWAVE_REQUIRED_RELEASE_LICENSES)
   endif()
 endforeach()
 
-## The pinned builder enables the real MOV/MP4 demuxer and the complete
+## The pinned builder enables the MOV/MP4 and Matroska demuxers and the complete
 ## hardware decoder backend. Provenance is documented by the build script.
 set(VITAWAVE_FFMPEG_ROOT "${VITAWAVE_H264_VITA_ROOT}")
 
@@ -227,6 +227,7 @@ add_executable(${PROJECT_NAME}
   src/ui/mini_player.c
   src/ui/sections_sidebar.c
   src/ui/local_media_screen.c
+  src/ui/local_files_screen.c
   src/ui/music_player.c
   src/ui/settings_screen.c
   src/ui/about_screen.c
@@ -288,7 +289,7 @@ target_link_libraries(${PROJECT_NAME}
   VitaHwDecoder::VitaHwDecoder
   VitaSwDecoder::VitaSwDecoder
   VitaHttps::VitaHttps
-  vitawave_avformat   # pinned FFmpeg with a registered MOV/MP4 demuxer
+  vitawave_avformat   # pinned FFmpeg with registered MOV/MP4 + Matroska demuxers
   vitawave_avcodec    # complete h264_vita plus software H.264 fallback
   ${VITAWAVE_AVUTIL_LINK}
   mpg123              # local MP3 playback
