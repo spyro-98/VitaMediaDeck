@@ -107,26 +107,35 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	if (!player || !config || !config->stream.open) return -1;
 	player->source = config->stream;
 	player->config = *config;
-	VitaHwDecoderPlayerConfig hardware = {
-		.stream = { &player->source, hw_stream_open },
-		.expected_width = config->expected_width,
-		.expected_height = config->expected_height,
-		.expected_fps = config->expected_fps,
-		.start_position_ms = config->start_position_ms,
-		.volume_percent = config->volume_percent,
-		.cancel_flag = config->cancel_flag
-	};
-	player->hardware = vita_hw_decoder_create();
-	int result = player->hardware
-	           ? vita_hw_decoder_open(player->hardware, &hardware) : -1;
-	if (result >= 0) {
-		player->backend = VT_DECODER_BACKEND_HARDWARE;
-		return 0;
+	VtDecoderBackend preference = config->preferred_backend;
+	if (preference != VT_DECODER_BACKEND_HARDWARE &&
+	    preference != VT_DECODER_BACKEND_SOFTWARE)
+		preference = VT_DECODER_BACKEND_NONE;
+	int result = -1;
+	if (preference != VT_DECODER_BACKEND_SOFTWARE) {
+		VitaHwDecoderPlayerConfig hardware = {
+			.stream = { &player->source, hw_stream_open },
+			.expected_width = config->expected_width,
+			.expected_height = config->expected_height,
+			.expected_fps = config->expected_fps,
+			.start_position_ms = config->start_position_ms,
+			.volume_percent = config->volume_percent,
+			.cancel_flag = config->cancel_flag
+		};
+		player->hardware = vita_hw_decoder_create();
+		result = player->hardware
+		       ? vita_hw_decoder_open(player->hardware, &hardware) : -1;
+		if (result >= 0) {
+			player->backend = VT_DECODER_BACKEND_HARDWARE;
+			return 0;
+		}
+		if (player->hardware) vita_hw_decoder_destroy(player->hardware);
+		player->hardware = NULL;
+		if (preference == VT_DECODER_BACKEND_HARDWARE) return result;
 	}
-	if (player->hardware) vita_hw_decoder_destroy(player->hardware);
-	player->hardware = NULL;
 	/* The source contract creates fresh independent cursors, so fallback can
-	 * safely reopen after a failed hardware session. */
+	 * safely reopen after a failed hardware session. A software preference
+	 * arrives here directly without initializing the hardware backend. */
 	VitaSwDecoderPlayerConfig software = {
 		.stream = { &player->source, sw_stream_open },
 		.expected_width = config->expected_width,
@@ -146,6 +155,8 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 	                                uint64_t position_ms) {
 	if (!player) return -1;
+	if (player->config.preferred_backend == VT_DECODER_BACKEND_HARDWARE)
+		return -1;
 	if (player->software && player->backend == VT_DECODER_BACKEND_SOFTWARE)
 		return 0;
 	if (player->hardware) {

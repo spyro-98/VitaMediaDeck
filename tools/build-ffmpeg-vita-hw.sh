@@ -65,7 +65,7 @@ env VITASDK="$vita_sdk" PATH="$vita_sdk/bin:/usr/bin:/bin" ./configure \
   --disable-avfilter --disable-swscale --disable-swresample --disable-avdevice \
   --disable-encoders \
   --disable-decoders --enable-decoder=h264,h264_vita \
-  --disable-demuxers --enable-demuxer=mov,mpegts,aac,h264 \
+  --disable-demuxers --enable-demuxer=mov,matroska,mpegts,aac,h264 \
   --disable-muxers --enable-muxer=mov,mp4,mpegts \
   --disable-parsers --enable-parser=aac,aac_latm,h264,mpeg4audio \
   --disable-protocols --enable-protocol=file \

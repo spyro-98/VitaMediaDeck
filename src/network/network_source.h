@@ -77,6 +77,12 @@ void vt_network_shutdown(void);
 int vt_network_sources_load(VtNetworkSource *sources, int capacity);
 int vt_network_sources_save(const VtNetworkSource *sources, int count);
 
+/* Optional plaintext password store. Callers must gate load/save behind the
+ * explicit remember-passwords preference. */
+int vt_network_credentials_load(VtNetworkCredential *credentials, int capacity);
+int vt_network_credentials_save(const VtNetworkCredential *credentials, int count);
+int vt_network_credentials_clear(void);
+
 int vt_network_list(const VtNetworkSource *source,
 	                const VtNetworkCredential *credential,
 	                const char *path, VtNetworkEntry *entries,

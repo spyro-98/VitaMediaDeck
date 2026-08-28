@@ -28,6 +28,12 @@
 #define VT_CLOCK_SOURCE_PSVSHELL 0
 #define VT_CLOCK_SOURCE_APP      1
 
+/* Preferred video decoder. AUTO preserves the historical hardware-first
+ * behavior and falls back to software when the H.264 backend cannot continue. */
+#define VT_VIDEO_DECODER_AUTO       0
+#define VT_VIDEO_DECODER_HW_H264    1
+#define VT_VIDEO_DECODER_SW_FFMPEG  2
+
 /* Subtitle appearance. Values are stable public preference values; their
  * compact on-disk bit encoding is deliberately private to preferences.c. */
 #define VT_SUBTITLE_OUTLINE_1 1
@@ -82,6 +88,11 @@ int vt_preferences_language(void);
  * only after the disk commit succeeds. */
 int vt_preferences_set_language(int language);
 
+/* Shared Finder-style layout for local and remote folder browsers. Grid is
+ * the default for both; switching either browser also changes the other. */
+int vt_preferences_file_browser_grid(void);
+int vt_preferences_set_file_browser_grid(int enabled);
+
 /* The controls reference is presented once after upgrading/first install.
  * The bit lives in the existing flags word, so 1.0 settings remain readable. */
 int vt_preferences_startup_controls_seen(void);
@@ -103,6 +114,10 @@ int vt_preferences_set_local_music_grid(int enabled);
  * system timeout while audio continues. */
 int vt_preferences_music_keep_display_awake(void);
 int vt_preferences_set_music_keep_display_awake(int enabled);
+
+/* Decoder used for newly opened video sessions. */
+int vt_preferences_video_decoder(void);
+int vt_preferences_set_video_decoder(int decoder);
 
 /* Loop and fill-screen defaults persist across playback sessions instead of
  * requiring the user to enable them again from the player sidebar. */
@@ -141,6 +156,11 @@ int vt_preferences_set_mini_player_expanded_default(int enabled);
  * writes are explicit opt-in so normal playback performs no logging I/O. */
 int vt_preferences_disk_logs_enabled(void);
 int vt_preferences_set_disk_logs_enabled(int enabled);
+
+/* Network passwords are session-only by default. This explicit opt-in stores
+ * them unencrypted in the path advertised by the Settings screen. */
+int vt_preferences_remember_network_passwords(void);
+int vt_preferences_set_remember_network_passwords(int enabled);
 
 /* Legacy buffering-policy bit kept for settings-file compatibility. */
 int vt_preferences_stream_fallback_enabled(void);

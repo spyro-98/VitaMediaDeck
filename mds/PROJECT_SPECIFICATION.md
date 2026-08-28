@@ -12,9 +12,10 @@ not depend on a companion transcoding or discovery service.
 1. **The user chooses the source.** VitaWave browses only local storage and
    explicitly configured servers.
 2. **Authentication is explicit.** Remote sources require a username and a
-   session password. SFTP additionally requires host-key confirmation.
-3. **Passwords are ephemeral.** Secrets never enter `sources.bin`, logs, or
-   media history.
+   password. SFTP additionally requires host-key confirmation.
+3. **Passwords are ephemeral by default.** Secrets never enter `sources.bin`,
+   logs, or media history. An explicit opt-in stores them unencrypted in the
+   separately advertised `network/passwords.txt` file.
 4. **Protocol and decoder ownership remain separate.** A transport produces
    independent seekable byte cursors; the player owns demux, decode, timing,
    rendering, and teardown.
@@ -34,7 +35,7 @@ not depend on a companion transcoding or discovery service.
 - Authenticated WebDAV browsing over verified HTTPS.
 - Authenticated SFTP browsing with SHA-256 host-key pinning.
 - Authenticated SMB2/SMB3 browsing.
-- Seekable remote H.264/AAC playback.
+- Seekable remote H.264 playback with optional AAC audio.
 - Local playback resume history.
 - Protocol-neutral reusable hardware player module.
 - English and Italian application catalogues.
@@ -91,9 +92,10 @@ demux independently. A backend must not share mutable offsets between them.
 
 ## Playback architecture
 
-- FFmpeg MOV/MP4 demux on custom AVIO cursors.
-- H.264 video and AAC audio track selection.
-- `h264_vita` preferred; FFmpeg software H.264 fallback.
+- FFmpeg MOV/MP4 and Matroska demux on custom AVIO cursors.
+- H.264 video with optional AAC audio track selection.
+- User-selectable decoder policy: Auto (`h264_vita` preferred with FFmpeg
+  software fallback), HW H.264 only, or SW FFmpeg only.
 - Hardware AAC decode for the reusable video player.
 - NV12 CDRAM surfaces presented directly through GXM/vita2d.
 - Audio PTS as master clock.
@@ -104,6 +106,7 @@ demux independently. A backend must not share mutable offsets between them.
 
 - `local_media.idx`: bounded on-disk local index, maximum 65,536 records.
 - `network/sources.bin`: maximum 32 non-secret source definitions.
+- `network/passwords.txt`: optional plaintext passwords, disabled by default.
 - `playback_history.bin`: local resume positions.
 - `settings.bin`: application preferences.
 - `session_log.txt`: written only when persistent diagnostics are enabled.
@@ -113,7 +116,8 @@ demux independently. A backend must not share mutable offsets between them.
 - Release build and VPK archive validation succeed in CI.
 - No old discovery/acquisition code or documentation remains in the public
   repository.
-- No password or session secret is serialized or logged.
+- Passwords are never logged and are serialized only after the explicit
+  plaintext-storage opt-in.
 - HTTPS, SFTP fingerprint mismatch, authentication failure, cancellation, seek,
   EOF, and reconnect paths are tested on physical hardware.
 - Repeated local and remote sessions close without leaked workers, sockets,

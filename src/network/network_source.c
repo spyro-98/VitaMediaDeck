@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <psp2/io/fcntl.h>
@@ -14,7 +15,12 @@
 
 #define SOURCE_DB_PATH VITAWAVE_NETWORK_DIR "/sources.bin"
 #define SOURCE_DB_TEMP VITAWAVE_NETWORK_DIR "/sources.tmp"
+#define SOURCE_DB_BACKUP VITAWAVE_NETWORK_DIR "/sources.bak"
 #define SOURCE_DB_VERSION 2U
+#define PASSWORDS_TEMP VITAWAVE_NETWORK_DIR "/passwords.tmp"
+#define PASSWORDS_BACKUP VITAWAVE_NETWORK_DIR "/passwords.bak"
+
+static const char g_passwords_header[] = "# VitaWave network passwords v1\n";
 
 typedef struct {
 	char magic[8];
@@ -38,6 +44,11 @@ typedef struct {
 } VtNetworkSourceV1;
 
 static int g_initialized;
+
+static int path_exists(const char *path) {
+	SceIoStat status;
+	return path && sceIoGetstat(path, &status) >= 0;
+}
 
 static int read_all(SceUID fd, void *buffer, size_t size) {
 	unsigned char *out = buffer;
@@ -78,6 +89,9 @@ void vt_network_shutdown(void) {
 
 int vt_network_sources_load(VtNetworkSource *sources, int capacity) {
 	if (!sources || capacity <= 0) return -1;
+	/* Recover a database left between the two rename operations. */
+	if (!path_exists(SOURCE_DB_PATH) && path_exists(SOURCE_DB_BACKUP))
+		sceIoRename(SOURCE_DB_BACKUP, SOURCE_DB_PATH);
 	SceUID fd = sceIoOpen(SOURCE_DB_PATH, SCE_O_RDONLY, 0);
 	if (fd < 0) return 0;
 	SourceDbHeader header;
@@ -124,8 +138,9 @@ int vt_network_sources_save(const VtNetworkSource *sources, int count) {
 		return -1;
 	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
 	sceIoMkdir(VITAWAVE_NETWORK_DIR, 0777);
+	sceIoRemove(SOURCE_DB_TEMP);
 	SceUID fd = sceIoOpen(SOURCE_DB_TEMP,
-	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0600);
+	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 	if (fd < 0) return fd;
 	SourceDbHeader header = { { 0 }, SOURCE_DB_VERSION,
 	                          sizeof(VtNetworkSource), (uint32_t)count };
@@ -134,13 +149,171 @@ int vt_network_sources_save(const VtNetworkSource *sources, int count) {
 	if (ret == 0 && count)
 		ret = write_all(fd, sources, (size_t)count * sizeof(*sources));
 	if (ret == 0) ret = sceIoSyncByFd(fd, 0);
-	sceIoClose(fd);
+	int close_ret = sceIoClose(fd);
+	if (ret == 0 && close_ret < 0) ret = close_ret;
 	if (ret < 0) {
 		sceIoRemove(SOURCE_DB_TEMP);
 		return ret;
 	}
-	sceIoRemove(SOURCE_DB_PATH);
-	return sceIoRename(SOURCE_DB_TEMP, SOURCE_DB_PATH);
+
+	/* Vita filesystems do not guarantee POSIX rename-overwrite semantics.
+	 * Keep the previous database recoverable until the replacement is in place. */
+	sceIoRemove(SOURCE_DB_BACKUP);
+	int had_previous = path_exists(SOURCE_DB_PATH);
+	if (had_previous) {
+		ret = sceIoRename(SOURCE_DB_PATH, SOURCE_DB_BACKUP);
+		if (ret < 0) {
+			sceIoRemove(SOURCE_DB_TEMP);
+			return ret;
+		}
+	}
+	ret = sceIoRename(SOURCE_DB_TEMP, SOURCE_DB_PATH);
+	if (ret < 0) {
+		if (had_previous) sceIoRename(SOURCE_DB_BACKUP, SOURCE_DB_PATH);
+		sceIoRemove(SOURCE_DB_TEMP);
+		return ret;
+	}
+	sceIoSync("ux0:", 0);
+	if (had_previous) sceIoRemove(SOURCE_DB_BACKUP);
+	return 0;
+}
+
+static void escape_password(const char *password, char *out, size_t out_size) {
+	size_t used = 0;
+	for (const unsigned char *cursor = (const unsigned char *)password;
+	     cursor && *cursor && used + 1 < out_size; cursor++) {
+		const char *escape = NULL;
+		if (*cursor == '\\') escape = "\\\\";
+		else if (*cursor == '\n') escape = "\\n";
+		else if (*cursor == '\r') escape = "\\r";
+		else if (*cursor == '\t') escape = "\\t";
+		if (escape) {
+			if (used + 2 >= out_size) break;
+			out[used++] = escape[0];
+			out[used++] = escape[1];
+		} else out[used++] = (char)*cursor;
+	}
+	out[used] = '\0';
+}
+
+static void unescape_password(const char *text, size_t length,
+	                          char out[VT_NETWORK_SECRET_MAX]) {
+	size_t used = 0;
+	for (size_t i = 0; i < length && used + 1 < VT_NETWORK_SECRET_MAX; i++) {
+		char value = text[i];
+		if (value == '\\' && i + 1 < length) {
+			char escaped = text[++i];
+			if (escaped == 'n') value = '\n';
+			else if (escaped == 'r') value = '\r';
+			else if (escaped == 't') value = '\t';
+			else value = escaped;
+		}
+		out[used++] = value;
+	}
+	out[used] = '\0';
+}
+
+int vt_network_credentials_load(VtNetworkCredential *credentials, int capacity) {
+	if (!credentials || capacity <= 0) return -1;
+	memset(credentials, 0, sizeof(*credentials) * (size_t)capacity);
+	SceIoStat status;
+	memset(&status, 0, sizeof(status));
+	if (sceIoGetstat(VITAWAVE_NETWORK_PASSWORDS_PATH, &status) < 0) return 0;
+	if (status.st_size <= 0 || status.st_size > 32768) return -1;
+	size_t size = (size_t)status.st_size;
+	char *data = malloc(size + 1);
+	if (!data) return -1;
+	SceUID fd = sceIoOpen(VITAWAVE_NETWORK_PASSWORDS_PATH, SCE_O_RDONLY, 0);
+	if (fd < 0) { free(data); return fd; }
+	int ret = read_all(fd, data, size);
+	int close_ret = sceIoClose(fd);
+	if (ret == 0 && close_ret < 0) ret = close_ret;
+	data[size] = '\0';
+	size_t header_size = strlen(g_passwords_header);
+	if (ret == 0 && (size < header_size ||
+	    memcmp(data, g_passwords_header, header_size) != 0)) ret = -1;
+	char *cursor = data + (ret == 0 ? header_size : size);
+	char *end = data + size;
+	while (ret == 0 && cursor < end) {
+		char *newline = memchr(cursor, '\n', (size_t)(end - cursor));
+		char *line_end = newline ? newline : end;
+		char *tab = memchr(cursor, '\t', (size_t)(line_end - cursor));
+		if (!tab) { ret = -1; break; }
+		char saved = *tab;
+		*tab = '\0';
+		char *number_end = NULL;
+		long index = strtol(cursor, &number_end, 10);
+		*tab = saved;
+		if (!number_end || number_end != tab || index < 0 || index >= capacity) {
+			ret = -1;
+			break;
+		}
+		unescape_password(tab + 1, (size_t)(line_end - tab - 1),
+		                  credentials[index].password);
+		cursor = newline ? newline + 1 : end;
+	}
+	memset(data, 0, size);
+	free(data);
+	if (ret < 0)
+		memset(credentials, 0, sizeof(*credentials) * (size_t)capacity);
+	return ret;
+}
+
+int vt_network_credentials_save(const VtNetworkCredential *credentials, int count) {
+	if (count < 0 || count > VT_NETWORK_MAX_SOURCES || (count && !credentials))
+		return -1;
+	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
+	sceIoMkdir(VITAWAVE_NETWORK_DIR, 0777);
+	sceIoRemove(PASSWORDS_TEMP);
+	SceUID fd = sceIoOpen(PASSWORDS_TEMP,
+	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+	if (fd < 0) return fd;
+	int ret = write_all(fd, g_passwords_header, strlen(g_passwords_header));
+	for (int i = 0; ret == 0 && i < count; i++) {
+		if (!credentials[i].password[0]) continue;
+		char escaped[VT_NETWORK_SECRET_MAX * 2 + 1];
+		char line[sizeof(escaped) + 24];
+		escape_password(credentials[i].password, escaped, sizeof(escaped));
+		int length = snprintf(line, sizeof(line), "%d\t%s\n", i, escaped);
+		if (length < 0 || (size_t)length >= sizeof(line)) ret = -1;
+		else ret = write_all(fd, line, (size_t)length);
+		memset(escaped, 0, sizeof(escaped));
+		memset(line, 0, sizeof(line));
+	}
+	if (ret == 0) ret = sceIoSyncByFd(fd, 0);
+	int close_ret = sceIoClose(fd);
+	if (ret == 0 && close_ret < 0) ret = close_ret;
+	if (ret < 0) { sceIoRemove(PASSWORDS_TEMP); return ret; }
+	sceIoRemove(PASSWORDS_BACKUP);
+	int had_previous = path_exists(VITAWAVE_NETWORK_PASSWORDS_PATH);
+	if (had_previous) {
+		ret = sceIoRename(VITAWAVE_NETWORK_PASSWORDS_PATH, PASSWORDS_BACKUP);
+		if (ret < 0) { sceIoRemove(PASSWORDS_TEMP); return ret; }
+	}
+	ret = sceIoRename(PASSWORDS_TEMP, VITAWAVE_NETWORK_PASSWORDS_PATH);
+	if (ret < 0) {
+		if (had_previous)
+			sceIoRename(PASSWORDS_BACKUP, VITAWAVE_NETWORK_PASSWORDS_PATH);
+		sceIoRemove(PASSWORDS_TEMP);
+		return ret;
+	}
+	sceIoSync("ux0:", 0);
+	if (had_previous) sceIoRemove(PASSWORDS_BACKUP);
+	return 0;
+}
+
+int vt_network_credentials_clear(void) {
+	int ret = 0;
+	const char *paths[] = {
+		VITAWAVE_NETWORK_PASSWORDS_PATH, PASSWORDS_TEMP, PASSWORDS_BACKUP
+	};
+	for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+		if (!path_exists(paths[i])) continue;
+		int remove_ret = sceIoRemove(paths[i]);
+		if (ret == 0 && remove_ret < 0) ret = remove_ret;
+	}
+	if (ret == 0) sceIoSync("ux0:", 0);
+	return ret;
 }
 
 int vt_network_list(const VtNetworkSource *source,
@@ -224,7 +397,7 @@ int vt_network_is_supported_media(const char *name, int *is_audio) {
 	if (is_audio) *is_audio = 0;
 	if (!name) return 0;
 	if (suffix_ci(name, ".mp4") || suffix_ci(name, ".m4v") ||
-	    suffix_ci(name, ".mov")) return 1;
+	    suffix_ci(name, ".mov") || suffix_ci(name, ".mkv")) return 1;
 	if (suffix_ci(name, ".mp3") || suffix_ci(name, ".m4a") ||
 	    suffix_ci(name, ".aac") || suffix_ci(name, ".wav")) {
 		if (is_audio) *is_audio = 1;

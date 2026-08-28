@@ -65,6 +65,6 @@ condivisione `VITAWAVE`, percorso e dominio vuoti, credenziali
 Ogni server resta in primo piano e si arresta con `Ctrl-C`. Per usarli insieme,
 aprili in tre finestre o pannelli Terminale distinti. Porta, credenziali,
 cartella e indirizzo di ascolto possono essere cambiati; usa `--help` per
-l'elenco completo delle opzioni. Metti nella cartella almeno un MP4/M4V/MOV
-seekable con video H.264 e audio AAC, che e' il contratto di riproduzione remota
-attualmente supportato dall'app.
+l'elenco completo delle opzioni. Metti nella cartella almeno un MP4/M4V/MOV/MKV
+seekable con video H.264; l'audio AAC e' supportato ma opzionale. Questo e' il
+contratto di riproduzione remota attualmente supportato dall'app.

@@ -92,9 +92,8 @@ int vt_smb_list(const VtNetworkSource *source,
 		if (!strcmp(entry->name, ".") || !strcmp(entry->name, "..")) continue;
 		int is_dir = entry->st.smb2_type == SMB2_TYPE_DIRECTORY;
 		int is_audio = 0;
-		if (!is_dir && !vt_network_is_supported_media(entry->name, &is_audio))
-			continue;
-		if (!is_dir && is_audio) continue;
+		int supported = !is_dir &&
+		                vt_network_is_supported_media(entry->name, &is_audio);
 		VtNetworkEntry *out = &entries[count++];
 		memset(out, 0, sizeof(*out));
 		snprintf(out->name, sizeof(out->name), "%s", entry->name);
@@ -103,8 +102,8 @@ int vt_smb_list(const VtNetworkSource *source,
 		else snprintf(out->path, sizeof(out->path), "%s", entry->name);
 		out->size = entry->st.smb2_size;
 		out->is_directory = is_dir;
-		out->is_audio = !is_dir && is_audio;
-		out->is_video = !is_dir && !is_audio;
+		out->is_audio = supported && is_audio;
+		out->is_video = supported && !is_audio;
 	}
 	smb2_closedir(context, directory);
 	smb2_disconnect_share(context);

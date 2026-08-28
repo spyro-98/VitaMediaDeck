@@ -30,6 +30,16 @@ temporarily switch it to a list; Video and Music remember their own view.
 File actions currently include rename and delete. Deleting local media also
 removes recognized artwork/metadata/subtitle sidecars with the same basename.
 
+The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
+`uma0:`. It defaults to a four-column grid inspired by Finder's icon view.
+
+| Input | Local folder browser behavior |
+| --- | --- |
+| D-pad / left stick | Move between folders and files. |
+| Cross | Open a folder or play a compatible media file. |
+| R1 | Switch the shared filesystem view between grid and list. |
+| Circle | Move to the parent folder; return to Library at the device root. |
+
 ## Network Sources
 
 ### Saved sources
@@ -39,19 +49,23 @@ removes recognized artwork/metadata/subtitle sidecars with the same basename.
 | Square | Add a source. |
 | Triangle | Edit the selected source. |
 | Select | Remove the selected source definition. |
-| Cross | Enter credentials and browse the selected server. |
+| Cross | Browse the selected server; request a password if none is available. |
 | Circle | Return. |
 
-The password prompt appears every time a server is opened; passwords are never
-saved. The first SFTP connection also presents the server SHA-256 fingerprint
-for explicit confirmation.
+The password can be entered in the add/edit form and is retained while the app
+is running. The System setting can optionally remember it in plaintext at
+`ux0:data/VitaWave/network/passwords.txt`; this is disabled by default and the
+file is removed when the option is disabled. The first SFTP connection presents
+the server SHA-256 fingerprint on a read-only confirmation page.
 
 ### Remote browser
 
 | Input | Behavior |
 | --- | --- |
-| Up/Down | Move through folders and compatible videos. |
-| Cross | Open a folder or play a video. |
+| Up/Down | Move through folders and files. |
+| Left/Right | Move between items while grid view is active. |
+| Cross | Open a folder or play a compatible video. |
+| R1 | Switch the shared filesystem view between grid and list. |
 | Circle | Move to the parent folder; leave at the root. |
 
 ## Video player
@@ -68,7 +82,10 @@ for explicit confirmation.
 | Touch video | Show or hide the player HUD. |
 | Touch/drag timeline | Seek to a position. |
 
-The player displays an `HW DEC` or `SW DEC` badge for the active H.264 decoder.
+The player displays an `HW DEC` or `SW DEC` badge, resolution, frame rate, and
+stream-reported video bitrate in both the HUD and the right information panel.
+The Playback settings tab selects Auto, HW H.264, or SW FFmpeg for newly opened
+videos. Auto is the default and permits hardware-to-software fallback.
 The Controls settings tab can explicitly swap L1/R1 with D-pad Left/Right. That
 compatibility mapping makes the shoulders seek and the D-pad open the panels;
 it is disabled by default.
