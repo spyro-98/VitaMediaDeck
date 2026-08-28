@@ -1,5 +1,5 @@
 VT_STR(SETTINGS_TITLE, "Impostazioni", "Settings")
-VT_STR(SETTINGS_CLOCK_SOURCE_APP, "VitaWave", "VitaWave")
+VT_STR(SETTINGS_CLOCK_SOURCE_APP, "VitaMediaDeck", "VitaMediaDeck")
 VT_STR(SETTINGS_CLOCK_SOURCE_PSVSHELL, "PSVshell manuale", "PSVshell manual")
 VT_STR(SETTINGS_TAB_PLAYBACK, "Riproduzione", "Playback")
 VT_STR(SETTINGS_TAB_INTERFACE, "Interfaccia", "Interface")

@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_UI_COMPONENTS_H
-#define VITAWAVE_UI_COMPONENTS_H
+#ifndef VITAMEDIADECK_UI_COMPONENTS_H
+#define VITAMEDIADECK_UI_COMPONENTS_H
 
 #include <vita2d.h>
 
@@ -18,4 +18,4 @@ void ui_action_button(float x, float y, float width, float height,
 	                  unsigned int fill, const char *key, const char *label,
 	                  int active);
 
-#endif /* VITAWAVE_UI_COMPONENTS_H */
+#endif /* VITAMEDIADECK_UI_COMPONENTS_H */

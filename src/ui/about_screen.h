@@ -1,11 +1,11 @@
-#ifndef VITAWAVE_UI_ABOUT_SCREEN_H
-#define VITAWAVE_UI_ABOUT_SCREEN_H
+#ifndef VITAMEDIADECK_UI_ABOUT_SCREEN_H
+#define VITAMEDIADECK_UI_ABOUT_SCREEN_H
 
-/* VitaWave "About" screen: logo, developer credit, and a context-aware
+/* VitaMediaDeck "About" screen: logo, developer credit, and a context-aware
  * button legend. Stays open until CIRCLE — never times out on its
  * own, unlike the generic ui_message_show() popup this replaces.
  * `player_context` is reserved for future context-specific details. Returns a
  * UI_SECTION_* destination chosen through L1, or UI_SECTION_NONE on back. */
 int ui_about_screen(int player_context);
 
-#endif /* VITAWAVE_UI_ABOUT_SCREEN_H */
+#endif /* VITAMEDIADECK_UI_ABOUT_SCREEN_H */

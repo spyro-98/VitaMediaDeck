@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_MEDIA_PLAYER_POWER_SAVE_H
-#define VITAWAVE_MEDIA_PLAYER_POWER_SAVE_H
+#ifndef VITAMEDIADECK_MEDIA_PLAYER_POWER_SAVE_H
+#define VITAMEDIADECK_MEDIA_PLAYER_POWER_SAVE_H
 
 #include <stdint.h>
 
@@ -78,4 +78,4 @@ static inline void player_power_save_lock_position(int index, int *x, int *y) {
 	if (y) *y = positions[index][1];
 }
 
-#endif /* VITAWAVE_MEDIA_PLAYER_POWER_SAVE_H */
+#endif /* VITAMEDIADECK_MEDIA_PLAYER_POWER_SAVE_H */

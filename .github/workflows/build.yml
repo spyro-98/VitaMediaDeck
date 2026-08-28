@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: vitawave-build-${{ github.ref }}
+  group: vitamediadeck-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
 
   build:
     name: VitaSDK Release build
-    if: ${{ vars.VITAWAVE_HW_REPOSITORY != '' && vars.VITAWAVE_SW_REPOSITORY != '' && vars.VITAWAVE_HTTPS_REPOSITORY != '' }}
+    if: ${{ vars.VITAMEDIADECK_HW_REPOSITORY != '' && vars.VITAMEDIADECK_SW_REPOSITORY != '' && vars.VITAMEDIADECK_HTTPS_REPOSITORY != '' }}
     runs-on: ubuntu-latest
     container:
       image: vitasdk/vitasdk:latest
@@ -44,24 +44,24 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v5
         with:
-          path: VitaWave
+          path: VitaMediaDeck
 
       - name: Check out hardware decoder
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.VITAWAVE_HW_REPOSITORY }}
+          repository: ${{ vars.VITAMEDIADECK_HW_REPOSITORY }}
           path: vita-hw-decoder
 
       - name: Check out software decoder
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.VITAWAVE_SW_REPOSITORY }}
+          repository: ${{ vars.VITAMEDIADECK_SW_REPOSITORY }}
           path: vita-sw-decoder
 
       - name: Check out HTTPS transport
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.VITAWAVE_HTTPS_REPOSITORY }}
+          repository: ${{ vars.VITAMEDIADECK_HTTPS_REPOSITORY }}
           path: vita-https
 
       - name: Install host build tools
@@ -116,26 +116,26 @@ jobs:
         id: libssh2-cache
         uses: actions/cache@v5
         with:
-          path: VitaWave/build/deps/libssh2-vita
-          key: libssh2-mbedtls-vita-${{ hashFiles('VitaWave/tools/build-libssh2-vita.sh') }}
+          path: VitaMediaDeck/build/deps/libssh2-vita
+          key: libssh2-mbedtls-vita-${{ hashFiles('VitaMediaDeck/tools/build-libssh2-vita.sh') }}
 
       - name: Build pinned libssh2
         if: steps.libssh2-cache.outputs.cache-hit != 'true'
-        working-directory: VitaWave
+        working-directory: VitaMediaDeck
         run: ./tools/build-libssh2-vita.sh
 
       - name: Restore pinned FFmpeg backend
         id: ffmpeg-cache
         uses: actions/cache@v5
         with:
-          path: VitaWave/build/deps/ffmpeg-vita-hw
-          key: ffmpeg-h264-vita-${{ hashFiles('VitaWave/tools/build-ffmpeg-vita-hw.sh') }}
+          path: VitaMediaDeck/build/deps/ffmpeg-vita-hw
+          key: ffmpeg-h264-vita-${{ hashFiles('VitaMediaDeck/tools/build-ffmpeg-vita-hw.sh') }}
 
       - name: Build pinned FFmpeg backend
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        working-directory: VitaWave
+        working-directory: VitaMediaDeck
         env:
-          VITAWAVE_FFMPEG_JOBS: "2"
+          VITAMEDIADECK_FFMPEG_JOBS: "2"
         run: ./tools/build-ffmpeg-vita-hw.sh
 
       - name: Restore pinned software FFmpeg backend
@@ -153,30 +153,30 @@ jobs:
         run: ./tools/build-ffmpeg.sh
 
       - name: Prepare release licenses and sources
-        working-directory: VitaWave
+        working-directory: VitaMediaDeck
         run: ./tools/prepare-release-licenses.sh
 
       - name: Configure Release build
-        working-directory: VitaWave
+        working-directory: VitaMediaDeck
         run: cmake -S . -B build-ci -DCMAKE_BUILD_TYPE=Release
 
       - name: Build VPK
-        working-directory: VitaWave
+        working-directory: VitaMediaDeck
         run: cmake --build build-ci --parallel 2
 
       - name: Validate VPK container
-        working-directory: VitaWave
-        run: ./tools/release-audit.sh --vpk build-ci/VitaWave.vpk
+        working-directory: VitaMediaDeck
+        run: ./tools/release-audit.sh --vpk build-ci/VitaMediaDeck.vpk
 
       - name: Package corresponding source
-        working-directory: VitaWave
-        run: ./tools/package-corresponding-source.sh build-ci/VitaWave-Corresponding-Source.tar.gz
+        working-directory: VitaMediaDeck
+        run: ./tools/package-corresponding-source.sh build-ci/VitaMediaDeck-Corresponding-Source.tar.gz
 
       - name: Upload VPK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: VitaWave-VPK
+          name: VitaMediaDeck-VPK
           path: |
-            VitaWave/build-ci/VitaWave.vpk
-            VitaWave/build-ci/VitaWave-Corresponding-Source.tar.gz
+            VitaMediaDeck/build-ci/VitaMediaDeck.vpk
+            VitaMediaDeck/build-ci/VitaMediaDeck-Corresponding-Source.tar.gz
           if-no-files-found: error

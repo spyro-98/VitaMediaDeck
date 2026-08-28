@@ -230,7 +230,7 @@ static void draw_screen(int tab, int cursor, float focus,
 			draw_value(small, y, language_label(rows[i].value));
 		else if (rows[i].kind == ROW_CLOCK)
 			draw_value(small, y, rows[i].value == VT_CLOCK_SOURCE_APP
-			                       ? "VitaWave 444/222/222/111"
+			                       ? "VitaMediaDeck 444/222/222/111"
 			                       : vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_PSVSHELL));
 		else if (rows[i].kind == ROW_MAPPING)
 			draw_value(small, y, vt_i18n_str(rows[i].value
@@ -243,7 +243,7 @@ static void draw_screen(int tab, int cursor, float focus,
 	if (tab == TAB_SYSTEM && small) {
 		char path[192];
 		snprintf(path, sizeof(path), vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PATH),
-		         VITAWAVE_NETWORK_PASSWORDS_PATH);
+		         VITAMEDIADECK_NETWORK_PASSWORDS_PATH);
 		ui_font_draw_text(small, ROW_X + 12, 354, VT_THEME_WARNING,
 		                  UI_FONT_SMALL,
 		                  vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PLAINTEXT_WARNING));

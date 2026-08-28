@@ -349,7 +349,7 @@ static int loading_run_internal(const char *query, const char *message,
 	state.result = -1;
 	UiTaskThreadArgs thread_args = { &state };
 
-	SceUID thid = sceKernelCreateThread("VitaWaveUiTask", loading_task_thread,
+	SceUID thid = sceKernelCreateThread("VitaMediaDeckUiTask", loading_task_thread,
 	                                    TASK_THREAD_PRIORITY, TASK_THREAD_STACK,
 	                                    0, 0, NULL);
 	if (thid < 0) {

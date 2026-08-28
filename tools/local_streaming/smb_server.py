@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only authenticated SMB2 server for VitaWave hardware tests."""
+"""Read-only authenticated SMB2 server for VitaMediaDeck hardware tests."""
 
 from __future__ import annotations
 
@@ -50,9 +50,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--media-dir", type=Path, default=default_media_dir())
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=1445)
-    parser.add_argument("--share", default="VITAWAVE")
-    parser.add_argument("--username", default="vitawave")
-    parser.add_argument("--password", default="vitawave")
+    parser.add_argument("--share", default="VITAMEDIADECK")
+    parser.add_argument("--username", default="vitamediadeck")
+    parser.add_argument("--password", default="vitamediadeck")
     return parser.parse_args()
 
 
@@ -73,7 +73,7 @@ def main() -> int:
                         format="[%(levelname)s] %(message)s")
     server = smbserver.SimpleSMBServer(
         listenAddress=args.bind, listenPort=args.port)
-    server.addShare(share, str(root), "VitaWave local media", readOnly="yes")
+    server.addShare(share, str(root), "VitaMediaDeck local media", readOnly="yes")
     server.setSMB2Support(True)
     server.setNTLMSupport(True)
     server.setKerberosSupport(False)
@@ -82,14 +82,14 @@ def main() -> int:
         compute_nthash(args.password))
     host = args.bind if args.bind not in ("0.0.0.0", "localhost") \
         else lan_ipv4_address()
-    print("\nSMB2 VitaWave avviato")
+    print("\nSMB2 VitaMediaDeck avviato")
     print(f"  Media:          {root}")
     print(f"  Endpoint:       {host}:{args.port}")
     print(f"  Condivisione:   {share}")
     print(f"  Utente:         {args.username}")
     print(f"  Password:       {args.password}")
     print(f"  Impacket:       {installed}")
-    print("\nIn VitaWave: SMB, host = IP del Mac, porta = quella sopra, ")
+    print("\nIn VitaMediaDeck: SMB, host = IP del Mac, porta = quella sopra, ")
     print("condivisione = nome sopra, percorso iniziale vuoto, dominio vuoto.")
     print("Il server e' in sola lettura e firma le sessioni autenticate.")
     print("Interrompi il server con Ctrl-C.\n")

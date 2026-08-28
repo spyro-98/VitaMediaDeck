@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_COMMON_TEXT_LOG_H
-#define VITAWAVE_COMMON_TEXT_LOG_H
+#ifndef VITAMEDIADECK_COMMON_TEXT_LOG_H
+#define VITAMEDIADECK_COMMON_TEXT_LOG_H
 
 /* Text log with scrollable history — the vendored debug screen
  * (debugScreen.c) has no scrollback of its own: when the text exceeds the

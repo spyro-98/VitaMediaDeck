@@ -196,7 +196,7 @@ void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor) {
 		ui_font_draw_text(small, (int)ox + 41 - key_width / 2, 38,
 		                  VT_THEME_TEXT, UI_FONT_SMALL, "L1");
 		ui_font_draw_text(small, (int)ox + 76, 38, VT_THEME_TEXT_MUTED,
-		                  UI_FONT_SMALL, "VitaWave");
+		                  UI_FONT_SMALL, "VitaMediaDeck");
 	}
 	if (!font) return;
 	ui_font_draw_text(font, (int)ox + 28, 116, VT_THEME_TEXT,

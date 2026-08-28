@@ -9,7 +9,7 @@ VitaSDK exposes two complementary mechanisms:
 - `sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, ...)` opens the PCM output
   port used by the application.
 
-VitaWave acquires the AppMgr lease before opening the BGM port and releases the
+VitaMediaDeck acquires the AppMgr lease before opening the BGM port and releases the
 audio port before releasing the lease. If another application owns the resource,
 the failure is reported and normal foreground behavior is preserved where
 possible.
@@ -40,7 +40,7 @@ video paths.
 
 The public VitaSDK surface does not provide a supported contract for a normal
 VPK to publish title, artwork, playback state, and callbacks into the shell's
-music widget. Undocumented shell symbols are outside VitaWave's production
+music widget. Undocumented shell symbols are outside VitaMediaDeck's production
 scope.
 
 ## Hardware validation matrix
@@ -50,7 +50,7 @@ scope.
 - Turn the display off and on while music continues.
 - Pause, seek, and change volume before and after every transition.
 - Test while another application owns the BGM port.
-- Stop playback and close VitaWave while decoding is active.
+- Stop playback and close VitaMediaDeck while decoding is active.
 - Verify balanced acquire/open/close/release events in opt-in diagnostics.
 
 Compilation proves symbol availability and resource ordering. Only physical

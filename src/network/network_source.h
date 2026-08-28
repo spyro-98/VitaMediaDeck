@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_NETWORK_SOURCE_H
-#define VITAWAVE_NETWORK_SOURCE_H
+#ifndef VITAMEDIADECK_NETWORK_SOURCE_H
+#define VITAMEDIADECK_NETWORK_SOURCE_H
 
 #include <stddef.h>
 #include <stdint.h>

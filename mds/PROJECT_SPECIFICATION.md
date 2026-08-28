@@ -1,15 +1,15 @@
-# VitaWave project specification
+# VitaMediaDeck project specification
 
 ## Product definition
 
-VitaWave is a native media client for homebrew-enabled PlayStation Vita
+VitaMediaDeck is a native media client for homebrew-enabled PlayStation Vita
 systems. It plays user-provided local media and streams user-authorized video
 from authenticated WebDAV, SFTP, and SMB servers. It is self-contained and does
 not depend on a companion transcoding or discovery service.
 
 ## Product principles
 
-1. **The user chooses the source.** VitaWave browses only local storage and
+1. **The user chooses the source.** VitaMediaDeck browses only local storage and
    explicitly configured servers.
 2. **Authentication is explicit.** Remote sources require a username and a
    password. SFTP additionally requires host-key confirmation.
@@ -22,7 +22,7 @@ not depend on a companion transcoding or discovery service.
 5. **Hardware acceleration is preferred, not assumed.** The complete public
    H.264 hardware backend is used when compatible, with software H.264 kept as
    a fallback.
-6. **No media acquisition or export.** VitaWave neither downloads, extracts,
+6. **No media acquisition or export.** VitaMediaDeck neither downloads, extracts,
    converts, uploads, nor copies remote media.
 7. **No private platform APIs.** Production code uses redistributable source
    and public VitaSDK interfaces.
@@ -46,7 +46,7 @@ not depend on a companion transcoding or discovery service.
 
 - Public-media discovery or third-party catalogue integration.
 - Remote media download, export, extraction, transcoding, or upload.
-- Credential synchronization, cloud accounts, or a hosted VitaWave service.
+- Credential synchronization, cloud accounts, or a hosted VitaMediaDeck service.
 - DRM, decryption, access-control bypasses, or protected media workflows.
 - Anonymous/guest remote sources.
 - A custom H.264 codec or undocumented firmware decoder interface.

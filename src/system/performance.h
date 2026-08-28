@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_SYSTEM_PERFORMANCE_H
-#define VITAWAVE_SYSTEM_PERFORMANCE_H
+#ifndef VITAMEDIADECK_SYSTEM_PERFORMANCE_H
+#define VITAMEDIADECK_SYSTEM_PERFORMANCE_H
 
 #define VT_VIDEO_DEFAULT_ARM_MHZ 444
 #define VT_720P60_BUS_MHZ 222
@@ -23,4 +23,4 @@ void vt_performance_begin_video(VtPerformanceClockGuard *guard,
 	                            int quality_height, int fps);
 void vt_performance_end_video(VtPerformanceClockGuard *guard);
 
-#endif /* VITAWAVE_SYSTEM_PERFORMANCE_H */
+#endif /* VITAMEDIADECK_SYSTEM_PERFORMANCE_H */

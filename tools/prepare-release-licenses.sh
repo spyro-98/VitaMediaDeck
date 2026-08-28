@@ -2,9 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-output="${VITAWAVE_RELEASE_LICENSE_ROOT:-$repo_root/build/release-licenses}"
-sources="${VITAWAVE_RELEASE_SOURCE_ROOT:-$repo_root/build/release-sources}"
-work="$(mktemp -d "${TMPDIR:-/tmp}/vitawave-licenses.XXXXXX")"
+output="${VITAMEDIADECK_RELEASE_LICENSE_ROOT:-$repo_root/build/release-licenses}"
+sources="${VITAMEDIADECK_RELEASE_SOURCE_ROOT:-$repo_root/build/release-sources}"
+work="$(mktemp -d "${TMPDIR:-/tmp}/vitamediadeck-licenses.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$output" "$sources"
 

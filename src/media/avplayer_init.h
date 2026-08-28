@@ -1,5 +1,5 @@
-#ifndef VITAWAVE_MEDIA_AVPLAYER_INIT_H
-#define VITAWAVE_MEDIA_AVPLAYER_INIT_H
+#ifndef VITAMEDIADECK_MEDIA_AVPLAYER_INIT_H
+#define VITAMEDIADECK_MEDIA_AVPLAYER_INIT_H
 
 #include <psp2/avplayer.h>
 
@@ -57,4 +57,4 @@ int media_init_with_autostart(
  * to the UI. Safe even with an invalid internal sentinel. */
 void media_term(SceAvPlayerHandle handle);
 
-#endif /* VITAWAVE_MEDIA_AVPLAYER_INIT_H */
+#endif /* VITAMEDIADECK_MEDIA_AVPLAYER_INIT_H */

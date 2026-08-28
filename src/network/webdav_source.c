@@ -208,7 +208,7 @@ static void webdav_client_config(const VtNetworkSource *source,
 	                             const VtNetworkCredential *credential,
 	                             VitaHttpsClientConfig *config) {
 	memset(config, 0, sizeof(*config));
-	config->user_agent = "VitaWave/1.1";
+	config->user_agent = "VitaMediaDeck/1.1";
 	config->username = source->username;
 	config->password = credential ? credential->password : "";
 	if (source->tls_public_key_sha256[0]) {

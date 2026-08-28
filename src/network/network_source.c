@@ -13,14 +13,14 @@
 #include "app_paths.h"
 #include "network/network_internal.h"
 
-#define SOURCE_DB_PATH VITAWAVE_NETWORK_DIR "/sources.bin"
-#define SOURCE_DB_TEMP VITAWAVE_NETWORK_DIR "/sources.tmp"
-#define SOURCE_DB_BACKUP VITAWAVE_NETWORK_DIR "/sources.bak"
+#define SOURCE_DB_PATH VITAMEDIADECK_NETWORK_DIR "/sources.bin"
+#define SOURCE_DB_TEMP VITAMEDIADECK_NETWORK_DIR "/sources.tmp"
+#define SOURCE_DB_BACKUP VITAMEDIADECK_NETWORK_DIR "/sources.bak"
 #define SOURCE_DB_VERSION 2U
-#define PASSWORDS_TEMP VITAWAVE_NETWORK_DIR "/passwords.tmp"
-#define PASSWORDS_BACKUP VITAWAVE_NETWORK_DIR "/passwords.bak"
+#define PASSWORDS_TEMP VITAMEDIADECK_NETWORK_DIR "/passwords.tmp"
+#define PASSWORDS_BACKUP VITAMEDIADECK_NETWORK_DIR "/passwords.bak"
 
-static const char g_passwords_header[] = "# VitaWave network passwords v1\n";
+static const char g_passwords_header[] = "# VitaMediaDeck network passwords v1\n";
 
 typedef struct {
 	char magic[8];
@@ -75,8 +75,8 @@ static int write_all(SceUID fd, const void *buffer, size_t size) {
 int vt_network_init(void) {
 	if (g_initialized) return 0;
 	if (libssh2_init(0) != 0) return -1;
-	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
-	sceIoMkdir(VITAWAVE_NETWORK_DIR, 0777);
+	sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
+	sceIoMkdir(VITAMEDIADECK_NETWORK_DIR, 0777);
 	g_initialized = 1;
 	return 0;
 }
@@ -136,8 +136,8 @@ int vt_network_sources_load(VtNetworkSource *sources, int capacity) {
 int vt_network_sources_save(const VtNetworkSource *sources, int count) {
 	if (count < 0 || count > VT_NETWORK_MAX_SOURCES || (count && !sources))
 		return -1;
-	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
-	sceIoMkdir(VITAWAVE_NETWORK_DIR, 0777);
+	sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
+	sceIoMkdir(VITAMEDIADECK_NETWORK_DIR, 0777);
 	sceIoRemove(SOURCE_DB_TEMP);
 	SceUID fd = sceIoOpen(SOURCE_DB_TEMP,
 	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
@@ -218,12 +218,12 @@ int vt_network_credentials_load(VtNetworkCredential *credentials, int capacity) 
 	memset(credentials, 0, sizeof(*credentials) * (size_t)capacity);
 	SceIoStat status;
 	memset(&status, 0, sizeof(status));
-	if (sceIoGetstat(VITAWAVE_NETWORK_PASSWORDS_PATH, &status) < 0) return 0;
+	if (sceIoGetstat(VITAMEDIADECK_NETWORK_PASSWORDS_PATH, &status) < 0) return 0;
 	if (status.st_size <= 0 || status.st_size > 32768) return -1;
 	size_t size = (size_t)status.st_size;
 	char *data = malloc(size + 1);
 	if (!data) return -1;
-	SceUID fd = sceIoOpen(VITAWAVE_NETWORK_PASSWORDS_PATH, SCE_O_RDONLY, 0);
+	SceUID fd = sceIoOpen(VITAMEDIADECK_NETWORK_PASSWORDS_PATH, SCE_O_RDONLY, 0);
 	if (fd < 0) { free(data); return fd; }
 	int ret = read_all(fd, data, size);
 	int close_ret = sceIoClose(fd);
@@ -262,8 +262,8 @@ int vt_network_credentials_load(VtNetworkCredential *credentials, int capacity) 
 int vt_network_credentials_save(const VtNetworkCredential *credentials, int count) {
 	if (count < 0 || count > VT_NETWORK_MAX_SOURCES || (count && !credentials))
 		return -1;
-	sceIoMkdir(VITAWAVE_DATA_DIR, 0777);
-	sceIoMkdir(VITAWAVE_NETWORK_DIR, 0777);
+	sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
+	sceIoMkdir(VITAMEDIADECK_NETWORK_DIR, 0777);
 	sceIoRemove(PASSWORDS_TEMP);
 	SceUID fd = sceIoOpen(PASSWORDS_TEMP,
 	                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
@@ -285,15 +285,15 @@ int vt_network_credentials_save(const VtNetworkCredential *credentials, int coun
 	if (ret == 0 && close_ret < 0) ret = close_ret;
 	if (ret < 0) { sceIoRemove(PASSWORDS_TEMP); return ret; }
 	sceIoRemove(PASSWORDS_BACKUP);
-	int had_previous = path_exists(VITAWAVE_NETWORK_PASSWORDS_PATH);
+	int had_previous = path_exists(VITAMEDIADECK_NETWORK_PASSWORDS_PATH);
 	if (had_previous) {
-		ret = sceIoRename(VITAWAVE_NETWORK_PASSWORDS_PATH, PASSWORDS_BACKUP);
+		ret = sceIoRename(VITAMEDIADECK_NETWORK_PASSWORDS_PATH, PASSWORDS_BACKUP);
 		if (ret < 0) { sceIoRemove(PASSWORDS_TEMP); return ret; }
 	}
-	ret = sceIoRename(PASSWORDS_TEMP, VITAWAVE_NETWORK_PASSWORDS_PATH);
+	ret = sceIoRename(PASSWORDS_TEMP, VITAMEDIADECK_NETWORK_PASSWORDS_PATH);
 	if (ret < 0) {
 		if (had_previous)
-			sceIoRename(PASSWORDS_BACKUP, VITAWAVE_NETWORK_PASSWORDS_PATH);
+			sceIoRename(PASSWORDS_BACKUP, VITAMEDIADECK_NETWORK_PASSWORDS_PATH);
 		sceIoRemove(PASSWORDS_TEMP);
 		return ret;
 	}
@@ -305,7 +305,7 @@ int vt_network_credentials_save(const VtNetworkCredential *credentials, int coun
 int vt_network_credentials_clear(void) {
 	int ret = 0;
 	const char *paths[] = {
-		VITAWAVE_NETWORK_PASSWORDS_PATH, PASSWORDS_TEMP, PASSWORDS_BACKUP
+		VITAMEDIADECK_NETWORK_PASSWORDS_PATH, PASSWORDS_TEMP, PASSWORDS_BACKUP
 	};
 	for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
 		if (!path_exists(paths[i])) continue;
