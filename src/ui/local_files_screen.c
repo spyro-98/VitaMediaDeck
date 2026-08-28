@@ -142,7 +142,9 @@ static int load_entries(const char *path, LocalFileEntry *entries) {
 		memset(&source, 0, sizeof(source));
 		int result = sceIoDread(directory, &source);
 		if (result <= 0) break;
-		if (!strcmp(source.d_name, ".") || !strcmp(source.d_name, "..")) continue;
+		/* Match Finder's default hidden-file behavior and keep Vita metadata or
+		 * application-private dot entries out of the media browser. */
+		if (source.d_name[0] == '.') continue;
 		int is_directory = SCE_S_ISDIR(source.d_stat.st_mode);
 		VtLocalMediaType type = is_directory ? 0 : local_media_type(source.d_name);
 		LocalFileEntry *entry = &entries[count];

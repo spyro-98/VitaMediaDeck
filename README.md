@@ -29,6 +29,31 @@ does not provide a download or audio-extraction feature.
 > still require broad validation on physical Vita hardware and different
 > servers before a stable release is published.
 
+## Running on PlayStation Vita
+
+<table>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="screenshots/music-player.jpeg" alt="VitaWave music player running on PlayStation Vita">
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Local music playback</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="screenshots/hardware-decoder.jpeg" alt="VitaWave hardware H.264 decoder running on PlayStation Vita">
+    </td>
+    <td width="50%" align="center">
+      <img src="screenshots/software-decoder.jpeg" alt="VitaWave software H.264 decoder running on PlayStation Vita">
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Hardware H.264 decoder</sub></td>
+    <td align="center"><sub>Software FFmpeg decoder</sub></td>
+  </tr>
+</table>
+
 ## Highlights
 
 - **Local media library:** indexes compatible files under `ux0:video`,
@@ -157,6 +182,7 @@ navigation. Local and remote folder browsers default to a four-column grid;
 R1 switches both to a compact list and remembers the shared choice.
 Folders and all files remain visible; compatible media uses the colored media
 accent and can be played, while unsupported files remain read-only.
+Dot-prefixed local files and folders stay hidden, matching Finder's default.
 
 ## Data layout
 
