@@ -110,8 +110,12 @@ fresh physical-Vita screenshot pass.
   Its single-threaded CPU fallback remains low-priority and bounded while the
   video mini-player runs; a temporary GPU-memory failure retains the decoded
   pixels for a cheap retry instead of decoding the movie again. Thumbnail cache
-  version 5 invalidates prior failed/incorrect local-cover results, and local
-  Matroska opening explicitly admits H.264 plus MJPEG/PNG attached artwork.
+  version 6 invalidates prior failed, black, or incorrect local-cover results.
+  Local `ux0:/` and `uma0:/` media use the proven `sceIo`-backed seekable AVIO
+  route instead of treating Vita device prefixes as FFmpeg URL protocols. Valid
+  embedded JPEG/PNG artwork is preferred; an all-black or effectively uniform
+  attachment is treated as unusable and falls back to a representative H.264
+  frame.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
@@ -135,8 +139,9 @@ fresh physical-Vita screenshot pass.
   open/probe/seek never takes over
   the player UI, healthy cursors are repositioned after a cooperative cancel,
   stale text clears immediately, and the R panel reports pending or failed
-  requests in place. Local subtitles use the native indexed libavformat path;
-  authenticated remote subtitles retain their isolated custom cursor. A failed
+  requests in place. Local subtitles use an isolated `sceIo`-backed seekable
+  cursor, while authenticated remote subtitles retain their protocol-specific
+  isolated cursor. A failed
   request remains visibly selected instead of silently reverting to Off.
   Read-ahead is bounded by both cue count and a
   short playback-time horizon so sparse subtitles cannot scan far into a movie.

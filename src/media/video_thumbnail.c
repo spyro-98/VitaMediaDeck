@@ -35,7 +35,7 @@
 #define THUMB_TEXTURE_CAPACITY      12
 #define THUMB_FAILURE_CAPACITY      24
 #define THUMB_DISK_SLOTS            128
-#define THUMB_CACHE_VERSION         5u
+#define THUMB_CACHE_VERSION         6u
 #define THUMB_FAILURE_RETRY_US      (30ULL * 1000ULL * 1000ULL)
 #define THUMB_UPLOAD_RETRY_US       (500ULL * 1000ULL)
 #define THUMB_DECODE_DEADLINE_US    (5ULL * 1000ULL * 1000ULL)
@@ -393,34 +393,6 @@ static int thumbnail_input_open(ThumbnailInput *input,
 	input->format->probesize = 1024 * 1024;
 	input->format->max_analyze_duration = 2 * AV_TIME_BASE;
 	result = avformat_open_input(&input->format, NULL, NULL, NULL);
-	if (result < 0) thumbnail_input_close(input);
-	return result;
-}
-
-static int thumbnail_input_open_local(ThumbnailInput *input, const char *path,
-	                                  ThumbnailInterrupt *interrupt) {
-	if (!input || !path || !path[0]) return AVERROR(EINVAL);
-	memset(input, 0, sizeof(*input));
-	input->interrupt = interrupt;
-	input->format = avformat_alloc_context();
-	if (!input->format) return AVERROR(ENOMEM);
-	input->format->interrupt_callback.callback = thumbnail_interrupted;
-	input->format->interrupt_callback.opaque = interrupt;
-	/* This is the exact local-file route used by the working online thumbnail
-	 * implementation. Do not insert the generic custom AVIO layer between
-	 * Matroska attachments/indexes and libavformat. */
-	/* Matroska cover.jpg is an MJPEG attached picture. The former H.264-only
-	 * whitelist rejected that stream while opening the container, preventing
-	 * both embedded artwork and the later H.264 frame fallback. */
-	input->format->codec_whitelist = av_strdup("h264,mjpeg,png");
-	if (!input->format->codec_whitelist) {
-		thumbnail_input_close(input);
-		return AVERROR(ENOMEM);
-	}
-	if (interrupt && !interrupt->deadline_us)
-		interrupt->deadline_us = sceKernelGetProcessTimeWide() +
-		                         THUMB_DECODE_DEADLINE_US;
-	int result = avformat_open_input(&input->format, path, NULL, NULL);
 	if (result < 0) thumbnail_input_close(input);
 	return result;
 }
@@ -890,9 +862,10 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 		.generation = request->generation
 	};
 	ThumbnailInput input;
-	int result = request->remote
-	           ? thumbnail_input_open(&input, factory, &interrupt)
-	           : thumbnail_input_open_local(&input, request->path, &interrupt);
+	/* Local Vita paths such as ux0:/ and uma0:/ are not ordinary FFmpeg URLs.
+	 * Use the same seekable custom AVIO contract for every source; the factory
+	 * maps local paths through sceIo and remote paths through their transports. */
+	int result = thumbnail_input_open(&input, factory, &interrupt);
 	AVFormatContext *format = result >= 0 ? input.format : NULL;
 	AVCodecContext *decoder = NULL;
 	AVPacket *packet = NULL;
@@ -905,11 +878,14 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	if (result >= 0 && cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
 		int cover_result = decode_attached_cover(format, cover_index, pixels,
 		                                         &interrupt);
-		if (cover_result >= 0) {
-			/* Embedded artwork belongs to the media author. A dark or intentionally
-			 * black cover is still valid artwork and must not be replaced by policy. */
+		if (cover_result >= 0 && thumbnail_information_score(pixels) > 0) {
 			converted = 1;
 			if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
+		} else if (cover_result >= 0) {
+			/* A valid but fully black/uniform attachment is visually equivalent to
+			 * missing artwork in the grid. Continue to the representative H.264 frame. */
+			log_printf("video thumbnail: embedded cover unusable, using frame: %s\n",
+			           request->path);
 		}
 	}
 	/* Matroska may enumerate cover.jpg during open while materializing its packet
@@ -949,9 +925,13 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 			if (cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
 				int cover_result = decode_attached_cover(format, cover_index, pixels,
 				                                         &interrupt);
-				if (cover_result >= 0) {
+				if (cover_result >= 0 &&
+				    thumbnail_information_score(pixels) > 0) {
 					converted = 1;
 					if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
+				} else if (cover_result >= 0) {
+					log_printf("video thumbnail: probed cover unusable, using frame: %s\n",
+					           request->path);
 				}
 			}
 		}
