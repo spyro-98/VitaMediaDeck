@@ -91,13 +91,17 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 		                          (int)(base_alpha[layer] * pulse)));
 	}
 
-	/* Thin signal rails preserve focus legibility over both dark and bright art. */
-	unsigned int rail = VT_THEME_SIGNAL_A((int)(248.0f * pulse));
+	/* Ice-white rails provide the primary selection contrast; copper survives as
+	 * a shorter lower trace so the palette remains mixed without overwhelming art. */
+	unsigned int rail = VT_THEME_SPECTRAL_A((int)(242.0f * pulse));
 	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, width + 8.0f, 3.0f, rail);
 	vita2d_draw_rectangle(x - 4.0f, y + height + 1.0f, width + 8.0f, 3.0f, rail);
 	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, 2.0f, 16.0f, rail);
 	vita2d_draw_rectangle(x + width + 2.0f, y + height - 12.0f,
 	                      2.0f, 16.0f, rail);
+	vita2d_draw_rectangle(x + width * 0.18f, y + height + 1.0f,
+	                      width * 0.34f, 2.0f,
+	                      VT_THEME_SIGNAL_A((int)(198.0f * pulse)));
 	/* Cold centre ticks read as machine acquisition; the warm rails continue to
 	 * identify the user's focus. */
 	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y - 7.0f,
