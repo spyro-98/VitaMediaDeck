@@ -397,6 +397,31 @@ static int thumbnail_input_open(ThumbnailInput *input,
 	return result;
 }
 
+static int thumbnail_input_open_local(ThumbnailInput *input, const char *path,
+	                                  ThumbnailInterrupt *interrupt) {
+	if (!input || !path || !path[0]) return AVERROR(EINVAL);
+	memset(input, 0, sizeof(*input));
+	input->interrupt = interrupt;
+	input->format = avformat_alloc_context();
+	if (!input->format) return AVERROR(ENOMEM);
+	input->format->interrupt_callback.callback = thumbnail_interrupted;
+	input->format->interrupt_callback.opaque = interrupt;
+	/* This is the exact local-file route used by the working online thumbnail
+	 * implementation. Do not insert the generic custom AVIO layer between
+	 * Matroska attachments/indexes and libavformat. */
+	input->format->codec_whitelist = av_strdup("h264");
+	if (!input->format->codec_whitelist) {
+		thumbnail_input_close(input);
+		return AVERROR(ENOMEM);
+	}
+	if (interrupt && !interrupt->deadline_us)
+		interrupt->deadline_us = sceKernelGetProcessTimeWide() +
+		                         THUMB_DECODE_DEADLINE_US;
+	int result = avformat_open_input(&input->format, path, NULL, NULL);
+	if (result < 0) thumbnail_input_close(input);
+	return result;
+}
+
 static int clamp_byte(int value) {
 	return value < 0 ? 0 : value > 255 ? 255 : value;
 }
@@ -709,19 +734,11 @@ static int choose_target_and_seek(AVFormatContext *format, int stream_index) {
 		duration_us = format->duration;
 	int64_t target_us = 2 * AV_TIME_BASE;
 	if (duration_us > 0) {
-		/* Ten seconds and the historical 30-second host cover frequently land on
-		 * studio cards or a fade. Indexed seeks cost the same at 45-90 seconds and
-		 * are much more likely to represent the actual movie. */
-		if (duration_us >= 180 * AV_TIME_BASE) {
-			target_us = duration_us / 10;
-			if (target_us < 45 * AV_TIME_BASE) target_us = 45 * AV_TIME_BASE;
-			if (target_us > 90 * AV_TIME_BASE) target_us = 90 * AV_TIME_BASE;
-		} else {
-			target_us = duration_us / 3;
-			if (target_us > 45 * AV_TIME_BASE) target_us = 45 * AV_TIME_BASE;
-		}
+		target_us = duration_us < 6 * AV_TIME_BASE
+		          ? duration_us / 3 : duration_us / 10;
 		if (target_us < 2 * AV_TIME_BASE && duration_us >= 3 * AV_TIME_BASE)
 			target_us = 2 * AV_TIME_BASE;
+		if (target_us > 10 * AV_TIME_BASE) target_us = 10 * AV_TIME_BASE;
 		if (target_us >= duration_us - AV_TIME_BASE / 2)
 			target_us = duration_us / 2;
 	}
@@ -870,7 +887,9 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 		.generation = request->generation
 	};
 	ThumbnailInput input;
-	int result = thumbnail_input_open(&input, factory, &interrupt);
+	int result = request->remote
+	           ? thumbnail_input_open(&input, factory, &interrupt)
+	           : thumbnail_input_open_local(&input, request->path, &interrupt);
 	AVFormatContext *format = result >= 0 ? input.format : NULL;
 	AVCodecContext *decoder = NULL;
 	AVPacket *packet = NULL;

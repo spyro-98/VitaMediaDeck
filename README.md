@@ -25,9 +25,11 @@ catalogues. It has no account integration with third-party media platforms and
 does not provide a download or audio-extraction feature.
 
 The application UI follows the evolved **Spectral Reassembly** direction:
-pitch-black OLED fields, spectral-white material, amber point-cloud projection,
-restrained teal reflections, native Vita status surfaces, and deterministic
-particle motion. Its design rationale and multilingual typography contract are
+pitch-black OLED fields, cold blue/teal atmospheric volume, spectral-white
+material, and amber/copper projection accents. Slow layered particle clouds,
+micro-fragments, and scan traces replace the former mostly fixed background
+graphic without removing the warm light present in the film references. Its
+design rationale and multilingual typography contract are
 documented in
 [`mds/UI_SIGNAL_SHELL.md`](mds/UI_SIGNAL_SHELL.md).
 
@@ -92,12 +94,14 @@ fresh physical-Vita screenshot pass.
   uses the same persistent grid/list choice as WebDAV, SFTP, and SMB folders.
 - **Video cover previews:** local cells prefer matching artwork sidecars, then
   local and remote cells use an embedded cover when present or asynchronously
-  extract and cache a representative H.264 frame. Indexed MP4/Matroska artwork
-  is decoded directly from the container index. Matroska discovery handles both
+  extract and cache a representative H.264 frame. Local media uses libavformat's
+  proven direct file path, while authenticated remote media retains its isolated
+  seekable cursor. Indexed MP4/Matroska artwork is decoded directly from the
+  container index. Matroska discovery handles both
   `attached_pic` packets and image attachments backed by codec data. Valid
   embedded artwork is always respected, including intentionally dark covers;
   only missing or undecodable artwork falls back to a representative H.264
-  frame from a 45–90 second window. Frame extraction receives a fresh
+  frame from a bounded 2–10 second representative window. Frame extraction receives a fresh
   local/remote decode budget after artwork inspection. The selected cell
   preempts stale viewport work, and its worker runs above background catalog
   scanning so embedded artwork is not starved by the active grid. Invalid

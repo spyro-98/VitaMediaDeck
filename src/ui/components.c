@@ -1,5 +1,6 @@
 #include "ui/components.h"
 
+#include <math.h>
 #include <stdint.h>
 
 #include <psp2/kernel/processmgr.h>
@@ -24,6 +25,43 @@ unsigned int ui_contrast_bw(unsigned int background) {
 	                         : RGBA8(255, 255, 255, 255);
 }
 
+static void draw_particle_cloud(float cx, float cy, float width, float height,
+	                            uint32_t salt, uint64_t now,
+	                            int reduced_motion, int warm_core) {
+	float drift_x = 0.0f, drift_y = 0.0f;
+	if (!reduced_motion) {
+		float phase = (float)((now / 1000ULL + salt) % 16000ULL) / 16000.0f;
+		drift_x = sinf(phase * 6.2831853f) * 18.0f;
+		drift_y = cosf(phase * 6.2831853f * 0.73f) * 9.0f;
+	}
+	cx += drift_x;
+	cy += drift_y;
+	/* Overlapping translucent cells create a real volumetric wisp rather than a
+	 * flat constellation. The deterministic field needs no allocation or RNG. */
+	for (unsigned int i = 0; i < 30U; i++) {
+		uint32_t seed = (salt + i * 0x9E3779B9U) * 0x45D9F3BU;
+		seed ^= seed >> 16;
+		float nx = ((float)((seed >> 5) % 1000U) / 500.0f) - 1.0f;
+		float ny = ((float)((seed >> 17) % 1000U) / 500.0f) - 1.0f;
+		float falloff = 1.0f - (nx * nx + ny * ny) * 0.28f;
+		if (falloff < 0.18f) falloff = 0.18f;
+		float px = cx + nx * width * 0.5f;
+		float py = cy + ny * height * 0.5f;
+		float radius = 3.0f + (float)(seed % 10U);
+		unsigned int alpha = (unsigned int)((5U + seed % 13U) * falloff);
+		unsigned int color = warm_core && i % 7U == 0U
+		                   ? VT_THEME_SIGNAL_A(alpha + 3U)
+		                   : i % 4U == 0U ? VT_THEME_SPECTRAL_A(alpha)
+		                                     : VT_THEME_COLD_A(alpha);
+		vita2d_draw_fill_circle(px, py, radius, color);
+		if (i % 3U == 0U)
+			vita2d_draw_rectangle(px, py, i % 9U == 0U ? 2.0f : 1.0f,
+			                      i % 9U == 0U ? 2.0f : 1.0f,
+			                      i % 7U == 0U ? VT_THEME_SIGNAL_A(92)
+			                                    : VT_THEME_SPECTRAL_A(74));
+	}
+}
+
 void ui_chrome_background(unsigned int base, unsigned int accent) {
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 	                      544 - UI_BRAND_HEADER_HEIGHT, base);
@@ -45,25 +83,31 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 	int reduced_motion = vt_preferences_reduce_motion();
 	unsigned int phase = reduced_motion
 	                   ? 0U : (unsigned int)((now / 42000ULL) % 420ULL);
-	for (unsigned int i = 0; i < 54; i++) {
+	for (unsigned int i = 0; i < 82; i++) {
 		uint32_t seed = 0x9E3779B9U * (i + 11U);
 		seed ^= seed >> 16;
-		float x = 574.0f + (float)(seed % 376U);
+		float x = 18.0f + (float)(seed % 924U);
 		float y = 76.0f + (float)((seed / 331U + phase * (1U + i % 3U)) % 448U);
 		float size = i % 11U == 0U ? 3.0f : i % 4U == 0U ? 2.0f : 1.0f;
 		unsigned int alpha = 18U + (seed % 62U);
 		unsigned int accent_particle =
 		    (accent & 0x00ffffffU) | ((alpha + 18U) << 24);
-		unsigned int color = i % 11U == 0U ? VT_THEME_SIGNAL_A(alpha + 18U)
+		unsigned int color = i % 19U == 0U ? VT_THEME_SIGNAL_A(alpha + 18U)
 		                   : i % 7U == 0U ? accent_particle
 		                   : i % 3U == 0U ? VT_THEME_COLD_A(alpha)
 		                                    : VT_THEME_SPECTRAL_A(alpha);
 		vita2d_draw_rectangle(x, y, size, size, color);
-		if (i % 9U == 0U)
+		if (i % 13U == 0U)
 			vita2d_draw_line(x, y, 842.0f, 296.0f,
-			                 i % 18U == 0U ? VT_THEME_SIGNAL_A(18)
+			                 i % 26U == 0U ? VT_THEME_SIGNAL_A(18)
 			                                : VT_THEME_SPECTRAL_A(13));
 	}
+	draw_particle_cloud(744.0f, 228.0f, 248.0f, 116.0f,
+	                    0xA61C3U, now, reduced_motion, 0);
+	draw_particle_cloud(844.0f, 374.0f, 186.0f, 154.0f,
+	                    0x71B29U, now, reduced_motion, 1);
+	draw_particle_cloud(278.0f, 456.0f, 270.0f, 72.0f,
+	                    0xC04D7U, now, reduced_motion, 0);
 	/* A cold memory scan crosses only the machine-side telemetry field. It is
 	 * intentionally secondary to amber focus, and freezes to a quiet datum when
 	 * Reduce motion is enabled. */
@@ -87,17 +131,17 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 		                      packet % 4U == 0U ? 5.0f : 2.0f, 2.0f,
 		                      VT_THEME_COLD_A(118U));
 	}
-	/* A cold reassembly seam and incomplete optical rings are the recurring
-	 * shell/acquisition motif from the reference material. */
+	/* The shell seam remains a quiet structural anchor beneath the drifting
+	 * cloud. Warm copper appears as a reflected trace, not a dominant panel. */
 	vita2d_draw_line(704.0f, 492.0f, 932.0f, 142.0f,
 	                 VT_THEME_SPECTRAL_A(13));
 	vita2d_draw_line(720.0f, 506.0f, 944.0f, 170.0f,
 	                 VT_THEME_SIGNAL_A(11));
 	for (int ring = 2; ring >= 0; ring--) {
 		float radius = 54.0f + ring * 35.0f;
-		unsigned int edge = ring == 2 ? VT_THEME_COLD_A(24)
-		                  : ring == 1 ? VT_THEME_SPECTRAL_A(30)
-		                              : VT_THEME_SIGNAL_A(32);
+		unsigned int edge = ring == 2 ? VT_THEME_COLD_A(20)
+		                  : ring == 1 ? VT_THEME_SPECTRAL_A(24)
+		                              : VT_THEME_SIGNAL_A(20);
 		vita2d_draw_fill_circle(842.0f, 296.0f, radius, edge);
 		vita2d_draw_fill_circle(842.0f, 296.0f, radius - 2.0f,
 		                        (base & 0x00ffffffU) | (244U << 24));
