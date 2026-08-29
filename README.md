@@ -119,6 +119,9 @@ fresh physical-Vita screenshot pass.
   successful until a real video frame exists; a silent hardware session is
   rejected so Auto can recover instead of playing audio behind an endless
   Preparing video overlay.
+  Backward seeks preserve the preceding H.264 keyframe as decoder preroll and
+  suppress only its decoded pictures before the requested timestamp, preventing
+  an audio-only restart caused by missing inter-frame reference state.
   A seek that cannot produce a hardware frame within its bounded restart window
   is treated as a real failure; Auto reopens the software backend at the same
   requested position instead of resuming audio into an endless buffer state.
