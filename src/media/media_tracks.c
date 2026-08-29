@@ -42,6 +42,10 @@ struct VtSubtitleReader {
 	SceUID thid;
 	int started;
 	int stream_index;
+	volatile int requested_stream_index;
+	volatile uint64_t requested_position_ms;
+	volatile unsigned int switch_serial;
+	volatile unsigned int applied_serial;
 	volatile unsigned int read_index;
 	volatile unsigned int write_index;
 	volatile int eof;
@@ -454,8 +458,44 @@ static int subtitle_worker(SceSize args, void *argp) {
 		reader->error = AVERROR(ENOMEM);
 		return sceKernelExitThread(0);
 	}
-	AVStream *stream = reader->input.format->streams[reader->stream_index];
 	while (!reader->cancel) {
+		unsigned int requested_serial = reader->switch_serial;
+		__sync_synchronize();
+		if (requested_serial != reader->applied_serial) {
+			int requested_stream = reader->requested_stream_index;
+			uint64_t requested_position = reader->requested_position_ms;
+			reader->read_index = reader->write_index = 0;
+			reader->eof = 0;
+			reader->error = 0;
+			memset(reader->cues, 0, sizeof(reader->cues));
+			if (requested_stream >= 0 &&
+			    (unsigned int)requested_stream < reader->input.format->nb_streams) {
+				AVStream *requested = reader->input.format->streams[requested_stream];
+				int64_t target = av_rescale_q((int64_t)requested_position,
+				                              (AVRational){ 1, 1000 },
+				                              requested->time_base);
+				int ret = avformat_seek_file(reader->input.format, requested_stream,
+				                             INT64_MIN, target, target,
+				                             AVSEEK_FLAG_BACKWARD);
+				if (ret < 0)
+					ret = av_seek_frame(reader->input.format, requested_stream,
+					                    target, AVSEEK_FLAG_BACKWARD);
+				if (ret >= 0) {
+					avformat_flush(reader->input.format);
+					reader->stream_index = requested_stream;
+				} else {
+					reader->error = ret;
+					reader->stream_index = -1;
+				}
+			} else reader->stream_index = -1;
+			__sync_synchronize();
+			reader->applied_serial = requested_serial;
+			continue;
+		}
+		if (reader->stream_index < 0 || reader->eof) {
+			sceKernelDelayThread(5000);
+			continue;
+		}
 		if (reader->write_index - reader->read_index >=
 		    SUBTITLE_QUEUE_CAPACITY) {
 			sceKernelDelayThread(5000);
@@ -465,9 +505,11 @@ static int subtitle_worker(SceSize args, void *argp) {
 		if (ret < 0) {
 			if (ret != AVERROR_EOF && !reader->cancel) reader->error = ret;
 			reader->eof = 1;
-			break;
+			av_packet_unref(packet);
+			continue;
 		}
 		if (packet->stream_index == reader->stream_index) {
+			AVStream *stream = reader->input.format->streams[reader->stream_index];
 			int64_t pts = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
 			if (pts != AV_NOPTS_VALUE) {
 				VtSubtitleCue cue;
@@ -513,6 +555,11 @@ static void subtitle_reader_stop(VtSubtitleReader *reader, int close_input) {
 	if (close_input) media_input_close(&reader->input);
 	reader->thid = -1;
 	reader->started = 0;
+	reader->stream_index = -1;
+	reader->requested_stream_index = -1;
+	reader->requested_position_ms = 0;
+	reader->switch_serial = 0;
+	reader->applied_serial = 0;
 	reader->read_index = 0;
 	reader->write_index = 0;
 	reader->eof = 0;
@@ -525,18 +572,29 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 	                        int stream_index, uint64_t start_position_ms,
 	                        volatile int *open_cancel) {
 	if (!reader || !factory || stream_index < 0) return AVERROR(EINVAL);
-	int reuse_input = reader->input.format &&
+	int reuse_input = reader->input.format && reader->started &&
 	                  reader->factory.open == factory->open &&
 	                  reader->factory.opaque == factory->opaque;
-	subtitle_reader_stop(reader, !reuse_input);
+	if (reuse_input) {
+		if ((unsigned int)stream_index >= reader->input.format->nb_streams ||
+		    reader->input.format->streams[stream_index]->codecpar->codec_type !=
+		        AVMEDIA_TYPE_SUBTITLE ||
+		    !text_subtitle_codec(
+		        reader->input.format->streams[stream_index]->codecpar->codec_id))
+			return AVERROR_DECODER_NOT_FOUND;
+		reader->requested_stream_index = stream_index;
+		reader->requested_position_ms = start_position_ms;
+		__sync_synchronize();
+		__sync_add_and_fetch(&reader->switch_serial, 1);
+		return 0;
+	}
+	subtitle_reader_stop(reader, 1);
 	reader->cancel = 0;
 	int ret = 0;
-	if (!reuse_input) {
-		reader->factory = *factory;
-		ret = media_input_open(&reader->input, factory,
-		                       open_cancel ? open_cancel : &reader->cancel);
-		if (ret < 0) return ret;
-	}
+	reader->factory = *factory;
+	ret = media_input_open(&reader->input, factory,
+	                       open_cancel ? open_cancel : &reader->cancel);
+	if (ret < 0) return ret;
 	if (open_cancel && *open_cancel) {
 		media_input_close(&reader->input);
 		return AVERROR_EXIT;
@@ -555,7 +613,7 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 		return AVERROR_DECODER_NOT_FOUND;
 	}
 	reader->stream_index = stream_index;
-	if (start_position_ms || reuse_input) {
+	if (start_position_ms) {
 		AVStream *stream = reader->input.format->streams[stream_index];
 		int64_t target = av_rescale_q((int64_t)start_position_ms,
 		                              (AVRational){ 1, 1000 }, stream->time_base);
@@ -570,6 +628,10 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 		}
 		avformat_flush(reader->input.format);
 	}
+	reader->requested_stream_index = stream_index;
+	reader->requested_position_ms = start_position_ms;
+	reader->switch_serial = 1;
+	reader->applied_serial = 1;
 	reader->thid = sceKernelCreateThread(
 		"VitaMediaDeckSubtitles", subtitle_worker, SUBTITLE_THREAD_PRIORITY,
 		SUBTITLE_THREAD_STACK, 0, 0, NULL);
@@ -590,6 +652,14 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 	return 0;
 }
 
+void vt_subtitle_reader_disable(VtSubtitleReader *reader) {
+	if (!reader || !reader->started) return;
+	reader->requested_stream_index = -1;
+	reader->requested_position_ms = 0;
+	__sync_synchronize();
+	__sync_add_and_fetch(&reader->switch_serial, 1);
+}
+
 void vt_subtitle_reader_close(VtSubtitleReader *reader) {
 	subtitle_reader_stop(reader, 1);
 }
@@ -605,6 +675,7 @@ int vt_subtitle_reader_text(VtSubtitleReader *reader, uint64_t position_ms,
 	if (!text || !text_size) return AVERROR(EINVAL);
 	text[0] = '\0';
 	if (!reader || !reader->started) return 0;
+	if (reader->applied_serial != reader->switch_serial) return 0;
 	for (;;) {
 		__sync_synchronize();
 		if (reader->read_index == reader->write_index)

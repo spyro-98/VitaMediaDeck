@@ -301,7 +301,7 @@ int vt_decoder_select_subtitle_track(VtDecoderPlayer *player,
 	    subtitle_track > player->subtitle_track_count) return -1;
 	if (subtitle_track == player->active_subtitle_track) return 0;
 	if (subtitle_track == 0) {
-		vt_subtitle_reader_close(player->subtitles);
+		vt_subtitle_reader_disable(player->subtitles);
 		player->active_subtitle_track = 0;
 		player->config.subtitle_track = 0;
 		return 0;
@@ -359,7 +359,7 @@ int vt_decoder_subtitle_text(VtDecoderPlayer *player, uint64_t position_ms,
 	int result = vt_subtitle_reader_text(player->subtitles, position_ms,
 	                                    text, text_size);
 	if (result < 0) {
-		vt_subtitle_reader_close(player->subtitles);
+		vt_subtitle_reader_disable(player->subtitles);
 		player->active_subtitle_track = 0;
 		player->config.subtitle_track = 0;
 	}

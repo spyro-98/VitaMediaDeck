@@ -351,11 +351,6 @@ static int thumbnail_input_open(ThumbnailInput *input,
 	input->format->probesize = 1024 * 1024;
 	input->format->max_analyze_duration = 2 * AV_TIME_BASE;
 	result = avformat_open_input(&input->format, NULL, NULL, NULL);
-	/* Even indexed containers can defer attached-picture packets or codec
-	 * dimensions until stream discovery. The interrupt deadline keeps this
-	 * bounded while guaranteeing that the cover/frame fallback has complete
-	 * parameters instead of silently rejecting every request. */
-	if (result >= 0) result = avformat_find_stream_info(input->format, NULL);
 	if (result < 0) thumbnail_input_close(input);
 	return result;
 }
@@ -677,6 +672,29 @@ static int decode_attached_cover(AVFormatContext *format, int stream_index,
 	return AVERROR_DECODER_NOT_FOUND;
 }
 
+static void find_thumbnail_streams(AVFormatContext *format, int *cover_index,
+	                                int *video_index) {
+	if (cover_index) *cover_index = -1;
+	if (video_index) *video_index = -1;
+	if (!format) return;
+	for (unsigned int i = 0; i < format->nb_streams; i++) {
+		AVStream *candidate = format->streams[i];
+		if (candidate->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) continue;
+		if ((candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
+		    cover_index && *cover_index < 0) {
+			*cover_index = (int)i;
+			continue;
+		}
+		/* The pinned Vita FFmpeg build contains the CPU H.264 decoder used by
+		 * the representative-frame fallback. Do not select an advertised codec
+		 * whose decoder was deliberately omitted from the Vita build. */
+		if (video_index && *video_index < 0 &&
+		    candidate->codecpar->codec_id == AV_CODEC_ID_H264 &&
+		    avcodec_find_decoder_by_name("h264"))
+			*video_index = (int)i;
+	}
+}
+
 static int decode_thumbnail(const ThumbnailRequest *request,
 	                        const VtDecoderStreamFactory *factory,
 	                        uint16_t *pixels) {
@@ -692,39 +710,42 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	AVFrame *frame = NULL;
 	int cover_index = -1;
 	int stream_index = -1;
-	if (result >= 0) {
-		for (unsigned int i = 0; i < format->nb_streams; i++) {
-			AVStream *candidate = format->streams[i];
-			if (candidate->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) continue;
-			if ((candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
-			    cover_index < 0)
-				cover_index = (int)i;
-			else if (!(candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
-			         stream_index < 0 &&
-			         avcodec_find_decoder(candidate->codecpar->codec_id)) {
-				stream_index = (int)i;
-			}
-		}
-	}
+	if (result >= 0) find_thumbnail_streams(format, &cover_index, &stream_index);
 	int converted = 0;
+	/* Matroska and MP4 expose attached pictures while opening their indexes. Read
+	 * that packet immediately: running avformat_find_stream_info() first can spend
+	 * the whole five-second budget probing the main movie on Vita. */
 	if (result >= 0 && cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
 		int cover_result = decode_attached_cover(format, cover_index, pixels,
 		                                         &interrupt);
 		if (cover_result >= 0) converted = 1;
+	}
+	/* Non-indexed inputs, or indexed files with incomplete H.264 parameters, need
+	 * bounded discovery before the representative-frame fallback. Retry embedded
+	 * artwork as well because some demuxers populate attached_pic during probing. */
+	if (result >= 0 && !converted &&
+	    (stream_index < 0 ||
+	     format->streams[stream_index]->codecpar->width <= 0 ||
+	     format->streams[stream_index]->codecpar->height <= 0) &&
+	    !thumbnail_interrupted(&interrupt)) {
+		result = avformat_find_stream_info(format, NULL);
+		if (result >= 0) {
+			find_thumbnail_streams(format, &cover_index, &stream_index);
+			if (cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
+				int cover_result = decode_attached_cover(format, cover_index, pixels,
+				                                         &interrupt);
+				if (cover_result >= 0) converted = 1;
+			}
+		}
 	}
 	if (result >= 0 && !converted && stream_index < 0)
 		result = AVERROR_STREAM_NOT_FOUND;
 	AVStream *stream = result >= 0 && !converted
 	                 ? format->streams[stream_index] : NULL;
 	/* H.264 explicitly uses the CPU decoder: thumbnail work must never claim
-	 * SceVideodec or compete for its CDRAM surfaces. Other registered software
-	 * codecs are allowed so AVI/MPEG-4 and similar local libraries still receive
-	 * a real frame preview even when no attached cover exists. */
+	 * SceVideodec or compete for its CDRAM surfaces. */
 	const AVCodec *codec = result >= 0 && !converted
-	                       ? (stream->codecpar->codec_id == AV_CODEC_ID_H264
-	                          ? avcodec_find_decoder_by_name("h264")
-	                          : avcodec_find_decoder(stream->codecpar->codec_id))
-	                       : NULL;
+	                       ? avcodec_find_decoder_by_name("h264") : NULL;
 	if (result >= 0 && !converted && !codec) result = AVERROR_DECODER_NOT_FOUND;
 	if (result >= 0 && !converted) decoder = avcodec_alloc_context3(codec);
 	if (result >= 0 && !converted && !decoder) result = AVERROR(ENOMEM);
