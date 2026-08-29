@@ -46,7 +46,7 @@
 #define THUMB_MAX_VIDEO_PACKETS     240
 #define THUMB_AVIO_BUFFER_SIZE      (32 * 1024)
 #define THUMB_COVER_MAX_PIXELS      (1024U * 1024U)
-#define THUMB_THREAD_PRIORITY       0x10000180
+#define THUMB_THREAD_PRIORITY       0x10000120
 #define THUMB_THREAD_STACK          0x100000
 #define THUMB_CACHE_DIR             "ux0:data/VitaMediaDeck/thumbs"
 
