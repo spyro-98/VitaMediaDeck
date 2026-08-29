@@ -96,15 +96,21 @@ fresh physical-Vita screenshot pass.
   is decoded directly from the container index. Almost-black or near-uniform
   embedded artwork is rejected instead of disappearing into the OLED canvas;
   for long videos the worker then seeks to a more representative 45–90 second
-  window. The selected cell preempts stale viewport work, invalid sidecars are
-  failure-cached, and cache/decode/upload outcomes are written to diagnostics.
+  window. Frame extraction receives a fresh local/remote decode budget after
+  artwork inspection, so a blank embedded JPEG cannot consume the fallback's
+  time allowance. The selected cell preempts stale viewport work, invalid
+  sidecars are failure-cached, and cache/decode/upload outcomes are written to
+  diagnostics.
   Its single-threaded CPU fallback remains low-priority and bounded while the
   video mini-player runs; a temporary GPU-memory failure retains the decoded
   pixels for a cheap retry instead of decoding the movie again.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
-  fallback), HW H.264 only, or SW FFmpeg only.
+  fallback), HW H.264 only, or SW FFmpeg only. Startup is not considered
+  successful until a real video frame exists; a silent hardware session is
+  rejected so Auto can recover instead of playing audio behind an endless
+  Preparing video overlay.
 - **Multiple media tracks:** the playback panel discovers and switches between
   AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
   subtitles without leaving the video. The same seekable-cursor path is used
