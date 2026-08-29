@@ -45,9 +45,9 @@ void ui_focus_motion_tick(UiFocusMotion *motion, float x, float y,
 static unsigned int halo_color(int layer, int alpha) {
 	if (alpha < 0) alpha = 0;
 	if (alpha > 255) alpha = 255;
-	if (layer == 0) return RGBA8(18, 57, 63, alpha);
-	if (layer == 1) return RGBA8(150, 174, 171, alpha);
-	return RGBA8(226, 128, 41, alpha);
+	if (layer == 0) return RGBA8(8, 48, 69, alpha);
+	if (layer == 1) return RGBA8(78, 163, 180, alpha);
+	return RGBA8(203, 239, 243, alpha);
 }
 
 void ui_focus_glow_draw(float x, float y, float width, float height,
@@ -91,8 +91,8 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 		                          (int)(base_alpha[layer] * pulse)));
 	}
 
-	/* Ice-white rails provide the primary selection contrast; copper survives as
-	 * a shorter lower trace so the palette remains mixed without overwhelming art. */
+	/* Ice-white rails provide the primary selection contrast; oxidized amber
+	 * survives only as a short lower telemetry trace. */
 	unsigned int rail = VT_THEME_SPECTRAL_A((int)(242.0f * pulse));
 	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, width + 8.0f, 3.0f, rail);
 	vita2d_draw_rectangle(x - 4.0f, y + height + 1.0f, width + 8.0f, 3.0f, rail);
@@ -101,9 +101,8 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 	                      2.0f, 16.0f, rail);
 	vita2d_draw_rectangle(x + width * 0.18f, y + height + 1.0f,
 	                      width * 0.34f, 2.0f,
-	                      VT_THEME_SIGNAL_A((int)(198.0f * pulse)));
-	/* Cold centre ticks read as machine acquisition; the warm rails continue to
-	 * identify the user's focus. */
+	                      VT_THEME_WARM_A((int)(150.0f * pulse)));
+	/* Cold centre ticks read as machine acquisition. */
 	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y - 7.0f,
 	                      20.0f, 2.0f, VT_THEME_COLD_A((int)(176.0f * pulse)));
 	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y + height + 5.0f,
@@ -128,7 +127,8 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 			default: px = x - offset; py = y + along * height - drift; break;
 		}
 		unsigned int alpha = 86U + seed % 104U;
-		unsigned int color = dot % 6U == 0U ? VT_THEME_SIGNAL_A(alpha)
+		unsigned int color = dot % 13U == 0U ? VT_THEME_WARM_A(alpha)
+		                   : dot % 5U == 0U ? VT_THEME_SIGNAL_A(alpha)
 		                   : dot % 4U == 0U ? VT_THEME_COLD_A(alpha)
 		                                     : VT_THEME_SPECTRAL_A(alpha);
 		float size = dot % 7U == 0U ? 3.0f : dot % 3U == 0U ? 2.0f : 1.0f;

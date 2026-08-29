@@ -50,7 +50,7 @@ static void draw_particle_cloud(float cx, float cy, float width, float height,
 		float radius = 3.0f + (float)(seed % 10U);
 		unsigned int alpha = (unsigned int)((5U + seed % 13U) * falloff);
 		unsigned int color = warm_core && i % 7U == 0U
-		                   ? VT_THEME_SIGNAL_A(alpha + 3U)
+		                   ? VT_THEME_WARM_A(alpha + 3U)
 		                   : i % 4U == 0U ? VT_THEME_SPECTRAL_A(alpha)
 		                                     : VT_THEME_COLD_A(alpha);
 		vita2d_draw_fill_circle(px, py, radius, color);
@@ -92,7 +92,7 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 		unsigned int alpha = 18U + (seed % 62U);
 		unsigned int accent_particle =
 		    (accent & 0x00ffffffU) | ((alpha + 18U) << 24);
-		unsigned int color = i % 19U == 0U ? VT_THEME_SIGNAL_A(alpha + 18U)
+		unsigned int color = i % 37U == 0U ? VT_THEME_WARM_A(alpha + 12U)
 		                   : i % 7U == 0U ? accent_particle
 		                   : i % 3U == 0U ? VT_THEME_COLD_A(alpha)
 		                                    : VT_THEME_SPECTRAL_A(alpha);
@@ -108,9 +108,8 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 	                    0x71B29U, now, reduced_motion, 1);
 	draw_particle_cloud(278.0f, 456.0f, 270.0f, 72.0f,
 	                    0xC04D7U, now, reduced_motion, 0);
-	/* A cold memory scan crosses only the machine-side telemetry field. It is
-	 * intentionally secondary to amber focus, and freezes to a quiet datum when
-	 * Reduce motion is enabled. */
+	/* A cold memory scan crosses only the machine-side telemetry field and
+	 * freezes to a quiet datum when Reduce motion is enabled. */
 	unsigned int scan_phase = reduced_motion
 	                        ? 132U : (unsigned int)((now / 26000ULL) % 264ULL);
 	float scan_x = 688.0f + (float)scan_phase;
@@ -136,12 +135,12 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 	vita2d_draw_line(704.0f, 492.0f, 932.0f, 142.0f,
 	                 VT_THEME_SPECTRAL_A(13));
 	vita2d_draw_line(720.0f, 506.0f, 944.0f, 170.0f,
-	                 VT_THEME_SIGNAL_A(11));
+	                 VT_THEME_WARM_A(10));
 	for (int ring = 2; ring >= 0; ring--) {
 		float radius = 54.0f + ring * 35.0f;
 		unsigned int edge = ring == 2 ? VT_THEME_COLD_A(20)
 		                  : ring == 1 ? VT_THEME_SPECTRAL_A(24)
-		                              : VT_THEME_SIGNAL_A(20);
+		                              : VT_THEME_WARM_A(16);
 		vita2d_draw_fill_circle(842.0f, 296.0f, radius, edge);
 		vita2d_draw_fill_circle(842.0f, 296.0f, radius - 2.0f,
 		                        (base & 0x00ffffffU) | (244U << 24));

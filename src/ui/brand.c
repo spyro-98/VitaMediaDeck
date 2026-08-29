@@ -368,7 +368,7 @@ static void draw_logo(void) {
 	vita2d_texture *logo = ui_runtime_logo();
 	/* Four acquisition brackets turn any supplied icon into part of the system
 	 * without modifying the user's artwork asset. */
-	unsigned int warm_frame = VT_THEME_SIGNAL_BRIGHT;
+	unsigned int warm_frame = VT_THEME_WARM_LIGHT;
 	unsigned int cold_frame = VT_THEME_SPECTRAL;
 	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 10, 2, cold_frame);
 	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 2, 10, cold_frame);
