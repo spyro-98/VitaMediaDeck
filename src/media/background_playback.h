@@ -53,7 +53,8 @@ void vt_background_playback_toggle_pause(void);
 void vt_background_playback_seek_to(uint64_t position_ms);
 void vt_background_playback_seek_relative(int64_t delta_ms);
 
-/* Optional hand-off hook for a future local-video mini-player integration. */
+/* Optional hand-off hook used to restore a minimized local video fullscreen at
+ * the position currently owned by the compact background player. */
 void vt_background_playback_set_fullscreen_resume(
 	VtBackgroundFullscreenResume resume, void *ctx);
 int vt_background_playback_resume_fullscreen(void);

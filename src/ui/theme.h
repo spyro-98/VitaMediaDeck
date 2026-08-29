@@ -3,36 +3,50 @@
 
 #include <vita2d.h>
 
-/* "Midnight Halo": sampled from the 2026-08-09 VitaMediaDeck icon.  The old
- * red/yellow/green/blue brand corners are deliberately gone; decorative UI
- * uses only ink, steel-blue and the electric blue emitted by the play badge.
- * Green/amber/red remain reserved for semantic success/warning/error states. */
-#define VT_THEME_BG             RGBA8(2, 7, 12, 255)
-#define VT_THEME_BG_SOFT        RGBA8(5, 13, 22, 255)
-#define VT_THEME_MEDIA_BACKDROP RGBA8(1, 5, 9, 255)
-#define VT_THEME_SURFACE        RGBA8(11, 23, 35, 255)
-#define VT_THEME_SURFACE_RAISED RGBA8(18, 37, 56, 255)
-#define VT_THEME_SURFACE_FOCUS  RGBA8(15, 56, 91, 255)
-#define VT_THEME_BORDER         RGBA8(41, 72, 96, 255)
-#define VT_THEME_BORDER_DIM     RGBA8(25, 47, 65, 255)
+/* "Signal / Shell": a Vita-native interpretation of the black-glass,
+ * particulate amber and white acquisition graphics used in Stylow's Ghost in
+ * the Shell concepts.  It deliberately avoids the generic cyan sci-fi HUD.
+ * Existing BLUE names remain compatibility aliases so every older scene adopts
+ * the new visual system without changing its input or feature contracts. */
+#define VT_THEME_BG             RGBA8(5, 5, 6, 255)       /* Obsidian */
+#define VT_THEME_BG_SOFT        RGBA8(10, 10, 11, 255)    /* Carbon */
+#define VT_THEME_MEDIA_BACKDROP RGBA8(2, 2, 3, 255)
+#define VT_THEME_SURFACE        RGBA8(17, 17, 18, 246)
+#define VT_THEME_SURFACE_RAISED RGBA8(27, 25, 23, 250)
+#define VT_THEME_SURFACE_FOCUS  RGBA8(53, 39, 23, 248)
+#define VT_THEME_BORDER         RGBA8(91, 75, 55, 255)
+#define VT_THEME_BORDER_DIM     RGBA8(48, 42, 34, 255)
 
-#define VT_THEME_BLUE_DIM       RGBA8(10, 57, 98, 255)
-#define VT_THEME_BLUE           RGBA8(23, 103, 164, 255)
-#define VT_THEME_BLUE_BRIGHT    RGBA8(42, 143, 212, 255)
-#define VT_THEME_BLUE_LIGHT     RGBA8(103, 184, 238, 255)
-#define VT_THEME_BLUE_A(a)      RGBA8(35, 126, 194, (a))
-#define VT_THEME_HALO_A(a)      RGBA8(37, 139, 221, (a))
+#define VT_THEME_SIGNAL_DIM     RGBA8(117, 61, 29, 255)
+#define VT_THEME_SIGNAL         RGBA8(201, 91, 38, 255)
+#define VT_THEME_SIGNAL_BRIGHT  RGBA8(255, 178, 62, 255)
+#define VT_THEME_SIGNAL_LIGHT   RGBA8(255, 218, 151, 255)
+#define VT_THEME_SIGNAL_A(a)    RGBA8(255, 156, 46, (a))
+#define VT_THEME_PARTICLE_A(a)  RGBA8(255, 190, 83, (a))
 
-#define VT_THEME_TEXT           RGBA8(248, 251, 254, 255)
-/* Secondary copy stays comfortably readable on both base and raised surfaces
- * at the Vita's native 960x544 resolution.  FAINT is reserved for metadata;
- * actionable labels must use TEXT or TEXT_MUTED. */
-#define VT_THEME_TEXT_MUTED     RGBA8(185, 204, 220, 255)
-#define VT_THEME_TEXT_FAINT     RGBA8(132, 158, 179, 255)
+/* Cold telemetry is deliberately secondary: amber remains the human focus
+ * signal, while cyan identifies machine state, scans, locks, and buffers. */
+#define VT_THEME_COLD_DIM        RGBA8(28, 93, 115, 255)
+#define VT_THEME_COLD            RGBA8(58, 186, 217, 255)
+#define VT_THEME_COLD_LIGHT      RGBA8(184, 241, 255, 255)
+#define VT_THEME_COLD_A(a)       RGBA8(82, 205, 232, (a))
 
-/* Semantic colours are intentionally not used as decoration. */
-#define VT_THEME_SUCCESS        RGBA8(69, 190, 126, 255)
-#define VT_THEME_WARNING        RGBA8(236, 174, 76, 255)
-#define VT_THEME_DANGER         RGBA8(235, 93, 108, 255)
+#define VT_THEME_BLUE_DIM       VT_THEME_SIGNAL_DIM
+#define VT_THEME_BLUE           VT_THEME_SIGNAL
+#define VT_THEME_BLUE_BRIGHT    VT_THEME_SIGNAL_BRIGHT
+#define VT_THEME_BLUE_LIGHT     VT_THEME_SIGNAL_LIGHT
+#define VT_THEME_BLUE_A(a)      VT_THEME_SIGNAL_A(a)
+#define VT_THEME_HALO_A(a)      VT_THEME_PARTICLE_A(a)
+
+#define VT_THEME_TEXT           RGBA8(244, 241, 232, 255) /* Hot white */
+/* Secondary copy is warm enough to sit inside the amber world without losing
+ * the contrast needed for 16 px Vita text. */
+#define VT_THEME_TEXT_MUTED     RGBA8(199, 193, 179, 255)
+#define VT_THEME_TEXT_FAINT     RGBA8(139, 132, 119, 255)
+
+/* Semantic colours remain distinct from the decorative signal amber. */
+#define VT_THEME_SUCCESS        RGBA8(107, 211, 174, 255)
+#define VT_THEME_WARNING        RGBA8(255, 190, 83, 255)
+#define VT_THEME_DANGER         RGBA8(239, 96, 82, 255)
 
 #endif /* VITAMEDIADECK_UI_THEME_H */

@@ -46,9 +46,9 @@ void ui_focus_motion_tick(UiFocusMotion *motion, float x, float y,
 static unsigned int halo_color(int layer, int alpha) {
 	if (alpha < 0) alpha = 0;
 	if (alpha > 255) alpha = 255;
-	if (layer == 0) return RGBA8(7, 48, 82, alpha);
-	if (layer == 1) return RGBA8(18, 88, 139, alpha);
-	return RGBA8(42, 143, 212, alpha);
+	if (layer == 0) return RGBA8(96, 42, 19, alpha);
+	if (layer == 1) return RGBA8(190, 82, 29, alpha);
+	return RGBA8(255, 178, 62, alpha);
 }
 
 void ui_focus_glow_draw(float x, float y, float width, float height,
@@ -70,20 +70,19 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 	                          viewport_bottom);
 	vita2d_enable_clipping();
 
-	/* Wide central bloom from the icon. It is intentionally drawn first and
-	 * largely covered by the poster that follows, leaving light only outside. */
+	/* The bloom sits behind content; cards cover its centre and leave a compact
+	 * particulate acquisition field around the focused object. */
 	float cx = x + width * 0.5f;
 	float cy = y + height * 0.5f;
-	float radius = height * 0.5f + 27.0f;
-	for (int layer = 0; layer < 4; layer++) {
-		float r = radius - (float)layer * 7.0f;
-		int alpha = (int)((12 + layer * 7) * pulse);
+	float radius = height * 0.5f + 19.0f;
+	for (int layer = 0; layer < 3; layer++) {
+		float r = radius - (float)layer * 8.0f;
+		int alpha = (int)((10 + layer * 9) * pulse);
 		vita2d_draw_fill_circle(cx, cy, r, VT_THEME_HALO_A(alpha));
 	}
 
-	/* Three oversized plates make the light hug every poster edge. */
-	static const int spread[3] = { 16, 10, 5 };
-	static const int base_alpha[3] = { 24, 39, 76 };
+	static const int spread[3] = { 12, 7, 3 };
+	static const int base_alpha[3] = { 15, 28, 58 };
 	for (int layer = 0; layer < 3; layer++) {
 		int s = spread[layer];
 		vita2d_draw_rectangle(x - s, y - s, width + s * 2.0f,
@@ -92,9 +91,23 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 		                          (int)(base_alpha[layer] * pulse)));
 	}
 
-	/* This thin plate is still behind the poster; its 3 px oversize reads as a
-	 * crisp blue rim without ever painting over thumbnail pixels. */
-	vita2d_draw_rectangle(x - 3.0f, y - 3.0f, width + 6.0f, height + 6.0f,
-	                      VT_THEME_BLUE_A((int)(205.0f * pulse)));
+	/* Thin signal rails and four particles make focus legible even on dark art. */
+	unsigned int rail = VT_THEME_SIGNAL_A((int)(220.0f * pulse));
+	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, width + 8.0f, 2.0f, rail);
+	vita2d_draw_rectangle(x - 4.0f, y + height + 2.0f, width + 8.0f, 2.0f, rail);
+	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, 2.0f, 16.0f, rail);
+	vita2d_draw_rectangle(x + width + 2.0f, y + height - 12.0f,
+	                      2.0f, 16.0f, rail);
+	/* Cold centre ticks read as machine acquisition; the warm rails continue to
+	 * identify the user's focus. */
+	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y - 7.0f,
+	                      20.0f, 2.0f, VT_THEME_COLD_A((int)(176.0f * pulse)));
+	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y + height + 5.0f,
+	                      20.0f, 2.0f, VT_THEME_COLD_A((int)(112.0f * pulse)));
+	for (int dot = 0; dot < 4; dot++) {
+		float dx = x + width + 8.0f + dot * 6.0f;
+		vita2d_draw_rectangle(dx, y + height * 0.5f, dot == 0 ? 3.0f : 2.0f,
+		                      2.0f, VT_THEME_PARTICLE_A(170 - dot * 28));
+	}
 	vita2d_disable_clipping();
 }

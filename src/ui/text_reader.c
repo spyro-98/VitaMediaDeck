@@ -1,6 +1,7 @@
 #include "ui/text_reader.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <psp2/ctrl.h>
@@ -89,15 +90,20 @@ static void draw_reader_tabs(vita2d_font *font, const char *parent_title,
 	const char *labels[2] = { parent_title, title };
 	for (int i = 0; i < 2; i++) {
 		int x = TEXT_READER_TAB_X + i * (TEXT_READER_TAB_W + TEXT_READER_TAB_GAP);
-		vita2d_draw_rectangle(x, TEXT_READER_TAB_Y, TEXT_READER_TAB_W,
-		                      TEXT_READER_TAB_H,
-		                      i == 1 ? RGBA8(13, 55, 94, 255)
-		                             : VT_THEME_SURFACE);
-		if (i == 1)
-			vita2d_draw_rectangle(x, TEXT_READER_TAB_Y + TEXT_READER_TAB_H - 3,
-			                      TEXT_READER_TAB_W, 3, VT_THEME_BLUE_LIGHT);
+		ui_panel(x, TEXT_READER_TAB_Y, TEXT_READER_TAB_W,
+		         TEXT_READER_TAB_H,
+		         i == 1 ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE,
+		         i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
+		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+		if (small) {
+			char index[4];
+			snprintf(index, sizeof(index), "%02d", i + 1);
+			ui_font_draw_text(small, x + 12, TEXT_READER_TAB_Y + 28,
+			                  i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
+			                  UI_FONT_SMALL, index);
+		}
 		if (font && labels[i])
-			ui_font_draw_text(font, x + 18, TEXT_READER_TAB_Y + 29,
+			ui_font_draw_text(font, x + 46, TEXT_READER_TAB_Y + 29,
 			                  i == 1 ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
 			                  UI_FONT_BODY, labels[i]);
 	}

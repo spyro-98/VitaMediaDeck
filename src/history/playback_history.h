@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-/* Persistent resume points for local media. */
+/* Persistent resume points keyed separately for local and remote media. */
 int vt_playback_history_init(void);
 uint64_t vt_playback_history_position(const char *video_id,
 	                                  uint64_t duration_ms);

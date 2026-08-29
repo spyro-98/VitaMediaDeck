@@ -18,6 +18,8 @@ active panel before leaving its page.
 
 The combined Library opens as a rich thumbnail grid. The R1 View panel can
 temporarily switch it to a list; Video and Music remember their own view.
+Video cells prefer recognized local artwork, then an embedded cover, and finally
+an asynchronously extracted representative frame.
 
 | Input | Behavior |
 | --- | --- |
@@ -60,6 +62,9 @@ the server SHA-256 fingerprint on a read-only confirmation page.
 
 ### Remote browser
 
+Remote video cells progressively show an embedded cover or a representative
+frame. Preview decoding and network reads stay on the bounded thumbnail worker.
+
 | Input | Behavior |
 | --- | --- |
 | Up/Down | Move through folders and files. |
@@ -79,8 +84,36 @@ the server SHA-256 fingerprint on a read-only confirmation page.
 | L1 | Open the shared section sidebar. |
 | R1 | Open playback options and decoder information. |
 | Right stick vertically | Change volume. |
+| Short Start (release before 900 ms) | Minimize supported local video into the shared mini-player. |
+| Hold Start (900 ms) | Toggle OLED ECO mode while playback and audio continue. |
+| Select | Immediately lock or unlock player input. |
 | Touch video | Show or hide the player HUD. |
 | Touch/drag timeline | Seek to a position. |
+
+The R1 playback panel also selects the active AAC audio track and embedded text
+subtitle track. Cross or Right advances, Left selects the previous track, and
+the subtitle selector includes an explicit Off choice. Track changes retain the
+current playback position and apply equally to local and authenticated remote
+videos.
+
+Each local or remote video remembers its last useful playback position. If the
+player opens from that position, the R1 panel adds **Start from beginning** as a
+fifth row. Activating it seeks to `00:00`, removes the saved resume point
+immediately, and closes the panel.
+
+Local video mini-player hand-off retains the playback position and selected
+audio/subtitle tracks when fullscreen is restored. It uses the platform
+`SceAvPlayer` background path, so a local H.264 file can be valid in the main
+HW/SW decoder while its particular container is not accepted by the compact
+background player. Authenticated remote video keeps ECO and input-lock controls,
+but is not detached into the local-only mini-player service.
+
+The Settings > Subtitles tab controls the font, foreground and background
+colors, small/medium/large text size, 60/75/88/96 percent maximum width,
+one-to-four minimum and maximum lines, and four vertical positions. Its live
+preview renders Western, Cyrillic, Japanese, Chinese, and Korean samples. Inter
+is rasterized from independent exact-size instances; Japanese, Chinese, and
+Korean glyphs come from the matching native PS Vita system PGFs.
 
 The player displays an `HW DEC` or `SW DEC` badge, resolution, frame rate, and
 stream-reported video bitrate in both the HUD and the right information panel.
@@ -100,7 +133,11 @@ it is disabled by default.
 | L1 | Open the shared section sidebar. |
 | R1 | Open shuffle and repeat options. |
 | Right stick vertically | Change volume. |
-| Circle | Leave full-screen playback while preserving the supported background session. |
+| Short Start | Minimize into the shared mini-player. |
+| Hold Start (900 ms) | Toggle OLED ECO mode while audio continues. |
+| Select | Immediately lock or unlock player input. |
+| Circle | Stop full-screen playback. |
+| Start in mini-player | Restore the active local media fullscreen. |
 | Mini-player controls | Seek, pause/resume, restore, or stop the active local track. |
 
 The exact mini-player behavior depends on the local audio format and whether a

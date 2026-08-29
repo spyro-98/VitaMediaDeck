@@ -277,12 +277,19 @@ void ui_mini_player_draw(void) {
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	const int y = ui_mini_player_top();
 
-	/* Shadow, dark glass, and double PS Vita accent. */
+	/* A docked signal strip: black glass, warm acquisition rail, sparse packet
+	 * marks. It remains the same height so every page keeps its viewport math. */
 	vita2d_draw_rectangle(0, y - 4, SCREEN_WIDTH, 4, RGBA8(0, 0, 0, 112));
 	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, UI_MINI_PLAYER_HEIGHT,
-	                      RGBA8(3, 8, 15, 249));
-	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, 2, VT_THEME_BLUE_BRIGHT);
-	vita2d_draw_rectangle(0, y + 2, SCREEN_WIDTH, 1, VT_THEME_HALO_A(180));
+	                      RGBA8(8, 8, 8, 250));
+	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, 2, VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(0, y + 2, SCREEN_WIDTH, 1,
+	                      VT_THEME_PARTICLE_A(120));
+	for (int packet = 0; packet < 10; packet++)
+		vita2d_draw_rectangle(506.0f + packet * 13.0f, y + 8.0f,
+		                      packet == 4 ? 7.0f : 2.0f, 2.0f,
+		                      packet == 4 ? VT_THEME_SIGNAL_LIGHT
+		                                  : VT_THEME_SIGNAL_DIM);
 
 	MiniVideoRect video_rect = mini_video_rect(
 	    &snapshot, (float)y, g_mini_video_expansion);
@@ -292,7 +299,7 @@ void ui_mini_player_draw(void) {
 		                      RGBA8(0, 0, 0, 118));
 		vita2d_draw_rectangle(video_rect.x - 2.0f, video_rect.y - 2.0f,
 		                      video_rect.width + 4.0f, video_rect.height + 4.0f,
-		                      VT_THEME_BLUE_BRIGHT);
+		                      VT_THEME_SIGNAL_BRIGHT);
 	}
 	int expects_visual = (snapshot.video_width && snapshot.video_height) || g_artwork;
 	if (expects_visual)
@@ -307,13 +314,13 @@ void ui_mini_player_draw(void) {
 	if (drew_live_video) {
 		vita2d_draw_rectangle(video_rect.x,
 		                      video_rect.y + video_rect.height - 2.0f,
-		                      video_rect.width, 2.0f, VT_THEME_BLUE_LIGHT);
+		                      video_rect.width, 2.0f, VT_THEME_SIGNAL_LIGHT);
 	} else if (g_artwork) {
 		draw_artwork_cover(g_artwork, video_rect.x, video_rect.y,
 		                   video_rect.width, video_rect.height);
 		vita2d_draw_rectangle(video_rect.x,
 		                      video_rect.y + video_rect.height - 2.0f,
-		                      video_rect.width, 2.0f, VT_THEME_BLUE_LIGHT);
+		                      video_rect.width, 2.0f, VT_THEME_SIGNAL_LIGHT);
 	}
 
 	const char *title = snapshot.title[0] ? snapshot.title
@@ -354,7 +361,7 @@ void ui_mini_player_draw(void) {
 	if (small) ui_font_draw_text(small, 552, y + 26,
 	                                snapshot.state == VT_BACKGROUND_ERROR
 	                                    ? VT_THEME_DANGER
-	                                    : VT_THEME_BLUE_LIGHT,
+		                                : VT_THEME_COLD_LIGHT,
 	                                UI_FONT_SMALL, state);
 
 	char elapsed[24], duration[24], timing[56];
@@ -365,8 +372,8 @@ void ui_mini_player_draw(void) {
 	                                VT_THEME_TEXT_MUTED, UI_FONT_SMALL,
 	                                timing);
 
-	/* Compact transport: seek back, play/pause, seek forward, close. The
-	 * chevrons leave a little more breathing room around the primary action. */
+	/* Compact transport uses square acquisition cells instead of floating
+	 * circles; hit targets stay unchanged for touch and controller input. */
 	const float transport_x[4] = {
 		MINI_TRANSPORT_BACK_X, MINI_TRANSPORT_PLAY_X,
 		MINI_TRANSPORT_FORWARD_X, MINI_TRANSPORT_CLOSE_X
@@ -376,10 +383,12 @@ void ui_mini_player_draw(void) {
 	for (int i = 0; i < 3; i++) {
 		transport_fill[i] = g_mini_control_feedback == i + 1 &&
 		                    now_us < g_mini_control_feedback_until_us
-		                  ? VT_THEME_BLUE_LIGHT : VT_THEME_BLUE;
+		                  ? VT_THEME_SIGNAL_LIGHT : VT_THEME_SIGNAL;
 		transport_foreground[i] = ui_contrast_bw(transport_fill[i]);
-		vita2d_draw_fill_circle(transport_x[i], y + 33.0f, 21.0f,
-		                        transport_fill[i]);
+		vita2d_draw_rectangle(transport_x[i] - 21.0f, y + 12.0f,
+		                      42.0f, 42.0f, transport_fill[i]);
+		vita2d_draw_rectangle(transport_x[i] - 17.0f, y + 16.0f,
+		                      34.0f, 1.0f, RGBA8(255, 236, 198, 92));
 	}
 	if (small) {
 		const char *back = "<", *forward = ">";
@@ -406,7 +415,8 @@ void ui_mini_player_draw(void) {
 	unsigned close_fill = g_mini_control_feedback == MINI_CONTROL_CLOSE &&
 	                      now_us < g_mini_control_feedback_until_us
 	                    ? VT_THEME_DANGER : RGBA8(54, 31, 48, 255);
-	vita2d_draw_fill_circle(MINI_TRANSPORT_CLOSE_X, y + 33.0f, 21.0f, close_fill);
+	vita2d_draw_rectangle(MINI_TRANSPORT_CLOSE_X - 21.0f, y + 12.0f,
+	                      42.0f, 42.0f, close_fill);
 	vita2d_draw_line(MINI_TRANSPORT_CLOSE_X - 7, y + 26,
 	                 MINI_TRANSPORT_CLOSE_X + 7, y + 40,
 	                 RGBA8(255, 165, 177, 255));
@@ -414,7 +424,7 @@ void ui_mini_player_draw(void) {
 	                 MINI_TRANSPORT_CLOSE_X - 7, y + 40,
 	                 RGBA8(255, 165, 177, 255));
 	if (g_mini_lock_animation > 0.01f) {
-		unsigned int lock_color = RGBA8(84, 158, 218,
+		unsigned int lock_color = VT_THEME_COLD_A(
 		    (unsigned int)(255.0f * g_mini_lock_animation));
 		vita2d_draw_rectangle(682, y + 26, 16, 14, lock_color);
 		vita2d_draw_line(686, y + 26, 686, y + 20, lock_color);
@@ -431,7 +441,7 @@ void ui_mini_player_draw(void) {
 	                      VT_THEME_BORDER);
 	vita2d_draw_rectangle(0, y + UI_MINI_PLAYER_HEIGHT - 3,
 	                      SCREEN_WIDTH * progress, 3,
-	                      VT_THEME_BLUE_LIGHT);
+	                      VT_THEME_SIGNAL_LIGHT);
 }
 
 void ui_mini_player_pump(void) {
@@ -546,8 +556,8 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 		                                 ? now + PLAYER_INPUT_LOCK_FEEDBACK_US : 0;
 	if (g_mini_input_lock.locked && attempted_press)
 		g_mini_lock_visible_until_us = now + PLAYER_INPUT_LOCK_FEEDBACK_US;
-	/* SELECT belongs exclusively to the 900 ms hold detector while the mini
-	 * player is visible. Once locked, no command reaches the underlying page. */
+	/* SELECT belongs exclusively to the mini-player lock while it is visible.
+	 * Once locked, no command reaches the underlying page. */
 	*pressed &= ~SCE_CTRL_SELECT;
 	if (g_mini_input_lock.locked) {
 		*pressed = 0;

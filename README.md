@@ -8,7 +8,7 @@
 > UI behavior on your own PlayStation Vita before relying on it day to day.
 
 <p align="center">
-  <img src="sce_sys/icon0.png" width="128" height="128" alt="VitaMediaDeck app icon">
+  <img src="assets/branding/vitamediadeck-icon.png" width="256" height="256" alt="VitaMediaDeck app icon">
 </p>
 
 <p align="center">
@@ -23,6 +23,12 @@ and rendering all run on the console; no companion service is required.
 VitaMediaDeck does not discover, acquire, export, convert, or copy media from online
 catalogues. It has no account integration with third-party media platforms and
 does not provide a download or audio-extraction feature.
+
+The application UI follows the original **Signal / Shell** direction: OLED-black
+planes, amber acquisition graphics, sparse signal particles, native Vita status
+surfaces, and scene-specific information layouts. Its design rationale and
+multilingual typography contract are documented in
+[`mds/UI_SIGNAL_SHELL.md`](mds/UI_SIGNAL_SHELL.md).
 
 > The local/network redesign is under active development. The application and
 > reusable player module compile as a complete VPK, but the new remote backends
@@ -62,10 +68,22 @@ does not provide a download or audio-extraction feature.
   collection into RAM.
 - **Finder-style folder browser:** explores `ux0:` and `uma0:` directly and
   uses the same persistent grid/list choice as WebDAV, SFTP, and SMB folders.
+- **Video cover previews:** local cells prefer matching artwork sidecars, then
+  local and remote cells use an embedded cover when present or asynchronously
+  extract and cache a representative video frame.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
   fallback), HW H.264 only, or SW FFmpeg only.
+- **Multiple media tracks:** the playback panel discovers and switches between
+  AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
+  subtitles without leaving the video. The same seekable-cursor path is used
+  for local files, WebDAV, SFTP, and SMB.
+- **Configurable multilingual subtitles:** a dedicated Settings tab controls
+  font, foreground/background color, size, maximum width, minimum/maximum line
+  count, and vertical position. Exact-size Inter faces keep Western and
+  Cyrillic text crisp, while native PS Vita PGFs cover Japanese, Chinese, and
+  Korean. A live preview shows every script independently.
 - **Live video information:** the player HUD and right-side information panel
   show decoder, resolution, frame rate, and the stream-reported video bitrate.
 - **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled
@@ -76,6 +94,13 @@ does not provide a download or audio-extraction feature.
 - **Full-screen music player:** supports MP3 and other local audio formats,
   artwork, metadata, seeking, shuffle/repeat, animated backgrounds, and the
   persistent mini-player.
+- **VitaTube player gestures restored:** a short Start minimizes supported local
+  music/video, holding Start toggles the OLED-black ECO view, and Select
+  immediately locks or unlocks input. Local video resumes fullscreen at the
+  mini-player position with its selected audio/subtitle tracks restored.
+- **Per-video resume history:** distinct local files and authenticated remote
+  streams resume from their last useful position. When playback was recovered,
+  the R1 panel exposes **Start from beginning** and clears that saved point.
 - **Packaged playback stack:** hardware decode, software fallback and HTTPS/TLS
   live in the independent `vita-hw-decoder`, `vita-sw-decoder` and `vita-https`
   repositories, each with an installable CMake target and minimal example.
@@ -94,11 +119,13 @@ does not provide a download or audio-extraction feature.
 | SMB | Authenticated SMB2/SMB3 share with message signing required | Remote video |
 
 Remote video currently requires a seekable MP4/M4V/MOV or Matroska (`.mkv`)
-container with H.264 video and optional AAC audio. WebDAV servers must answer
+container with H.264 video, optional AAC audio tracks, and optional embedded
+UTF-8 text-subtitle tracks. WebDAV servers must answer
 an actual one-byte Range probe with `206 Partial Content`; an `Accept-Ranges`
 header alone is not accepted.
-Every protocol factory creates independent cursors for the audio and video
-demuxers.
+Every protocol factory creates independent cursors for track discovery, video,
+the selected audio stream, and the selected subtitle stream. Subtitle reading
+uses a bounded background cue queue so remote I/O never runs on the render loop.
 
 Local audio detection currently includes MP3, M4A, AAC, and WAV. Local video
 detection includes MP4, M4V, MOV, and MKV. Codec/container compatibility still
@@ -183,6 +210,9 @@ R1 switches both to a compact list and remembers the shared choice.
 Folders and all files remain visible; compatible media uses the colored media
 accent and can be played, while unsupported files remain read-only.
 Dot-prefixed local files and folders stay hidden, matching Finder's default.
+Video cells progressively replace their placeholder with a sidecar or embedded
+cover, falling back to a representative frame generated by the bounded
+thumbnail worker. Remote passwords are never written to the thumbnail cache.
 
 ## Data layout
 
@@ -190,7 +220,7 @@ Application state is stored below `ux0:data/VitaMediaDeck`:
 
 ```text
 local_media.idx        paged local media index
-playback_history.bin   local resume positions
+playback_history.bin   local and remote resume positions
 settings.bin           application preferences
 network/sources.bin    source definitions without passwords
 network/passwords.txt  optional plaintext passwords (explicit opt-in)

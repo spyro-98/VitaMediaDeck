@@ -39,7 +39,6 @@
 #define TAB_Y             (UI_BRAND_HEADER_HEIGHT + 10)
 #define TAB_H             40
 #define TAB_BASELINE_Y    (TAB_Y + 27)
-#define TAB_UNDERLINE_Y   (TAB_Y + TAB_H - 3)
 
 #define SCROLL_PAGE_STEP (VIEW_H - 40)
 #define SCROLL_SPEED_PX_PER_SECOND 290.0f
@@ -60,10 +59,18 @@ static void draw_about_tabs(void) {
 	};
 	for (int i = 0; i < 2; i++) {
 		int x = 36 + i * 190;
-		vita2d_draw_rectangle(x, TAB_Y, 178, TAB_H,
-		                      i == 0 ? VT_THEME_SURFACE_RAISED : COLOR_CARD);
-		if (i == 0) vita2d_draw_rectangle(x, TAB_UNDERLINE_Y, 178, 3, COLOR_CYAN);
-		if (font) ui_font_draw_text(font, x + 18, TAB_BASELINE_Y,
+		ui_panel(x, TAB_Y, 178, TAB_H,
+		         i == 0 ? VT_THEME_SURFACE_RAISED : COLOR_CARD,
+		         i == 0 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
+		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+		if (small) {
+			char index[4];
+			snprintf(index, sizeof(index), "%02d", i + 1);
+			ui_font_draw_text(small, x + 12, TAB_BASELINE_Y,
+			                  i == 0 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
+			                  UI_FONT_SMALL, index);
+		}
+		if (font) ui_font_draw_text(font, x + 46, TAB_BASELINE_Y,
 		                                 i == 0 ? COLOR_TEXT : COLOR_MUTED,
 		                                 UI_FONT_BODY, labels[i]);
 	}
@@ -274,7 +281,7 @@ int ui_about_screen(int player_context) {
 			const float track_x = SCREEN_WIDTH - 12.0f;
 			const float track_h = (float)VIEW_H;
 			vita2d_draw_rectangle(track_x, (float)VIEW_TOP, 4.0f, track_h,
-			                     RGBA8(24, 38, 60, 255));
+			                     VT_THEME_BORDER_DIM);
 			float ratio = (float)VIEW_H / (float)content_h;
 			float thumb_h = track_h * ratio;
 			if (thumb_h < 24.0f) thumb_h = 24.0f;

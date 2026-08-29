@@ -31,7 +31,6 @@
 #define TAB_Y             (UI_BRAND_HEADER_HEIGHT + 10)
 #define TAB_H             40
 #define TAB_BASELINE_Y    (TAB_Y + 27)
-#define TAB_UNDERLINE_Y   (TAB_Y + TAB_H - 3)
 #define LOG_LIST_Y        (UI_BRAND_HEADER_HEIGHT + 70)
 #define LOG_TITLE_Y       (UI_BRAND_HEADER_HEIGHT + 81)
 #define LOG_CLIP_TOP      (UI_BRAND_HEADER_HEIGHT + 94)
@@ -153,10 +152,18 @@ static void draw_tabs(void) {
 	};
 	for (int i = 0; i < 2; i++) {
 		int x = 36 + i * 190;
-		vita2d_draw_rectangle(x, TAB_Y, 178, TAB_H,
-		                      i == 1 ? VT_THEME_SURFACE_RAISED : COLOR_CARD);
-		if (i == 1) vita2d_draw_rectangle(x, TAB_UNDERLINE_Y, 178, 3, COLOR_CYAN);
-		if (font) ui_font_draw_text(font, x + 18, TAB_BASELINE_Y,
+		ui_panel(x, TAB_Y, 178, TAB_H,
+		         i == 1 ? VT_THEME_SURFACE_RAISED : COLOR_CARD,
+		         i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
+		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+		if (small) {
+			char index[4];
+			snprintf(index, sizeof(index), "%02d", i + 1);
+			ui_font_draw_text(small, x + 12, TAB_BASELINE_Y,
+			                  i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
+			                  UI_FONT_SMALL, index);
+		}
+		if (font) ui_font_draw_text(font, x + 46, TAB_BASELINE_Y,
 		                                 i == 1 ? COLOR_TEXT : COLOR_MUTED,
 		                                 UI_FONT_BODY, labels[i]);
 	}

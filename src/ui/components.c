@@ -1,5 +1,10 @@
 #include "ui/components.h"
 
+#include <stdint.h>
+
+#include <psp2/kernel/processmgr.h>
+
+#include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
@@ -22,26 +27,125 @@ unsigned int ui_contrast_bw(unsigned int background) {
 void ui_chrome_background(unsigned int base, unsigned int accent) {
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 	                      544 - UI_BRAND_HEADER_HEIGHT, base);
-	/* One restrained optical echo supports the moving focus halo without
-	 * competing with posters or text. */
-	for (int ring = 3; ring >= 1; ring--) {
-		unsigned int alpha = 4U + (unsigned int)(4 - ring) * 3U;
-		unsigned int color = (accent & 0x00ffffffU) | (alpha << 24);
-		vita2d_draw_fill_circle(882.0f, 492.0f, 84.0f + ring * 52.0f, color);
+	/* Structural scan lines divide the 16:9 field without becoming a grid. */
+	for (int line = 0; line < 7; line++) {
+		float y = 92.0f + line * 66.0f;
+		vita2d_draw_rectangle(0, y, 960, 1,
+		                      line == 0 ? RGBA8(94, 71, 43, 72)
+		                                : RGBA8(120, 88, 45, 18));
 	}
-	vita2d_draw_rectangle(0, 118, 960, 1, VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(684, UI_BRAND_HEADER_HEIGHT, 1,
+	                      544 - UI_BRAND_HEADER_HEIGHT,
+	                      RGBA8(255, 178, 62, 18));
+
+	/* A deterministic, low-cost signal field. Motion is a slow vertical phase,
+	 * disabled by Reduce motion; no random state or allocation touches frames. */
+	uint64_t now = sceKernelGetProcessTimeWide();
+	int reduced_motion = vt_preferences_reduce_motion();
+	unsigned int phase = reduced_motion
+	                   ? 0U : (unsigned int)((now / 42000ULL) % 420ULL);
+	for (unsigned int i = 0; i < 38; i++) {
+		uint32_t seed = 0x9E3779B9U * (i + 11U);
+		seed ^= seed >> 16;
+		float x = 624.0f + (float)(seed % 326U);
+		float y = 76.0f + (float)((seed / 331U + phase * (1U + i % 3U)) % 448U);
+		float size = i % 9U == 0U ? 3.0f : i % 3U == 0U ? 2.0f : 1.0f;
+		unsigned int alpha = 20U + (seed % 54U);
+		unsigned int color = (accent & 0x00ffffffU) | (alpha << 24);
+		vita2d_draw_rectangle(x, y, size, size, color);
+		if (i % 8U == 0U)
+			vita2d_draw_line(x, y, 896.0f, 296.0f,
+			                 RGBA8(255, 164, 54, 18));
+	}
+	/* A cold memory scan crosses only the machine-side telemetry field. It is
+	 * intentionally secondary to amber focus, and freezes to a quiet datum when
+	 * Reduce motion is enabled. */
+	unsigned int scan_phase = reduced_motion
+	                        ? 132U : (unsigned int)((now / 26000ULL) % 264ULL);
+	float scan_x = 688.0f + (float)scan_phase;
+	vita2d_draw_rectangle(scan_x - 7.0f, 118.0f, 1.0f, 410.0f,
+	                      VT_THEME_COLD_A(28));
+	vita2d_draw_rectangle(scan_x - 2.0f, 118.0f, 1.0f, 410.0f,
+	                      VT_THEME_COLD_A(76));
+	vita2d_draw_rectangle(scan_x, 118.0f, 2.0f, 410.0f,
+	                      VT_THEME_COLD_A(150));
+	for (unsigned int packet = 0; packet < 12; packet++) {
+		uint32_t seed = 0x45D9F3BU * (packet + 19U);
+		seed ^= seed >> 15;
+		float packet_y = 126.0f + (float)(seed % 392U);
+		float trail = 7.0f + (float)(seed % 21U);
+		vita2d_draw_rectangle(scan_x - trail, packet_y, trail, 1.0f,
+		                      VT_THEME_COLD_A(44U + seed % 68U));
+		vita2d_draw_rectangle(scan_x + 3.0f, packet_y - 1.0f,
+		                      packet % 4U == 0U ? 5.0f : 2.0f, 2.0f,
+		                      VT_THEME_COLD_A(118U));
+	}
+	/* The incomplete orbit is the recurring shell/acquisition motif. */
+	for (int ring = 2; ring >= 0; ring--) {
+		float radius = 62.0f + ring * 34.0f;
+		unsigned int alpha = 11U + (unsigned int)ring * 5U;
+		vita2d_draw_fill_circle(896.0f, 296.0f, radius,
+		                        (accent & 0x00ffffffU) | (alpha << 24));
+		vita2d_draw_fill_circle(896.0f, 296.0f, radius - 2.0f,
+		                        (base & 0x00ffffffU) | (236U << 24));
+	}
+	vita2d_draw_rectangle(0, 116, 960, 2, VT_THEME_BORDER_DIM);
+}
+
+void ui_scene_identity(float x, float y, float width, const char *code,
+	                   const char *title, const char *detail) {
+	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
+	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+	const float code_width = 62.0f;
+	vita2d_draw_rectangle(x, y, 3.0f, 46.0f, VT_THEME_SIGNAL);
+	vita2d_draw_rectangle(x + 3.0f, y, code_width, 1.0f,
+	                      VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(x + 3.0f, y + 45.0f, width - 3.0f, 1.0f,
+	                      VT_THEME_BORDER_DIM);
+	if (small && code && code[0])
+		ui_font_draw_text(small, (int)x + 12, (int)y + 27,
+		                  VT_THEME_SIGNAL_LIGHT, UI_FONT_SMALL, code);
+	if (body && title && title[0]) {
+		char fitted[192];
+		ui_font_fit_text(body, UI_FONT_BODY, title, fitted, sizeof(fitted),
+		                 (int)(width - code_width - 14.0f));
+		ui_font_draw_text(body, (int)(x + code_width + 10.0f), (int)y + 22,
+		                  VT_THEME_TEXT, UI_FONT_BODY, fitted);
+	}
+	if (small && detail && detail[0]) {
+		char fitted[256];
+		ui_font_fit_text(small, UI_FONT_SMALL, detail, fitted, sizeof(fitted),
+		                 (int)(width - code_width - 14.0f));
+		ui_font_draw_text(small, (int)(x + code_width + 10.0f), (int)y + 42,
+		                  VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted);
+	}
+}
+
+static void panel_corner(float x, float y, float sx, float sy,
+	                     unsigned int color) {
+	float horizontal_x = sx > 0.0f ? x : x - 14.0f;
+	float horizontal_y = sy > 0.0f ? y : y - 2.0f;
+	float vertical_x = sx > 0.0f ? x : x - 2.0f;
+	float vertical_y = sy > 0.0f ? y : y - 11.0f;
+	vita2d_draw_rectangle(horizontal_x, horizontal_y, 14.0f, 2.0f, color);
+	vita2d_draw_rectangle(vertical_x, vertical_y, 2.0f, 11.0f, color);
 }
 
 void ui_panel(float x, float y, float width, float height,
 	          unsigned int fill, unsigned int accent, int focused) {
-	if (focused) {
-		vita2d_draw_rectangle(x - 3, y - 3, width + 6, height + 6,
-		                      VT_THEME_HALO_A(88));
-	}
+	if (focused)
+		vita2d_draw_rectangle(x - 2, y - 2, width + 4, height + 4,
+		                      VT_THEME_HALO_A(54));
 	vita2d_draw_rectangle(x, y, width, height, fill);
-	vita2d_draw_rectangle(x, y, 4, height, accent);
-	vita2d_draw_rectangle(x + 4, y, width - 4, 1,
+	vita2d_draw_rectangle(x, y, width, 1,
 	                      focused ? accent : VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(x, y + height - 1, width, 1,
+	                      RGBA8(73, 58, 41, 180));
+	unsigned int mark = focused ? VT_THEME_SIGNAL_LIGHT : accent;
+	panel_corner(x, y, 1.0f, 1.0f, mark);
+	panel_corner(x + width, y, -1.0f, 1.0f, mark);
+	panel_corner(x, y + height, 1.0f, -1.0f, mark);
+	panel_corner(x + width, y + height, -1.0f, -1.0f, mark);
 }
 
 void ui_action_button(float x, float y, float width, float height,
@@ -49,7 +153,7 @@ void ui_action_button(float x, float y, float width, float height,
 	                  int active) {
 	unsigned int foreground = ui_contrast_bw(fill);
 	ui_panel(x, y, width, height, fill,
-	         active ? VT_THEME_BLUE_LIGHT : VT_THEME_BORDER, active);
+	         active ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER, active);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	float key_width = 0.0f;
 	if (small && key && key[0]) {
@@ -58,9 +162,8 @@ void ui_action_button(float x, float y, float width, float height,
 	}
 	if (key_width > 0.0f) {
 		vita2d_draw_rectangle(x + 10, y + 9, key_width, height - 18,
-		                      foreground == RGBA8(255, 255, 255, 255)
-		                          ? RGBA8(255, 255, 255, 28)
-		                          : RGBA8(0, 0, 0, 28));
+		                      active ? RGBA8(255, 218, 151, 38)
+		                             : RGBA8(255, 255, 255, 18));
 		if (small) {
 			int kw = ui_font_text_width(small, UI_FONT_SMALL, key);
 			ui_font_draw_text(small, (int)(x + 10 + (key_width - kw) * .5f),

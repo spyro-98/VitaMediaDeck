@@ -207,6 +207,7 @@ add_executable(${PROJECT_NAME}
   src/media/background_playback.c
   src/media/audio_volume.c
   src/media/avplayer_init.c
+  src/media/media_tracks.c
   src/media/vita_decoder.c
   src/media/video_thumbnail.c
   src/media/hw_player_screen.c

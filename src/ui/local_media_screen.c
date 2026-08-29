@@ -608,7 +608,7 @@ static int draw_media_badge(vita2d_font *font, const char *label,
 	                        int x, int y, unsigned int accent) {
 	if (!font || !label || !label[0]) return 0;
 	int width = ui_font_text_width(font, UI_FONT_SMALL, label) + 17;
-	vita2d_draw_rectangle(x, y, width, 24, RGBA8(2, 7, 14, 226));
+	vita2d_draw_rectangle(x, y, width, 24, RGBA8(9, 8, 7, 226));
 	vita2d_draw_rectangle(x, y, 3, 24, accent);
 	ui_font_draw_text(font, x + 9, y + 18, VT_THEME_TEXT,
 	                  UI_FONT_SMALL, label);
@@ -670,16 +670,11 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	                     (!sidebar || (!sidebar->open &&
 	                                  sidebar->animation <= 0.01f));
 	int content_has_focus = page_has_focus && !focus_tabs;
-	if (body)
-		ui_font_draw_text(body, 42, 94, VT_THEME_TEXT, UI_FONT_BODY,
-		                  vt_i18n_str(VT_STR_HOME_TITLE));
-	if (small) {
-		char summary[64];
-		snprintf(summary, sizeof(summary), vt_i18n_str(VT_STR_LOCAL_MEDIA_SUMMARY),
-		         g_index.video_count, g_index.audio_count);
-		ui_font_draw_text(small, 42, 116, VT_THEME_TEXT,
-		                  UI_FONT_SMALL, summary);
-	}
+	char summary[64];
+	snprintf(summary, sizeof(summary), vt_i18n_str(VT_STR_LOCAL_MEDIA_SUMMARY),
+	         g_index.video_count, g_index.audio_count);
+	ui_scene_identity(42, 68, 338, "LIB/01",
+	                  vt_i18n_str(VT_STR_HOME_TITLE), summary);
 	const char *tabs[3] = {
 		vt_i18n_str(VT_STR_LOCAL_MEDIA_ALL),
 		vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_VIDEO),
@@ -691,10 +686,11 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		                   sceKernelGetProcessTimeWide(), 64, 112);
 	for (int i = 0; i < 3; i++) {
 		int x = 416 + i * 166;
-		vita2d_draw_rectangle(x, 68, 154, 38,
-		                      filter == i ? VT_THEME_SURFACE_RAISED
-		                                  : VT_THEME_SURFACE);
-		if (filter == i) vita2d_draw_rectangle(x, 103, 154, 3, VT_THEME_BLUE_LIGHT);
+		ui_panel(x, 68, 154, 38,
+		         filter == i ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE,
+		         filter == i ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
+		if (filter == i)
+			vita2d_draw_rectangle(x + 12, 103, 130, 2, VT_THEME_SIGNAL);
 		if (small) {
 			char tab_text[128];
 			clip_text(small, UI_FONT_SMALL, tabs[i], tab_text, 138);
@@ -810,10 +806,10 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				for (int stripe = 0; stripe < 6; stripe++)
 					vita2d_draw_rectangle(x + 6 + stripe * 48, y + 6, 24,
 					                      GRID_THUMB_H, stripe & 1
-					                          ? RGBA8(9, 27, 47, 255)
-					                          : RGBA8(5, 16, 29, 255));
+						                          ? RGBA8(47, 34, 22, 255)
+						                          : RGBA8(18, 16, 14, 255));
 				vita2d_draw_fill_circle(x + GRID_CARD_W * .5f, y + 68.0f, 31.0f,
-				                        RGBA8(2, 8, 17, 210));
+				                        RGBA8(5, 5, 6, 220));
 				for (int line = 0; line < 26; line++)
 					vita2d_draw_rectangle(x + GRID_CARD_W * .5f - 8,
 					                      y + 55 + line, 10 + line / 2, 1,
@@ -836,7 +832,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 					int duration_w = ui_font_text_width(small, UI_FONT_SMALL, duration) + 12;
 					vita2d_draw_rectangle(x + GRID_CARD_W - duration_w - 12,
 					                      y + GRID_THUMB_H - 18, duration_w, 24,
-					                      RGBA8(2, 7, 14, 226));
+					                      RGBA8(9, 8, 7, 226));
 					ui_font_draw_text(small, x + GRID_CARD_W - duration_w - 6,
 					                  y + GRID_THUMB_H, VT_THEME_TEXT,
 					                  UI_FONT_SMALL, duration);
@@ -869,7 +865,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		/* Modal drawers cover the complete display edge, including the brand bar.
 		 * This prevents the panel from reading as a detached card. */
 		float panel_x = 960.0f - 340.0f * right_animation;
-		vita2d_draw_rectangle(panel_x, 0, 340, 544, RGBA8(3, 8, 15, 250));
+		vita2d_draw_rectangle(panel_x, 0, 340, 544, RGBA8(7, 6, 5, 250));
 		vita2d_draw_rectangle(panel_x, 0, 4, 544, VT_THEME_BLUE_BRIGHT);
 		if (body) ui_font_draw_text(body, (int)panel_x + 30, 92, VT_THEME_TEXT,
 		                            UI_FONT_BODY,
@@ -897,7 +893,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	if (delete_confirm) {
 		vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 		                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(0, 3, 7, 186));
-		ui_panel(208, 174, 544, 190, RGBA8(3, 8, 15, 255),
+		ui_panel(208, 174, 544, 190, RGBA8(9, 8, 7, 255),
 		         VT_THEME_DANGER, 0);
 		if (body) ui_font_draw_text(body, 244, 224, VT_THEME_TEXT, UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_DELETE_TITLE));
@@ -1150,7 +1146,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			top = grid_top_for_selection(selected);
 		}
 		/* Animate the selector itself instead of delaying input: the new item is
-		 * immediately actionable while the blue rim glides across the grid. */
+		 * immediately actionable while the signal rim glides across the grid. */
 		if (focus_tabs) {
 			int tab_x = 416 + filter * 166;
 			ui_focus_motion_tick(&focus_motion, tab_x - 3, 65, 160, 44);

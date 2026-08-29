@@ -8,7 +8,7 @@
 
 #include "app_paths.h"
 
-#define VT_PREFERENCES_VERSION 2U
+#define VT_PREFERENCES_VERSION 3U
 #define VT_PREFERENCES_PATH VITAMEDIADECK_DATA_DIR "/settings.bin"
 #define VT_PREFERENCES_TEMP VITAMEDIADECK_DATA_DIR "/settings.tmp"
 #define VT_PREFERENCES_BACKUP VITAMEDIADECK_DATA_DIR "/settings.bak"
@@ -43,12 +43,24 @@ typedef struct {
 	int32_t default_frame_rate;
 } VtPreferencesDiskV2;
 
+/* V3 adds a dedicated subtitle word. The original playback word is full, and
+ * reusing any of its bits would corrupt existing UI or decoder preferences. */
+typedef struct {
+	VtPreferencesHeader header;
+	int32_t default_quality;
+	uint32_t reserved[2];
+	int32_t default_frame_rate;
+	uint32_t subtitle_flags;
+} VtPreferencesDiskV3;
+
 _Static_assert(sizeof(VtPreferencesHeader) == 20,
 	           "preferences header layout must remain fixed");
 _Static_assert(sizeof(VtPreferencesDiskV1) == 32,
 	           "preferences v1 layout must remain fixed");
 _Static_assert(sizeof(VtPreferencesDiskV2) == 36,
 	           "preferences v2 layout must remain fixed");
+_Static_assert(sizeof(VtPreferencesDiskV3) == 40,
+	           "preferences v3 layout must remain fixed");
 
 #define VT_PLAYBACK_FLAG_LOOP        (1u << 0)
 #define VT_PLAYBACK_FLAG_FILL_SCREEN (1u << 1)
@@ -89,11 +101,18 @@ _Static_assert(sizeof(VtPreferencesDiskV2) == 36,
 #define VT_VIDEO_DECODER_SHIFT                   30u
 #define VT_VIDEO_DECODER_MASK                    (3u << VT_VIDEO_DECODER_SHIFT)
 
+#define VT_SUBTITLE_FONT_SHIFT        0u
+#define VT_SUBTITLE_BACKGROUND_SHIFT  2u
+#define VT_SUBTITLE_MIN_ROWS_SHIFT    4u
+#define VT_SUBTITLE_MAX_ROWS_SHIFT    6u
+#define VT_SUBTITLE_EXTRA_MASK(shift) (3u << (shift))
+
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
 static int g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 static int g_language = VT_LANGUAGE_AUTO;
 static uint32_t g_playback_flags = 0;
+static uint32_t g_subtitle_flags = 0;
 
 static int set_playback_flag(uint32_t bit, int enabled);
 
@@ -140,6 +159,12 @@ static uint32_t disk_v2_checksum(const VtPreferencesDiskV2 *disk) {
 	return crc32_bytes((const unsigned char *)&copy, sizeof(copy));
 }
 
+static uint32_t disk_v3_checksum(const VtPreferencesDiskV3 *disk) {
+	VtPreferencesDiskV3 copy = *disk;
+	copy.header.checksum = 0;
+	return crc32_bytes((const unsigned char *)&copy, sizeof(copy));
+}
+
 static int path_exists(const char *path) {
 	SceIoStat stat;
 	memset(&stat, 0, sizeof(stat));
@@ -169,7 +194,8 @@ static int write_all(SceUID fd, const void *data, size_t size) {
 }
 
 static int load_path(const char *path, int *quality, int *frame_rate,
-	                 int *language, uint32_t *flags) {
+	                 int *language, uint32_t *flags,
+	                 uint32_t *subtitle_flags) {
 	SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
 	if (fd < 0) return fd;
 	VtPreferencesHeader header;
@@ -193,8 +219,9 @@ static int load_path(const char *path, int *quality, int *frame_rate,
 			*language = valid_language((int)disk.reserved[0])
 			          ? (int)disk.reserved[0] : VT_LANGUAGE_AUTO;
 			*flags = disk.reserved[1];
+			*subtitle_flags = 0;
 		}
-	} else if (ret == 0 && header.version == VT_PREFERENCES_VERSION &&
+	} else if (ret == 0 && header.version == 2U &&
 	           header.record_size == sizeof(VtPreferencesDiskV2)) {
 		VtPreferencesDiskV2 disk;
 		memset(&disk, 0, sizeof(disk));
@@ -211,6 +238,26 @@ static int load_path(const char *path, int *quality, int *frame_rate,
 			*language = valid_language((int)disk.reserved[0])
 			          ? (int)disk.reserved[0] : VT_LANGUAGE_AUTO;
 			*flags = disk.reserved[1];
+			*subtitle_flags = 0;
+		}
+	} else if (ret == 0 && header.version == VT_PREFERENCES_VERSION &&
+	           header.record_size == sizeof(VtPreferencesDiskV3)) {
+		VtPreferencesDiskV3 disk;
+		memset(&disk, 0, sizeof(disk));
+		disk.header = header;
+		ret = read_all(fd, (unsigned char *)&disk + sizeof(header),
+		               sizeof(disk) - sizeof(header));
+		if (ret == 0 &&
+		    (disk.header.checksum != disk_v3_checksum(&disk) ||
+		     !valid_quality(disk.default_quality) ||
+		     !valid_frame_rate(disk.default_frame_rate))) ret = -2;
+		if (ret == 0) {
+			*quality = disk.default_quality;
+			*frame_rate = disk.default_frame_rate;
+			*language = valid_language((int)disk.reserved[0])
+			          ? (int)disk.reserved[0] : VT_LANGUAGE_AUTO;
+			*flags = disk.reserved[1];
+			*subtitle_flags = disk.subtitle_flags;
 		}
 	} else if (ret == 0) {
 		ret = -2;
@@ -220,9 +267,9 @@ static int load_path(const char *path, int *quality, int *frame_rate,
 	return ret;
 }
 
-static int persist_record(int height, int frame_rate, int language,
-	                      uint32_t flags) {
-	VtPreferencesDiskV2 disk;
+static int persist_record_all(int height, int frame_rate, int language,
+	                          uint32_t flags, uint32_t subtitle_flags) {
+	VtPreferencesDiskV3 disk;
 	memset(&disk, 0, sizeof(disk));
 	memcpy(disk.header.magic, g_preferences_magic, sizeof(disk.header.magic));
 	disk.header.version = VT_PREFERENCES_VERSION;
@@ -231,7 +278,8 @@ static int persist_record(int height, int frame_rate, int language,
 	disk.reserved[0] = (uint32_t)language;
 	disk.reserved[1] = flags;
 	disk.default_frame_rate = frame_rate;
-	disk.header.checksum = disk_v2_checksum(&disk);
+	disk.subtitle_flags = subtitle_flags;
+	disk.header.checksum = disk_v3_checksum(&disk);
 
 	sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
 	sceIoRemove(VT_PREFERENCES_TEMP);
@@ -270,31 +318,41 @@ static int persist_record(int height, int frame_rate, int language,
 	return 0;
 }
 
+static int persist_record(int height, int frame_rate, int language,
+	                      uint32_t flags) {
+	return persist_record_all(height, frame_rate, language, flags,
+	                          g_subtitle_flags);
+}
+
 int vt_preferences_init(void) {
 	g_default_quality = VT_DEFAULT_QUALITY_720;
 	g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	g_language = VT_LANGUAGE_AUTO;
 	g_playback_flags = 0;
+	g_subtitle_flags = 0;
 	g_loaded = 1;
 	int quality = 0, frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	int language = VT_LANGUAGE_AUTO;
 	uint32_t flags = 0;
+	uint32_t subtitle_flags = 0;
 	int ret = load_path(VT_PREFERENCES_PATH, &quality, &frame_rate,
-	                    &language, &flags);
+	                    &language, &flags, &subtitle_flags);
 	if (ret == 0) {
 		g_default_quality = quality;
 		g_default_frame_rate = frame_rate;
 		g_language = language;
 		g_playback_flags = flags;
+		g_subtitle_flags = subtitle_flags;
 		return 0;
 	}
 	/* Recover a commit interrupted between the two rename operations. */
 	if (load_path(VT_PREFERENCES_BACKUP, &quality, &frame_rate,
-	              &language, &flags) == 0) {
+	              &language, &flags, &subtitle_flags) == 0) {
 		g_default_quality = quality;
 		g_default_frame_rate = frame_rate;
 		g_language = language;
 		g_playback_flags = flags;
+		g_subtitle_flags = subtitle_flags;
 		return 0;
 	}
 	return path_exists(VT_PREFERENCES_PATH) ? ret : 0;
@@ -631,4 +689,88 @@ int vt_preferences_set_subtitle_position(int position) {
 	    position > VT_SUBTITLE_POSITION_HIGH) return -1;
 	return set_subtitle_field(VT_SUBTITLE_POSITION_SHIFT,
 	                          (unsigned int)position);
+}
+
+static unsigned int subtitle_extra_field(unsigned int shift) {
+	if (!g_loaded) vt_preferences_init();
+	return (g_subtitle_flags >> shift) & 3u;
+}
+
+static uint32_t with_subtitle_extra_field(uint32_t flags, unsigned int shift,
+	                                      unsigned int encoded) {
+	uint32_t mask = VT_SUBTITLE_EXTRA_MASK(shift);
+	return (flags & ~mask) | ((encoded & 3u) << shift);
+}
+
+static int persist_subtitle_flags(uint32_t next) {
+	if (!g_loaded) vt_preferences_init();
+	if (next == g_subtitle_flags) return 0;
+	int ret = persist_record_all(g_default_quality, g_default_frame_rate,
+	                             g_language, g_playback_flags, next);
+	if (ret == 0) g_subtitle_flags = next;
+	return ret;
+}
+
+int vt_preferences_subtitle_font(void) {
+	int font = (int)subtitle_extra_field(VT_SUBTITLE_FONT_SHIFT);
+	return font <= VT_SUBTITLE_FONT_VITA_SYSTEM
+	     ? font : VT_SUBTITLE_FONT_INTER_MEDIUM;
+}
+
+int vt_preferences_set_subtitle_font(int font) {
+	if (font < VT_SUBTITLE_FONT_INTER_MEDIUM ||
+	    font > VT_SUBTITLE_FONT_VITA_SYSTEM) return -1;
+	if (!g_loaded) vt_preferences_init();
+	return persist_subtitle_flags(with_subtitle_extra_field(
+	    g_subtitle_flags, VT_SUBTITLE_FONT_SHIFT, (unsigned int)font));
+}
+
+int vt_preferences_subtitle_background_color(void) {
+	return (int)subtitle_extra_field(VT_SUBTITLE_BACKGROUND_SHIFT);
+}
+
+int vt_preferences_set_subtitle_background_color(int color) {
+	if (color < VT_SUBTITLE_BACKGROUND_TRANSPARENT ||
+	    color > VT_SUBTITLE_BACKGROUND_WHITE) return -1;
+	if (!g_loaded) vt_preferences_init();
+	return persist_subtitle_flags(with_subtitle_extra_field(
+	    g_subtitle_flags, VT_SUBTITLE_BACKGROUND_SHIFT,
+	    (unsigned int)color));
+}
+
+int vt_preferences_subtitle_min_rows(void) {
+	return (int)subtitle_extra_field(VT_SUBTITLE_MIN_ROWS_SHIFT) + 1;
+}
+
+int vt_preferences_subtitle_max_rows(void) {
+	unsigned int encoded = subtitle_extra_field(VT_SUBTITLE_MAX_ROWS_SHIFT);
+	return encoded == 0u ? VT_SUBTITLE_MAX_ROWS : (int)encoded;
+}
+
+static unsigned int encode_subtitle_max_rows(int rows) {
+	return rows == VT_SUBTITLE_MAX_ROWS ? 0u : (unsigned int)rows;
+}
+
+int vt_preferences_set_subtitle_min_rows(int rows) {
+	if (rows < VT_SUBTITLE_MIN_ROWS || rows > VT_SUBTITLE_MAX_ROWS) return -1;
+	if (!g_loaded) vt_preferences_init();
+	uint32_t next = with_subtitle_extra_field(
+	    g_subtitle_flags, VT_SUBTITLE_MIN_ROWS_SHIFT,
+	    (unsigned int)(rows - 1));
+	if (rows > vt_preferences_subtitle_max_rows())
+		next = with_subtitle_extra_field(next, VT_SUBTITLE_MAX_ROWS_SHIFT,
+		                                 encode_subtitle_max_rows(rows));
+	return persist_subtitle_flags(next);
+}
+
+int vt_preferences_set_subtitle_max_rows(int rows) {
+	if (rows < VT_SUBTITLE_MIN_ROWS || rows > VT_SUBTITLE_MAX_ROWS) return -1;
+	if (!g_loaded) vt_preferences_init();
+	uint32_t next = with_subtitle_extra_field(
+	    g_subtitle_flags, VT_SUBTITLE_MAX_ROWS_SHIFT,
+	    encode_subtitle_max_rows(rows));
+	if (rows < vt_preferences_subtitle_min_rows())
+		next = with_subtitle_extra_field(next, VT_SUBTITLE_MIN_ROWS_SHIFT,
+		                                 (unsigned int)(rows - 1));
+	return persist_subtitle_flags(next);
 }
