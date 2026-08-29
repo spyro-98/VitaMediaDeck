@@ -285,9 +285,9 @@ static void draw_icon(const LocalFileEntry *entry, int x, int y) {
 	} else if (entry->media.type == VT_LOCAL_MEDIA_VIDEO) {
 		for (int stripe = 0; stripe < 5; stripe++)
 			vita2d_draw_rectangle(x + 18 + stripe * 20, y + 14, 10, 88,
-			                      stripe & 1 ? RGBA8(47, 34, 22, 255)
-			                                 : RGBA8(18, 16, 14, 255));
-		vita2d_draw_fill_circle(x + 68, y + 58, 21, RGBA8(5, 5, 6, 220));
+			                      stripe & 1 ? VT_THEME_SURFACE_FOCUS
+			                                 : VT_THEME_SURFACE);
+		vita2d_draw_fill_circle(x + 68, y + 58, 21, VT_THEME_MEDIA_BACKDROP);
 		for (int line = 0; line < 18; line++)
 			vita2d_draw_rectangle(x + 62, y + 49 + line, 7 + line / 2, 1,
 			                      VT_THEME_TEXT);

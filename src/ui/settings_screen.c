@@ -397,7 +397,19 @@ static void draw_screen(int tab, int cursor, float focus,
 		if (body) ui_font_draw_text(body, x + 43, TAB_Y + 27,
 		                             i == tab ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
 		                             UI_FONT_BODY, tab_label(i));
+		if (i == tab) {
+			vita2d_draw_rectangle(x + 8, TAB_Y + TAB_H - 3, TAB_W - 16, 3,
+			                      VT_THEME_SIGNAL_LIGHT);
+			vita2d_draw_rectangle(x + 8, TAB_Y + 4, 28, 1,
+			                      VT_THEME_COLD_LIGHT);
+		}
 	}
+	vita2d_draw_rectangle(TAB_X, TAB_Y + TAB_H + 8,
+	                      TAB_COUNT * TAB_W + (TAB_COUNT - 1) * 8, 1,
+	                      VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(TAB_X, TAB_Y + TAB_H + 8,
+	                      (tab + 1) * TAB_W + tab * 8, 2,
+	                      VT_THEME_SPECTRAL);
 	if (page_has_focus)
 		ui_focus_glow_draw(ROW_X, ROW_Y + focus * ROW_STEP, ROW_W, ROW_H,
 		                   sceKernelGetProcessTimeWide(), ROW_Y, 432);

@@ -63,7 +63,7 @@
 #define COLOR_TEXT    VT_THEME_TEXT
 #define COLOR_MUTED   VT_THEME_TEXT_MUTED
 #define COLOR_BLUE    VT_THEME_BLUE_BRIGHT
-#define COLOR_FIELD   RGBA8(17, 16, 14, 248)
+#define COLOR_FIELD   RGBA8(6, 17, 19, 248)
 /* Status indicators: same palette family as the rest of the topbar. */
 #define COLOR_DIM     VT_THEME_BORDER
 #define COLOR_BATT_OK   RGBA8(76, 217, 100, 255)
@@ -341,17 +341,21 @@ static void draw_gradient_bar(void) {
 	const int strips = 48;
 	const float strip_w = (float)SCREEN_WIDTH / (float)strips;
 	const unsigned int black = VT_THEME_BG_SOFT;
-	const unsigned int warm_black = RGBA8(22, 17, 12, 255);
+	const unsigned int optical_black = RGBA8(4, 18, 20, 255);
 	for (int i = 0; i < strips; i++) {
 		vita2d_draw_rectangle((float)i * strip_w, 0.0f, strip_w + 1.0f,
 		                       (float)UI_BRAND_HEADER_HEIGHT,
-		                       mix_rgb(black, warm_black, i, strips - 1));
+		                       mix_rgb(black, optical_black, i, strips - 1));
 	}
 	/* Command-rail partitions are functional: brand, scene title, status. */
 	vita2d_draw_rectangle(248, 8, 1, 38, VT_THEME_BORDER_DIM);
 	vita2d_draw_rectangle(708, 8, 1, 38, VT_THEME_BORDER_DIM);
-	vita2d_draw_rectangle(0.0f, (float)UI_BRAND_HEADER_HEIGHT - 2.0f,
-	                       (float)SCREEN_WIDTH, 2.0f, VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(0.0f, (float)UI_BRAND_HEADER_HEIGHT - 1.0f,
+	                       (float)SCREEN_WIDTH, 1.0f, VT_THEME_COLD_DIM);
+	vita2d_draw_rectangle(540.0f, (float)UI_BRAND_HEADER_HEIGHT - 2.0f,
+	                       260.0f, 1.0f, VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(800.0f, (float)UI_BRAND_HEADER_HEIGHT - 2.0f,
+	                       92.0f, 1.0f, VT_THEME_SPECTRAL);
 	for (int i = 0; i < 9; i++)
 		vita2d_draw_rectangle(420.0f + i * 12.0f,
 		                      (float)UI_BRAND_HEADER_HEIGHT - 6.0f,
@@ -364,13 +368,14 @@ static void draw_logo(void) {
 	vita2d_texture *logo = ui_runtime_logo();
 	/* Four acquisition brackets turn any supplied icon into part of the system
 	 * without modifying the user's artwork asset. */
-	unsigned int frame = VT_THEME_SIGNAL_BRIGHT;
-	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 10, 2, frame);
-	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 2, 10, frame);
+	unsigned int warm_frame = VT_THEME_SIGNAL_BRIGHT;
+	unsigned int cold_frame = VT_THEME_SPECTRAL;
+	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 10, 2, cold_frame);
+	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 2, 10, cold_frame);
 	vita2d_draw_rectangle(HEADER_ICON_X + HEADER_ICON_SIZE - 7,
-	                      HEADER_ICON_Y + HEADER_ICON_SIZE + 1, 10, 2, frame);
+	                      HEADER_ICON_Y + HEADER_ICON_SIZE + 1, 10, 2, warm_frame);
 	vita2d_draw_rectangle(HEADER_ICON_X + HEADER_ICON_SIZE + 1,
-	                      HEADER_ICON_Y + HEADER_ICON_SIZE - 7, 2, 10, frame);
+	                      HEADER_ICON_Y + HEADER_ICON_SIZE - 7, 2, 10, warm_frame);
 	if (logo) {
 		unsigned int w = vita2d_texture_get_width(logo);
 		unsigned int h = vita2d_texture_get_height(logo);
@@ -393,7 +398,7 @@ static void draw_logo(void) {
 	/* Always-visible fallback in case the PNG fails to load. */
 	vita2d_draw_rectangle(HEADER_ICON_X + 5, HEADER_ICON_Y + 5,
 	                      HEADER_ICON_SIZE - 10, HEADER_ICON_SIZE - 10,
-	                      VT_THEME_SIGNAL);
+	                      VT_THEME_SPECTRAL);
 	vita2d_draw_rectangle(HEADER_ICON_X + 11, HEADER_ICON_Y + 11,
 	                      HEADER_ICON_SIZE - 22, HEADER_ICON_SIZE - 22,
 	                      VT_THEME_BG);
@@ -503,9 +508,10 @@ static void draw_header(const char *query, int editing,
 				int step = reduce_motion ? (i == 0 ? 0 : 2) :
 				           (int)((phase + (uint64_t)i) % 4ULL);
 				float radius = step == 0 ? 3.8f : step == 1 ? 3.1f : 2.4f;
-				unsigned color = step == 0 ? VT_THEME_SIGNAL_LIGHT
+				unsigned color = step == 0 ? VT_THEME_SPECTRAL_LIGHT
 				               : step == 1 ? VT_THEME_SIGNAL_BRIGHT
-				                           : VT_THEME_BORDER;
+				                           : step == 2 ? VT_THEME_COLD
+				                                       : VT_THEME_BORDER;
 				vita2d_draw_fill_circle(start_x + i * 10.0f, 27.0f, radius, color);
 			}
 		}
@@ -584,7 +590,7 @@ static void draw_header(const char *query, int editing,
 		 * generous hit area via ui_brand_search_clear_hit(). */
 		vita2d_draw_rectangle(SEARCH_CLEAR_X + 3, SEARCH_CLEAR_Y + 3,
 		                      SEARCH_CLEAR_SIZE - 6, SEARCH_CLEAR_SIZE - 6,
-		                      RGBA8(55, 34, 22, 255));
+		                      VT_THEME_SURFACE_FOCUS);
 		vita2d_draw_line(SEARCH_CLEAR_X + 11.0f, SEARCH_CLEAR_Y + 11.0f,
 		                 SEARCH_CLEAR_X + 23.0f, SEARCH_CLEAR_Y + 23.0f,
 		                 COLOR_TEXT);

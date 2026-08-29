@@ -187,19 +187,21 @@ void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor) {
 		                      960 - (ox + SIDEBAR_WIDTH), SCREEN_HEIGHT,
 		                      RGBA8(0, 0, 0, (unsigned int)(150.0f * animation)));
 	vita2d_draw_rectangle(ox, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT,
-	                      RGBA8(7, 7, 8, 252));
-	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 3, 0, 3, SCREEN_HEIGHT,
-	                      VT_THEME_SIGNAL_BRIGHT);
-	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 8, 0, 5, SCREEN_HEIGHT,
-	                      RGBA8(255, 148, 40, 30));
+	                      VT_THEME_BG_SOFT);
+	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 2, 0, 2, SCREEN_HEIGHT,
+	                      VT_THEME_SPECTRAL);
+	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 7, 0, 4, SCREEN_HEIGHT,
+	                      VT_THEME_SIGNAL_A(42));
 	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	/* Packet-like marks provide depth without suggesting unavailable controls. */
-	for (int i = 0; i < 11; i++) {
+	for (int i = 0; i < 18; i++) {
 		float px = ox + 214.0f + (float)((i * 29) % 72);
 		float py = 68.0f + (float)((i * 47) % 390);
 		vita2d_draw_rectangle(px, py, i % 4 == 0 ? 3.0f : 2.0f, 2.0f,
-		                      VT_THEME_PARTICLE_A(32 + i * 5));
+		                      i % 6 == 0 ? VT_THEME_SIGNAL_A(48 + i * 4)
+		                      : i % 3 == 0 ? VT_THEME_COLD_A(38 + i * 4)
+		                                   : VT_THEME_SPECTRAL_A(32 + i * 5));
 	}
 	vita2d_draw_rectangle(ox + 20, 18, 42, 26, VT_THEME_SURFACE_RAISED);
 	vita2d_draw_rectangle(ox + 20, 18, 3, 26, VT_THEME_SIGNAL_BRIGHT);
@@ -222,10 +224,10 @@ void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor) {
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
 		                      ITEM_W, 2, VT_THEME_SIGNAL_LIGHT);
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
-		                      3, ITEM_H, VT_THEME_SIGNAL_BRIGHT);
+		                      3, ITEM_H, VT_THEME_SPECTRAL);
 	}
 	for (int i = 0; i < UI_SECTION_COUNT; i++) {
-		unsigned int color = has_focus && i == cursor ? VT_THEME_SIGNAL_LIGHT
+		unsigned int color = has_focus && i == cursor ? VT_THEME_TEXT
 		                                      : VT_THEME_TEXT_MUTED;
 		if (small)
 			ui_font_draw_text(small, (int)ox + 34, 179 + i * ITEM_STEP,

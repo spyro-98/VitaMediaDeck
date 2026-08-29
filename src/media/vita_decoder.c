@@ -374,6 +374,17 @@ int vt_decoder_present(VtDecoderPlayer *player, int fill_screen) {
 	     ? vita_sw_decoder_present(player->software, fill_screen) : -1;
 }
 
+int vt_decoder_present_rect(VtDecoderPlayer *player, float x, float y,
+	                        float width, float height, int fill_rect) {
+	if (!player) return -1;
+	return player->backend == VT_DECODER_BACKEND_HARDWARE
+	     ? vita_hw_decoder_present_rect(player->hardware, x, y, width, height,
+	                                    fill_rect)
+	     : player->backend == VT_DECODER_BACKEND_SOFTWARE
+	     ? vita_sw_decoder_present_rect(player->software, x, y, width, height,
+	                                    fill_rect) : -1;
+}
+
 void vt_decoder_render_complete(VtDecoderPlayer *player) {
 	if (!player) return;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE)

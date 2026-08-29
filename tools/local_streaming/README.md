@@ -66,5 +66,20 @@ Ogni server resta in primo piano e si arresta con `Ctrl-C`. Per usarli insieme,
 aprili in tre finestre o pannelli Terminale distinti. Porta, credenziali,
 cartella e indirizzo di ascolto possono essere cambiati; usa `--help` per
 l'elenco completo delle opzioni. Metti nella cartella almeno un MP4/M4V/MOV/MKV
-seekable con video H.264; l'audio AAC e' supportato ma opzionale. Questo e' il
-contratto di riproduzione remota attualmente supportato dall'app.
+seekable con video H.264; l'audio AAC e' supportato ma opzionale. Per coprire il
+contratto attuale dell'app, aggiungi anche un Matroska creato da
+VitaMediaDeck-Transcoder con piu' tracce AAC, almeno due sottotitoli testuali e
+un `cover.jpg` incorporato.
+
+Per ogni protocollo verifica:
+
+1. anteprima della copertina nella griglia e nella lista;
+2. estrazione di un fotogramma quando la copertina non e' presente;
+3. cambio delle tracce audio e dei sottotitoli dal pannello R1;
+4. salvataggio del punto di arresto, ripresa dopo la riapertura e azione
+   **Ricomincia dall'inizio**;
+5. rifiuto di credenziali, fingerprint o pin errati senza scrivere password
+   nella cache delle anteprime.
+
+Questo e' il contratto di riproduzione remota attualmente supportato dall'app;
+la compilazione locale non sostituisce la verifica su una PS Vita fisica.

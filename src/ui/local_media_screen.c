@@ -608,7 +608,7 @@ static int draw_media_badge(vita2d_font *font, const char *label,
 	                        int x, int y, unsigned int accent) {
 	if (!font || !label || !label[0]) return 0;
 	int width = ui_font_text_width(font, UI_FONT_SMALL, label) + 17;
-	vita2d_draw_rectangle(x, y, width, 24, RGBA8(9, 8, 7, 226));
+	vita2d_draw_rectangle(x, y, width, 24, VT_THEME_GLASS_A(226));
 	vita2d_draw_rectangle(x, y, 3, 24, accent);
 	ui_font_draw_text(font, x + 9, y + 18, VT_THEME_TEXT,
 	                  UI_FONT_SMALL, label);
@@ -806,10 +806,10 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				for (int stripe = 0; stripe < 6; stripe++)
 					vita2d_draw_rectangle(x + 6 + stripe * 48, y + 6, 24,
 					                      GRID_THUMB_H, stripe & 1
-						                          ? RGBA8(47, 34, 22, 255)
-						                          : RGBA8(18, 16, 14, 255));
+						                          ? VT_THEME_SURFACE_FOCUS
+						                          : VT_THEME_SURFACE);
 				vita2d_draw_fill_circle(x + GRID_CARD_W * .5f, y + 68.0f, 31.0f,
-				                        RGBA8(5, 5, 6, 220));
+				                        VT_THEME_MEDIA_BACKDROP);
 				for (int line = 0; line < 26; line++)
 					vita2d_draw_rectangle(x + GRID_CARD_W * .5f - 8,
 					                      y + 55 + line, 10 + line / 2, 1,
@@ -832,7 +832,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 					int duration_w = ui_font_text_width(small, UI_FONT_SMALL, duration) + 12;
 					vita2d_draw_rectangle(x + GRID_CARD_W - duration_w - 12,
 					                      y + GRID_THUMB_H - 18, duration_w, 24,
-					                      RGBA8(9, 8, 7, 226));
+					                      VT_THEME_GLASS_A(226));
 					ui_font_draw_text(small, x + GRID_CARD_W - duration_w - 6,
 					                  y + GRID_THUMB_H, VT_THEME_TEXT,
 					                  UI_FONT_SMALL, duration);
@@ -865,8 +865,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		/* Modal drawers cover the complete display edge, including the brand bar.
 		 * This prevents the panel from reading as a detached card. */
 		float panel_x = 960.0f - 340.0f * right_animation;
-		vita2d_draw_rectangle(panel_x, 0, 340, 544, RGBA8(7, 6, 5, 250));
-		vita2d_draw_rectangle(panel_x, 0, 4, 544, VT_THEME_BLUE_BRIGHT);
+		vita2d_draw_rectangle(panel_x, 0, 340, 544, VT_THEME_BG_SOFT);
+		vita2d_draw_rectangle(panel_x, 0, 3, 544, VT_THEME_SPECTRAL);
+		vita2d_draw_rectangle(panel_x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
 		if (body) ui_font_draw_text(body, (int)panel_x + 30, 92, VT_THEME_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
@@ -893,7 +894,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	if (delete_confirm) {
 		vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 		                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(0, 3, 7, 186));
-		ui_panel(208, 174, 544, 190, RGBA8(9, 8, 7, 255),
+		ui_panel(208, 174, 544, 190, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_DANGER, 0);
 		if (body) ui_font_draw_text(body, 244, 224, VT_THEME_TEXT, UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_DELETE_TITLE));

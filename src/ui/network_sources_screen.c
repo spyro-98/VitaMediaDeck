@@ -296,7 +296,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 	if (remove_confirm) {
 		vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 		                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(0, 3, 7, 186));
-		ui_panel(208, 174, 544, 190, RGBA8(9, 8, 7, 255),
+		ui_panel(208, 174, 544, 190, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_DANGER, 0);
 		if (body) ui_font_draw_text(body, 244, 224, VT_THEME_TEXT, UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_NETWORK_REMOVE_TITLE));
@@ -339,9 +339,9 @@ static void draw_browser_icon(const VtNetworkEntry *entry, int x, int y) {
 	}
 	for (int stripe = 0; stripe < 5; stripe++)
 		vita2d_draw_rectangle(x + 18 + stripe * 20, y + 14, 10, 88,
-		                      stripe & 1 ? RGBA8(47, 34, 22, 255)
-		                                 : RGBA8(18, 16, 14, 255));
-	vita2d_draw_fill_circle(x + 68, y + 58, 21, RGBA8(5, 5, 6, 220));
+		                      stripe & 1 ? VT_THEME_SURFACE_FOCUS
+		                                 : VT_THEME_SURFACE);
+	vita2d_draw_fill_circle(x + 68, y + 58, 21, VT_THEME_MEDIA_BACKDROP);
 	for (int line = 0; line < 18; line++)
 		vita2d_draw_rectangle(x + 62, y + 49 + line, 7 + line / 2, 1,
 		                      VT_THEME_TEXT);

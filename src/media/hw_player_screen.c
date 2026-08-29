@@ -94,15 +94,15 @@ static int run_seek(VtDecoderPlayer *player, UiPlayerLoadingInfo *loading,
 static int run_track_change(VtDecoderPlayer *player,
 	                        UiPlayerLoadingInfo *loading,
 	                        volatile int *cancel, uint64_t position_ms,
-	                        int subtitles, int direction) {
+	                        int subtitles, int track) {
 	int count = subtitles ? vt_decoder_subtitle_track_count(player)
 	                      : vt_decoder_audio_track_count(player);
-	if ((!subtitles && count < 2) || (subtitles && count < 1)) return 0;
+	int choices = subtitles ? count + 1 : count;
+	if (track < 0 || track >= choices) return -1;
 	int current = subtitles ? vt_decoder_active_subtitle_track(player)
 	                        : vt_decoder_active_audio_track(player);
-	int choices = subtitles ? count + 1 : count;
-	int next = (current + (direction < 0 ? choices - 1 : 1)) % choices;
-	TrackTask task = { player, position_ms, next };
+	if (track == current) return 0;
+	TrackTask task = { player, position_ms, track };
 	if (cancel) *cancel = 0;
 	loading->status = vt_i18n_str(subtitles ? VT_STR_PLAYER_CHANGE_SUBTITLE
 	                                      : VT_STR_PLAYER_CHANGE_AUDIO);
@@ -175,7 +175,7 @@ static void draw_play_icon(float x, float y, float height, unsigned color) {
 
 static void draw_skip_button(vita2d_font *font, float center_x,
 	                         const char *label, float opacity) {
-	unsigned fill = fade_color(RGBA8(18, 16, 14, 225), opacity);
+	unsigned fill = fade_color(VT_THEME_GLASS_A(225), opacity);
 	unsigned text = fade_color(VT_THEME_TEXT, opacity);
 	float left = center_x - 23.0f, top = PLAYER_TRANSPORT_Y - 23.0f;
 	vita2d_draw_rectangle(left, top, 46.0f, 46.0f, fill);
@@ -235,10 +235,11 @@ static void format_video_bitrate(uint64_t bitrate_bps, char out[32]) {
 }
 
 static void format_track_value(const VtDecoderPlayer *player, int subtitles,
-	                           char out[128]) {
+	                           int selection, char out[128]) {
 	int count = subtitles ? vt_decoder_subtitle_track_count(player)
 	                      : vt_decoder_audio_track_count(player);
-	int active = subtitles ? vt_decoder_active_subtitle_track(player)
+	int active = selection >= 0 ? selection
+	           : subtitles ? vt_decoder_active_subtitle_track(player)
 	                       : vt_decoder_active_audio_track(player);
 	if (!count || (subtitles && active == 0)) {
 		snprintf(out, 128, "%s", vt_i18n_str(VT_STR_PLAYER_OFF));
@@ -392,7 +393,7 @@ static void draw_buffering_overlay(float opacity, uint64_t now) {
 	vita2d_draw_rectangle(x - 4, y - 4, width + 8, height + 8,
 	                      fade_color(RGBA8(0, 0, 0, 92), opacity));
 	vita2d_draw_rectangle(x, y, width, height,
-	                      fade_color(RGBA8(12, 10, 8, 232), opacity));
+	                      fade_color(VT_THEME_GLASS_A(232), opacity));
 	vita2d_draw_rectangle(x, y, 4, height,
 	                      fade_color(VT_THEME_BLUE_LIGHT, opacity));
 	if (opacity > 0.16f) ui_draw_spinner_compact(x + 38, y + 34, now);
@@ -599,12 +600,15 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	                                  int cursor,
 	                                  const VtDecoderPlayer *player,
 	                                  const VtDecoderPlayerStatus *status,
-	                                  int resume_available) {
+	                                  int resume_available,
+	                                  int pending_audio_track,
+	                                  int pending_subtitle_track) {
 	if (animation <= 0.01f || !status) return;
 	const float width = RIGHT_PANEL_WIDTH;
 	float x = SCREEN_WIDTH - width * animation;
-	vita2d_draw_rectangle(x, 0, width, SCREEN_HEIGHT, RGBA8(7, 6, 5, 250));
-	vita2d_draw_rectangle(x, 0, 4, SCREEN_HEIGHT, VT_THEME_BLUE_LIGHT);
+	vita2d_draw_rectangle(x, 0, width, SCREEN_HEIGHT, VT_THEME_BG_SOFT);
+	vita2d_draw_rectangle(x, 0, 3, SCREEN_HEIGHT, VT_THEME_SPECTRAL);
+	vita2d_draw_rectangle(x + 4, 0, 1, SCREEN_HEIGHT, VT_THEME_SIGNAL_BRIGHT);
 	vita2d_draw_rectangle(x + 4, 0, width - 4, 1, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -627,8 +631,8 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		vt_i18n_str(VT_STR_PLAYER_RESTART_FROM_BEGINNING)
 	};
 	char audio_value[128], subtitle_value[128];
-	format_track_value(player, 0, audio_value);
-	format_track_value(player, 1, subtitle_value);
+	format_track_value(player, 0, pending_audio_track, audio_value);
+	format_track_value(player, 1, pending_subtitle_track, subtitle_value);
 	const char *values[5] = {
 		vt_i18n_str(vt_preferences_fill_screen() ? VT_STR_PLAYER_ON
 		                                             : VT_STR_PLAYER_OFF),
@@ -665,7 +669,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 			ui_font_draw_text(small, (int)x + (int)width - value_w - 34,
 			                  (int)y + 35,
 				                  (i < 2 && !strcmp(value, vt_i18n_str(VT_STR_PLAYER_OFF))) ||
-				                  (i == 3 && vt_decoder_active_subtitle_track(player) == 0)
+				                  (i == 3 && pending_subtitle_track == 0)
 				                      ? VT_THEME_TEXT_MUTED
 				                      : i == 4 ? VT_THEME_COLD_LIGHT
 				                               : VT_THEME_BLUE_LIGHT,
@@ -761,6 +765,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                                    : UI_SECTION_LOCAL_MEDIA);
 	int right_open = 0;
 	int right_cursor = 0;
+	int pending_audio_track = vt_decoder_active_audio_track(player);
+	int pending_subtitle_track = vt_decoder_active_subtitle_track(player);
 	int resume_available = source->start_position_ms > 0;
 	float right_animation = 0.0f;
 	float right_focus_position = 0.0f;
@@ -871,6 +877,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			right_open = !right_open;
 			right_cursor = 0;
 			right_focus_position = 0.0f;
+			pending_audio_track = vt_decoder_active_audio_track(player);
+			pending_subtitle_track = vt_decoder_active_subtitle_track(player);
 			ui_nav_repeat_reset(&right_nav_repeat);
 			dragging = 0;
 			pressed &= ~right_toggle;
@@ -890,18 +898,42 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			int right_row_count = resume_available ? 5 : 4;
 			if ((right_navigation & SCE_CTRL_DOWN) &&
 			    right_cursor + 1 < right_row_count) right_cursor++;
-			if (pressed & (SCE_CTRL_CROSS | SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) {
+			if (right_cursor == 2 &&
+			    (pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
+				int count = vt_decoder_audio_track_count(player);
+				if (count > 1) {
+					int direction = (pressed & SCE_CTRL_LEFT) ? -1 : 1;
+					pending_audio_track =
+					    (pending_audio_track + (direction < 0 ? count - 1 : 1)) % count;
+				}
+			} else if (right_cursor == 3 &&
+			           (pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
+				int choices = vt_decoder_subtitle_track_count(player) + 1;
+				if (choices > 1) {
+					int direction = (pressed & SCE_CTRL_LEFT) ? -1 : 1;
+					pending_subtitle_track =
+					    (pending_subtitle_track + (direction < 0 ? choices - 1 : 1)) % choices;
+				}
+			}
+			if (pressed & SCE_CTRL_CROSS) {
 				if (right_cursor == 0)
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (right_cursor == 1)
 					vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
 				else if (right_cursor < 4) {
-					int direction = (pressed & SCE_CTRL_LEFT) ? -1 : 1;
+					int selected_track = right_cursor == 3
+					                   ? pending_subtitle_track : pending_audio_track;
 					ret = run_track_change(player, &loading, &cancel,
 					                       status.position_ms,
-					                       right_cursor == 3, direction);
+					                       right_cursor == 3, selected_track);
 					loading.status = opening_status;
-					if (ret < 0) break;
+					if (ret < 0) {
+						if (right_cursor == 3) {
+							pending_subtitle_track =
+							    vt_decoder_active_subtitle_track(player);
+							ret = 0;
+						} else break;
+					}
 					now = resync_after_blocking_action(
 					    &controls, &previous, &left_seek_direction,
 					    &left_seek_repeat_at);
@@ -1030,9 +1062,20 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				else if (i == 1)
 					vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
 				else if (i < 4) {
+					int count = i == 3
+					          ? vt_decoder_subtitle_track_count(player) + 1
+					          : vt_decoder_audio_track_count(player);
+					int *pending = i == 3 ? &pending_subtitle_track
+					                      : &pending_audio_track;
+					if (count > 1) *pending = (*pending + 1) % count;
 					ret = run_track_change(player, &loading, &cancel,
-					                       status.position_ms, i == 3, 1);
+					                       status.position_ms, i == 3, *pending);
 					loading.status = opening_status;
+					if (ret < 0 && i == 3) {
+						pending_subtitle_track =
+						    vt_decoder_active_subtitle_track(player);
+						ret = 0;
+					}
 					track_change_failed = ret < 0;
 					track_change_completed = ret >= 0;
 				} else {
@@ -1199,7 +1242,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				                         sidebar.open ? sidebar.focus_cursor : -1.0f);
 			draw_player_right_sidebar(right_animation, right_focus_position,
 			                          right_cursor, player, &status,
-			                          resume_available);
+			                          resume_available, pending_audio_track,
+			                          pending_subtitle_track);
 		}
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
