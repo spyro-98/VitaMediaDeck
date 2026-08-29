@@ -39,9 +39,11 @@
 #define THUMB_FAILURE_RETRY_US      (30ULL * 1000ULL * 1000ULL)
 #define THUMB_UPLOAD_RETRY_US       (500ULL * 1000ULL)
 #define THUMB_DECODE_DEADLINE_US    (5ULL * 1000ULL * 1000ULL)
+#define THUMB_FRAME_LOCAL_DEADLINE_US  (8ULL * 1000ULL * 1000ULL)
+#define THUMB_FRAME_REMOTE_DEADLINE_US (12ULL * 1000ULL * 1000ULL)
 #define THUMB_SALVAGE_DEADLINE_US   (1ULL * 1000ULL * 1000ULL)
 #define THUMB_MAX_DEMUX_PACKETS     4096
-#define THUMB_MAX_VIDEO_PACKETS     120
+#define THUMB_MAX_VIDEO_PACKETS     240
 #define THUMB_AVIO_BUFFER_SIZE      (32 * 1024)
 #define THUMB_COVER_MAX_PIXELS      (1024U * 1024U)
 #define THUMB_THREAD_PRIORITY       0x10000180
@@ -931,6 +933,19 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 		result = AVERROR_STREAM_NOT_FOUND;
 	AVStream *stream = result >= 0 && !converted
 	                 ? format->streams[stream_index] : NULL;
+	/* Opening the container and inspecting embedded artwork have their own bounded
+	 * cost. A blank attached picture must not consume the representative-frame
+	 * decoder's entire budget: that made valid long MKVs permanently cache a
+	 * thumbnail failure after correctly rejecting their black cover.jpg. */
+	if (result >= 0 && !converted) {
+		interrupt.deadline_us = sceKernelGetProcessTimeWide() +
+		    (request->remote ? THUMB_FRAME_REMOTE_DEADLINE_US
+		                     : THUMB_FRAME_LOCAL_DEADLINE_US);
+		if (format->pb) {
+			format->pb->error = 0;
+			format->pb->eof_reached = 0;
+		}
+	}
 	/* H.264 explicitly uses the CPU decoder: thumbnail work must never claim
 	 * SceVideodec or compete for its CDRAM surfaces. The single-threaded worker
 	 * stays at low priority and remains wall-bounded even while a video mini-player
