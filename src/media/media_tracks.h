@@ -21,6 +21,7 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 	                        const VtDecoderStreamFactory *factory,
 	                        int stream_index, uint64_t start_position_ms,
 	                        volatile int *open_cancel);
+void vt_subtitle_reader_disable(VtSubtitleReader *reader);
 void vt_subtitle_reader_close(VtSubtitleReader *reader);
 void vt_subtitle_reader_destroy(VtSubtitleReader *reader);
 int vt_subtitle_reader_text(VtSubtitleReader *reader, uint64_t position_ms,

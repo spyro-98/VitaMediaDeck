@@ -92,9 +92,9 @@ fresh physical-Vita screenshot pass.
   uses the same persistent grid/list choice as WebDAV, SFTP, and SMB folders.
 - **Video cover previews:** local cells prefer matching artwork sidecars, then
   local and remote cells use an embedded cover when present or asynchronously
-  extract and cache a representative video frame. Bounded stream discovery is
-  still performed for indexed containers so attached pictures and codec
-  dimensions are not silently missed.
+  extract and cache a representative H.264 frame. Indexed MP4/Matroska artwork
+  is decoded directly from the container index; bounded stream discovery is
+  reserved for inputs whose video parameters are actually incomplete.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
@@ -103,7 +103,9 @@ fresh physical-Vita screenshot pass.
   AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
   subtitles without leaving the video. The same seekable-cursor path is used
   for local files, WebDAV, SFTP, and SMB. Left/Right stages a track choice and
-  X applies it, preventing accidental playback restarts while browsing.
+  X applies it, preventing accidental playback restarts while browsing. Once
+  opened, the subtitle cursor switches tracks and seeks in place, clears stale
+  text immediately, and never blocks the UI while joining the previous reader.
 - **Configurable multilingual subtitles:** a dedicated Settings tab controls
   font, foreground/background color, size, maximum width, minimum/maximum line
   count, and vertical position. Exact-size Inter faces keep Western and

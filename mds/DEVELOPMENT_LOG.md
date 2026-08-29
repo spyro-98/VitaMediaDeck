@@ -41,6 +41,14 @@ Sources, Settings, and About from the shared sidebar.
 - Added progressive cover previews to local and authenticated-remote video
   cells: sidecar artwork remains first, then embedded cover art, then a bounded
   representative-frame fallback with a checked RGB565 disk cache.
+- Moved embedded-cover decoding ahead of stream analysis so indexed Matroska
+  and MP4 artwork cannot consume the thumbnail deadline while probing the main
+  movie. H.264 frame fallback now probes only when codec parameters are missing.
+- Reworked subtitle switching around one persistent demux worker: track/off and
+  seek requests clear stale cues immediately and are applied asynchronously,
+  avoiding the blocking thread join behind the **Changing subtitle** screen.
+- Reduced runtime seek preroll to the first decoded frame with a 600 ms cap in
+  both reusable decoders.
 - Restored complete-but-bounded stream discovery for thumbnail and playback
   inputs, preventing indexed long videos and embedded covers from being opened
   with incomplete codec parameters. Failed saved-position seeks now retry from

@@ -96,7 +96,11 @@ subtitle track. Left/Right changes the pending choice and Cross applies it; the
 subtitle selector includes an explicit Off choice. Track changes retain the
 current playback position and apply equally to local and authenticated remote
 videos. A subtitle-open failure returns to the panel instead of closing video
-playback.
+playback. Subsequent subtitle changes reuse the active subtitle cursor: the old
+cue disappears immediately and the new track is sought asynchronously, so the
+player cannot remain trapped on the **Changing subtitle** screen. Video seeks
+release playback after the first decoded preroll frame instead of waiting for a
+multi-frame startup cushion.
 
 Each local or remote video remembers its last useful playback position. If the
 player opens from that position, the R1 panel adds **Start from beginning** as a
