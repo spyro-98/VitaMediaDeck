@@ -33,11 +33,12 @@
 #define ROW_H 56
 #define ROW_STEP 64
 #define SETTINGS_VISIBLE_ROWS 5
+#define SUBTITLE_VISIBLE_ROWS 3
 #define SUBTITLE_ROW_W 520
-#define SUBTITLE_PREVIEW_X 588
-#define SUBTITLE_PREVIEW_Y 130
-#define SUBTITLE_PREVIEW_W 328
-#define SUBTITLE_PREVIEW_H 312
+#define SUBTITLE_PREVIEW_X 0
+#define SUBTITLE_PREVIEW_Y 314
+#define SUBTITLE_PREVIEW_W 960
+#define SUBTITLE_PREVIEW_H 230
 
 enum {
 	TAB_PLAYBACK = 0,
@@ -332,11 +333,15 @@ static int apply_row(int tab, int row, int direction) {
 	return 0;
 }
 
-static int first_visible_row(int cursor, int row_count) {
-	if (row_count <= SETTINGS_VISIBLE_ROWS) return 0;
-	int first = cursor - SETTINGS_VISIBLE_ROWS / 2;
+static int visible_rows_for_tab(int tab) {
+	return tab == TAB_SUBTITLES ? SUBTITLE_VISIBLE_ROWS : SETTINGS_VISIBLE_ROWS;
+}
+
+static int first_visible_row(int cursor, int row_count, int visible_rows) {
+	if (row_count <= visible_rows) return 0;
+	int first = cursor - visible_rows / 2;
 	if (first < 0) first = 0;
-	int maximum = row_count - SETTINGS_VISIBLE_ROWS;
+	int maximum = row_count - visible_rows;
 	if (first > maximum) first = maximum;
 	return first;
 }
@@ -384,49 +389,55 @@ static unsigned subtitle_preview_font_size(void) {
 
 static void draw_subtitle_preview(vita2d_font *label_font) {
 	static const char *const samples[] = {
-		"Signal acquired // Aa \xC3\x80\xC3\xA9 \xD0\x91\xD0\xB1",
-		"\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E  \xE4\xB8\xAD\xE6\x96\x87  \xED\x95\x9C\xEA\xB8\x80",
-		"Subtitle telemetry // 03",
-		"VitaMediaDeck"
+		"The network is quiet tonight.",
+		"That does not mean nobody is listening.",
+		"Keep moving. We are almost there.",
+		"I will contact you on the other side."
 	};
-	const int viewport_x = SUBTITLE_PREVIEW_X + 12;
-	const int viewport_y = SUBTITLE_PREVIEW_Y + 38;
-	const int viewport_w = SUBTITLE_PREVIEW_W - 24;
-	const int viewport_h = 228;
+	const int viewport_x = SUBTITLE_PREVIEW_X;
+	const int viewport_y = SUBTITLE_PREVIEW_Y + 24;
+	const int viewport_w = SUBTITLE_PREVIEW_W;
+	const int viewport_h = SUBTITLE_PREVIEW_H - 24;
 	ui_panel(SUBTITLE_PREVIEW_X, SUBTITLE_PREVIEW_Y,
 	         SUBTITLE_PREVIEW_W, SUBTITLE_PREVIEW_H,
 	         VT_THEME_SURFACE, VT_THEME_COLD_DIM, 0);
-	vita2d_draw_rectangle(SUBTITLE_PREVIEW_X + 9, SUBTITLE_PREVIEW_Y + 9,
-	                      34, 2, VT_THEME_SIGNAL);
+	vita2d_draw_rectangle(0, SUBTITLE_PREVIEW_Y, 960, 2,
+	                      VT_THEME_SPECTRAL_A(80));
 	if (label_font)
-		ui_font_draw_text(label_font, SUBTITLE_PREVIEW_X + 52,
-		                  SUBTITLE_PREVIEW_Y + 27, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text(label_font, 44,
+		                  SUBTITLE_PREVIEW_Y + 19, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL,
 		                  vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_PREVIEW));
 
-	/* OLED black is the honest contrast reference; subtle spectral traces keep
-	 * the preview consistent with the app without competing with the captions. */
+	/* A full-width mock movie frame exercises the exact screen-relative caption
+	 * width and position instead of presenting text inside a narrow settings card. */
 	vita2d_draw_rectangle(viewport_x, viewport_y, viewport_w, viewport_h,
 	                      VT_THEME_BG);
-	for (int y = viewport_y + 8; y < viewport_y + viewport_h; y += 18)
-		vita2d_draw_rectangle(viewport_x + 1, y, viewport_w - 2, 1,
-		                      RGBA8(21, 55, 61, 72));
-	vita2d_draw_line(viewport_x + 20, viewport_y + 77,
-	                 viewport_x + viewport_w - 28, viewport_y + 58,
-	                 RGBA8(55, 137, 146, 92));
-	vita2d_draw_line(viewport_x + 42, viewport_y + 90,
-	                 viewport_x + viewport_w - 54, viewport_y + 72,
-	                 RGBA8(198, 101, 31, 72));
-	static const unsigned short particles[][2] = {
-		{18, 33}, {47, 62}, {81, 22}, {119, 48}, {153, 31},
-		{191, 67}, {226, 28}, {264, 54}, {286, 19}, {242, 92}
-	};
-	for (size_t i = 0; i < sizeof(particles) / sizeof(particles[0]); i++)
-		vita2d_draw_fill_circle(viewport_x + particles[i][0],
-		                        viewport_y + particles[i][1],
-		                        i % 3 == 0 ? 1.5f : 1.0f,
-		                        i % 4 == 0 ? VT_THEME_SIGNAL_LIGHT
-		                                   : VT_THEME_COLD_LIGHT);
+	/* Abstract night skyline and reflected data haze: enough contrast variation
+	 * to judge outline/background settings like a real scene. */
+	for (int building = 0; building < 13; building++) {
+		int width = 54 + (building * 17) % 48;
+		int height = 34 + (building * 29) % 94;
+		int x = building * 79 - 18;
+		vita2d_draw_rectangle(x, viewport_y + viewport_h - height,
+		                      width, height,
+		                      building & 1 ? RGBA8(4, 17, 24, 255)
+		                                   : RGBA8(7, 25, 34, 255));
+		if (building % 3 == 0)
+			vita2d_draw_rectangle(x + 11, viewport_y + viewport_h - height + 13,
+			                      4, 2, VT_THEME_SIGNAL_A(118));
+	}
+	vita2d_draw_line(0, viewport_y + viewport_h - 48,
+	                 960, viewport_y + viewport_h - 72, VT_THEME_COLD_A(76));
+	for (int particle = 0; particle < 42; particle++) {
+		unsigned seed = 0x45D9F3BU * (unsigned)(particle + 31);
+		seed ^= seed >> 15;
+		float px = (float)(seed % 960U);
+		float py = viewport_y + 8.0f + (float)((seed >> 10) % (unsigned)(viewport_h - 42));
+		vita2d_draw_fill_circle(px, py, particle % 9 == 0 ? 2.0f : 1.0f,
+		                        particle % 11 == 0 ? VT_THEME_SIGNAL_A(105)
+		                                            : VT_THEME_COLD_A(92));
+	}
 
 	unsigned size = subtitle_preview_font_size();
 	vita2d_font *font = ui_runtime_subtitle_font(
@@ -434,9 +445,9 @@ static void draw_subtitle_preview(vita2d_font *label_font) {
 	int max_width = viewport_w * subtitle_preview_width_percent() / 100;
 	int guide_left = viewport_x + (viewport_w - max_width) / 2;
 	int guide_right = guide_left + max_width;
-	vita2d_draw_line(guide_left, viewport_y + 108, guide_left,
+	vita2d_draw_line(guide_left, viewport_y + 8, guide_left,
 	                 viewport_y + viewport_h - 10, VT_THEME_COLD_DIM);
-	vita2d_draw_line(guide_right, viewport_y + 108, guide_right,
+	vita2d_draw_line(guide_right, viewport_y + 8, guide_right,
 	                 viewport_y + viewport_h - 10, VT_THEME_COLD_DIM);
 
 	int count = vt_preferences_subtitle_max_rows();
@@ -448,9 +459,9 @@ static void draw_subtitle_preview(vita2d_font *label_font) {
 	int line_height = (int)size + 7;
 	int anchor;
 	switch (vt_preferences_subtitle_position()) {
-		case VT_SUBTITLE_POSITION_LOW: anchor = viewport_y + viewport_h - 43; break;
-		case VT_SUBTITLE_POSITION_CENTER: anchor = viewport_y + viewport_h - 78; break;
-		case VT_SUBTITLE_POSITION_HIGH: anchor = viewport_y + viewport_h - 95; break;
+		case VT_SUBTITLE_POSITION_LOW: anchor = viewport_y + viewport_h - 50; break;
+		case VT_SUBTITLE_POSITION_CENTER: anchor = viewport_y + viewport_h / 2 + 18; break;
+		case VT_SUBTITLE_POSITION_HIGH: anchor = viewport_y + 54; break;
 		default: anchor = viewport_y + viewport_h - 15; break;
 	}
 	char fitted[4][160];
@@ -484,15 +495,6 @@ static void draw_subtitle_preview(vita2d_font *label_font) {
 		ui_font_draw_text(font, x, y, foreground, size, fitted[line]);
 	}
 
-	if (label_font) {
-		char telemetry[48];
-		snprintf(telemetry, sizeof(telemetry), "%d%% // %d-%d ROW",
-		         subtitle_preview_width_percent(),
-		         vt_preferences_subtitle_min_rows(),
-		         vt_preferences_subtitle_max_rows());
-		ui_font_draw_text(label_font, viewport_x, SUBTITLE_PREVIEW_Y + 292,
-		                  VT_THEME_TEXT_FAINT, UI_FONT_SMALL, telemetry);
-	}
 }
 
 void ui_settings_show_controls_reference(void) {
@@ -507,10 +509,10 @@ static void draw_screen(int tab, int cursor, float focus,
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	SettingRow rows[8];
 	int row_count = rows_for_tab(tab, rows);
-	int first_row = first_visible_row(cursor, row_count);
+	int row_limit = visible_rows_for_tab(tab);
+	int first_row = first_visible_row(cursor, row_count, row_limit);
 	int visible_rows = row_count - first_row;
-	if (visible_rows > SETTINGS_VISIBLE_ROWS)
-		visible_rows = SETTINGS_VISIBLE_ROWS;
+	if (visible_rows > row_limit) visible_rows = row_limit;
 	int page_has_focus = !ui_mini_player_input_locked() && !sidebar->open &&
 	                     sidebar->animation <= 0.01f;
 	int row_width = tab == TAB_SUBTITLES ? SUBTITLE_ROW_W : ROW_W;
@@ -550,7 +552,8 @@ static void draw_screen(int tab, int cursor, float focus,
 	                      VT_THEME_SPECTRAL);
 	if (page_has_focus)
 		ui_focus_glow_draw(ROW_X, ROW_Y + focus * ROW_STEP, row_width, ROW_H,
-		                   sceKernelGetProcessTimeWide(), ROW_Y, 432);
+			                   sceKernelGetProcessTimeWide(), ROW_Y,
+			                   tab == TAB_SUBTITLES ? SUBTITLE_PREVIEW_Y - 8 : 432);
 
 	for (int slot = 0; slot < visible_rows; slot++) {
 		int i = first_row + slot;
@@ -605,12 +608,13 @@ static void draw_screen(int tab, int cursor, float focus,
 			draw_value(small, y, row_width, subtitle_position_label(rows[i].value));
 		else draw_value(small, y, row_width, vt_i18n_str(VT_STR_SETTINGS_OPEN));
 	}
-	if (row_count > SETTINGS_VISIBLE_ROWS && small) {
+	if (row_count > row_limit && small) {
 		if (first_row > 0)
 			ui_font_draw_text(small, ROW_X + row_width - 18, ROW_Y - 7,
 			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "^");
 		if (first_row + visible_rows < row_count)
-			ui_font_draw_text(small, ROW_X + row_width - 18, 453,
+			ui_font_draw_text(small, ROW_X + row_width - 18,
+			                  tab == TAB_SUBTITLES ? SUBTITLE_PREVIEW_Y - 9 : 453,
 			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "v");
 	}
 	if (tab == TAB_SYSTEM && small) {
@@ -730,10 +734,10 @@ int ui_settings_screen(void) {
 					}
 				}
 				count = rows_for_tab(tab, rows);
-				int first_row = first_visible_row(cursor, count);
+				int row_limit = visible_rows_for_tab(tab);
+				int first_row = first_visible_row(cursor, count, row_limit);
 				int visible_rows = count - first_row;
-				if (visible_rows > SETTINGS_VISIBLE_ROWS)
-					visible_rows = SETTINGS_VISIBLE_ROWS;
+				if (visible_rows > row_limit) visible_rows = row_limit;
 				for (int slot = 0; slot < visible_rows; slot++) {
 					int i = first_row + slot;
 					int row_width = tab == TAB_SUBTITLES
@@ -755,7 +759,8 @@ int ui_settings_screen(void) {
 		} else ui_nav_repeat_reset(&nav_repeat);
 		SettingRow focus_rows[8];
 		int focus_count = rows_for_tab(tab, focus_rows);
-		int focus_first = first_visible_row(cursor, focus_count);
+		int focus_first = first_visible_row(cursor, focus_count,
+		                                    visible_rows_for_tab(tab));
 		float target = (float)(cursor - focus_first);
 		if (vt_preferences_reduce_motion()) focus = target;
 		else {

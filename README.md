@@ -110,7 +110,8 @@ fresh physical-Vita screenshot pass.
   Its single-threaded CPU fallback remains low-priority and bounded while the
   video mini-player runs; a temporary GPU-memory failure retains the decoded
   pixels for a cheap retry instead of decoding the movie again. Thumbnail cache
-  version 4 invalidates results produced by the previous cover policy.
+  version 5 invalidates prior failed/incorrect local-cover results, and local
+  Matroska opening explicitly admits H.264 plus MJPEG/PNG attached artwork.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
@@ -127,10 +128,14 @@ fresh physical-Vita screenshot pass.
   for local files, WebDAV, SFTP, and SMB. Left/Right stages a track choice and
   X applies it, preventing accidental playback restarts while browsing. The
   first subtitle activation and every later switch are serial requests handled
-  by one persistent low-priority worker: cursor open/probe/seek never takes over
+  by one persistent low-priority worker reserved before playback: cursor
+  open/probe/seek never takes over
   the player UI, healthy cursors are repositioned after a cooperative cancel,
   stale text clears immediately, and the R panel reports pending or failed
-  requests in place. Read-ahead is bounded by both cue count and a
+  requests in place. Local subtitles use the native indexed libavformat path;
+  authenticated remote subtitles retain their isolated custom cursor. A failed
+  request remains visibly selected instead of silently reverting to Off.
+  Read-ahead is bounded by both cue count and a
   short playback-time horizon so sparse subtitles cannot scan far into a movie.
   Every indexed-seek fallback clears stale AVIO error/EOF state, so one missing
   sparse SubRip index entry cannot poison all later reposition attempts.
@@ -141,9 +146,9 @@ fresh physical-Vita screenshot pass.
   font, foreground/background color, size, maximum width, minimum/maximum line
   count, and vertical position. Exact-size Inter faces keep Western and
   Cyrillic text crisp, while native PS Vita PGFs cover Japanese, Chinese, and
-  Korean. A persistent OLED-black preview monitor renders the selected font,
-  colors, size, safe width, row limits, and position with Western, Cyrillic,
-  Japanese, Chinese, and Korean samples before playback.
+  Korean. A full-width OLED-black mock movie frame renders natural dialogue
+  with the selected font, colors, size, safe width, row limits, and position,
+  exposing the real screen-relative subtitle result before playback.
 - **Live video information:** the player HUD and right-side information panel
   show decoder, resolution, frame rate, and the stream-reported video bitrate.
 - **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled

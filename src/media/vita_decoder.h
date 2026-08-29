@@ -24,6 +24,9 @@ typedef struct VtDecoderStreamFactory {
 	 * callback so local and remote opens can be interrupted cooperatively. */
 	int (*open_cancelable)(void *opaque, VtDecoderStreamHandle *out,
 	                       volatile int *cancel_flag);
+	/* Optional non-owning native path for local libavformat consumers. Remote
+	 * factories leave this NULL and retain the isolated custom-AVIO route. */
+	const char *local_path;
 } VtDecoderStreamFactory;
 
 typedef enum VtDecoderBackend {
