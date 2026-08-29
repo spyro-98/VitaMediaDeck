@@ -93,17 +93,19 @@ fresh physical-Vita screenshot pass.
 - **Video cover previews:** local cells prefer matching artwork sidecars, then
   local and remote cells use an embedded cover when present or asynchronously
   extract and cache a representative H.264 frame. Indexed MP4/Matroska artwork
-  is decoded directly from the container index. Almost-black or near-uniform
-  embedded artwork is rejected instead of disappearing into the OLED canvas;
-  for long videos the worker then seeks to a more representative 45–90 second
-  window. Frame extraction receives a fresh local/remote decode budget after
-  artwork inspection, so a blank embedded JPEG cannot consume the fallback's
-  time allowance. The selected cell preempts stale viewport work, invalid
+  is decoded directly from the container index. Matroska discovery handles both
+  `attached_pic` packets and image attachments backed by codec data. Valid
+  embedded artwork is always respected, including intentionally dark covers;
+  only missing or undecodable artwork falls back to a representative H.264
+  frame from a 45–90 second window. Frame extraction receives a fresh
+  local/remote decode budget after artwork inspection. The selected cell
+  preempts stale viewport work, invalid
   sidecars are failure-cached, and cache/decode/upload outcomes are written to
   diagnostics.
   Its single-threaded CPU fallback remains low-priority and bounded while the
   video mini-player runs; a temporary GPU-memory failure retains the decoded
-  pixels for a cheap retry instead of decoding the movie again.
+  pixels for a cheap retry instead of decoding the movie again. Thumbnail cache
+  version 4 invalidates results produced by the previous cover policy.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
