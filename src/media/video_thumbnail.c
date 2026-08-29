@@ -35,7 +35,7 @@
 #define THUMB_TEXTURE_CAPACITY      12
 #define THUMB_FAILURE_CAPACITY      24
 #define THUMB_DISK_SLOTS            128
-#define THUMB_CACHE_VERSION         4u
+#define THUMB_CACHE_VERSION         5u
 #define THUMB_FAILURE_RETRY_US      (30ULL * 1000ULL * 1000ULL)
 #define THUMB_UPLOAD_RETRY_US       (500ULL * 1000ULL)
 #define THUMB_DECODE_DEADLINE_US    (5ULL * 1000ULL * 1000ULL)
@@ -409,7 +409,10 @@ static int thumbnail_input_open_local(ThumbnailInput *input, const char *path,
 	/* This is the exact local-file route used by the working online thumbnail
 	 * implementation. Do not insert the generic custom AVIO layer between
 	 * Matroska attachments/indexes and libavformat. */
-	input->format->codec_whitelist = av_strdup("h264");
+	/* Matroska cover.jpg is an MJPEG attached picture. The former H.264-only
+	 * whitelist rejected that stream while opening the container, preventing
+	 * both embedded artwork and the later H.264 frame fallback. */
+	input->format->codec_whitelist = av_strdup("h264,mjpeg,png");
 	if (!input->format->codec_whitelist) {
 		thumbnail_input_close(input);
 		return AVERROR(ENOMEM);

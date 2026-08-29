@@ -144,6 +144,7 @@ void vt_decoder_file_stream_factory(const char *path,
 	memset(factory, 0, sizeof(*factory));
 	factory->opaque = (void *)path;
 	factory->open = local_open;
+	factory->local_path = path;
 }
 
 static int hw_stream_open(void *opaque, VitaHwDecoderStreamHandle *out) {
@@ -236,7 +237,10 @@ static void open_selected_subtitles(VtDecoderPlayer *player,
 	if (!player || !player->subtitles) return;
 	if (player->active_subtitle_track <= 0 ||
 	    player->active_subtitle_track > player->subtitle_track_count) {
-		vt_subtitle_reader_close(player->subtitles);
+		/* Keep the pre-reserved worker alive while subtitles are Off. Closing here
+		 * discarded the early allocation and forced X selection to create a thread
+		 * under peak decoder memory pressure. */
+		vt_subtitle_reader_disable(player->subtitles);
 		player->active_subtitle_track = 0;
 		return;
 	}
@@ -627,13 +631,11 @@ int vt_decoder_select_subtitle_track(VtDecoderPlayer *player,
 	    player->subtitles, &player->source,
 	    player->subtitle_tracks[index].stream_index, position_ms,
 	    NULL);
-	if (result >= 0) {
-		player->active_subtitle_track = subtitle_track;
-		player->config.subtitle_track = subtitle_track;
-	} else {
-		player->active_subtitle_track = 0;
-		player->config.subtitle_track = 0;
-	}
+	/* Keep the user's requested track selected even if worker creation fails.
+	 * The reader exposes FAILED explicitly; silently rewriting the selection to
+	 * Off hid the error and made retrying the same track impossible. */
+	player->active_subtitle_track = subtitle_track;
+	player->config.subtitle_track = subtitle_track;
 	return result;
 }
 

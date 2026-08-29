@@ -96,6 +96,7 @@ static void subtitle_withdraw_input_abort(VtSubtitleReader *reader,
 	                                      const VtMediaInput *input);
 static void subtitle_input_io_begin(VtSubtitleReader *reader);
 static void subtitle_input_io_end(VtSubtitleReader *reader);
+static int subtitle_reader_start(VtSubtitleReader *reader);
 
 static void subtitle_request_lock(VtSubtitleReader *reader) {
 	while (__sync_lock_test_and_set(&reader->request_lock, 1))
@@ -212,7 +213,21 @@ static int media_input_open(VtMediaInput *input,
 	input->cancel = cancel;
 	input->request_serial = request_serial;
 	input->operation_serial = operation_serial;
-	int ret = factory->open_cancelable
+	int ret = 0;
+	if (factory->local_path && factory->local_path[0]) {
+		/* Local subtitles use the same native libavformat file path as the proven
+		 * playback/thumbnail baseline. This preserves Matroska indexes and stream
+		 * numbering without inserting the generic custom AVIO adapter. */
+		input->format = avformat_alloc_context();
+		if (!input->format) return AVERROR(ENOMEM);
+		input->format->interrupt_callback.callback = media_interrupt;
+		input->format->interrupt_callback.opaque = input;
+		input->format->probesize = 1024 * 1024;
+		input->format->max_analyze_duration = 2 * AV_TIME_BASE;
+		ret = avformat_open_input(&input->format, factory->local_path, NULL, NULL);
+		goto discover_streams;
+	}
+	ret = factory->open_cancelable
 	        ? factory->open_cancelable(factory->opaque, &input->stream, cancel)
 	        : factory->open(factory->opaque, &input->stream);
 	if (ret < 0 || !input->stream.read || !input->stream.seek) {
@@ -255,6 +270,7 @@ static int media_input_open(VtMediaInput *input,
 	input->format->max_analyze_duration = 2 * AV_TIME_BASE;
 	if (subtitle_reader) subtitle_input_io_begin(subtitle_reader);
 	ret = avformat_open_input(&input->format, NULL, NULL, NULL);
+	discover_streams:
 	if (ret >= 0) {
 		int ready = required_subtitle_stream >= 0
 		          ? selected_subtitle_ready(input->format,
@@ -1172,6 +1188,12 @@ VtSubtitleReader *vt_subtitle_reader_create(void) {
 		reader->requested_stream_index = -1;
 		reader->clock_stream_index = -1;
 		reader->state = VT_SUBTITLE_READER_DISABLED;
+		/* Reserve the worker before the video decoder claims its runtime memory.
+		 * Track selection can then remain a cheap serial request during playback. */
+		int start_ret = subtitle_reader_start(reader);
+		if (start_ret < 0)
+			log_printf("subtitle: early worker start failed ret=%d; will retry on selection\n",
+			           start_ret);
 	}
 	return reader;
 }
