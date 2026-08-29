@@ -35,7 +35,7 @@
 #define THUMB_TEXTURE_CAPACITY      12
 #define THUMB_FAILURE_CAPACITY      24
 #define THUMB_DISK_SLOTS            128
-#define THUMB_CACHE_VERSION         3u
+#define THUMB_CACHE_VERSION         4u
 #define THUMB_FAILURE_RETRY_US      (30ULL * 1000ULL * 1000ULL)
 #define THUMB_UPLOAD_RETRY_US       (500ULL * 1000ULL)
 #define THUMB_DECODE_DEADLINE_US    (5ULL * 1000ULL * 1000ULL)
@@ -249,9 +249,6 @@ static int cache_load(const ThumbnailRequest *request, uint16_t *pixels) {
 	     header.payload_size != THUMB_BYTES)) result = -1;
 	if (result == 0) result = read_fully(fd, pixels, THUMB_BYTES);
 	if (result == 0 && header.checksum != payload_checksum(pixels)) result = -1;
-	/* Version 3 never persists a blank frame. Validate on load as well so a
-	 * partially upgraded cache cannot keep an OLED-black cover alive. */
-	if (result == 0 && thumbnail_information_score(pixels) <= 0) result = -1;
 	sceIoClose(fd);
 	return result;
 }
@@ -754,11 +751,16 @@ static int decode_attached_cover(AVFormatContext *format, int stream_index,
 	                             ThumbnailInterrupt *interrupt) {
 	if (!format || stream_index < 0 || !pixels) return AVERROR(EINVAL);
 	AVStream *stream = format->streams[stream_index];
-	if (stream->attached_pic.size <= 0 || !stream->attached_pic.data)
-		return AVERROR_INVALIDDATA;
-	if (thumbnail_interrupted(interrupt)) return AVERROR_EXIT;
 	const unsigned char *data = stream->attached_pic.data;
-	size_t size = (size_t)stream->attached_pic.size;
+	size_t size = stream->attached_pic.size > 0
+	            ? (size_t)stream->attached_pic.size : 0;
+	if ((!data || !size) && stream->codecpar->extradata &&
+	    stream->codecpar->extradata_size > 0) {
+		data = stream->codecpar->extradata;
+		size = (size_t)stream->codecpar->extradata_size;
+	}
+	if (!data || !size) return AVERROR_INVALIDDATA;
+	if (thumbnail_interrupted(interrupt)) return AVERROR_EXIT;
 	if (size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff)
 		return decode_jpeg_cover(data, size, pixels);
 	static const unsigned char png_signature[8] = {
@@ -823,12 +825,17 @@ static void find_thumbnail_streams(AVFormatContext *format, int *cover_index,
 	if (!format) return;
 	for (unsigned int i = 0; i < format->nb_streams; i++) {
 		AVStream *candidate = format->streams[i];
-		if (candidate->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) continue;
-		if ((candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
+		int image_attachment =
+		    candidate->codecpar->codec_type == AVMEDIA_TYPE_ATTACHMENT &&
+		    (candidate->codecpar->codec_id == AV_CODEC_ID_MJPEG ||
+		     candidate->codecpar->codec_id == AV_CODEC_ID_PNG);
+		if (((candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) ||
+		     image_attachment) &&
 		    cover_index && *cover_index < 0) {
 			*cover_index = (int)i;
 			continue;
 		}
+		if (candidate->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) continue;
 		/* The pinned Vita FFmpeg build contains the CPU H.264 decoder used by
 		 * the representative-frame fallback. Do not select an advertised codec
 		 * whose decoder was deliberately omitted from the Vita build. */
@@ -837,6 +844,12 @@ static void find_thumbnail_streams(AVFormatContext *format, int *cover_index,
 		    avcodec_find_decoder_by_name("h264"))
 			*video_index = (int)i;
 	}
+}
+
+static int cover_payload_available(const AVStream *stream) {
+	if (!stream) return 0;
+	return (stream->attached_pic.data && stream->attached_pic.size > 0) ||
+	       (stream->codecpar->extradata && stream->codecpar->extradata_size > 0);
 }
 
 enum {
@@ -866,27 +879,25 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	int stream_index = -1;
 	if (result >= 0) find_thumbnail_streams(format, &cover_index, &stream_index);
 	int converted = 0;
-	/* Matroska and MP4 expose attached pictures while opening their indexes. Read
-	 * that packet immediately: running avformat_find_stream_info() first can spend
-	 * the whole five-second budget probing the main movie on Vita. */
+	/* Read artwork already materialized by the demuxer before doing any probing. */
 	if (result >= 0 && cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
 		int cover_result = decode_attached_cover(format, cover_index, pixels,
 		                                         &interrupt);
 		if (cover_result >= 0) {
-			int score = thumbnail_information_score(pixels);
-			if (score > 0) {
-				converted = 1;
-				if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
-			}
-			else log_printf("video thumbnail rejected blank embedded cover: %s\n",
-			                request->path);
+			/* Embedded artwork belongs to the media author. A dark or intentionally
+			 * black cover is still valid artwork and must not be replaced by policy. */
+			converted = 1;
+			if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
 		}
 	}
-	/* Non-indexed inputs, or indexed files with incomplete H.264 parameters, need
-	 * bounded discovery before the representative-frame fallback. Retry embedded
-	 * artwork as well because some demuxers populate attached_pic during probing. */
+	/* Matroska may enumerate cover.jpg during open while materializing its packet
+	 * only during stream discovery; older FFmpeg builds can also expose it as an
+	 * image attachment backed by codec extradata. Probe whenever artwork is absent
+	 * or incomplete, not only when H.264 dimensions happen to be incomplete. */
 	if (result >= 0 && !converted &&
-	    (stream_index < 0 ||
+	    (cover_index < 0 ||
+	     !cover_payload_available(format->streams[cover_index]) ||
+	     stream_index < 0 ||
 	     format->streams[stream_index]->codecpar->width <= 0 ||
 	     format->streams[stream_index]->codecpar->height <= 0) &&
 	    !thumbnail_interrupted(&interrupt)) {
@@ -897,7 +908,7 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 		    !thumbnail_cancelled(&interrupt)) {
 			find_thumbnail_streams(format, &cover_index, &stream_index);
 			int cover_usable = cover_index >= 0 &&
-			    format->streams[cover_index]->attached_pic.size > 0;
+			    cover_payload_available(format->streams[cover_index]);
 			int video_usable = stream_index >= 0 &&
 			    format->streams[stream_index]->codecpar->width > 0 &&
 			    format->streams[stream_index]->codecpar->height > 0;
@@ -917,14 +928,8 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 				int cover_result = decode_attached_cover(format, cover_index, pixels,
 				                                         &interrupt);
 				if (cover_result >= 0) {
-					int score = thumbnail_information_score(pixels);
-					if (score > 0) {
-						converted = 1;
-						if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
-					}
-					else log_printf(
-					    "video thumbnail rejected blank probed cover: %s\n",
-					    request->path);
+					converted = 1;
+					if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
 				}
 			}
 		}
@@ -934,9 +939,8 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	AVStream *stream = result >= 0 && !converted
 	                 ? format->streams[stream_index] : NULL;
 	/* Opening the container and inspecting embedded artwork have their own bounded
-	 * cost. A blank attached picture must not consume the representative-frame
-	 * decoder's entire budget: that made valid long MKVs permanently cache a
-	 * thumbnail failure after correctly rejecting their black cover.jpg. */
+	 * cost. Missing or invalid artwork must not consume the representative-frame
+	 * decoder's entire budget before the H.264 fallback begins. */
 	if (result >= 0 && !converted) {
 		interrupt.deadline_us = sceKernelGetProcessTimeWide() +
 		    (request->remote ? THUMB_FRAME_REMOTE_DEADLINE_US
