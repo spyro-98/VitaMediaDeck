@@ -80,6 +80,29 @@ static void player_unlock(BackgroundPlaybackJob *job) {
 	__sync_lock_release(&job->player_lock);
 }
 
+static uint64_t player_start_position(BackgroundPlaybackJob *job) {
+	player_lock(job);
+	uint64_t position_ms = job->start_position_ms;
+	player_unlock(job);
+	return position_ms;
+}
+
+/* A decoder frame can remain referenced by GXM after draw_video() releases the
+ * player lock.  A background seek must therefore acquire the decoder only in a
+ * frame boundary where the UI has already called render_complete(). */
+static int player_lock_when_video_idle(BackgroundPlaybackJob *job,
+	                                   uint64_t timeout_us) {
+	uint64_t deadline = timeout_us
+	                  ? sceKernelGetProcessTimeWide() + timeout_us : 0;
+	for (;;) {
+		player_lock(job);
+		if (!job->video_in_gpu) return 1;
+		player_unlock(job);
+		if (deadline && sceKernelGetProcessTimeWide() >= deadline) return 0;
+		sceKernelDelayThread(1000);
+	}
+}
+
 static void copy_text(char *out, size_t out_size, const char *value) {
 	if (!out || out_size == 0) return;
 	snprintf(out, out_size, "%s", value ? value : "");
@@ -166,9 +189,9 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 		job->snapshot.duration_ms = (uint64_t)length * 1000ULL / (uint64_t)rate;
 		snapshot_unlock();
 	}
+	uint64_t start_position_ms = player_start_position(job);
 	mpg123_seek(decoder,
-	            (off_t)(job->start_position_ms * (uint64_t)rate / 1000ULL),
-	            SEEK_SET);
+	            (off_t)(start_position_ms * (uint64_t)rate / 1000ULL), SEEK_SET);
 	vt_background_audio_acquire(&lease);
 	lease_ready = 1;
 	port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM,
@@ -177,7 +200,9 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	if (port < 0) goto done;
 	set_state(VT_BACKGROUND_PLAYING, 0);
 	unsigned int observed_toggle = job->toggle_serial;
+	player_lock(job);
 	unsigned int observed_seek = job->seek_serial;
+	player_unlock(job);
 	int applied_volume = -1;
 	int paused = 0;
 	uint64_t last_power_tick = 0;
@@ -188,10 +213,16 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 			paused = !paused;
 			set_state(paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
 		}
-		if (observed_seek != job->seek_serial) {
-			observed_seek = job->seek_serial;
+		unsigned int pending_seek_serial;
+		uint64_t pending_seek_position_ms;
+		player_lock(job);
+		pending_seek_serial = job->seek_serial;
+		pending_seek_position_ms = job->seek_position_ms;
+		player_unlock(job);
+		if (observed_seek != pending_seek_serial) {
+			observed_seek = pending_seek_serial;
 			mpg123_seek(decoder,
-			            (off_t)(job->seek_position_ms * (uint64_t)rate / 1000ULL),
+			            (off_t)(pending_seek_position_ms * (uint64_t)rate / 1000ULL),
 			            SEEK_SET);
 		}
 		if (paused) {
@@ -284,8 +315,9 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 		media_term(player);
 		return job->cancel ? -1 : -2;
 	}
-	if (job->start_position_ms > 0)
-		seek_player_ready(player, job->start_position_ms, &job->cancel);
+	uint64_t start_position_ms = player_start_position(job);
+	if (start_position_ms > 0)
+		seek_player_ready(player, start_position_ms, &job->cancel);
 
 	VtBackgroundAudioLease lease;
 	vt_background_audio_acquire(&lease);
@@ -301,7 +333,9 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 	}
 	player_lock(job);
 	job->active_player = player;
-	job->local_video_source = 1;
+	/* This legacy AvPlayer path is audio-only. Embedded artwork/video streams are
+	 * drained, never published as a live mini-player surface. */
+	job->local_video_source = 0;
 	job->video_have_frame = 0;
 	memset(&job->video_frame, 0, sizeof(job->video_frame));
 	memset(&job->video_texture, 0, sizeof(job->video_texture));
@@ -320,14 +354,16 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 	uint64_t last_power_tick = 0;
 	while (!job->cancel) {
 		if (observed_seek != job->seek_serial) {
-			observed_seek = job->seek_serial;
 			player_lock(job);
-			int seek_ret = sceAvPlayerJumpToTime(player, job->seek_position_ms);
+			unsigned int served_seek = job->seek_serial;
+			uint64_t served_position_ms = job->seek_position_ms;
+			int seek_ret = sceAvPlayerJumpToTime(player, served_position_ms);
 			job->video_have_frame = 0;
+			if (seek_ret >= 0) observed_seek = served_seek;
 			player_unlock(job);
 			if (seek_ret >= 0) {
 				snapshot_lock();
-				job->snapshot.position_ms = job->seek_position_ms;
+				job->snapshot.position_ms = served_position_ms;
 				snapshot_unlock();
 			}
 		}
@@ -375,7 +411,7 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 		} else {
 			sceKernelDelayThread(1000);
 		}
-		if (!paused && !vt_preferences_mini_player_animated()) {
+		if (!paused) {
 			SceAvPlayerFrameInfo discard;
 			memset(&discard, 0, sizeof(discard));
 			player_lock(job);
@@ -432,36 +468,64 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 	VtDecoderStreamFactory factory;
 	if (job->remote_video_source) factory = job->remote_factory.factory;
 	else vt_decoder_file_stream_factory(job->input_path, &factory);
+	uint64_t start_position_ms = player_start_position(job);
 	VtDecoderPlayerConfig config = {
 		.stream = factory,
 		.preferred_backend = VT_DECODER_BACKEND_NONE,
 		.audio_track = job->audio_track,
 		.subtitle_track = 0,
-		.start_position_ms = job->start_position_ms,
+		.start_position_ms = start_position_ms,
 		.volume_percent = vt_audio_volume_percent(),
 		.cancel_flag = &job->cancel
 	};
 	set_state(VT_BACKGROUND_BUFFERING, 0);
+	/* Publish the allocated decoder before its cancellable open. Draw remains
+	 * disabled until local_video_source is set, but stop can already propagate to
+	 * the decoder-owned transport flags instead of waiting for network timeouts. */
+	player_lock(job);
+	job->active_decoder = decoder;
+	player_unlock(job);
 	int ret = vt_decoder_open(decoder, &config);
 	if (ret < 0) {
+		player_lock(job);
+		if (job->active_decoder == decoder) job->active_decoder = NULL;
+		player_unlock(job);
 		vt_decoder_destroy(decoder);
 		vt_background_audio_release(&lease);
 		return ret;
 	}
 	player_lock(job);
-	job->active_decoder = decoder;
 	job->local_video_source = 1;
 	player_unlock(job);
 	set_state(VT_BACKGROUND_PLAYING, 0);
 	unsigned int observed_toggle = job->toggle_serial;
+	player_lock(job);
 	unsigned int observed_seek = job->seek_serial;
+	player_unlock(job);
 	int paused = 0;
 	uint64_t last_power_tick = 0;
 	while (!job->cancel) {
 		if (observed_seek != job->seek_serial) {
-			observed_seek = job->seek_serial;
+			if (!player_lock_when_video_idle(job, 250 * 1000ULL)) {
+				/* The UI may be between scenes and late retiring the preceding draw.
+				 * Keep the latest serial pending instead of converting a missed frame
+				 * acknowledgement into a fatal playback error. */
+				continue;
+			}
+			unsigned int served_seek = job->seek_serial;
+			uint64_t served_position_ms = job->seek_position_ms;
+			/* Exclude draws while the decoder restarts, but release the lifecycle
+			 * lock so stop can interrupt a blocked network seek immediately. */
+			job->local_video_source = 0;
+			vt_decoder_prepare_background_restart(decoder);
+			player_unlock(job);
+			ret = vt_decoder_seek(decoder, served_position_ms);
 			player_lock(job);
-			ret = vt_decoder_seek(decoder, job->seek_position_ms);
+			if (ret >= 0) {
+				observed_seek = served_seek;
+				if (job->seek_serial == served_seek && !job->cancel)
+					job->local_video_source = 1;
+			}
 			player_unlock(job);
 			if (ret < 0) break;
 		}
@@ -472,6 +536,16 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 			vt_decoder_set_paused(decoder, paused);
 			player_unlock(job);
 			set_state(paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
+		}
+		/* With animated mini-player video disabled, no scene calls present_rect().
+		 * Keep consuming frames against the presentation clock so the bounded video
+		 * queue cannot fill and stall the decoder/audio pipeline. */
+		if (!paused && !vt_preferences_mini_player_animated()) {
+			player_lock(job);
+			if (!job->video_in_gpu && job->local_video_source &&
+			    job->active_decoder == decoder)
+				vt_decoder_discard_video_to_clock(decoder);
+			player_unlock(job);
 		}
 		VtDecoderPlayerStatus status;
 		player_lock(job);
@@ -493,10 +567,14 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		sceKernelDelayThread(4 * 1000);
 	}
 	VtDecoderPlayerStatus final_status;
-	player_lock(job);
+	/* Never free a decoder texture while GXM can still sample it. Normal UI
+	 * pumping retires natural completion; the synchronous stop path performs the
+	 * same fence before joining this worker. */
+	player_lock_when_video_idle(job, 0);
 	vt_decoder_get_status(decoder, &final_status);
 	job->local_video_source = 0;
 	job->active_decoder = NULL;
+	vt_decoder_prepare_background_restart(decoder);
 	player_unlock(job);
 	snapshot_lock();
 	job->snapshot.position_ms = final_status.position_ms;
@@ -562,6 +640,7 @@ static int prepare_local(const char *media_path, const char *media_id,
 	copy_text(job->snapshot.thumbnail_url, sizeof(job->snapshot.thumbnail_url),
 	          artwork_path);
 	job->snapshot.duration_ms = duration_ms;
+	job->snapshot.is_video = decoder_source != 0;
 	job->snapshot.state = VT_BACKGROUND_PREPARING;
 	job->thid = sceKernelCreateThread("VitaMediaDeckLocalAudio", background_thread,
 	                                  BACKGROUND_THREAD_PRIORITY,
@@ -624,6 +703,7 @@ int vt_background_playback_prepare_remote_video(
 	copy_text(job->snapshot.title, sizeof(job->snapshot.title), title);
 	copy_text(job->snapshot.channel, sizeof(job->snapshot.channel), location);
 	job->snapshot.duration_ms = duration_ms;
+	job->snapshot.is_video = 1;
 	job->snapshot.state = VT_BACKGROUND_PREPARING;
 	job->thid = sceKernelCreateThread("VitaMediaDeckRemoteVideo",
 	                                  background_thread,
@@ -651,15 +731,17 @@ int vt_background_playback_prepared(void) {
 
 int vt_background_playback_activate(uint64_t start_position_ms) {
 	if (g_background.thid < 0 || g_background.done) return -1;
+	player_lock(&g_background);
 	g_background.start_position_ms = start_position_ms;
+	__sync_synchronize();
+	g_background.activate = 1;
+	player_unlock(&g_background);
 	snapshot_lock();
 	g_background.snapshot.activation_serial =
 	    __sync_add_and_fetch(&g_activation_serial, 1);
 	g_background.snapshot.position_ms = start_position_ms;
 	g_background.snapshot.visible = 1;
 	snapshot_unlock();
-	__sync_synchronize();
-	g_background.activate = 1;
 	return 0;
 }
 
@@ -676,9 +758,14 @@ void vt_background_playback_seek_to(uint64_t position_ms) {
 	if (duration > 0 && position_ms > duration) position_ms = duration;
 	job->snapshot.position_ms = position_ms;
 	snapshot_unlock();
+	/* Position is 64-bit on a 32-bit CPU. Publish it with its serial while the
+	 * same lock used by both playback workers is held, preventing torn/mismatched
+	 * rapid-seek requests. */
+	player_lock(job);
 	job->seek_position_ms = position_ms;
+	job->seek_serial++;
 	__sync_synchronize();
-	__sync_add_and_fetch(&job->seek_serial, 1);
+	player_unlock(job);
 }
 
 void vt_background_playback_seek_relative(int64_t delta_ms) {
@@ -721,10 +808,19 @@ void vt_background_playback_request_stop(void) {
 	snapshot_unlock();
 	g_background.cancel = 1;
 	g_background.activate = 1;
+	player_lock(&g_background);
+	if (g_background.active_decoder)
+		vt_decoder_request_stop(g_background.active_decoder);
+	player_unlock(&g_background);
 }
 
 void vt_background_playback_stop(void) {
 	if (g_background.thid >= 0) {
+		/* stop() is the synchronous UI-thread teardown path. Complete the most
+		 * recent mini-player draw before waiting for the worker, otherwise the
+		 * worker would correctly wait forever rather than freeing GPU-owned CDRAM. */
+		vita2d_wait_rendering_done();
+		vt_background_playback_video_render_complete();
 		vt_background_playback_request_stop();
 		sceKernelWaitThreadEnd(g_background.thid, NULL, NULL);
 		sceKernelDeleteThread(g_background.thid);
@@ -750,12 +846,17 @@ int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out) {
 void vt_background_playback_video_render_complete(void) {
 	BackgroundPlaybackJob *job = &g_background;
 	player_lock(job);
-	if (job->active_decoder)
-		vt_decoder_render_complete(job->active_decoder);
+	/* This callback is pumped by every scene, including frames where the mini
+	 * player did not draw.  Only touch the decoder when retiring an actual GXM
+	 * reference; otherwise an idle callback could race the unlocked seek path. */
+	if (job->video_in_gpu) {
+		if (job->active_decoder)
+			vt_decoder_render_complete(job->active_decoder);
+		__sync_synchronize();
+		job->video_in_gpu = 0;
+		__sync_synchronize();
+	}
 	player_unlock(job);
-	__sync_synchronize();
-	g_background.video_in_gpu = 0;
-	__sync_synchronize();
 }
 
 int vt_background_playback_draw_video(float x, float y,
@@ -767,10 +868,23 @@ int vt_background_playback_draw_video(float x, float y,
 		return 0;
 	VtBackgroundPlaybackSnapshot snapshot;
 	if (!vt_background_playback_snapshot(&snapshot)) return 0;
+	if (!snapshot.is_video) return 0;
 	player_lock(job);
+	/* Revalidate after acquiring the lifecycle lock.  The worker can hide the
+	 * source and enter an unlocked cancellable seek between the optimistic test
+	 * above and this lock acquisition. */
+	if (job->video_in_gpu || !job->local_video_source) {
+		player_unlock(job);
+		return 0;
+	}
 	if (job->active_decoder) {
 		int drew = vt_decoder_present_rect(job->active_decoder, x, y,
 		                                  width, height, 0);
+		if (drew > 0) {
+			__sync_synchronize();
+			job->video_in_gpu = 1;
+			__sync_synchronize();
+		}
 		player_unlock(job);
 		return drew > 0;
 	}

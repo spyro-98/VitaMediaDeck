@@ -20,7 +20,8 @@ sidebar adds **Active player** above Home; selecting it restores the full player
 The combined Library opens as a rich thumbnail grid. The R1 View panel can
 temporarily switch it to a list; Video and Music remember their own view.
 Video cells prefer recognized local artwork, then an embedded cover, and finally
-an asynchronously extracted representative frame.
+an asynchronously extracted representative frame. Blank embedded artwork is
+ignored, and the selected cell is generated ahead of surrounding previews.
 
 | Input | Behavior |
 | --- | --- |
@@ -64,7 +65,9 @@ the server SHA-256 fingerprint on a read-only confirmation page.
 ### Remote browser
 
 Remote video cells progressively show an embedded cover or a representative
-frame. Preview decoding and network reads stay on the bounded thumbnail worker.
+frame. Blank embedded artwork falls through to frame extraction; the selected
+cell can preempt obsolete viewport work. Preview decoding and network reads stay
+on the bounded thumbnail worker.
 
 | Input | Behavior |
 | --- | --- |
@@ -95,10 +98,15 @@ The R1 playback panel also selects the active AAC audio track and embedded text
 subtitle track. Left/Right changes the pending choice and Cross applies it; the
 subtitle selector includes an explicit Off choice. Track changes retain the
 current playback position and apply equally to local and authenticated remote
-videos. A subtitle-open failure returns to the panel instead of closing video
-playback. Subsequent subtitle changes reuse the active subtitle cursor: the old
-cue disappears immediately and the new track is sought asynchronously, so the
-player cannot remain trapped on the **Changing subtitle** screen. Video seeks
+videos. Subtitle activation never opens a full-screen loading scene: the first
+cursor open and all later seeks run as serial requests on one persistent worker,
+while the R panel remains responsive and shows **Changing...** or a retryable
+failure. The old cue disappears immediately, and read-ahead stops at a small cue
+limit or short future-time horizon. A request that does not complete within five
+seconds becomes a retryable failure instead of trapping the UI in
+**Changing...**; selecting the same failed or pending track and pressing Cross
+restarts that request. Circle and the L1 navigation remain available throughout
+the operation. Video seeks
 release playback after the first decoded preroll frame instead of waiting for a
 multi-frame startup cushion.
 
@@ -109,14 +117,15 @@ immediately, and closes the panel. While a recovered video is still opening,
 Cross on **Play from beginning** cancels that attempt and performs a clean open
 at `00:00`, so the action does not depend on the R1 panel becoming available.
 
-Local video mini-player hand-off retains the playback position and selected
+Video mini-player hand-off retains the playback position and selected
 audio/subtitle tracks when fullscreen is restored. It uses the same HW/SW
 decoder stack as fullscreen playback and renders the live video surface. Tap
 the video surface to expand/collapse it at one quarter of the screen width;
 tap the title or press Start to restore fullscreen. Selecting the same active
-video in the grid also restores it instead of restarting it. Authenticated remote video
-keeps ECO and input-lock controls, but is not detached into the local-only
-mini-player service.
+video in the grid also restores it instead of restarting it. The same hand-off
+is available to authenticated remote video by reopening its seekable source at
+the saved position and track selection; navigating to another section minimizes
+rather than closes that player.
 
 The Settings > Subtitles tab controls the font, foreground and background
 colors, small/medium/large text size, 60/75/88/96 percent maximum width,

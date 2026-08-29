@@ -326,14 +326,12 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 	               : attr_ret;
 	if (attr_ready) pthread_attr_destroy(&attr);
 	if (create_ret != 0) {
-		/* No separate thread: the task runs on the caller and no input is
-		 * read anymore until it returns on its own, `cancel_flag` included.
-		 * If this ever shows up in the log, it is the direct cause of a
-		 * cancel button that seems unresponsive during this task. */
-		log_printf("ui_player_loading_run: pthread_create failed (%d), synchronous task without cancellation",
+		/* Never turn an advertised cancellable operation into a synchronous UI
+		 * stall. The caller can report/retry the allocation failure safely. */
+		log_printf("ui_player_loading_run: pthread_create failed (%d), task not started\n",
 		          create_ret);
-		ui_player_loading_present(&draw_info, progress_current, progress_total);
-		return task(ctx);
+		ui_brand_set_loading(0);
+		return create_ret > 0 ? -create_ret : -1;
 	}
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
@@ -352,13 +350,23 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 			int start_over_touch = draw_info.start_over_requested &&
 			    (touch_flags & UI_TOUCH_EVENT_TAP) &&
 			    ui_touch_hit_rect(touch.x, touch.y, 338, 382, 284, 42);
+			int cancel_requested = 0;
 			if (draw_info.start_over_requested &&
 			    ((pressed & SCE_CTRL_CROSS) || start_over_touch)) {
 				*draw_info.start_over_requested = 1;
-				*cancel_flag = 1;
+				cancel_requested = 1;
 			}
 			if ((pressed & SCE_CTRL_CIRCLE) ||
 			    touch_is_cancel_hold(touch_flags, &touch)) {
+				cancel_requested = 1;
+			}
+			if (cancel_requested) {
+				/* Interrupt the decoder-owned transport phase before publishing the
+				 * caller flag. Otherwise the worker can enter rollback from that flag
+				 * and a delayed callback can accidentally cancel the fresh restore. */
+				if (draw_info.cancel_action)
+					draw_info.cancel_action(draw_info.cancel_ctx);
+				__sync_synchronize();
 				*cancel_flag = 1;
 			}
 		}

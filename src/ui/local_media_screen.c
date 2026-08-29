@@ -115,10 +115,12 @@ typedef struct {
 static LocalMediaScanJob g_scan_job = { .thid = -1 };
 
 #define LOCAL_ART_CACHE 12
+#define LOCAL_ART_RETRY_US (30ULL * 1000ULL * 1000ULL)
 typedef struct {
 	char path[VT_LOCAL_MEDIA_PATH_MAX];
 	vita2d_texture *texture;
 	uint64_t used;
+	uint64_t retry_after_us;
 } LocalArtworkCache;
 static LocalArtworkCache g_artwork[LOCAL_ART_CACHE];
 
@@ -140,16 +142,26 @@ static int local_media_leave(int action) {
 static vita2d_texture *artwork_get(const char *path) {
 	if (!path || !path[0]) return NULL;
 	uint64_t now = sceKernelGetProcessTimeWide();
+	int retry_slot = -1;
 	for (int i = 0; i < LOCAL_ART_CACHE; i++) {
-		if (g_artwork[i].texture && strcmp(g_artwork[i].path, path) == 0) {
-			g_artwork[i].used = now;
-			return g_artwork[i].texture;
+		if (strcmp(g_artwork[i].path, path) == 0) {
+			if (g_artwork[i].texture) {
+				g_artwork[i].used = now;
+				return g_artwork[i].texture;
+			}
+			if (now < g_artwork[i].retry_after_us) return NULL;
+			retry_slot = i;
+			break;
 		}
 	}
-	int slot = 0;
-	for (int i = 1; i < LOCAL_ART_CACHE; i++)
-		if (!g_artwork[i].texture || g_artwork[i].used < g_artwork[slot].used)
-			slot = i;
+	int slot = retry_slot;
+	if (slot < 0) {
+		slot = 0;
+		for (int i = 0; i < LOCAL_ART_CACHE; i++) {
+			if (!g_artwork[i].path[0]) { slot = i; break; }
+			if (g_artwork[i].used < g_artwork[slot].used) slot = i;
+		}
+	}
 	if (g_artwork[slot].texture) vita2d_free_texture(g_artwork[slot].texture);
 	memset(&g_artwork[slot], 0, sizeof(g_artwork[slot]));
 	/* A sidecar poster can be JPG/JPEG or PNG.  The old JPEG-only loader made a
@@ -158,9 +170,13 @@ static vita2d_texture *artwork_get(const char *path) {
 	g_artwork[slot].texture = ends_with_ci(path, ".png")
 	                       ? vita2d_load_PNG_file(path)
 	                       : vita2d_load_JPEG_file(path);
-	if (!g_artwork[slot].texture) return NULL;
 	snprintf(g_artwork[slot].path, sizeof(g_artwork[slot].path), "%s", path);
 	g_artwork[slot].used = now;
+	if (!g_artwork[slot].texture) {
+		g_artwork[slot].retry_after_us = now + LOCAL_ART_RETRY_US;
+		log_printf("video sidecar artwork unavailable: %s\n", path);
+		return NULL;
+	}
 	return g_artwork[slot].texture;
 }
 
@@ -732,7 +748,8 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			         0);
 			vita2d_texture *art = artwork_get(item->artwork_path);
 			if (!art && item->type == VT_LOCAL_MEDIA_VIDEO)
-				art = vt_video_thumbnail_get(item->path, item->size);
+				art = vt_video_thumbnail_get_priority(
+				    item->path, item->size, pos == selected ? 100 : 10);
 			if (art) draw_artwork_contain(art, LIST_X + 10, row_y + 4, 38, 38);
 			if (body) {
 				char clipped[128];
@@ -790,7 +807,8 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			const VtLocalMediaItem *item = &g_items[index];
 			vita2d_texture *art = artwork_get(item->artwork_path);
 			if (!art && item->type == VT_LOCAL_MEDIA_VIDEO)
-				art = vt_video_thumbnail_get(item->path, item->size);
+				art = vt_video_thumbnail_get_priority(
+				    item->path, item->size, pos == selected ? 100 : 10);
 			vita2d_draw_rectangle(x + 6, y + 6, GRID_CARD_W - 12, GRID_THUMB_H,
 			                      VT_THEME_MEDIA_BACKDROP);
 			if (art && item->type == VT_LOCAL_MEDIA_VIDEO)

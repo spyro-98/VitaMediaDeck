@@ -301,12 +301,14 @@ void ui_mini_player_draw(void) {
 		                      video_rect.width + 4.0f, video_rect.height + 4.0f,
 		                      VT_THEME_SPECTRAL);
 	}
-	int expects_visual = (snapshot.video_width && snapshot.video_height) || g_artwork;
+	int expects_visual = (snapshot.is_video && snapshot.video_width &&
+	                      snapshot.video_height) || g_artwork;
 	if (expects_visual)
 		vita2d_draw_rectangle(video_rect.x, video_rect.y,
 		                      video_rect.width, video_rect.height,
 		                      RGBA8(0, 0, 0, 255));
-	int drew_live_video = snapshot.video_width && snapshot.video_height
+	int drew_live_video = snapshot.is_video && snapshot.video_width &&
+	                      snapshot.video_height
 	                    ? vt_background_playback_draw_video(
 	                          video_rect.x, video_rect.y,
 	                          video_rect.width, video_rect.height)
@@ -458,8 +460,8 @@ void ui_mini_player_pump(void) {
 			snprintf(g_mini_layout_video_id, sizeof(g_mini_layout_video_id), "%s",
 			         snapshot.video_id);
 			g_mini_layout_activation_serial = snapshot.activation_serial;
-			g_mini_video_expanded =
-			    vt_preferences_mini_player_expanded_default();
+				g_mini_video_expanded = snapshot.is_video &&
+				    vt_preferences_mini_player_expanded_default();
 			g_mini_video_expansion = g_mini_video_expanded ? 1.0f : 0.0f;
 			g_mini_control_feedback = MINI_CONTROL_NONE;
 			g_mini_control_feedback_until_us = 0;
@@ -477,7 +479,8 @@ void ui_mini_player_pump(void) {
 	if (delta_us > 50000ULL) delta_us = 50000ULL;
 	g_mini_animation_last_us = now_us;
 	float target = active ? 1.0f : 0.0f;
-	float video_target = active && g_mini_video_expanded ? 1.0f : 0.0f;
+	float video_target = active && snapshot.is_video && g_mini_video_expanded
+	                   ? 1.0f : 0.0f;
 	if (vt_preferences_reduce_motion()) {
 		g_mini_animation = target;
 		g_mini_video_expansion = video_target;
@@ -588,11 +591,12 @@ int ui_mini_player_handle_touch(unsigned int touch_flags,
 	int now_in_bar = touch->y >= bar_y;
 	int began_in_video = mini_video_hit(&video_rect, touch->down_x, touch->down_y);
 	int now_in_video = mini_video_hit(&video_rect, touch->x, touch->y);
-	int expects_visual = (snapshot.video_width && snapshot.video_height) || g_artwork;
+	int expects_visual = (snapshot.is_video && snapshot.video_width &&
+	                      snapshot.video_height) || g_artwork;
 	if (g_mini_input_lock.locked) return 1;
 	if (!began_in_bar && !now_in_bar && !began_in_video && !now_in_video) return 0;
 	if (!active) return 1;
-	if ((touch_flags & UI_TOUCH_EVENT_TAP) && expects_visual &&
+	if ((touch_flags & UI_TOUCH_EVENT_TAP) && snapshot.is_video &&
 	    began_in_video && now_in_video) {
 		g_mini_video_expanded = !g_mini_video_expanded;
 		return 1;

@@ -13,6 +13,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 
+#include "common/text_log.h"
 #include "i18n/i18n.h"
 #include "media/video_thumbnail.h"
 #include "settings/preferences.h"
@@ -42,10 +43,12 @@ typedef struct {
 } LocalFileEntry;
 
 #define FILE_ARTWORK_CACHE 12
+#define FILE_ARTWORK_RETRY_US (30ULL * 1000ULL * 1000ULL)
 typedef struct {
 	char path[VT_LOCAL_MEDIA_PATH_MAX];
 	vita2d_texture *texture;
 	uint64_t used_us;
+	uint64_t retry_after_us;
 } LocalFileArtwork;
 
 static char g_last_path[VT_LOCAL_MEDIA_PATH_MAX];
@@ -160,24 +163,38 @@ static void find_video_artwork(VtLocalMediaItem *media) {
 static vita2d_texture *artwork_get(const char *path) {
 	if (!path || !path[0]) return NULL;
 	uint64_t now = sceKernelGetProcessTimeWide();
+	int retry_slot = -1;
 	for (int i = 0; i < FILE_ARTWORK_CACHE; i++) {
-		if (g_artwork[i].texture && !strcmp(g_artwork[i].path, path)) {
-			g_artwork[i].used_us = now;
-			return g_artwork[i].texture;
+		if (!strcmp(g_artwork[i].path, path)) {
+			if (g_artwork[i].texture) {
+				g_artwork[i].used_us = now;
+				return g_artwork[i].texture;
+			}
+			if (now < g_artwork[i].retry_after_us) return NULL;
+			retry_slot = i;
+			break;
 		}
 	}
-	int slot = 0;
-	for (int i = 1; i < FILE_ARTWORK_CACHE; i++)
-		if (!g_artwork[i].texture ||
-		    g_artwork[i].used_us < g_artwork[slot].used_us) slot = i;
+	int slot = retry_slot;
+	if (slot < 0) {
+		slot = 0;
+		for (int i = 0; i < FILE_ARTWORK_CACHE; i++) {
+			if (!g_artwork[i].path[0]) { slot = i; break; }
+			if (g_artwork[i].used_us < g_artwork[slot].used_us) slot = i;
+		}
+	}
 	if (g_artwork[slot].texture) vita2d_free_texture(g_artwork[slot].texture);
 	memset(&g_artwork[slot], 0, sizeof(g_artwork[slot]));
 	g_artwork[slot].texture = ends_with_ci(path, ".png")
 	                          ? vita2d_load_PNG_file(path)
 	                          : vita2d_load_JPEG_file(path);
-	if (!g_artwork[slot].texture) return NULL;
 	snprintf(g_artwork[slot].path, sizeof(g_artwork[slot].path), "%s", path);
 	g_artwork[slot].used_us = now;
+	if (!g_artwork[slot].texture) {
+		g_artwork[slot].retry_after_us = now + FILE_ARTWORK_RETRY_US;
+		log_printf("video sidecar artwork unavailable: %s\n", path);
+		return NULL;
+	}
 	return g_artwork[slot].texture;
 }
 
@@ -370,7 +387,8 @@ static void draw_files(const LocalFileEntry *entries, int count,
 			const LocalFileEntry *entry = &entries[i];
 			vita2d_texture *preview = artwork_get(entry->media.artwork_path);
 			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
-				preview = vt_video_thumbnail_get(entry->media.path, entry->media.size);
+				preview = vt_video_thumbnail_get_priority(
+				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
 			ui_panel(FILE_X, y, FILE_W, FILE_ROW_H - 6, VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : entry->media.type ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER, 0);
@@ -416,7 +434,8 @@ static void draw_files(const LocalFileEntry *entries, int count,
 			const LocalFileEntry *entry = &entries[i];
 			vita2d_texture *preview = artwork_get(entry->media.artwork_path);
 			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
-				preview = vt_video_thumbnail_get(entry->media.path, entry->media.size);
+				preview = vt_video_thumbnail_get_priority(
+				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
 			ui_panel(x, y, FILE_CARD_W, FILE_CARD_H, VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : entry->media.type ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER, 0);

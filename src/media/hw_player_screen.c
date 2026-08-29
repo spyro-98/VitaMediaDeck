@@ -8,6 +8,8 @@
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 
+#include <libavutil/error.h>
+
 #include "history/playback_history.h"
 #include "i18n/i18n.h"
 #include "media/audio_volume.h"
@@ -60,6 +62,7 @@ typedef struct {
 	VtDecoderPlayer *player;
 	uint64_t position_ms;
 	int track;
+	volatile int *operation_cancel;
 } TrackTask;
 
 static int seek_task(void *opaque) {
@@ -74,20 +77,32 @@ static int fallback_task(void *opaque) {
 
 static int audio_track_task(void *opaque) {
 	TrackTask *task = opaque;
-	return vt_decoder_select_audio_track(task->player, task->track,
-	                                    task->position_ms);
+	return vt_decoder_select_audio_track_with_cancel(
+	    task->player, task->track, task->position_ms, task->operation_cancel);
 }
 
-static int subtitle_track_task(void *opaque) {
-	TrackTask *task = opaque;
-	return vt_decoder_select_subtitle_track(task->player, task->track,
-	                                       task->position_ms);
+static void cancel_player_operation(void *opaque) {
+	vt_decoder_request_stop((VtDecoderPlayer *)opaque);
+}
+
+static void cancel_audio_operation(void *opaque) {
+	vt_decoder_interrupt_audio_operation((VtDecoderPlayer *)opaque);
+}
+
+static void fence_decoder_frame(VtDecoderPlayer *player) {
+	/* Seek/fallback runs on the cancellable loading worker. Retire the preceding
+	 * texture on the UI thread first so decoder teardown never calls vita2d/GXM
+	 * while the loading scene is drawing. */
+	vita2d_wait_rendering_done();
+	vt_decoder_render_complete(player);
+	vt_decoder_prepare_background_restart(player);
 }
 
 static int run_seek(VtDecoderPlayer *player, UiPlayerLoadingInfo *loading,
 	                volatile int *cancel, uint64_t position_ms) {
 	SeekTask task = { player, position_ms };
 	if (cancel) *cancel = 0;
+	fence_decoder_frame(player);
 	return ui_player_loading_run(loading, seek_task, &task, cancel, NULL, NULL);
 }
 
@@ -95,21 +110,38 @@ static int run_track_change(VtDecoderPlayer *player,
 	                        UiPlayerLoadingInfo *loading,
 	                        volatile int *cancel, uint64_t position_ms,
 	                        int subtitles, int track) {
+	(void)cancel;
 	int count = subtitles ? vt_decoder_subtitle_track_count(player)
 	                      : vt_decoder_audio_track_count(player);
 	int choices = subtitles ? count + 1 : count;
 	if (track < 0 || track >= choices) return -1;
 	int current = subtitles ? vt_decoder_active_subtitle_track(player)
 	                        : vt_decoder_active_audio_track(player);
-	if (track == current) return 0;
-	TrackTask task = { player, position_ms, track };
-	if (cancel) *cancel = 0;
-	loading->status = vt_i18n_str(subtitles ? VT_STR_PLAYER_CHANGE_SUBTITLE
-	                                      : VT_STR_PLAYER_CHANGE_AUDIO);
-	return ui_player_loading_run(loading,
-	                             subtitles ? subtitle_track_task
-	                                       : audio_track_task,
-	                             &task, cancel, NULL, NULL);
+	if (track == current) {
+		if (!subtitles) return 0;
+		VtDecoderSubtitleState subtitle_state =
+		    vt_decoder_subtitle_state(player);
+		if (subtitle_state != VT_DECODER_SUBTITLE_PENDING &&
+		    subtitle_state != VT_DECODER_SUBTITLE_FAILED) return 0;
+	}
+	/* Subtitle open/probe/seek is owned by the persistent subtitle worker. Post
+	 * the serial request directly so video, input, and the right drawer remain
+	 * live; importantly, do not reset or pass the decoder session cancel flag. */
+	if (subtitles)
+		return vt_decoder_select_subtitle_track(player, track, position_ms);
+	volatile int operation_cancel = 0;
+	TrackTask task = { player, position_ms, track, &operation_cancel };
+	loading->status = vt_i18n_str(VT_STR_PLAYER_CHANGE_AUDIO);
+	UiPlayerLoadingInfo audio_loading = *loading;
+	audio_loading.cancel_action = cancel_audio_operation;
+	audio_loading.cancel_ctx = player;
+	int result = ui_player_loading_run(&audio_loading, audio_track_task, &task,
+	                                   &operation_cancel, NULL, NULL);
+	/* The decoder restores the previous audio track after an operation-only
+	 * cancellation. Only swallow the matching EXIT result: a failed rollback is
+	 * deliberately reported as a real error so the player cannot continue with
+	 * its audio cursor stopped while the UI claims the action was dismissed. */
+	return operation_cancel && result == AVERROR_EXIT ? 0 : result;
 }
 
 static uint64_t resync_after_blocking_action(SceCtrlData *controls,
@@ -633,6 +665,17 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	char audio_value[128], subtitle_value[128];
 	format_track_value(player, 0, pending_audio_track, audio_value);
 	format_track_value(player, 1, pending_subtitle_track, subtitle_value);
+	VtDecoderSubtitleState subtitle_state = vt_decoder_subtitle_state(player);
+	int subtitle_request_visible = pending_subtitle_track > 0 &&
+	    pending_subtitle_track == vt_decoder_active_subtitle_track(player);
+	if (subtitle_request_visible &&
+	    subtitle_state == VT_DECODER_SUBTITLE_PENDING)
+		snprintf(subtitle_value, sizeof(subtitle_value), "%s",
+		         vt_i18n_str(VT_STR_PLAYER_SUBTITLE_PENDING));
+	else if (subtitle_request_visible &&
+	         subtitle_state == VT_DECODER_SUBTITLE_FAILED)
+		snprintf(subtitle_value, sizeof(subtitle_value), "%s",
+		         vt_i18n_str(VT_STR_PLAYER_SUBTITLE_FAILED));
 	const char *values[5] = {
 		vt_i18n_str(vt_preferences_fill_screen() ? VT_STR_PLAYER_ON
 		                                             : VT_STR_PLAYER_OFF),
@@ -666,13 +709,20 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 				value = fitted_values[i];
 				value_w = ui_font_text_width(small, UI_FONT_SMALL, value);
 			}
+			unsigned value_color =
+			    (i < 2 && !strcmp(value, vt_i18n_str(VT_STR_PLAYER_OFF))) ||
+			    (i == 3 && pending_subtitle_track == 0)
+			        ? VT_THEME_TEXT_MUTED
+			        : i == 4 ? VT_THEME_COLD_LIGHT : VT_THEME_BLUE_LIGHT;
+			if (i == 3 && subtitle_request_visible &&
+			    subtitle_state == VT_DECODER_SUBTITLE_PENDING)
+				value_color = VT_THEME_SPECTRAL_LIGHT;
+			else if (i == 3 && subtitle_request_visible &&
+			         subtitle_state == VT_DECODER_SUBTITLE_FAILED)
+				value_color = VT_THEME_DANGER;
 			ui_font_draw_text(small, (int)x + (int)width - value_w - 34,
 			                  (int)y + 35,
-				                  (i < 2 && !strcmp(value, vt_i18n_str(VT_STR_PLAYER_OFF))) ||
-				                  (i == 3 && pending_subtitle_track == 0)
-				                      ? VT_THEME_TEXT_MUTED
-				                      : i == 4 ? VT_THEME_COLD_LIGHT
-				                               : VT_THEME_BLUE_LIGHT,
+			                  value_color,
 			                  UI_FONT_SMALL, value);
 		}
 	}
@@ -697,7 +747,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_duration_ms,
 	                        int *last_audio_track,
 	                        int *last_subtitle_track) {
-	if (!source || !source->stream.open) return -1;
+	if (!source || (!source->stream.open && !source->stream.open_cancelable))
+		return -1;
 	VtPerformanceClockGuard clock_guard;
 	vt_performance_begin_video(&clock_guard, (int)source->expected_height,
 	                           source->expected_fps);
@@ -733,7 +784,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		.title = source->title,
 		.channel = source->location,
 		.status = opening_status,
-		.quality_height = source->expected_height
+		.quality_height = source->expected_height,
+		.cancel_action = cancel_player_operation,
+		.cancel_ctx = player
 	};
 	volatile int start_over_requested = 0;
 	if (open.config.start_position_ms > 0)
@@ -750,6 +803,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			return -1;
 		}
 		open.player = player;
+		loading.cancel_ctx = player;
 		cancel = 0;
 		open.config.start_position_ms = 0;
 		loading.start_over_requested = NULL;
@@ -853,6 +907,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				SeekTask task = { player, status.position_ms };
 				cancel = 0;
 				loading.status = vt_i18n_str(VT_STR_PLAYER_FALLBACK_SOFTWARE);
+				fence_decoder_frame(player);
 				ret = ui_player_loading_run(&loading, fallback_task, &task,
 				                            &cancel, NULL, NULL);
 				loading.status = opening_status;
@@ -946,6 +1001,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 					                       status.position_ms,
 					                       right_cursor == 3, selected_track);
 					loading.status = opening_status;
+					if (right_cursor == 2)
+						pending_audio_track =
+						    vt_decoder_active_audio_track(player);
 					if (ret < 0) {
 						if (right_cursor == 3) {
 							pending_subtitle_track =
@@ -1090,6 +1148,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 					ret = run_track_change(player, &loading, &cancel,
 					                       status.position_ms, i == 3, *pending);
 					loading.status = opening_status;
+					if (i == 2)
+						pending_audio_track =
+						    vt_decoder_active_audio_track(player);
 					if (ret < 0 && i == 3) {
 						pending_subtitle_track =
 						    vt_decoder_active_subtitle_track(player);
@@ -1229,7 +1290,10 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		vt_display_keep_awake_tick();
 		vita2d_start_drawing();
 		vita2d_clear_screen();
-		vt_decoder_present(player, vt_preferences_fill_screen());
+		if (energy_saving)
+			vt_decoder_discard_video_to_clock(player);
+		else
+			vt_decoder_present(player, vt_preferences_fill_screen());
 		vt_decoder_get_status(player, &status);
 		if (energy_saving) {
 			if (now >= energy_lock_move_us) {
