@@ -1,55 +1,75 @@
-# Signal / Shell UI direction
+# Spectral Reassembly UI direction
 
-VitaMediaDeck uses a code-native visual system called **Signal / Shell**. It is
-an original interpretation of the screen-graphics principles discussed in the
-[Pushing Pixels interview with Stylow](https://www.pushing-pixels.org/2019/04/19/the-art-and-craft-of-screen-graphics-interview-with-stylow.html),
-not a reproduction of film frames, logos, or interface assets.
+VitaMediaDeck's original **Signal / Shell** system has evolved into **Spectral
+Reassembly**. It is a code-native interpretation of the color, particle
+material, optical depth, and holographic restraint in the three selected
+*Ghost in the Shell* concept references and the
+[Pushing Pixels interview with Stylow](https://www.pushing-pixels.org/2019/04/19/the-art-and-craft-of-screen-graphics-interview-with-stylow.html).
+It does not reproduce film frames, characters, logos, or interface assets.
 
 ## Visual grammar
 
-- Obsidian and carbon planes preserve the OLED's natural black and leave room
-  for video, artwork, and multilingual text.
-- Signal amber communicates focus and direct action. Cold cyan is reserved for
-  machine state, scans, locks, and buffers. Hot white carries primary
-  information; green, yellow, and red remain reserved for semantic status.
-- Sparse particles, wire connections, scan divisions, and incomplete
-  acquisition corners provide the recurring spatial motif.
-- A thin command rail, full-height section index, numbered settings banks, and
-  asymmetric information panels give each scene a clear operational hierarchy.
-- Motion is deliberately slow and deterministic. The Reduce motion preference
-  freezes ambient phases and keeps every control usable without animation.
-- One vertical memory scan crosses the machine-side telemetry field. It samples
-  the warm particle network with cool packet trails instead of turning the
-  whole interface into a generic cyan HUD.
+- **OLED void `#000000`:** the page background is true pitch black, allowing
+  unused Vita OLED pixels to switch off. Dark teal exists only inside compact
+  glass surfaces and never becomes a full-screen wash.
+- **Abyss glass `#03080A` and `#061113`:** headers, drawers, mini-player chrome,
+  and raised controls form a restrained optical layer above the black field.
+- **Spectral white `#DEECEC`:** text, acquisition glints, and the brightest
+  particles carry the silver material seen in the references.
+- **Hologram amber `#C6651F` / `#EB9439`:** human focus and projected data use
+  amber in thin rails, point clouds, and small control feedback—not large
+  orange plates.
+- **Reflected teal `#1D4D54` / `#379199`:** machine state, scans, buffering,
+  locks, folders, and network transport use cold environmental reflection.
+- Green, yellow, and red remain semantic status colors rather than decoration.
+
+Particles appear in three material families: spectral dust defines an object's
+surface, amber grains disclose active data, and teal packets identify machine
+movement. Incomplete optical rings, fractured lattice points, thin scan seams,
+and sparse wire connections replace continuous neon glows.
+
+## Layout and motion
+
+The existing scene hierarchy remains functional: command header, content field,
+full-height L1 section index, and contextual R1 drawer. The memorable element is
+the **reassembly field**. Focused records acquire a bounded cloud of fragments
+that converges around their edges; loading and music scenes reuse the same
+material without turning the screen into decorative concept art.
+
+All fields are deterministic, allocation-free, and bounded for the 960x544 Vita
+target. Reduce motion freezes particle drift, optical-ring movement, and scan
+phases while retaining every static focus and state indicator.
 
 ## Scene interpretation
 
-- **Local Media:** a media index with a compact identity block, filter command
-  cells, acquisition focus, and warm signal placeholders.
-- **Local/Network Files:** a path rail above list or grid content, with folder
-  and media objects treated as scanned records.
-- **Network Sources:** a route catalogue paired with a connection telemetry
-  panel and explicit security state.
-- **Settings:** five numbered command banks and dense, stable rows. Subtitle
-  controls and their Western, Cyrillic, Japanese, Chinese, and Korean preview
-  remain visible without changing their input model.
-- **Video:** the picture remains dominant; the HUD is a temporary acquisition
-  layer with square transport cells and a full-height track/settings drawer.
-- **Music:** cover-derived colour fields remain unique to each track, with a
-  sparse wire signal layer and acquisition marks around the artwork.
-- **Loading and errors:** full scenes, not detached modal cards, centered on an
-  acquisition target or fault cell.
+- **Local Media and Files:** covers remain dominant; empty media records use
+  cold glass and spectral playback marks. Focus materializes around the record
+  instead of filling it with orange.
+- **Network Sources:** route controls and trust state use teal machine light,
+  with amber reserved for the currently projected action.
+- **Settings:** stable rows and multilingual previews sit on compact abyss-glass
+  surfaces; the pitch-black field remains visible between control groups.
+- **Video:** the picture remains dominant. Temporary HUD scrims stay black,
+  while timelines, buffering, lock state, and the R1 drawer use the shared
+  spectral/amber/teal hierarchy.
+- **Music:** album colors illuminate only fine particles and two-pixel optical
+  rings. The former full-screen color wash has been removed to preserve OLED
+  black and reliable white text contrast.
+- **Mini-player:** a spectral top seam, short amber projection rail, and small
+  multicolor packets make the dock feel assembled into the current scene.
+- **Loading and errors:** acquisition corners mix spectral and amber material;
+  the particle field communicates activity without a generic neon spinner.
 
 ## Typography and assets
 
-Inter Medium and SemiBold render Western and Cyrillic runs at their requested
-pixel size. Native PS Vita PGFs render Japanese, Chinese, and Korean runs, with
-a fully native system-font preference available for all subtitles. No artwork
-from the visual reference is packaged in the application; particles, lines,
-corners, panels, and focus effects are drawn by vita2d.
+Inter Medium and SemiBold render Western and Cyrillic runs at exact requested
+pixel sizes. Native PS Vita PGFs render Japanese, Chinese, and Korean, with a
+fully native system-font preference available for subtitles. No reference
+image is packaged in the application: particles, rings, lines, panels, and
+focus fields are drawn by vita2d.
 
-The application icon condenses the same grammar into a flat segmented shell:
-amber aperture plates surround a hot-white playback core, while two restrained
-cyan telemetry arcs identify machine state. Its 128-pixel indexed export keeps
-the silhouette readable in LiveArea without importing imagery from the visual
-reference.
+The active icon condenses the same grammar into an incomplete optical media
+core: a dark central sphere, spectral-white glass, amber fractured data, and
+restrained teal refraction on pitch black. Its 128x128 indexed export preserves
+the particle silhouette in LiveArea without importing imagery or branding from
+the references.

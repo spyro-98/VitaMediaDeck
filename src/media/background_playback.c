@@ -18,6 +18,7 @@
 #include "common/text_log.h"
 #include "media/audio_volume.h"
 #include "media/avplayer_init.h"
+#include "media/vita_decoder.h"
 #include "settings/preferences.h"
 #include "system/background_audio.h"
 
@@ -40,8 +41,11 @@ typedef struct {
 	uint64_t start_position_ms;
 	char input_path[512];
 	int mp3_source;
+	int decoder_source;
+	int audio_track;
 	volatile int player_lock;
 	SceAvPlayerHandle active_player;
+	VtDecoderPlayer *active_decoder;
 	volatile int local_video_source;
 	volatile int video_in_gpu;
 	int video_have_frame;
@@ -415,13 +419,99 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 	return 0;
 }
 
+static int play_decoder_source(BackgroundPlaybackJob *job) {
+	VtBackgroundAudioLease lease;
+	vt_background_audio_acquire(&lease);
+	VtDecoderPlayer *decoder = vt_decoder_create();
+	if (!decoder) {
+		vt_background_audio_release(&lease);
+		return -1;
+	}
+	VtDecoderStreamFactory factory;
+	vt_decoder_file_stream_factory(job->input_path, &factory);
+	VtDecoderPlayerConfig config = {
+		.stream = factory,
+		.preferred_backend = VT_DECODER_BACKEND_NONE,
+		.audio_track = job->audio_track,
+		.subtitle_track = 0,
+		.start_position_ms = job->start_position_ms,
+		.volume_percent = vt_audio_volume_percent(),
+		.cancel_flag = &job->cancel
+	};
+	set_state(VT_BACKGROUND_BUFFERING, 0);
+	int ret = vt_decoder_open(decoder, &config);
+	if (ret < 0) {
+		vt_decoder_destroy(decoder);
+		vt_background_audio_release(&lease);
+		return ret;
+	}
+	player_lock(job);
+	job->active_decoder = decoder;
+	job->local_video_source = 1;
+	player_unlock(job);
+	set_state(VT_BACKGROUND_PLAYING, 0);
+	unsigned int observed_toggle = job->toggle_serial;
+	unsigned int observed_seek = job->seek_serial;
+	int paused = 0;
+	uint64_t last_power_tick = 0;
+	while (!job->cancel) {
+		if (observed_seek != job->seek_serial) {
+			observed_seek = job->seek_serial;
+			player_lock(job);
+			ret = vt_decoder_seek(decoder, job->seek_position_ms);
+			player_unlock(job);
+			if (ret < 0) break;
+		}
+		if (observed_toggle != job->toggle_serial) {
+			observed_toggle = job->toggle_serial;
+			paused = !paused;
+			player_lock(job);
+			vt_decoder_set_paused(decoder, paused);
+			player_unlock(job);
+			set_state(paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
+		}
+		VtDecoderPlayerStatus status;
+		player_lock(job);
+		vt_decoder_get_status(decoder, &status);
+		player_unlock(job);
+		snapshot_lock();
+		job->snapshot.position_ms = status.position_ms;
+		if (status.duration_ms) job->snapshot.duration_ms = status.duration_ms;
+		job->snapshot.video_width = status.width;
+		job->snapshot.video_height = status.height;
+		snapshot_unlock();
+		if (status.error) { ret = -1; break; }
+		if (status.eof) { ret = 0; break; }
+		uint64_t now = sceKernelGetProcessTimeWide();
+		if (!last_power_tick || now - last_power_tick >= 1000 * 1000ULL) {
+			sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+			last_power_tick = now;
+		}
+		sceKernelDelayThread(4 * 1000);
+	}
+	VtDecoderPlayerStatus final_status;
+	player_lock(job);
+	vt_decoder_get_status(decoder, &final_status);
+	job->local_video_source = 0;
+	job->active_decoder = NULL;
+	player_unlock(job);
+	snapshot_lock();
+	job->snapshot.position_ms = final_status.position_ms;
+	snapshot_unlock();
+	vt_decoder_destroy(decoder);
+	vt_background_audio_release(&lease);
+	return job->cancel ? -1 : ret;
+}
+
 static int background_thread(SceSize args, void *argp) {
 	(void)args;
 	BackgroundPlaybackJob *job = *(void **)argp;
 	set_state(VT_BACKGROUND_READY, 0);
 	while (!job->cancel && !job->activate) sceKernelDelayThread(10 * 1000);
 	int ret = job->cancel ? -1
-	                      : (job->mp3_source ? play_mp3(job) : play_av_source(job));
+	        : job->mp3_source ? play_mp3(job)
+	        : job->decoder_source ? play_decoder_source(job)
+	                              : play_av_source(job);
 	if (ret < 0 && !job->cancel) {
 		set_state(VT_BACKGROUND_ERROR, ret);
 		log_printf("local background playback failed: 0x%08X\n", (unsigned)ret);
@@ -444,12 +534,10 @@ void vt_background_playback_init(void) {
 	g_activation_serial = 0;
 }
 
-int vt_background_playback_prepare_local(const char *media_path,
-	                                     const char *media_id,
-	                                     const char *title,
-	                                     const char *artist,
-	                                     const char *artwork_path,
-	                                     uint64_t duration_ms) {
+static int prepare_local(const char *media_path, const char *media_id,
+	                     const char *title, const char *artist,
+	                     const char *artwork_path, uint64_t duration_ms,
+	                     int decoder_source, int audio_track) {
 	if (!media_path || !media_path[0] || !media_id || !media_id[0]) return -1;
 	vt_background_playback_stop();
 	BackgroundPlaybackJob *job = &g_background;
@@ -458,6 +546,8 @@ int vt_background_playback_prepare_local(const char *media_path,
 	job->thid = -1;
 	job->active_player = AVPLAYER_INVALID_HANDLE;
 	job->mp3_source = path_is_mp3(media_path);
+	job->decoder_source = decoder_source;
+	job->audio_track = audio_track;
 	copy_text(job->input_path, sizeof(job->input_path), media_path);
 	copy_text(job->snapshot.video_id, sizeof(job->snapshot.video_id), media_id);
 	copy_text(job->snapshot.title, sizeof(job->snapshot.title), title);
@@ -477,6 +567,27 @@ int vt_background_playback_prepare_local(const char *media_path,
 		return ret;
 	}
 	return 0;
+}
+
+int vt_background_playback_prepare_local(const char *media_path,
+	                                     const char *media_id,
+	                                     const char *title,
+	                                     const char *artist,
+	                                     const char *artwork_path,
+	                                     uint64_t duration_ms) {
+	return prepare_local(media_path, media_id, title, artist, artwork_path,
+	                     duration_ms, 0, 0);
+}
+
+int vt_background_playback_prepare_local_video(const char *media_path,
+	                                           const char *media_id,
+	                                           const char *title,
+	                                           const char *artist,
+	                                           const char *artwork_path,
+	                                           uint64_t duration_ms,
+	                                           int audio_track) {
+	return prepare_local(media_path, media_id, title, artist, artwork_path,
+	                     duration_ms, 1, audio_track);
 }
 
 int vt_background_playback_prepared(void) {
@@ -573,6 +684,11 @@ int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out) {
 }
 
 void vt_background_playback_video_render_complete(void) {
+	BackgroundPlaybackJob *job = &g_background;
+	player_lock(job);
+	if (job->active_decoder)
+		vt_decoder_render_complete(job->active_decoder);
+	player_unlock(job);
 	__sync_synchronize();
 	g_background.video_in_gpu = 0;
 	__sync_synchronize();
@@ -588,6 +704,12 @@ int vt_background_playback_draw_video(float x, float y,
 	VtBackgroundPlaybackSnapshot snapshot;
 	if (!vt_background_playback_snapshot(&snapshot)) return 0;
 	player_lock(job);
+	if (job->active_decoder) {
+		int drew = vt_decoder_present_rect(job->active_decoder, x, y,
+		                                  width, height, 0);
+		player_unlock(job);
+		return drew > 0;
+	}
 	if (!job->local_video_source || job->active_player == AVPLAYER_INVALID_HANDLE) {
 		player_unlock(job);
 		return 0;

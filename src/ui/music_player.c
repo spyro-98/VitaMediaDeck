@@ -82,7 +82,7 @@ static void draw_music_sidebar_bitrate(float animation,
 	if (animation <= 0.01f || bitrate_kbps == 0) return;
 	float ox = -286.0f * (1.0f - animation);
 	vita2d_draw_rectangle(ox + 18.0f, 438.0f, 250.0f, 42.0f,
-	                      RGBA8(17, 15, 13, 246));
+	                      VT_THEME_SURFACE);
 	vita2d_draw_rectangle(ox + 18.0f, 438.0f, 3.0f, 42.0f,
 	                      VT_THEME_BLUE_LIGHT);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -97,7 +97,7 @@ static void draw_cover(vita2d_texture *cover, float x, float y, float size,
 	                   unsigned foreground) {
 	if (!cover) return;
 	unsigned frame = foreground == RGBA8(255, 255, 255, 255)
-	               ? RGBA8(12, 10, 8, 228) : RGBA8(248, 245, 238, 218);
+	               ? RGBA8(3, 10, 12, 228) : RGBA8(236, 244, 242, 218);
 	vita2d_draw_rectangle(x - 10, y + 8, size + 20, size + 12,
 	                      RGBA8(0, 0, 0, 62));
 	vita2d_draw_rectangle(x - 5, y - 5, size + 10, size + 10, frame);
@@ -218,9 +218,9 @@ static unsigned palette_color(unsigned red, unsigned green, unsigned blue) {
 
 static void artwork_palette(vita2d_texture *cover, unsigned colors[5]) {
 	static const unsigned fallback[5] = {
-		RGBA8(9, 8, 7, 255), RGBA8(49, 31, 20, 255),
-		RGBA8(117, 61, 29, 255), RGBA8(201, 91, 38, 255),
-		RGBA8(255, 178, 62, 255)
+		RGBA8(0, 0, 0, 255), RGBA8(4, 18, 20, 255),
+		RGBA8(29, 77, 84, 255), RGBA8(198, 101, 31, 255),
+		RGBA8(222, 237, 236, 255)
 	};
 	memcpy(colors, fallback, sizeof(fallback));
 	if (!cover) return;
@@ -300,13 +300,10 @@ static void artwork_palette(vita2d_texture *cover, unsigned colors[5]) {
 }
 
 static unsigned palette_foreground(const unsigned colors[5]) {
-	unsigned red = 0, green = 0, blue = 0;
-	for (int i = 0; i < 5; i++) {
-		red += colors[i] & 0xffU;
-		green += (colors[i] >> 8) & 0xffU;
-		blue += (colors[i] >> 16) & 0xffU;
-	}
-	return ui_contrast_bw(RGBA8(red / 5U, green / 5U, blue / 5U, 255));
+	(void)colors;
+	/* The new player field is always pitch black; cover colours illuminate only
+	 * particles and optical rings, so a spectral-white foreground is stable. */
+	return RGBA8(255, 255, 255, 255);
 }
 
 static void draw_flow_background(const unsigned colors[5], uint64_t now,
@@ -314,44 +311,40 @@ static void draw_flow_background(const unsigned colors[5], uint64_t now,
 	float t = vt_preferences_reduce_motion()
 	        ? 0.0f : (float)(now % 90000000ULL) / 1000000.0f;
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
-	                      544 - UI_BRAND_HEADER_HEIGHT, colors[0]);
-	/* Five broad fields and six translucent rings are enough to read as a soft
-	 * mesh gradient, while keeping overdraw modest on the Vita's 960x544 target. */
-	for (int blob = 0; blob < 5; blob++) {
-		float phase = t * (0.035f + blob * 0.004f) + blob * 1.37f;
-		float cx = 480.0f + cosf(phase) * (360.0f - blob * 22.0f);
-		float cy = 282.0f + sinf(phase * 1.17f) * (210.0f - blob * 12.0f);
-		for (int ring = 6; ring >= 1; ring--) {
-			float radius = 112.0f + ring * 58.0f;
-			unsigned alpha = (unsigned)(24 + (7 - ring) * 8);
-			vita2d_draw_fill_circle(cx, cy, radius,
-			                        with_alpha(colors[blob], alpha));
-		}
+	                      544 - UI_BRAND_HEADER_HEIGHT, VT_THEME_BG);
+	/* Cover colours survive as thin optical rings rather than illuminating the
+	 * whole OLED. Each ring is cut back to black in its centre. */
+	for (int ring = 0; ring < 5; ring++) {
+		float phase = t * (0.022f + ring * 0.003f) + ring * 1.31f;
+		float cx = 480.0f + cosf(phase) * (238.0f - ring * 18.0f);
+		float cy = 286.0f + sinf(phase * 1.13f) * (132.0f - ring * 9.0f);
+		float radius = 86.0f + ring * 43.0f;
+		vita2d_draw_fill_circle(cx, cy, radius,
+		                        with_alpha(colors[ring], 17U + ring * 3U));
+		vita2d_draw_fill_circle(cx, cy, radius - 2.0f,
+		                        RGBA8(0, 0, 0, 238));
 	}
-	/* The veil follows the average palette: every foreground element in the
-	 * player becomes either black or white, never a low-contrast accent. */
-	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
-	                      544 - UI_BRAND_HEADER_HEIGHT,
-	                      foreground == RGBA8(0, 0, 0, 255)
-	                          ? RGBA8(255, 255, 255, 94)
-	                          : RGBA8(0, 5, 12, 104));
-	/* The artwork palette remains unique to the track; a sparse wire signal
-	 * field connects it to the rest of the application visual language. */
+	/* The artwork palette remains unique to the track as a sparse point-cloud
+	 * reassembly field. */
 	unsigned int phase = vt_preferences_reduce_motion()
-	                   ? 0U : (unsigned int)((now / 52000ULL) % 360ULL);
-	for (unsigned int i = 0; i < 24; i++) {
+	                   ? 0U : (unsigned int)((now / 52000ULL) % 420ULL);
+	for (unsigned int i = 0; i < 46; i++) {
 		unsigned int seed = 0x45D9F3BU * (i + 17U);
 		seed ^= seed >> 15;
-		float x = 36.0f + (float)(seed % 888U);
+		float x = 24.0f + (float)(seed % 912U);
 		float y = 76.0f + (float)((seed / 277U + phase * (1U + i % 2U)) % 438U);
-		unsigned dot_alpha = 34U + seed % 62U;
-		vita2d_draw_rectangle(x, y, i % 6U == 0U ? 3.0f : 2.0f,
-		                      i % 6U == 0U ? 3.0f : 2.0f,
-		                      with_alpha(foreground, dot_alpha));
-		if (i % 7U == 0U)
+		unsigned dot_alpha = 26U + seed % 78U;
+		unsigned particle = i % 9U == 0U ? VT_THEME_SIGNAL_BRIGHT
+		                  : i % 7U == 0U ? VT_THEME_SPECTRAL
+		                                  : colors[i % 5U];
+		float size = i % 11U == 0U ? 3.0f : i % 4U == 0U ? 2.0f : 1.0f;
+		vita2d_draw_rectangle(x, y, size, size,
+		                      with_alpha(particle, dot_alpha));
+		if (i % 10U == 0U)
 			vita2d_draw_line(x, y, 480.0f, 204.0f,
-			                 with_alpha(foreground, 22U));
+			                 VT_THEME_SPECTRAL_A(16U));
 	}
+	(void)foreground;
 }
 
 static void draw_metadata_scrim(float title_y, unsigned foreground,
@@ -389,7 +382,7 @@ static void draw_music_state(const VtBackgroundPlaybackSnapshot *snapshot,
 	int label_width = ui_font_text_width(small, UI_FONT_SMALL, label);
 	int width = label_width + (loading ? 54 : 30);
 	unsigned panel = foreground == RGBA8(255, 255, 255, 255)
-	               ? RGBA8(12, 10, 8, 218) : RGBA8(250, 247, 240, 224);
+	               ? RGBA8(3, 10, 12, 218) : RGBA8(236, 244, 242, 224);
 	unsigned state_color = ui_contrast_bw(panel);
 	vita2d_draw_rectangle(72, 82, width, 34, fade_color(panel, opacity));
 	vita2d_draw_rectangle(72, 82, 3, 34,
@@ -460,7 +453,7 @@ static void draw_music_action_button(float x, float y, float width,
 
 static void draw_input_lock_at(int x, int y) {
 	unsigned color = VT_THEME_TEXT;
-	unsigned panel = RGBA8(17, 15, 13, 224);
+	unsigned panel = VT_THEME_GLASS_A(224);
 	vita2d_draw_rectangle(x, y, 54, 44, panel);
 	vita2d_draw_rectangle(x, y, 3, 44, VT_THEME_COLD_LIGHT);
 	vita2d_draw_line(x + 20, y + 19, x + 20, y + 12, color);
@@ -530,7 +523,7 @@ static void draw_music_volume(int percent, float opacity,
 	unsigned alpha = (unsigned)(220.0f * opacity);
 	vita2d_draw_rectangle(x - 18, y - 32, 55, h + 62,
 	                      foreground == RGBA8(255, 255, 255, 255)
-	                          ? RGBA8(12, 10, 8, alpha)
+	                          ? RGBA8(3, 10, 12, alpha)
 	                          : RGBA8(255, 255, 255, alpha));
 	vita2d_draw_rectangle(x, y, 9, h, with_alpha(foreground, alpha / 2));
 	float fraction = (float)percent / (float)MUSIC_VOLUME_MAX;
@@ -549,8 +542,9 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	if (animation <= 0.01f) return;
 	const float width = MUSIC_RIGHT_PANEL_W;
 	float x = 960.0f - width * animation;
-	vita2d_draw_rectangle(x, 0, width, 544, RGBA8(7, 6, 5, 250));
-	vita2d_draw_rectangle(x, 0, 4, 544, VT_THEME_BLUE_LIGHT);
+	vita2d_draw_rectangle(x, 0, width, 544, VT_THEME_BG_SOFT);
+	vita2d_draw_rectangle(x, 0, 3, 544, VT_THEME_SPECTRAL);
+	vita2d_draw_rectangle(x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
 	vita2d_draw_rectangle(x + 4, 0, width - 4, 1, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -1032,7 +1026,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			                  UI_FONT_SMALL, duration);
 		}
 		unsigned button_fill = foreground == RGBA8(255, 255, 255, 255)
-		                     ? RGBA8(17, 15, 13, 224)
+		                     ? VT_THEME_GLASS_A(224)
 		                     : RGBA8(240, 244, 248, 230);
 		draw_music_action_button(46, MUSIC_CONTROLS_Y, 166, 56,
 		                 music_control_fill(button_fill, MUSIC_CONTROL_SHUFFLE,

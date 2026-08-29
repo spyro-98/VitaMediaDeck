@@ -100,6 +100,8 @@ int vt_decoder_subtitle_text(VtDecoderPlayer *player, uint64_t position_ms,
 int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 	                                uint64_t position_ms);
 int vt_decoder_present(VtDecoderPlayer *player, int fill_screen);
+int vt_decoder_present_rect(VtDecoderPlayer *player, float x, float y,
+	                        float width, float height, int fill_rect);
 void vt_decoder_render_complete(VtDecoderPlayer *player);
 void vt_decoder_get_status(VtDecoderPlayer *player, VtDecoderPlayerStatus *status);
 VtDecoderBackend vt_decoder_backend(const VtDecoderPlayer *player);

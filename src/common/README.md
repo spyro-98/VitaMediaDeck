@@ -2,4 +2,8 @@
 
 `debugScreen.c` and `debugScreen.h` originate from the public-domain `common/` directory in the [VitaSDK samples repository](https://github.com/vitasdk/samples), specifically the `hello_world` sample.
 
-The files are kept close to upstream so early-startup and crash diagnostics can render without depending on the full VitaMediaDeck UI stack. VitaMediaDeck-specific logging lives in the adjacent `text_log` implementation.
+The files are kept close to upstream so early-startup and crash diagnostics can
+render without depending on the full VitaMediaDeck UI stack. They intentionally
+remain independent of the Signal / Shell theme, multilingual fonts, media
+workers, and network lifecycle. VitaMediaDeck-specific logging lives in the
+adjacent `text_log` implementation.

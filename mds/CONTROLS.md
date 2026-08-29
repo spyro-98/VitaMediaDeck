@@ -91,10 +91,11 @@ frame. Preview decoding and network reads stay on the bounded thumbnail worker.
 | Touch/drag timeline | Seek to a position. |
 
 The R1 playback panel also selects the active AAC audio track and embedded text
-subtitle track. Cross or Right advances, Left selects the previous track, and
-the subtitle selector includes an explicit Off choice. Track changes retain the
+subtitle track. Left/Right changes the pending choice and Cross applies it; the
+subtitle selector includes an explicit Off choice. Track changes retain the
 current playback position and apply equally to local and authenticated remote
-videos.
+videos. A subtitle-open failure returns to the panel instead of closing video
+playback.
 
 Each local or remote video remembers its last useful playback position. If the
 player opens from that position, the R1 panel adds **Start from beginning** as a
@@ -102,11 +103,12 @@ fifth row. Activating it seeks to `00:00`, removes the saved resume point
 immediately, and closes the panel.
 
 Local video mini-player hand-off retains the playback position and selected
-audio/subtitle tracks when fullscreen is restored. It uses the platform
-`SceAvPlayer` background path, so a local H.264 file can be valid in the main
-HW/SW decoder while its particular container is not accepted by the compact
-background player. Authenticated remote video keeps ECO and input-lock controls,
-but is not detached into the local-only mini-player service.
+audio/subtitle tracks when fullscreen is restored. It uses the same HW/SW
+decoder stack as fullscreen playback and renders the live video surface. Tap
+the video or media identity area to expand/collapse it at one quarter of the
+screen width; press Start to restore fullscreen. Authenticated remote video
+keeps ECO and input-lock controls, but is not detached into the local-only
+mini-player service.
 
 The Settings > Subtitles tab controls the font, foreground and background
 colors, small/medium/large text size, 60/75/88/96 percent maximum width,
@@ -138,7 +140,8 @@ it is disabled by default.
 | Select | Immediately lock or unlock player input. |
 | Circle | Stop full-screen playback. |
 | Start in mini-player | Restore the active local media fullscreen. |
-| Mini-player controls | Seek, pause/resume, restore, or stop the active local track. |
+| Tap mini-player media area | Expand or collapse the live video to one quarter of the screen width. |
+| Mini-player controls | Seek, pause/resume, or stop the active local track. |
 
-The exact mini-player behavior depends on the local audio format and whether a
-decoded video surface is available.
+Audio-only media uses artwork when available; local video uses the same decoder
+compatibility path as fullscreen playback.

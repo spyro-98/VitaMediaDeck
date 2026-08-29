@@ -123,6 +123,12 @@ typedef struct ThumbnailState {
 
 static ThumbnailState g_thumbnail = { .thid = -1 };
 
+static int indexed_container(const AVFormatContext *format) {
+	const char *name = format && format->iformat ? format->iformat->name : NULL;
+	return name && (strstr(name, "mov,mp4") || strstr(name, "matroska") ||
+	                strstr(name, "webm") || strstr(name, "avi"));
+}
+
 static void thumbnail_lock(void) {
 	while (__sync_lock_test_and_set(&g_thumbnail.lock, 1))
 		sceKernelDelayThread(100);
@@ -358,7 +364,8 @@ static int thumbnail_input_open(ThumbnailInput *input,
 		return AVERROR(ENOMEM);
 	}
 	result = avformat_open_input(&input->format, NULL, NULL, NULL);
-	if (result >= 0) result = avformat_find_stream_info(input->format, NULL);
+	if (result >= 0 && !indexed_container(input->format))
+		result = avformat_find_stream_info(input->format, NULL);
 	if (result < 0) thumbnail_input_close(input);
 	return result;
 }
@@ -702,9 +709,9 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 			if ((candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
 			    cover_index < 0)
 				cover_index = (int)i;
-			else if (candidate->codecpar->codec_type == AVMEDIA_TYPE_VIDEO &&
-			    candidate->codecpar->codec_id == AV_CODEC_ID_H264 &&
-			    stream_index < 0) {
+			else if (!(candidate->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
+			         stream_index < 0 &&
+			         avcodec_find_decoder(candidate->codecpar->codec_id)) {
 				stream_index = (int)i;
 			}
 		}
@@ -719,11 +726,15 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 		result = AVERROR_STREAM_NOT_FOUND;
 	AVStream *stream = result >= 0 && !converted
 	                 ? format->streams[stream_index] : NULL;
-	/* Request the named CPU decoder explicitly. avcodec_find_decoder() may
-	 * select the separately registered h264_vita implementation. Thumbnail
-	 * work must never claim SceVideodec or compete for its CDRAM surfaces. */
+	/* H.264 explicitly uses the CPU decoder: thumbnail work must never claim
+	 * SceVideodec or compete for its CDRAM surfaces. Other registered software
+	 * codecs are allowed so AVI/MPEG-4 and similar local libraries still receive
+	 * a real frame preview even when no attached cover exists. */
 	const AVCodec *codec = result >= 0 && !converted
-	                       ? avcodec_find_decoder_by_name("h264") : NULL;
+	                       ? (stream->codecpar->codec_id == AV_CODEC_ID_H264
+	                          ? avcodec_find_decoder_by_name("h264")
+	                          : avcodec_find_decoder(stream->codecpar->codec_id))
+	                       : NULL;
 	if (result >= 0 && !converted && !codec) result = AVERROR_DECODER_NOT_FOUND;
 	if (result >= 0 && !converted) decoder = avcodec_alloc_context3(codec);
 	if (result >= 0 && !converted && !decoder) result = AVERROR(ENOMEM);
@@ -810,10 +821,13 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		thumbnail_lock();
 		if (!state->stop && state->enabled && !state->result.pixels &&
 		    state->request_count > 0) {
-			int request_index = --state->request_count;
-			request = state->requests[request_index];
-			memset(&state->requests[request_index], 0,
-			       sizeof(state->requests[request_index]));
+			request = state->requests[0];
+			state->request_count--;
+			if (state->request_count > 0)
+				memmove(state->requests, state->requests + 1,
+				        sizeof(state->requests[0]) * state->request_count);
+			memset(&state->requests[state->request_count], 0,
+			       sizeof(state->requests[state->request_count]));
 			state->active = request;
 			state->active_valid = 1;
 			have_request = 1;

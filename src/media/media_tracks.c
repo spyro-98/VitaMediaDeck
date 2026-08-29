@@ -75,6 +75,12 @@ static int media_interrupt(void *opaque) {
 	return cancel && *cancel;
 }
 
+static int indexed_container(const AVFormatContext *format) {
+	const char *name = format && format->iformat ? format->iformat->name : NULL;
+	return name && (strstr(name, "mov,mp4") || strstr(name, "matroska") ||
+	                strstr(name, "webm") || strstr(name, "avi"));
+}
+
 static void media_input_close(VtMediaInput *input) {
 	if (!input) return;
 	if (input->format) avformat_close_input(&input->format);
@@ -123,7 +129,8 @@ static int media_input_open(VtMediaInput *input,
 	input->format->probesize = 1024 * 1024;
 	input->format->max_analyze_duration = 2 * AV_TIME_BASE;
 	ret = avformat_open_input(&input->format, NULL, NULL, NULL);
-	if (ret >= 0) ret = avformat_find_stream_info(input->format, NULL);
+	if (ret >= 0 && !indexed_container(input->format))
+		ret = avformat_find_stream_info(input->format, NULL);
 	if (ret < 0) media_input_close(input);
 	return ret;
 }
@@ -474,17 +481,41 @@ VtSubtitleReader *vt_subtitle_reader_create(void) {
 	return reader;
 }
 
+static void subtitle_reader_stop(VtSubtitleReader *reader, int close_input) {
+	if (!reader) return;
+	reader->cancel = 1;
+	__sync_synchronize();
+	if (reader->started && reader->thid >= 0)
+		sceKernelWaitThreadEnd(reader->thid, NULL, NULL);
+	if (reader->started && reader->thid >= 0)
+		sceKernelDeleteThread(reader->thid);
+	if (close_input) media_input_close(&reader->input);
+	reader->thid = -1;
+	reader->started = 0;
+	reader->read_index = 0;
+	reader->write_index = 0;
+	reader->eof = 0;
+	reader->error = 0;
+	memset(reader->cues, 0, sizeof(reader->cues));
+}
+
 int vt_subtitle_reader_open(VtSubtitleReader *reader,
 	                        const VtDecoderStreamFactory *factory,
 	                        int stream_index, uint64_t start_position_ms,
 	                        volatile int *open_cancel) {
 	if (!reader || !factory || stream_index < 0) return AVERROR(EINVAL);
-	vt_subtitle_reader_close(reader);
-	reader->factory = *factory;
+	int reuse_input = reader->input.format &&
+	                  reader->factory.open == factory->open &&
+	                  reader->factory.opaque == factory->opaque;
+	subtitle_reader_stop(reader, !reuse_input);
 	reader->cancel = 0;
-	int ret = media_input_open(&reader->input, factory,
-	                           open_cancel ? open_cancel : &reader->cancel);
-	if (ret < 0) return ret;
+	int ret = 0;
+	if (!reuse_input) {
+		reader->factory = *factory;
+		ret = media_input_open(&reader->input, factory,
+		                       open_cancel ? open_cancel : &reader->cancel);
+		if (ret < 0) return ret;
+	}
 	if (open_cancel && *open_cancel) {
 		media_input_close(&reader->input);
 		return AVERROR_EXIT;
@@ -503,12 +534,20 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 		return AVERROR_DECODER_NOT_FOUND;
 	}
 	reader->stream_index = stream_index;
-	if (start_position_ms) {
+	if (start_position_ms || reuse_input) {
 		AVStream *stream = reader->input.format->streams[stream_index];
 		int64_t target = av_rescale_q((int64_t)start_position_ms,
 		                              (AVRational){ 1, 1000 }, stream->time_base);
-		av_seek_frame(reader->input.format, stream_index, target,
-		              AVSEEK_FLAG_BACKWARD);
+		ret = avformat_seek_file(reader->input.format, stream_index, INT64_MIN,
+		                         target, target, AVSEEK_FLAG_BACKWARD);
+		if (ret < 0)
+			ret = av_seek_frame(reader->input.format, stream_index, target,
+			                    AVSEEK_FLAG_BACKWARD);
+		if (ret < 0) {
+			media_input_close(&reader->input);
+			return ret;
+		}
+		avformat_flush(reader->input.format);
 	}
 	reader->thid = sceKernelCreateThread(
 		"VitaMediaDeckSubtitles", subtitle_worker, SUBTITLE_THREAD_PRIORITY,
@@ -531,19 +570,7 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 }
 
 void vt_subtitle_reader_close(VtSubtitleReader *reader) {
-	if (!reader) return;
-	reader->cancel = 1;
-	__sync_synchronize();
-	if (reader->started && reader->thid >= 0)
-		sceKernelWaitThreadEnd(reader->thid, NULL, NULL);
-	if (reader->started && reader->thid >= 0) sceKernelDeleteThread(reader->thid);
-	media_input_close(&reader->input);
-	reader->thid = -1;
-	reader->started = 0;
-	reader->read_index = 0;
-	reader->write_index = 0;
-	reader->eof = 0;
-	reader->error = 0;
+	subtitle_reader_stop(reader, 1);
 }
 
 void vt_subtitle_reader_destroy(VtSubtitleReader *reader) {

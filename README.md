@@ -24,16 +24,34 @@ VitaMediaDeck does not discover, acquire, export, convert, or copy media from on
 catalogues. It has no account integration with third-party media platforms and
 does not provide a download or audio-extraction feature.
 
-The application UI follows the original **Signal / Shell** direction: OLED-black
-planes, amber acquisition graphics, sparse signal particles, native Vita status
-surfaces, and scene-specific information layouts. Its design rationale and
-multilingual typography contract are documented in
+The application UI follows the evolved **Spectral Reassembly** direction:
+pitch-black OLED fields, spectral-white material, amber point-cloud projection,
+restrained teal reflections, native Vita status surfaces, and deterministic
+particle motion. Its design rationale and multilingual typography contract are
+documented in
 [`mds/UI_SIGNAL_SHELL.md`](mds/UI_SIGNAL_SHELL.md).
 
 > The local/network redesign is under active development. The application and
 > reusable player module compile as a complete VPK, but the new remote backends
 > still require broad validation on physical Vita hardware and different
 > servers before a stable release is published.
+
+## VitaMediaDeck project family
+
+VitaMediaDeck is the console application. Its runtime packages stay reusable,
+and the optional transcoder runs only on a desktop computer:
+
+| Repository | Responsibility | Included in the VPK |
+| --- | --- | --- |
+| [`VitaMediaDeck`](https://github.com/spyro-98/VitaMediaDeck) | Local/network library, Spectral Reassembly UI, subtitles, player orchestration, previews, and resume history | Application |
+| [`vita-hw-decoder`](https://github.com/spyro-98/vita-hw-decoder) | Hardware-only H.264/AAC playback through `h264_vita`, SceVideodec, and direct NV12 presentation | Yes |
+| [`vita-sw-decoder`](https://github.com/spyro-98/vita-sw-decoder) | CPU H.264 fallback with the same stream and lifecycle contract | Yes |
+| [`vita-https`](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, CA/SPKI verification, WebDAV requests, and seekable Range streams | Yes |
+| [`VitaMediaDeck-Transcoder`](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional macOS/Windows/Linux conversion to the Vita-oriented H.264/AAC/Matroska profile | No |
+
+No host tool is required for playback. The transcoder is useful when source
+media does not already satisfy the Vita decoder contract, or when an embedded
+cover and a predictable multi-track Matroska output are desired.
 
 ## Running on PlayStation Vita
 
@@ -60,6 +78,10 @@ multilingual typography contract are documented in
   </tr>
 </table>
 
+These photographs document the decoder paths on real hardware. The current
+Spectral Reassembly theme, expanded player panels, and new icon still need a
+fresh physical-Vita screenshot pass.
+
 ## Highlights
 
 - **Local media library:** indexes compatible files under `ux0:video`,
@@ -78,7 +100,8 @@ multilingual typography contract are documented in
 - **Multiple media tracks:** the playback panel discovers and switches between
   AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
   subtitles without leaving the video. The same seekable-cursor path is used
-  for local files, WebDAV, SFTP, and SMB.
+  for local files, WebDAV, SFTP, and SMB. Left/Right stages a track choice and
+  X applies it, preventing accidental playback restarts while browsing.
 - **Configurable multilingual subtitles:** a dedicated Settings tab controls
   font, foreground/background color, size, maximum width, minimum/maximum line
   count, and vertical position. Exact-size Inter faces keep Western and
@@ -97,7 +120,10 @@ multilingual typography contract are documented in
 - **VitaTube player gestures restored:** a short Start minimizes supported local
   music/video, holding Start toggles the OLED-black ECO view, and Select
   immediately locks or unlocks input. Local video resumes fullscreen at the
-  mini-player position with its selected audio/subtitle tracks restored.
+  mini-player position with its selected audio/subtitle tracks restored. The
+  local-video mini-player uses the main decoder for live frames and matching
+  audio compatibility; tapping its media area expands it to one quarter of the
+  screen width, while Start restores fullscreen playback.
 - **Per-video resume history:** distinct local files and authenticated remote
   streams resume from their last useful position. When playback was recovered,
   the R1 panel exposes **Start from beginning** and clears that saved point.
@@ -140,11 +166,15 @@ flowchart LR
     T --> F
     S["SFTP + pinned host key"] --> F
     M["Authenticated SMB2/3"] --> F
+    F --> D0["Track and cover discovery cursor"]
     F --> D1["Video demux cursor"]
     F --> D2["Audio demux cursor"]
+    F --> D3["Subtitle demux cursor"]
+    D0 --> O["R1 audio/subtitle selectors"]
     D1 --> H["vita-hw-decoder"]
     H -->|"open/runtime failure"| SW["vita-sw-decoder"]
     D2 --> A["Vita AAC / local audio path"]
+    D3 --> U["Unicode subtitle renderer"]
     H --> P["PTS-aware NV12 presenter"]
     SW --> P
     A --> C["Audio master clock"]
@@ -158,11 +188,14 @@ authentication and transport; the player owns demux, decode, synchronization,
 and presentation. This boundary lets new transports be added without coupling
 them to decoder internals.
 
-The three standalone package READMEs document their public APIs, lifecycle and
-copyable examples. VitaMediaDeck's `src/media/vita_decoder.c` is deliberately only a
-small dispatcher: Auto opens the hardware package first and recreates the
-session through the software package on either startup or delayed runtime
-failure, while the two explicit Settings choices force one backend.
+The three runtime-package READMEs document their public APIs, lifecycle, and
+copyable examples. The separate transcoder README documents the compatible
+output profile but is not part of the console runtime. VitaMediaDeck's
+`src/media/vita_decoder.c` is deliberately a small dispatcher: Auto opens the
+hardware package first and recreates the session through the software package
+on either startup or delayed runtime failure, while the two explicit Settings
+choices force one backend. Track discovery and text-subtitle demux remain in
+the app because neither standalone decoder package owns UI or subtitle policy.
 
 ## Network security model
 
@@ -300,6 +333,9 @@ mds/                     architecture, controls and development documents
 - Remote audio browsing is not exposed yet; the network section is video-only.
 - The reusable player currently targets seekable H.264 media in ISO-BMFF or
   Matroska containers; AAC audio is supported when present.
+- Bitmap subtitles such as PGS and VobSub may be retained by the transcoder but
+  are not rendered by the current app. The selectable subtitle path supports
+  SubRip, ASS/SSA text, WebVTT, MOV text, generic text, and MicroDVD.
 - Some local formats recognized by the library may still be rejected when they
   do not satisfy the active decoder/container contract.
 - The Vita display is 960×544. A 1280×720 source is decoded at source

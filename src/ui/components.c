@@ -27,16 +27,17 @@ unsigned int ui_contrast_bw(unsigned int background) {
 void ui_chrome_background(unsigned int base, unsigned int accent) {
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 	                      544 - UI_BRAND_HEADER_HEIGHT, base);
-	/* Structural scan lines divide the 16:9 field without becoming a grid. */
+	/* Faint submerged strata add depth without lighting otherwise-black OLED
+	 * pixels across a large area. */
 	for (int line = 0; line < 7; line++) {
 		float y = 92.0f + line * 66.0f;
 		vita2d_draw_rectangle(0, y, 960, 1,
-		                      line == 0 ? RGBA8(94, 71, 43, 72)
-		                                : RGBA8(120, 88, 45, 18));
+		                      line == 0 ? VT_THEME_COLD_A(42)
+		                                : VT_THEME_COLD_A(12));
 	}
 	vita2d_draw_rectangle(684, UI_BRAND_HEADER_HEIGHT, 1,
 	                      544 - UI_BRAND_HEADER_HEIGHT,
-	                      RGBA8(255, 178, 62, 18));
+	                      VT_THEME_SIGNAL_A(22));
 
 	/* A deterministic, low-cost signal field. Motion is a slow vertical phase,
 	 * disabled by Reduce motion; no random state or allocation touches frames. */
@@ -44,18 +45,24 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 	int reduced_motion = vt_preferences_reduce_motion();
 	unsigned int phase = reduced_motion
 	                   ? 0U : (unsigned int)((now / 42000ULL) % 420ULL);
-	for (unsigned int i = 0; i < 38; i++) {
+	for (unsigned int i = 0; i < 54; i++) {
 		uint32_t seed = 0x9E3779B9U * (i + 11U);
 		seed ^= seed >> 16;
-		float x = 624.0f + (float)(seed % 326U);
+		float x = 574.0f + (float)(seed % 376U);
 		float y = 76.0f + (float)((seed / 331U + phase * (1U + i % 3U)) % 448U);
-		float size = i % 9U == 0U ? 3.0f : i % 3U == 0U ? 2.0f : 1.0f;
-		unsigned int alpha = 20U + (seed % 54U);
-		unsigned int color = (accent & 0x00ffffffU) | (alpha << 24);
+		float size = i % 11U == 0U ? 3.0f : i % 4U == 0U ? 2.0f : 1.0f;
+		unsigned int alpha = 18U + (seed % 62U);
+		unsigned int accent_particle =
+		    (accent & 0x00ffffffU) | ((alpha + 18U) << 24);
+		unsigned int color = i % 11U == 0U ? VT_THEME_SIGNAL_A(alpha + 18U)
+		                   : i % 7U == 0U ? accent_particle
+		                   : i % 3U == 0U ? VT_THEME_COLD_A(alpha)
+		                                    : VT_THEME_SPECTRAL_A(alpha);
 		vita2d_draw_rectangle(x, y, size, size, color);
-		if (i % 8U == 0U)
-			vita2d_draw_line(x, y, 896.0f, 296.0f,
-			                 RGBA8(255, 164, 54, 18));
+		if (i % 9U == 0U)
+			vita2d_draw_line(x, y, 842.0f, 296.0f,
+			                 i % 18U == 0U ? VT_THEME_SIGNAL_A(18)
+			                                : VT_THEME_SPECTRAL_A(13));
 	}
 	/* A cold memory scan crosses only the machine-side telemetry field. It is
 	 * intentionally secondary to amber focus, and freezes to a quiet datum when
@@ -80,14 +87,20 @@ void ui_chrome_background(unsigned int base, unsigned int accent) {
 		                      packet % 4U == 0U ? 5.0f : 2.0f, 2.0f,
 		                      VT_THEME_COLD_A(118U));
 	}
-	/* The incomplete orbit is the recurring shell/acquisition motif. */
+	/* A cold reassembly seam and incomplete optical rings are the recurring
+	 * shell/acquisition motif from the reference material. */
+	vita2d_draw_line(704.0f, 492.0f, 932.0f, 142.0f,
+	                 VT_THEME_SPECTRAL_A(13));
+	vita2d_draw_line(720.0f, 506.0f, 944.0f, 170.0f,
+	                 VT_THEME_SIGNAL_A(11));
 	for (int ring = 2; ring >= 0; ring--) {
-		float radius = 62.0f + ring * 34.0f;
-		unsigned int alpha = 11U + (unsigned int)ring * 5U;
-		vita2d_draw_fill_circle(896.0f, 296.0f, radius,
-		                        (accent & 0x00ffffffU) | (alpha << 24));
-		vita2d_draw_fill_circle(896.0f, 296.0f, radius - 2.0f,
-		                        (base & 0x00ffffffU) | (236U << 24));
+		float radius = 54.0f + ring * 35.0f;
+		unsigned int edge = ring == 2 ? VT_THEME_COLD_A(24)
+		                  : ring == 1 ? VT_THEME_SPECTRAL_A(30)
+		                              : VT_THEME_SIGNAL_A(32);
+		vita2d_draw_fill_circle(842.0f, 296.0f, radius, edge);
+		vita2d_draw_fill_circle(842.0f, 296.0f, radius - 2.0f,
+		                        (base & 0x00ffffffU) | (244U << 24));
 	}
 	vita2d_draw_rectangle(0, 116, 960, 2, VT_THEME_BORDER_DIM);
 }
@@ -140,7 +153,7 @@ void ui_panel(float x, float y, float width, float height,
 	vita2d_draw_rectangle(x, y, width, 1,
 	                      focused ? accent : VT_THEME_BORDER_DIM);
 	vita2d_draw_rectangle(x, y + height - 1, width, 1,
-	                      RGBA8(73, 58, 41, 180));
+	                      VT_THEME_COLD_A(82));
 	unsigned int mark = focused ? VT_THEME_SIGNAL_LIGHT : accent;
 	panel_corner(x, y, 1.0f, 1.0f, mark);
 	panel_corner(x + width, y, -1.0f, 1.0f, mark);
@@ -162,7 +175,7 @@ void ui_action_button(float x, float y, float width, float height,
 	}
 	if (key_width > 0.0f) {
 		vita2d_draw_rectangle(x + 10, y + 9, key_width, height - 18,
-		                      active ? RGBA8(255, 218, 151, 38)
+		                      active ? VT_THEME_SPECTRAL_A(42)
 		                             : RGBA8(255, 255, 255, 18));
 		if (small) {
 			int kw = ui_font_text_width(small, UI_FONT_SMALL, key);

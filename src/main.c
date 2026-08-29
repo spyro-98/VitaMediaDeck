@@ -229,11 +229,11 @@ static int minimize_local_video(const VtLocalMediaItem *item,
 	if (!item) return -1;
 	char id[16];
 	media_id(item->path, id);
-	int ret = vt_background_playback_prepare_local(
+	int ret = vt_background_playback_prepare_local_video(
 	    item->path, id, item->name,
 	    item->artist[0] ? item->artist : vt_i18n_str(VT_STR_LOCAL_MEDIA_TITLE),
 	    item->artwork_path[0] ? item->artwork_path : NULL,
-	    item->duration_ms);
+	    item->duration_ms, audio_track);
 	if (ret < 0) return ret;
 	g_minimized_local_video.valid = 1;
 	g_minimized_local_video.item = *item;

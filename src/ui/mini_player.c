@@ -277,19 +277,19 @@ void ui_mini_player_draw(void) {
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	const int y = ui_mini_player_top();
 
-	/* A docked signal strip: black glass, warm acquisition rail, sparse packet
+	/* A docked signal strip: OLED glass, spectral acquisition rail, sparse packet
 	 * marks. It remains the same height so every page keeps its viewport math. */
 	vita2d_draw_rectangle(0, y - 4, SCREEN_WIDTH, 4, RGBA8(0, 0, 0, 112));
 	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, UI_MINI_PLAYER_HEIGHT,
-	                      RGBA8(8, 8, 8, 250));
-	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, 2, VT_THEME_SIGNAL_BRIGHT);
-	vita2d_draw_rectangle(0, y + 2, SCREEN_WIDTH, 1,
-	                      VT_THEME_PARTICLE_A(120));
+	                      VT_THEME_BG_SOFT);
+	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, 1, VT_THEME_SPECTRAL);
+	vita2d_draw_rectangle(474, y + 1, 286, 1, VT_THEME_SIGNAL_BRIGHT);
 	for (int packet = 0; packet < 10; packet++)
 		vita2d_draw_rectangle(506.0f + packet * 13.0f, y + 8.0f,
 		                      packet == 4 ? 7.0f : 2.0f, 2.0f,
 		                      packet == 4 ? VT_THEME_SIGNAL_LIGHT
-		                                  : VT_THEME_SIGNAL_DIM);
+		                      : packet % 3 == 0 ? VT_THEME_COLD
+		                                          : VT_THEME_SPECTRAL_A(92));
 
 	MiniVideoRect video_rect = mini_video_rect(
 	    &snapshot, (float)y, g_mini_video_expansion);
@@ -299,7 +299,7 @@ void ui_mini_player_draw(void) {
 		                      RGBA8(0, 0, 0, 118));
 		vita2d_draw_rectangle(video_rect.x - 2.0f, video_rect.y - 2.0f,
 		                      video_rect.width + 4.0f, video_rect.height + 4.0f,
-		                      VT_THEME_SIGNAL_BRIGHT);
+		                      VT_THEME_SPECTRAL);
 	}
 	int expects_visual = (snapshot.video_width && snapshot.video_height) || g_artwork;
 	if (expects_visual)
@@ -383,12 +383,12 @@ void ui_mini_player_draw(void) {
 	for (int i = 0; i < 3; i++) {
 		transport_fill[i] = g_mini_control_feedback == i + 1 &&
 		                    now_us < g_mini_control_feedback_until_us
-		                  ? VT_THEME_SIGNAL_LIGHT : VT_THEME_SIGNAL;
+		                  ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_SURFACE_FOCUS;
 		transport_foreground[i] = ui_contrast_bw(transport_fill[i]);
 		vita2d_draw_rectangle(transport_x[i] - 21.0f, y + 12.0f,
 		                      42.0f, 42.0f, transport_fill[i]);
 		vita2d_draw_rectangle(transport_x[i] - 17.0f, y + 16.0f,
-		                      34.0f, 1.0f, RGBA8(255, 236, 198, 92));
+		                      34.0f, 1.0f, VT_THEME_SPECTRAL_A(112));
 	}
 	if (small) {
 		const char *back = "<", *forward = ">";
@@ -603,8 +603,9 @@ int ui_mini_player_handle_touch(unsigned int touch_flags,
 		if (touch->down_x >= title_x &&
 		    touch->down_x < title_x + title_w &&
 		    touch->down_y < bar_y + 56) {
-			vt_background_playback_video_render_complete();
-			vt_background_playback_resume_fullscreen();
+			/* The whole media identity area owns compact/quarter-screen expansion.
+			 * START remains the unambiguous fullscreen restore command. */
+			g_mini_video_expanded = !g_mini_video_expanded;
 		}
 		else if (ui_touch_hit_rect(
 		             touch->x, touch->y, (int)MINI_TRANSPORT_CLOSE_X - 26,

@@ -26,8 +26,8 @@
 #define COLOR_TEXT     VT_THEME_TEXT
 #define COLOR_MUTED    VT_THEME_TEXT_MUTED
 #define COLOR_TRACK    VT_THEME_BORDER
-#define COLOR_ACCENT   VT_THEME_BLUE_BRIGHT
-#define COLOR_BUFFER   VT_THEME_BLUE_LIGHT
+#define COLOR_ACCENT   VT_THEME_SIGNAL_BRIGHT
+#define COLOR_BUFFER   VT_THEME_SPECTRAL_LIGHT
 
 #define TASK_THREAD_PRIORITY 0x10000100
 #define TASK_THREAD_STACK    0x40000
@@ -101,7 +101,7 @@ static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 			dot_radius = active_radius;
 		} else {
 			color = age <= 2 ? COLOR_ACCENT
-			      : (age <= 5 ? VT_THEME_BLUE : VT_THEME_BORDER);
+			      : (age <= 5 ? VT_THEME_COLD : VT_THEME_BORDER);
 			dot_radius = idle_radius;
 		}
 		if (reduced_motion && age != 0) color = VT_THEME_BORDER;
@@ -117,21 +117,22 @@ static void draw_acquisition_frame(float center_x, float center_y,
 	                               float half_width, float half_height,
 	                               unsigned int opacity) {
 	unsigned int signal = VT_THEME_SIGNAL_A(opacity);
-	unsigned int dim = VT_THEME_SIGNAL_A(opacity / 4U);
+	unsigned int spectral = VT_THEME_SPECTRAL_A(opacity);
+	unsigned int dim = VT_THEME_COLD_A(opacity / 4U);
 	const float mark = 24.0f;
 	const float thickness = 2.0f;
 	float left = center_x - half_width, right = center_x + half_width;
 	float top = center_y - half_height, bottom = center_y + half_height;
 	vita2d_draw_line(left, center_y, right, center_y, dim);
 	vita2d_draw_line(center_x, top, center_x, bottom, dim);
-	vita2d_draw_rectangle(left, top, mark, thickness, signal);
-	vita2d_draw_rectangle(left, top, thickness, mark, signal);
+	vita2d_draw_rectangle(left, top, mark, thickness, spectral);
+	vita2d_draw_rectangle(left, top, thickness, mark, spectral);
 	vita2d_draw_rectangle(right - mark, top, mark, thickness, signal);
 	vita2d_draw_rectangle(right - thickness, top, thickness, mark, signal);
 	vita2d_draw_rectangle(left, bottom - thickness, mark, thickness, signal);
 	vita2d_draw_rectangle(left, bottom - mark, thickness, mark, signal);
-	vita2d_draw_rectangle(right - mark, bottom - thickness, mark, thickness, signal);
-	vita2d_draw_rectangle(right - thickness, bottom - mark, thickness, mark, signal);
+	vita2d_draw_rectangle(right - mark, bottom - thickness, mark, thickness, spectral);
+	vita2d_draw_rectangle(right - thickness, bottom - mark, thickness, mark, spectral);
 }
 
 static void draw_loading_frame(const char *query, const char *message,
@@ -254,7 +255,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 		}
 		int quality_w = ui_font_text_width(small, UI_FONT_SMALL, quality);
 		vita2d_draw_rectangle(SCREEN_WIDTH - quality_w - 54, 462,
-		                      quality_w + 30, 32, RGBA8(16, 13, 10, 224));
+		                      quality_w + 30, 32, VT_THEME_SURFACE_RAISED);
 		vita2d_draw_rectangle(SCREEN_WIDTH - quality_w - 54, 462, 3, 32,
 		                      COLOR_ACCENT);
 		ui_font_draw_text(small, SCREEN_WIDTH - quality_w - 38, 484,
