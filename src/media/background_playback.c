@@ -42,6 +42,8 @@ typedef struct {
 	char input_path[512];
 	int mp3_source;
 	int decoder_source;
+	int remote_video_source;
+	VtNetworkStreamFactory remote_factory;
 	int audio_track;
 	volatile int player_lock;
 	SceAvPlayerHandle active_player;
@@ -428,7 +430,8 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		return -1;
 	}
 	VtDecoderStreamFactory factory;
-	vt_decoder_file_stream_factory(job->input_path, &factory);
+	if (job->remote_video_source) factory = job->remote_factory.factory;
+	else vt_decoder_file_stream_factory(job->input_path, &factory);
 	VtDecoderPlayerConfig config = {
 		.stream = factory,
 		.preferred_backend = VT_DECODER_BACKEND_NONE,
@@ -522,6 +525,10 @@ static int background_thread(SceSize args, void *argp) {
 		snapshot_unlock();
 	}
 	__sync_synchronize();
+	/* The decoder has closed every stream handle; the session secret is no
+	 * longer needed by this worker and must not survive natural completion. */
+	memset(&job->remote_factory.credential, 0,
+	       sizeof(job->remote_factory.credential));
 	job->done = 1;
 	return sceKernelExitThread(0);
 }
@@ -588,6 +595,54 @@ int vt_background_playback_prepare_local_video(const char *media_path,
 	                                           int audio_track) {
 	return prepare_local(media_path, media_id, title, artist, artwork_path,
 	                     duration_ms, 1, audio_track);
+}
+
+int vt_background_playback_prepare_remote_video(
+	const VtNetworkSource *source,
+	const VtNetworkCredential *credential,
+	const char *media_path,
+	const char *media_id,
+	const char *title,
+	const char *location,
+	uint64_t duration_ms,
+	int audio_track) {
+	if (!source || !media_path || !media_path[0] ||
+	    !media_id || !media_id[0]) return -1;
+	vt_background_playback_stop();
+	BackgroundPlaybackJob *job = &g_background;
+	memset(job, 0, sizeof(*job));
+	job->self = job;
+	job->thid = -1;
+	job->active_player = AVPLAYER_INVALID_HANDLE;
+	job->decoder_source = 1;
+	job->remote_video_source = 1;
+	job->audio_track = audio_track;
+	int ret = vt_network_stream_factory_init(&job->remote_factory, source,
+	                                         credential, media_path);
+	if (ret < 0) return ret;
+	copy_text(job->snapshot.video_id, sizeof(job->snapshot.video_id), media_id);
+	copy_text(job->snapshot.title, sizeof(job->snapshot.title), title);
+	copy_text(job->snapshot.channel, sizeof(job->snapshot.channel), location);
+	job->snapshot.duration_ms = duration_ms;
+	job->snapshot.state = VT_BACKGROUND_PREPARING;
+	job->thid = sceKernelCreateThread("VitaMediaDeckRemoteVideo",
+	                                  background_thread,
+	                                  BACKGROUND_THREAD_PRIORITY,
+	                                  BACKGROUND_THREAD_STACK, 0, 0, NULL);
+	if (job->thid < 0) {
+		memset(&job->remote_factory.credential, 0,
+		       sizeof(job->remote_factory.credential));
+		return job->thid;
+	}
+	ret = sceKernelStartThread(job->thid, sizeof(job->self), &job->self);
+	if (ret < 0) {
+		sceKernelDeleteThread(job->thid);
+		job->thid = -1;
+		memset(&job->remote_factory.credential, 0,
+		       sizeof(job->remote_factory.credential));
+		return ret;
+	}
+	return 0;
 }
 
 int vt_background_playback_prepared(void) {
@@ -669,11 +724,14 @@ void vt_background_playback_request_stop(void) {
 }
 
 void vt_background_playback_stop(void) {
-	if (g_background.thid < 0) return;
-	vt_background_playback_request_stop();
-	sceKernelWaitThreadEnd(g_background.thid, NULL, NULL);
-	sceKernelDeleteThread(g_background.thid);
-	g_background.thid = -1;
+	if (g_background.thid >= 0) {
+		vt_background_playback_request_stop();
+		sceKernelWaitThreadEnd(g_background.thid, NULL, NULL);
+		sceKernelDeleteThread(g_background.thid);
+		g_background.thid = -1;
+	}
+	memset(&g_background.remote_factory.credential, 0,
+	       sizeof(g_background.remote_factory.credential));
 	memset(&g_background.snapshot, 0, sizeof(g_background.snapshot));
 }
 

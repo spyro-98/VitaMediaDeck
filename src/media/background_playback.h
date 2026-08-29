@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "network/network_source.h"
+
 #define VT_BACKGROUND_TITLE_MAX 160
 #define VT_BACKGROUND_CHANNEL_MAX 112
 #define VT_BACKGROUND_MEDIA_ID_MAX 64
@@ -52,6 +54,15 @@ int vt_background_playback_prepare_local_video(const char *media_path,
 	                                           const char *artwork_path,
 	                                           uint64_t duration_ms,
 	                                           int audio_track);
+int vt_background_playback_prepare_remote_video(
+	const VtNetworkSource *source,
+	const VtNetworkCredential *credential,
+	const char *media_path,
+	const char *media_id,
+	const char *title,
+	const char *location,
+	uint64_t duration_ms,
+	int audio_track);
 
 int vt_background_playback_prepared(void);
 int vt_background_playback_activate(uint64_t start_position_ms);
@@ -59,8 +70,8 @@ void vt_background_playback_toggle_pause(void);
 void vt_background_playback_seek_to(uint64_t position_ms);
 void vt_background_playback_seek_relative(int64_t delta_ms);
 
-/* Optional hand-off hook used to restore a minimized local video fullscreen at
- * the position currently owned by the compact background player. */
+/* Optional hand-off hook used to restore a minimized media session fullscreen
+ * at the position currently owned by the compact background player. */
 void vt_background_playback_set_fullscreen_resume(
 	VtBackgroundFullscreenResume resume, void *ctx);
 int vt_background_playback_can_resume_fullscreen(void);
@@ -71,7 +82,7 @@ void vt_background_playback_stop(void);
 void vt_background_playback_shutdown(void);
 int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out);
 
-/* Local video sources expose a decoded surface to the compact mini player.
+/* Video sources expose a decoded surface to the compact mini player.
  * Audio-only sources return zero and the UI draws artwork. */
 int vt_background_playback_draw_video(float x, float y,
 	                                  float width, float height);

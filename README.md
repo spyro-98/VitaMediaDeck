@@ -110,7 +110,9 @@ fresh physical-Vita screenshot pass.
   font, foreground/background color, size, maximum width, minimum/maximum line
   count, and vertical position. Exact-size Inter faces keep Western and
   Cyrillic text crisp, while native PS Vita PGFs cover Japanese, Chinese, and
-  Korean. A live preview shows every script independently.
+  Korean. A persistent OLED-black preview monitor renders the selected font,
+  colors, size, safe width, row limits, and position with Western, Cyrillic,
+  Japanese, Chinese, and Korean samples before playback.
 - **Live video information:** the player HUD and right-side information panel
   show decoder, resolution, frame rate, and the stream-reported video bitrate.
 - **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled
@@ -121,15 +123,18 @@ fresh physical-Vita screenshot pass.
 - **Full-screen music player:** supports MP3 and other local audio formats,
   artwork, metadata, seeking, shuffle/repeat, animated backgrounds, and the
   persistent mini-player.
-- **VitaTube player gestures restored:** a short Start minimizes supported local
-  music/video, holding Start toggles the OLED-black ECO view, and Select
+- **VitaTube player gestures restored:** a short Start minimizes local music,
+  local video, and authenticated remote video; holding Start toggles the
+  OLED-black ECO view, and Select
   immediately locks or unlocks input. Local video resumes fullscreen at the
   mini-player position with its selected audio/subtitle tracks restored. The
-  local-video mini-player uses the main decoder for live frames and matching
-  audio compatibility; tapping its media area expands it to one quarter of the
+  video mini-player uses the main decoder for live frames and matching audio
+  compatibility; tapping its media area expands it to one quarter of the
   screen width, while Start or the mini-player title restores fullscreen
   playback. The L1 sidebar exposes an **Active player** row above Home whenever
-  a minimized music or video session can be restored.
+  a minimized music or video session can be restored. Choosing another L1 menu
+  section from fullscreen performs the same background hand-off and navigates
+  without stopping the active local movie, streamed movie, or music session.
 - **Per-video resume history:** distinct local files and authenticated remote
   streams resume from their last useful position. When playback was recovered,
   the opening screen exposes **Play from beginning** immediately; once open,
