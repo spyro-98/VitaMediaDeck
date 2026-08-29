@@ -13,11 +13,17 @@
 int vt_video_thumbnail_init(void);
 void vt_video_thumbnail_resume(void);
 void vt_video_thumbnail_suspend(void);
+/* Stops thumbnail work, fences and releases cached GPU covers before the video
+ * decoder claims CDRAM, and briefly waits for the CPU worker to acknowledge
+ * cancellation. Safe to call repeatedly. */
+void vt_video_thumbnail_prepare_playback(void);
 void vt_video_thumbnail_pump(void);
 
 /* Non-blocking. Returns a cached GPU texture or queues the path and returns
  * NULL. Sidecar artwork remains the caller's first choice. */
 vita2d_texture *vt_video_thumbnail_get(const char *path, uint64_t source_size);
+vita2d_texture *vt_video_thumbnail_get_priority(
+	const char *path, uint64_t source_size, int priority);
 
 /* Remote previews use the same bounded worker and disposable RGB565 cache as
  * local files. Credentials are copied only into transient in-memory requests,
@@ -26,6 +32,10 @@ vita2d_texture *vt_video_thumbnail_get_remote(
 	const VtNetworkSource *source,
 	const VtNetworkCredential *credential,
 	const char *path, uint64_t source_size);
+vita2d_texture *vt_video_thumbnail_get_remote_priority(
+	const VtNetworkSource *source,
+	const VtNetworkCredential *credential,
+	const char *path, uint64_t source_size, int priority);
 
 /* Must run before vita2d_fini(), so cached textures can be released safely. */
 void vt_video_thumbnail_shutdown(void);

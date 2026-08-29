@@ -93,8 +93,14 @@ fresh physical-Vita screenshot pass.
 - **Video cover previews:** local cells prefer matching artwork sidecars, then
   local and remote cells use an embedded cover when present or asynchronously
   extract and cache a representative H.264 frame. Indexed MP4/Matroska artwork
-  is decoded directly from the container index; bounded stream discovery is
-  reserved for inputs whose video parameters are actually incomplete.
+  is decoded directly from the container index. Almost-black or near-uniform
+  embedded artwork is rejected instead of disappearing into the OLED canvas;
+  for long videos the worker then seeks to a more representative 45–90 second
+  window. The selected cell preempts stale viewport work, invalid sidecars are
+  failure-cached, and cache/decode/upload outcomes are written to diagnostics.
+  Its single-threaded CPU fallback remains low-priority and bounded while the
+  video mini-player runs; a temporary GPU-memory failure retains the decoded
+  pixels for a cheap retry instead of decoding the movie again.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
@@ -103,9 +109,18 @@ fresh physical-Vita screenshot pass.
   AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
   subtitles without leaving the video. The same seekable-cursor path is used
   for local files, WebDAV, SFTP, and SMB. Left/Right stages a track choice and
-  X applies it, preventing accidental playback restarts while browsing. Once
-  opened, the subtitle cursor switches tracks and seeks in place, clears stale
-  text immediately, and never blocks the UI while joining the previous reader.
+  X applies it, preventing accidental playback restarts while browsing. The
+  first subtitle activation and every later switch are serial requests handled
+  by one persistent low-priority worker: cursor open/probe/seek never takes over
+  the player UI, healthy cursors are repositioned after a cooperative cancel,
+  stale text clears immediately, and the R panel reports pending or failed
+  requests in place. Read-ahead is bounded by both cue count and a
+  short playback-time horizon so sparse subtitles cannot scan far into a movie.
+  Every indexed-seek fallback clears stale AVIO error/EOF state, so one missing
+  sparse SubRip index entry cannot poison all later reposition attempts.
+  A five-second watchdog converts a stalled request into a retryable failure;
+  selecting the same pending or failed track retries it without blocking Circle
+  or the navigation menu.
 - **Configurable multilingual subtitles:** a dedicated Settings tab controls
   font, foreground/background color, size, maximum width, minimum/maximum line
   count, and vertical position. Exact-size Inter faces keep Western and
@@ -157,13 +172,17 @@ fresh physical-Vita screenshot pass.
 | SMB | Authenticated SMB2/SMB3 share with message signing required | Remote video |
 
 Remote video currently requires a seekable MP4/M4V/MOV or Matroska (`.mkv`)
-container with H.264 video, optional AAC audio tracks, and optional embedded
+container with H.264 video, optional mono/stereo AAC audio tracks, and optional embedded
 UTF-8 text-subtitle tracks. WebDAV servers must answer
-an actual one-byte Range probe with `206 Partial Content`; an `Accept-Ranges`
-header alone is not accepted.
-Every protocol factory creates independent cursors for track discovery, video,
-the selected audio stream, and the selected subtitle stream. Subtitle reading
-uses a bounded background cue queue so remote I/O never runs on the render loop.
+an actual initial 512 KiB-or-smaller Range request with `206 Partial Content`
+and a valid total length; an `Accept-Ranges` header alone is not accepted. That
+verified response seeds the first cache window, and the cursor reuses the same
+libcurl handle/connection for later reads and seeks.
+Every protocol factory creates independent video and selected-audio cursors.
+The active decoder snapshots selectable track metadata from its already-open
+video demux, avoiding a third synchronous startup connection/probe. A subtitle
+cursor is opened only after a text track is requested, and its bounded
+background cue queue keeps remote I/O off the render loop.
 
 Local audio detection currently includes MP3, M4A, AAC, and WAV. Local video
 detection includes MP4, M4V, MOV, and MKV. Codec/container compatibility still
@@ -178,13 +197,15 @@ flowchart LR
     T --> F
     S["SFTP + pinned host key"] --> F
     M["Authenticated SMB2/3"] --> F
-    F --> D0["Track and cover discovery cursor"]
     F --> D1["Video demux cursor"]
     F --> D2["Audio demux cursor"]
     F --> D3["Subtitle demux cursor"]
-    D0 --> O["R1 audio/subtitle selectors"]
     D1 --> H["vita-hw-decoder"]
     H -->|"open/runtime failure"| SW["vita-sw-decoder"]
+    H --> O["Track metadata snapshot / R1 selectors"]
+    SW --> O
+    F --> T0["Asynchronous cover/frame cursor"]
+    T0 --> V["Video-cell preview cache"]
     D2 --> A["Vita AAC / local audio path"]
     D3 --> U["Unicode subtitle renderer"]
     H --> P["PTS-aware NV12 presenter"]
@@ -206,8 +227,9 @@ output profile but is not part of the console runtime. VitaMediaDeck's
 `src/media/vita_decoder.c` is deliberately a small dispatcher: Auto opens the
 hardware package first and recreates the session through the software package
 on either startup or delayed runtime failure, while the two explicit Settings
-choices force one backend. Track discovery and text-subtitle demux remain in
-the app because neither standalone decoder package owns UI or subtitle policy.
+choices force one backend. Each package exposes a fixed-size snapshot of the
+track metadata already present in its video demux; the app owns selection UI
+and the separate asynchronous text-subtitle demux policy.
 
 ## Network security model
 
@@ -257,7 +279,9 @@ accent and can be played, while unsupported files remain read-only.
 Dot-prefixed local files and folders stay hidden, matching Finder's default.
 Video cells progressively replace their placeholder with a sidecar or embedded
 cover, falling back to a representative frame generated by the bounded
-thumbnail worker. Remote passwords are never written to the thumbnail cache.
+thumbnail worker. A versioned RGB565 cache rejects corrupt and low-information
+entries before GPU upload, and the currently selected cell has priority over
+nearby previews. Remote passwords are never written to the thumbnail cache.
 
 ## Data layout
 
@@ -267,6 +291,7 @@ Application state is stored below `ux0:data/VitaMediaDeck`:
 local_media.idx        paged local media index
 playback_history.bin   local and remote resume positions
 settings.bin           application preferences
+thumbs/*.rgb           disposable checked RGB565 video previews
 network/sources.bin    source definitions without passwords
 network/passwords.txt  optional plaintext passwords (explicit opt-in)
 session_log.txt        optional diagnostics when disk logging is enabled
@@ -344,7 +369,18 @@ mds/                     architecture, controls and development documents
   representative server matrix on real hardware.
 - Remote audio browsing is not exposed yet; the network section is video-only.
 - The reusable player currently targets seekable H.264 media in ISO-BMFF or
-  Matroska containers; AAC audio is supported when present.
+  Matroska containers; known mono/stereo AAC audio is supported when present.
+  Known multichannel AAC is not advertised by the Vita audio-track selector.
+- Video, selected audio, requested subtitles, and thumbnail extraction retain
+  independent seekable cursors. This keeps cancellation and ownership isolated
+  but can duplicate interleaved reads, especially over a remote source; the
+  performance audit documents the bounded behavior and shared-demux follow-up.
+- SFTP and SMB hostname resolution, connection setup, authentication, stat/open,
+  and transport reads are cancelable and wall-bounded. Cursor creation uses one
+  end-to-end deadline rather than restarting the timeout for every stage. Normal
+  seek/track operations first use
+  a short cooperative stop so a healthy remote cursor is not reauthenticated
+  unless a destructive socket wake-up is actually required.
 - Bitmap subtitles such as PGS and VobSub may be retained by the transcoder but
   are not rendered by the current app. The selectable subtitle path supports
   SubRip, ASS/SSA text, WebVTT, MOV text, generic text, and MicroDVD.
@@ -358,6 +394,7 @@ mds/                     architecture, controls and development documents
 - [Project specification](mds/PROJECT_SPECIFICATION.md)
 - [Controls](mds/CONTROLS.md)
 - [Development status](mds/DEVELOPMENT_LOG.md)
+- [Playback performance audit](mds/PLAYBACK_PERFORMANCE_AUDIT.md)
 - [Hardware acceleration](mds/H264_ACCELERATION_RESEARCH_PLAN.md)
 - [PS Vita hardware resources](mds/research/PSVITA_HARDWARE_GPU_RESOURCES.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

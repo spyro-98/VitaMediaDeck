@@ -11,6 +11,13 @@
 
 typedef struct VtSubtitleReader VtSubtitleReader;
 
+typedef enum VtSubtitleReaderState {
+	VT_SUBTITLE_READER_DISABLED = 0,
+	VT_SUBTITLE_READER_PENDING,
+	VT_SUBTITLE_READER_ACTIVE,
+	VT_SUBTITLE_READER_FAILED
+} VtSubtitleReaderState;
+
 int vt_media_tracks_probe(const VtDecoderStreamFactory *factory,
 	                      VtDecoderTrackInfo *audio_tracks, int *audio_count,
 	                      VtDecoderTrackInfo *subtitle_tracks,
@@ -24,7 +31,10 @@ int vt_subtitle_reader_open(VtSubtitleReader *reader,
 void vt_subtitle_reader_disable(VtSubtitleReader *reader);
 void vt_subtitle_reader_close(VtSubtitleReader *reader);
 void vt_subtitle_reader_destroy(VtSubtitleReader *reader);
+void vt_subtitle_reader_tick(VtSubtitleReader *reader);
 int vt_subtitle_reader_text(VtSubtitleReader *reader, uint64_t position_ms,
 	                        char *text, size_t text_size);
+VtSubtitleReaderState vt_subtitle_reader_state(const VtSubtitleReader *reader);
+int vt_subtitle_reader_error(const VtSubtitleReader *reader);
 
 #endif

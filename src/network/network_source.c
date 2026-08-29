@@ -352,21 +352,30 @@ int vt_network_webdav_probe_public_key(const VtNetworkSource *source,
 	                                  detail, detail_size);
 }
 
-static int network_factory_open(void *opaque, VtDecoderStreamHandle *out) {
+static int network_factory_open_cancelable(void *opaque,
+	                                       VtDecoderStreamHandle *out,
+	                                       volatile int *cancel_flag) {
 	VtNetworkStreamFactory *factory = opaque;
 	if (!factory || !out) return -1;
 	switch (factory->source.protocol) {
 		case VT_NETWORK_WEBDAV:
 			return vt_webdav_open_stream(&factory->source,
-			                             &factory->credential, factory->path, out);
+			                             &factory->credential, factory->path, out,
+			                             cancel_flag);
 		case VT_NETWORK_SFTP:
 			return vt_sftp_open_stream(&factory->source,
-			                           &factory->credential, factory->path, out);
+			                           &factory->credential, factory->path, out,
+			                           cancel_flag);
 		case VT_NETWORK_SMB:
 			return vt_smb_open_stream(&factory->source,
-			                          &factory->credential, factory->path, out);
+			                          &factory->credential, factory->path, out,
+			                          cancel_flag);
 		default: return -1;
 	}
+}
+
+static int network_factory_open(void *opaque, VtDecoderStreamHandle *out) {
+	return network_factory_open_cancelable(opaque, out, NULL);
 }
 
 int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
@@ -380,6 +389,7 @@ int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	snprintf(factory->path, sizeof(factory->path), "%s", path);
 	factory->factory.opaque = factory;
 	factory->factory.open = network_factory_open;
+	factory->factory.open_cancelable = network_factory_open_cancelable;
 	return 0;
 }
 

@@ -10,6 +10,7 @@ typedef int (*UiLoadingTaskFn)(void *ctx);
 typedef void (*UiLoadingProgressTickFn)(long current, long total);
 typedef void (*UiPlayerLoadingDetailFn)(char *out, size_t out_size,
 	                                    void *ctx, uint64_t now_us);
+typedef void (*UiPlayerLoadingCancelFn)(void *ctx);
 
 /* Minimal data for the player canvas. The same composition is used while a
  * local or authenticated remote source opens and while the decoder waits for
@@ -28,6 +29,10 @@ typedef struct {
 	 * atomic/volatile counters owned by the worker. */
 	UiPlayerLoadingDetailFn detail_text;
 	void *detail_ctx;
+	/* Optional immediate transport interrupt. The UI still sets cancel_flag;
+	 * this hook wakes a decoder blocked inside a range/socket read. */
+	UiPlayerLoadingCancelFn cancel_action;
+	void *cancel_ctx;
 } UiPlayerLoadingInfo;
 
 /* Presents a single loading frame immediately. Needed before system

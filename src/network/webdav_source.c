@@ -19,6 +19,7 @@ typedef struct {
 typedef struct {
 	VitaHttpsClient *client;
 	VitaHttpsStream stream;
+	volatile int *cancel;
 } WebDavStream;
 
 static size_t memory_write(const void *contents, size_t bytes, void *opaque) {
@@ -309,6 +310,13 @@ static int64_t webdav_stream_seek(void *opaque, int64_t offset, int whence) {
 	     ? stream->stream.seek(stream->stream.opaque, offset, whence) : -1;
 }
 
+static void webdav_stream_abort(void *opaque) {
+	WebDavStream *stream = opaque;
+	if (!stream || !stream->cancel) return;
+	*stream->cancel = 1;
+	__sync_synchronize();
+}
+
 static void webdav_stream_close(void *opaque) {
 	WebDavStream *stream = opaque;
 	if (!stream) return;
@@ -320,7 +328,8 @@ static void webdav_stream_close(void *opaque) {
 
 int vt_webdav_open_stream(const VtNetworkSource *source,
 	                      const VtNetworkCredential *credential,
-	                      const char *path, VtDecoderStreamHandle *out) {
+	                      const char *path, VtDecoderStreamHandle *out,
+	                      volatile int *cancel_flag) {
 	if (!source || !path || !out) return -1;
 	WebDavStream *stream = calloc(1, sizeof(*stream));
 	if (!stream) return -1;
@@ -331,12 +340,20 @@ int vt_webdav_open_stream(const VtNetworkSource *source,
 	}
 	VitaHttpsClientConfig config;
 	webdav_client_config(source, credential, &config);
+	/* Media cursors must fail responsively; directory listings retain the
+	 * library defaults because a large PROPFIND body can legitimately take
+	 * longer than a small HEAD/range request. */
+	config.connect_timeout_ms = 5000;
+	config.request_timeout_ms = 8000;
+	config.low_speed_bytes_per_second = 1024;
+	config.low_speed_seconds = 5;
 	stream->client = vita_https_client_create(&config);
 	if (!stream->client) {
 		webdav_stream_close(stream);
 		return -1;
 	}
-	int result = vita_https_open_range_stream(stream->client, url, NULL,
+	stream->cancel = cancel_flag;
+	int result = vita_https_open_range_stream(stream->client, url, cancel_flag,
 	                                          &stream->stream);
 	if (result < 0) {
 		webdav_stream_close(stream);
@@ -347,6 +364,7 @@ int vt_webdav_open_stream(const VtNetworkSource *source,
 	out->opaque = stream;
 	out->read = webdav_stream_read;
 	out->seek = webdav_stream_seek;
+	out->abort = webdav_stream_abort;
 	out->close = webdav_stream_close;
 	out->size = stream->stream.size;
 	return 0;

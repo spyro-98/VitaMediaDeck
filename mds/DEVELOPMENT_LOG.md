@@ -44,11 +44,43 @@ Sources, Settings, and About from the shared sidebar.
 - Moved embedded-cover decoding ahead of stream analysis so indexed Matroska
   and MP4 artwork cannot consume the thumbnail deadline while probing the main
   movie. H.264 frame fallback now probes only when codec parameters are missing.
-- Reworked subtitle switching around one persistent demux worker: track/off and
-  seek requests clear stale cues immediately and are applied asynchronously,
-  avoiding the blocking thread join behind the **Changing subtitle** screen.
+- Verified a real converted movie whose syntactically valid embedded JPEG was
+  entirely black. Thumbnail cache v3 now rejects almost-black and near-uniform
+  embedded/cached pictures, seeks farther into long videos, uses fast bounded
+  H.264 frame decoding, and records origin plus elapsed time. Selected-cell
+  requests preempt stale viewport work; failed sidecars are not decoded every
+  render frame.
+- Reworked subtitle switching around one persistent demux worker: the initial
+  factory open/probe/seek, later track changes, Off, and video seeks are all
+  serial requests. They clear stale cues immediately, expose pending/failure in
+  the R panel, and never enter the full-screen loading runner. Read-ahead now
+  uses a sorted 24-cue active window and a five-second future horizon instead of
+  scanning far into sparse SubRip streams. A stable video/audio clock stream
+  advances that horizon even when SubRip packets are sparse, and overlapping
+  cues are combined instead of blocking later dialogue. Indexed subtitle opens
+  trust the selected stream identity already supplied by the playback demux
+  rather than probing unrelated audio/video tracks. Superseding requests cancel
+  app/network cursor work through a subtitle-private flag, never the live
+  audio/video decoder flag. A five-second watchdog changes a stalled request to a
+  visible failure, and applying that same track again retries it.
+- Added a short cooperative-cancel grace for subtitle switches. A responsive
+  local/remote cursor is flushed, repositioned, and reused; only a read that
+  fails to retire is destructively aborted and reopened. Explicit player close
+  still wakes transport I/O immediately.
 - Reduced runtime seek preroll to the first decoded frame with a 600 ms cap in
   both reusable decoders.
+- Removed the app's synchronous third track-discovery cursor. Both decoder
+  packages now snapshot AAC and supported text-subtitle metadata from the
+  already-open video demux, so startup needs only the video and selected-audio
+  cursors while preserving multilingual labels and stable stream indices.
+- Fixed the thumbnail resume state that could pass a permanently set cancel
+  flag to every later cover request after a scene transition. Results now reach
+  the UI before disposable cache persistence, GPU LRU eviction happens before
+  replacement allocation, and playback hand-off releases cached cover textures
+  before decoder CDRAM startup.
+- Replaced synchronous SFTP/SMB hostname resolution with bounded native Vita
+  resolver jobs. SSH and SMB connect/auth/stat/open advance in short cancelable
+  service slices, and an aborted socket skips protocol-level close waits.
 - Restored complete-but-bounded stream discovery for thumbnail and playback
   inputs, preventing indexed long videos and embedded covers from being opened
   with incomplete codec parameters. Failed saved-position seeks now retry from

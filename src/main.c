@@ -179,13 +179,17 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 	return 0;
 }
 
-static int active_media_matches(const char *path) {
-	char id[16];
+static int active_media_id_matches(const char *id) {
 	VtBackgroundPlaybackSnapshot snapshot;
-	media_id(path, id);
-	return vt_background_playback_can_resume_fullscreen() &&
+	return id && id[0] && vt_background_playback_can_resume_fullscreen() &&
 	       vt_background_playback_snapshot(&snapshot) &&
 	       strcmp(snapshot.video_id, id) == 0;
+}
+
+static int active_media_matches(const char *path) {
+	char id[16];
+	media_id(path, id);
+	return active_media_id_matches(id);
 }
 
 static void remember_minimized_local_audio(const VtLocalMediaItem *item) {
@@ -272,6 +276,7 @@ static int run_local_video_fullscreen(const VtLocalMediaItem *item,
 	                                  int *last_audio_track,
 	                                  int *last_subtitle_track) {
 	if (!item) return -1;
+	vt_video_thumbnail_prepare_playback();
 	char id[16];
 	media_id(item->path, id);
 	VtDecoderStreamFactory factory;
@@ -413,6 +418,7 @@ static int run_remote_video_fullscreen(
 	int *last_audio_track,
 	int *last_subtitle_track) {
 	if (!selection) return -1;
+	vt_video_thumbnail_prepare_playback();
 	VtNetworkStreamFactory remote;
 	int ret = vt_network_stream_factory_init(&remote, &selection->source,
 	                                         &selection->credential,
@@ -556,6 +562,12 @@ static int browse_network(void) {
 		if (action != UI_NETWORK_ACTION_PLAY) return UI_SECTION_NETWORK;
 		char id[16];
 		remote_media_id(&selection, id);
+		if (active_media_id_matches(id)) {
+			/* Selecting the same remote cell is a restore action, exactly like the
+			 * local grid. Preserve the live mini-player position and chosen tracks. */
+			memset(&selection.credential, 0, sizeof(selection.credential));
+			return UI_SECTION_PLAYER;
+		}
 		uint64_t last_position = vt_playback_history_position(id, 0);
 		uint64_t last_duration = 0;
 		vt_background_playback_stop();

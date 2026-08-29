@@ -64,10 +64,12 @@ a new handle containing:
 - an idempotent close operation;
 - independent cursor state.
 
-Multiple handles may exist concurrently for the same file because track
-discovery, video, the selected audio stream, and the selected subtitle stream
-demux independently. A backend must return a fresh cursor for every `open` and
-must not share mutable offsets between handles.
+Multiple handles may exist concurrently for the same file because video, the
+selected audio stream, an explicitly requested subtitle stream, and asynchronous
+cover extraction demux independently. Selectable-track metadata is copied from
+the already-open video demux instead of opening a separate discovery handle. A
+backend must return a fresh cursor for every `open` and must not share mutable
+offsets between handles.
 
 ## Remote protocol requirements
 
@@ -119,12 +121,15 @@ must not share mutable offsets between handles.
 - Shared VitaTube player gestures: short Start hands supported local media to
   the mini-player, a 900 ms Start hold toggles OLED ECO mode without stopping
   playback, and Select immediately locks/unlocks player input.
-- Local-video mini-player restoration preserves position plus the selected
-  audio and subtitle track. The compact background decoder is `SceAvPlayer`, so
-  its accepted local container set can be narrower than the main HW/SW path.
+- Local and authenticated-remote video mini-player restoration preserves
+  position plus the selected audio and subtitle track. The compact player
+  reopens through the same HW/SW decoder stack and publishes its live video
+  surface; it does not route video through the narrower legacy audio player.
 - A bounded software-only thumbnail worker prefers embedded MJPEG/PNG cover
-  streams, otherwise seeks to a representative H.264 frame, and caches only
-  checked RGB565 pixels. Local sidecar artwork remains the first choice.
+  streams, rejects almost-black or near-uniform results, otherwise seeks to a
+  representative H.264 frame, and caches only checked RGB565 pixels. The
+  selected cell preempts obsolete viewport requests. Local sidecar artwork
+  remains the first choice, with failed loads held in a short negative cache.
 - Local paths and non-secret remote endpoint/path fields produce stable,
   distinct history IDs. Credentials are excluded. A recovered session exposes
   an R1 **Start from beginning** action that clears its saved point.

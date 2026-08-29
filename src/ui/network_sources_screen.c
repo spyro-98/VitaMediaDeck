@@ -425,8 +425,9 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			int y = LIST_Y + (i - top) * ROW_H;
 			const VtNetworkEntry *entry = &entries[i];
 			vita2d_texture *preview = entry->is_video
-			                        ? vt_video_thumbnail_get_remote(
-			                              source, credential, entry->path, entry->size)
+			                        ? vt_video_thumbnail_get_remote_priority(
+			                              source, credential, entry->path, entry->size,
+			                              i == selected ? 100 : 10)
 			                        : NULL;
 			ui_panel(LIST_X, y, LIST_W, ROW_H - 6,
 			         VT_THEME_SURFACE,
@@ -483,8 +484,9 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			int y = LIST_Y + row * (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y);
 			const VtNetworkEntry *entry = &entries[i];
 			vita2d_texture *preview = entry->is_video
-			                        ? vt_video_thumbnail_get_remote(
-			                              source, credential, entry->path, entry->size)
+			                        ? vt_video_thumbnail_get_remote_priority(
+			                              source, credential, entry->path, entry->size,
+			                              i == selected ? 100 : 10)
 			                        : NULL;
 			ui_panel(x, y, BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H,
 			         VT_THEME_SURFACE,

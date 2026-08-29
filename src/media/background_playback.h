@@ -24,6 +24,7 @@ typedef struct {
 	VtBackgroundPlaybackState state;
 	int visible;
 	int error;
+	int is_video;
 	uint32_t activation_serial;
 	uint64_t position_ms;
 	uint64_t duration_ms;

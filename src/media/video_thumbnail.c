@@ -26,7 +26,6 @@
 #include <libavutil/pixfmt.h>
 
 #include "common/text_log.h"
-
 #define THUMB_WIDTH                 264
 #define THUMB_HEIGHT                148
 #define THUMB_PIXELS                (THUMB_WIDTH * THUMB_HEIGHT)
@@ -36,10 +35,13 @@
 #define THUMB_TEXTURE_CAPACITY      12
 #define THUMB_FAILURE_CAPACITY      24
 #define THUMB_DISK_SLOTS            128
-#define THUMB_CACHE_VERSION         2u
+#define THUMB_CACHE_VERSION         3u
 #define THUMB_FAILURE_RETRY_US      (30ULL * 1000ULL * 1000ULL)
+#define THUMB_UPLOAD_RETRY_US       (500ULL * 1000ULL)
 #define THUMB_DECODE_DEADLINE_US    (5ULL * 1000ULL * 1000ULL)
-#define THUMB_MAX_DEMUX_PACKETS     320
+#define THUMB_SALVAGE_DEADLINE_US   (1ULL * 1000ULL * 1000ULL)
+#define THUMB_MAX_DEMUX_PACKETS     4096
+#define THUMB_MAX_VIDEO_PACKETS     120
 #define THUMB_AVIO_BUFFER_SIZE      (32 * 1024)
 #define THUMB_COVER_MAX_PIXELS      (1024U * 1024U)
 #define THUMB_THREAD_PRIORITY       0x10000180
@@ -49,7 +51,9 @@
 typedef struct ThumbnailRequest {
 	uint64_t key;
 	uint64_t source_size;
+	uint64_t sequence;
 	unsigned int generation;
+	int priority;
 	int remote;
 	VtNetworkSource source;
 	VtNetworkCredential credential;
@@ -111,17 +115,25 @@ typedef struct ThumbnailState {
 	volatile int stop;
 	volatile int done;
 	volatile int lock;
+	volatile int active_cancel;
 	volatile unsigned int generation;
+	uint64_t request_sequence;
 	ThumbnailRequest requests[THUMB_REQUEST_CAPACITY];
 	int request_count;
 	ThumbnailRequest active;
 	int active_valid;
+	volatile int worker_busy;
+	void (*active_abort)(void *opaque);
+	void *active_abort_opaque;
 	ThumbnailResult result;
+	uint64_t result_retry_after_us;
 	ThumbnailTexture textures[THUMB_TEXTURE_CAPACITY];
 	ThumbnailFailure failures[THUMB_FAILURE_CAPACITY];
 } ThumbnailState;
 
 static ThumbnailState g_thumbnail = { .thid = -1 };
+
+static int thumbnail_information_score(const uint16_t *pixels);
 
 static void thumbnail_lock(void) {
 	while (__sync_lock_test_and_set(&g_thumbnail.lock, 1))
@@ -135,10 +147,10 @@ static void thumbnail_unlock(void) {
 static int same_request(uint64_t key, uint64_t source_size,
 	                    unsigned int generation, const char *path,
 	                    const ThumbnailRequest *request) {
-	(void)path;
 	return request && request->key == key &&
 	       request->source_size == source_size &&
-	       request->generation == generation;
+	       request->generation == generation && path &&
+	       strcmp(request->path, path) == 0;
 }
 
 static uint64_t thumbnail_hash_text(uint64_t hash, const char *text) {
@@ -227,7 +239,7 @@ static int cache_load(const ThumbnailRequest *request, uint16_t *pixels) {
 	ThumbnailDiskHeader header;
 	int result = read_fully(fd, &header, sizeof(header));
 	if (result == 0 &&
-	    (memcmp(header.magic, "VTTHMB2", 8) != 0 ||
+	    (memcmp(header.magic, "VTTHMB3", 8) != 0 ||
 	     header.version != THUMB_CACHE_VERSION ||
 	     header.width != THUMB_WIDTH || header.height != THUMB_HEIGHT ||
 	     header.pixel_format != 1 || header.key != request->key ||
@@ -235,13 +247,16 @@ static int cache_load(const ThumbnailRequest *request, uint16_t *pixels) {
 	     header.payload_size != THUMB_BYTES)) result = -1;
 	if (result == 0) result = read_fully(fd, pixels, THUMB_BYTES);
 	if (result == 0 && header.checksum != payload_checksum(pixels)) result = -1;
+	/* Version 3 never persists a blank frame. Validate on load as well so a
+	 * partially upgraded cache cannot keep an OLED-black cover alive. */
+	if (result == 0 && thumbnail_information_score(pixels) <= 0) result = -1;
 	sceIoClose(fd);
 	return result;
 }
 
 static void cache_store(const ThumbnailRequest *request,
 	                    const uint16_t *pixels) {
-	if (g_thumbnail.stop || !g_thumbnail.enabled ||
+	if (g_thumbnail.stop || !g_thumbnail.enabled || g_thumbnail.active_cancel ||
 	    request->generation != g_thumbnail.generation) return;
 	sceIoMkdir("ux0:data/VitaMediaDeck", 0777);
 	sceIoMkdir(THUMB_CACHE_DIR, 0777);
@@ -249,7 +264,7 @@ static void cache_store(const ThumbnailRequest *request,
 	cache_paths(request->key, path, temporary);
 	ThumbnailDiskHeader header;
 	memset(&header, 0, sizeof(header));
-	memcpy(header.magic, "VTTHMB2", 8);
+	memcpy(header.magic, "VTTHMB3", 8);
 	header.version = THUMB_CACHE_VERSION;
 	header.width = THUMB_WIDTH;
 	header.height = THUMB_HEIGHT;
@@ -264,9 +279,12 @@ static void cache_store(const ThumbnailRequest *request,
 	if (fd < 0) return;
 	int result = write_fully(fd, &header, sizeof(header));
 	if (result == 0) result = write_fully(fd, pixels, THUMB_BYTES);
-	if (result == 0) result = sceIoSyncByFd(fd, 0);
+	/* This is a disposable, checksummed cache. A synchronous flash flush delayed
+	 * the first visible cover and could overlap player startup for no durability
+	 * benefit; close + verified-on-read publication is sufficient. */
 	sceIoClose(fd);
 	if (result == 0 && !g_thumbnail.stop && g_thumbnail.enabled &&
+	    !g_thumbnail.active_cancel &&
 	    request->generation == g_thumbnail.generation) {
 		/* These files are disposable cache entries. The verified header prevents
 		 * a power-loss window from ever being treated as a valid thumbnail. */
@@ -277,11 +295,16 @@ static void cache_store(const ThumbnailRequest *request,
 	}
 }
 
+static int thumbnail_cancelled(const ThumbnailInterrupt *interrupt) {
+	return g_thumbnail.stop || !g_thumbnail.enabled || g_thumbnail.active_cancel ||
+	       (interrupt && interrupt->generation != g_thumbnail.generation);
+}
+
 static int thumbnail_interrupted(void *opaque) {
 	const ThumbnailInterrupt *interrupt = opaque;
-	return g_thumbnail.stop || !g_thumbnail.enabled ||
-	       (interrupt && interrupt->generation != g_thumbnail.generation) ||
-	       (interrupt && sceKernelGetProcessTimeWide() >= interrupt->deadline_us);
+	return thumbnail_cancelled(interrupt) ||
+	       (interrupt && interrupt->deadline_us &&
+	        sceKernelGetProcessTimeWide() >= interrupt->deadline_us);
 }
 
 static int thumbnail_stream_read(void *opaque, uint8_t *buffer, int size) {
@@ -304,6 +327,13 @@ static int64_t thumbnail_stream_seek(void *opaque, int64_t offset, int whence) {
 
 static void thumbnail_input_close(ThumbnailInput *input) {
 	if (!input) return;
+	/* Withdraw the non-owning abort target before releasing cursor ownership. */
+	thumbnail_lock();
+	if (g_thumbnail.active_abort_opaque == input->stream.opaque) {
+		g_thumbnail.active_abort = NULL;
+		g_thumbnail.active_abort_opaque = NULL;
+	}
+	thumbnail_unlock();
 	if (input->format) avformat_close_input(&input->format);
 	if (input->avio) {
 		av_freep(&input->avio->buffer);
@@ -317,14 +347,27 @@ static void thumbnail_input_close(ThumbnailInput *input) {
 static int thumbnail_input_open(ThumbnailInput *input,
 	                            const VtDecoderStreamFactory *factory,
 	                            ThumbnailInterrupt *interrupt) {
-	if (!input || !factory || !factory->open) return AVERROR(EINVAL);
+	if (!input || !factory || (!factory->open && !factory->open_cancelable))
+		return AVERROR(EINVAL);
 	memset(input, 0, sizeof(*input));
 	input->interrupt = interrupt;
-	int result = factory->open(factory->opaque, &input->stream);
+	int result = factory->open_cancelable
+	           ? factory->open_cancelable(factory->opaque, &input->stream,
+	                                      &g_thumbnail.active_cancel)
+	           : factory->open(factory->opaque, &input->stream);
 	if (result < 0 || !input->stream.read || !input->stream.seek) {
 		thumbnail_input_close(input);
 		return result < 0 ? result : AVERROR(EINVAL);
 	}
+	thumbnail_lock();
+	g_thumbnail.active_abort = input->stream.abort;
+	g_thumbnail.active_abort_opaque = input->stream.opaque;
+	thumbnail_unlock();
+	/* Connection/authentication has its own cooperative cancellation. Bound all
+	 * container parsing and decoding from the first byte after that point. */
+	if (interrupt && !interrupt->deadline_us)
+		interrupt->deadline_us = sceKernelGetProcessTimeWide() +
+		                         THUMB_DECODE_DEADLINE_US;
 	unsigned char *buffer = av_malloc(THUMB_AVIO_BUFFER_SIZE);
 	if (!buffer) {
 		thumbnail_input_close(input);
@@ -523,6 +566,38 @@ static int rgb24_to_rgb565(const unsigned char *data, int stride,
 	return 0;
 }
 
+/* A syntactically valid cover can still be a fade-to-black frame. On an OLED
+ * background that is indistinguishable from a missing texture and, more
+ * importantly, prevents the useful representative-frame fallback from ever
+ * running. Keep this deliberately conservative: only almost-uniform or
+ * overwhelmingly black images are rejected. */
+static int thumbnail_information_score(const uint16_t *pixels) {
+	if (!pixels) return 0;
+	uint64_t sum = 0, squared = 0;
+	unsigned int visible = 0;
+	int minimum = 255, maximum = 0;
+	for (unsigned int i = 0; i < THUMB_PIXELS; i++) {
+		uint16_t pixel = pixels[i];
+		int red = ((pixel >> 11) & 0x1f) * 255 / 31;
+		int green = ((pixel >> 5) & 0x3f) * 255 / 63;
+		int blue = (pixel & 0x1f) * 255 / 31;
+		int luma = (77 * red + 150 * green + 29 * blue) >> 8;
+		if (luma < minimum) minimum = luma;
+		if (luma > maximum) maximum = luma;
+		if (luma >= 18) visible++;
+		sum += (uint64_t)luma;
+		squared += (uint64_t)luma * (uint64_t)luma;
+	}
+	if (maximum <= 12 || visible < THUMB_PIXELS / 200U) return 0;
+	uint64_t mean = sum / THUMB_PIXELS;
+	uint64_t variance = squared / THUMB_PIXELS - mean * mean;
+	int range = maximum - minimum;
+	if (range < 8 && variance < 4) return 0;
+	uint64_t score = variance + (uint64_t)range * 4U +
+	                 (uint64_t)visible * 100U / THUMB_PIXELS;
+	return score > 0x7fffffffULL ? 0x7fffffff : (int)score;
+}
+
 typedef struct ThumbnailJpegError {
 	struct jpeg_error_mgr base;
 	jmp_buf jump;
@@ -635,19 +710,40 @@ static int choose_target_and_seek(AVFormatContext *format, int stream_index) {
 		duration_us = format->duration;
 	int64_t target_us = 2 * AV_TIME_BASE;
 	if (duration_us > 0) {
-		target_us = duration_us < 6 * AV_TIME_BASE
-		          ? duration_us / 3 : duration_us / 10;
+		/* Ten seconds and the historical 30-second host cover frequently land on
+		 * studio cards or a fade. Indexed seeks cost the same at 45-90 seconds and
+		 * are much more likely to represent the actual movie. */
+		if (duration_us >= 180 * AV_TIME_BASE) {
+			target_us = duration_us / 10;
+			if (target_us < 45 * AV_TIME_BASE) target_us = 45 * AV_TIME_BASE;
+			if (target_us > 90 * AV_TIME_BASE) target_us = 90 * AV_TIME_BASE;
+		} else {
+			target_us = duration_us / 3;
+			if (target_us > 45 * AV_TIME_BASE) target_us = 45 * AV_TIME_BASE;
+		}
 		if (target_us < 2 * AV_TIME_BASE && duration_us >= 3 * AV_TIME_BASE)
 			target_us = 2 * AV_TIME_BASE;
-		if (target_us > 10 * AV_TIME_BASE) target_us = 10 * AV_TIME_BASE;
 		if (target_us >= duration_us - AV_TIME_BASE / 2)
 			target_us = duration_us / 2;
 	}
 	int64_t target = av_rescale_q(target_us, AV_TIME_BASE_Q, stream->time_base);
 	if (stream->start_time != AV_NOPTS_VALUE) target += stream->start_time;
+	/* A bounded probe can leave AVIOContext.error latched to AVERROR_EXIT.
+	 * FFmpeg's seek resets EOF but not that error field, so explicitly recover
+	 * the reusable cursor before either indexed seek. */
+	if (format->pb) {
+		format->pb->error = 0;
+		format->pb->eof_reached = 0;
+	}
 	int result = av_seek_frame(format, stream_index, target, AVSEEK_FLAG_BACKWARD);
-	if (result < 0)
+	if (result < 0) {
+		if (format->pb) {
+			format->pb->error = 0;
+			format->pb->eof_reached = 0;
+		}
 		result = av_seek_frame(format, stream_index, 0, AVSEEK_FLAG_BACKWARD);
+	}
+	if (result >= 0) avformat_flush(format);
 	return result;
 }
 
@@ -670,6 +766,52 @@ static int decode_attached_cover(AVFormatContext *format, int stream_index,
 	    memcmp(data, png_signature, sizeof(png_signature)) == 0)
 		return decode_png_cover(data, size, pixels);
 	return AVERROR_DECODER_NOT_FOUND;
+}
+
+static int receive_thumbnail_frames(AVCodecContext *decoder, AVFrame *frame,
+	                                uint16_t *pixels,
+	                                ThumbnailInterrupt *interrupt,
+	                                int *converted, int *frames_received) {
+	if (frames_received) *frames_received = 0;
+	for (;;) {
+		if (thumbnail_interrupted(interrupt)) return AVERROR_EXIT;
+		int receive_result = avcodec_receive_frame(decoder, frame);
+		if (receive_result == AVERROR(EAGAIN) || receive_result == AVERROR_EOF)
+			return 0;
+		if (receive_result < 0) return receive_result;
+		if (frames_received) (*frames_received)++;
+		int result = frame_to_rgb565(frame, pixels);
+		av_frame_unref(frame);
+		if (result < 0) return result;
+		/* Continue draining black/fade frames already buffered by the codec. A
+		 * later picture in the same reorder window may be the first useful cover. */
+		if (thumbnail_information_score(pixels) > 0) {
+			*converted = 1;
+			return 0;
+		}
+	}
+}
+
+static int send_thumbnail_packet(AVCodecContext *decoder,
+	                             const AVPacket *packet, AVFrame *frame,
+	                             uint16_t *pixels,
+	                             ThumbnailInterrupt *interrupt,
+	                             int *converted) {
+	for (;;) {
+		if (thumbnail_interrupted(interrupt)) return AVERROR_EXIT;
+		int send_result = avcodec_send_packet(decoder, packet);
+		if (send_result < 0 && send_result != AVERROR(EAGAIN))
+			return send_result;
+		int received = 0;
+		int result = receive_thumbnail_frames(decoder, frame, pixels, interrupt,
+		                                      converted, &received);
+		if (result < 0 || *converted) return result;
+		if (send_result >= 0) return 0;
+		/* EAGAIN means the packet was not consumed. Draining must make progress
+		 * before the exact same packet is retried; dropping it corrupts long-GOP
+		 * and B-frame fallback decoding. */
+		if (!received) return AVERROR(EIO);
+	}
 }
 
 static void find_thumbnail_streams(AVFormatContext *format, int *cover_index,
@@ -695,11 +837,21 @@ static void find_thumbnail_streams(AVFormatContext *format, int *cover_index,
 	}
 }
 
+enum {
+	THUMB_ORIGIN_NONE = 0,
+	THUMB_ORIGIN_EMBEDDED,
+	THUMB_ORIGIN_FRAME
+};
+
 static int decode_thumbnail(const ThumbnailRequest *request,
 	                        const VtDecoderStreamFactory *factory,
-	                        uint16_t *pixels) {
+	                        uint16_t *pixels, int *origin_out) {
+	if (origin_out) *origin_out = THUMB_ORIGIN_NONE;
 	ThumbnailInterrupt interrupt = {
-		.deadline_us = sceKernelGetProcessTimeWide() + THUMB_DECODE_DEADLINE_US,
+		/* Network cursor setup observes active_cancel. Start the separate CPU/demux
+		 * budget after a TLS/SSH/SMB cursor is open so a legitimate handshake does
+		 * not make an otherwise cheap embedded-cover decode fail immediately. */
+		.deadline_us = 0,
 		.generation = request->generation
 	};
 	ThumbnailInput input;
@@ -718,7 +870,15 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	if (result >= 0 && cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
 		int cover_result = decode_attached_cover(format, cover_index, pixels,
 		                                         &interrupt);
-		if (cover_result >= 0) converted = 1;
+		if (cover_result >= 0) {
+			int score = thumbnail_information_score(pixels);
+			if (score > 0) {
+				converted = 1;
+				if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
+			}
+			else log_printf("video thumbnail rejected blank embedded cover: %s\n",
+			                request->path);
+		}
 	}
 	/* Non-indexed inputs, or indexed files with incomplete H.264 parameters, need
 	 * bounded discovery before the representative-frame fallback. Retry embedded
@@ -729,12 +889,41 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	     format->streams[stream_index]->codecpar->height <= 0) &&
 	    !thumbnail_interrupted(&interrupt)) {
 		result = avformat_find_stream_info(format, NULL);
+		uint64_t probe_finished = sceKernelGetProcessTimeWide();
+		if (result < 0 && interrupt.deadline_us &&
+		    probe_finished >= interrupt.deadline_us &&
+		    !thumbnail_cancelled(&interrupt)) {
+			find_thumbnail_streams(format, &cover_index, &stream_index);
+			int cover_usable = cover_index >= 0 &&
+			    format->streams[cover_index]->attached_pic.size > 0;
+			int video_usable = stream_index >= 0 &&
+			    format->streams[stream_index]->codecpar->width > 0 &&
+			    format->streams[stream_index]->codecpar->height > 0;
+			if (cover_usable || video_usable) {
+				/* Permit only a short verified salvage. Frame fallback must seek,
+				 * which also resets any AVIO error latched by the interrupted probe. */
+				interrupt.deadline_us = probe_finished +
+				                        THUMB_SALVAGE_DEADLINE_US;
+				result = 0;
+				log_printf("video thumbnail: probe deadline salvaged cover=%d video=%d: %s\n",
+				           cover_usable, video_usable, request->path);
+			}
+		}
 		if (result >= 0) {
 			find_thumbnail_streams(format, &cover_index, &stream_index);
 			if (cover_index >= 0 && !thumbnail_interrupted(&interrupt)) {
 				int cover_result = decode_attached_cover(format, cover_index, pixels,
 				                                         &interrupt);
-				if (cover_result >= 0) converted = 1;
+				if (cover_result >= 0) {
+					int score = thumbnail_information_score(pixels);
+					if (score > 0) {
+						converted = 1;
+						if (origin_out) *origin_out = THUMB_ORIGIN_EMBEDDED;
+					}
+					else log_printf(
+					    "video thumbnail rejected blank probed cover: %s\n",
+					    request->path);
+				}
 			}
 		}
 	}
@@ -743,7 +932,9 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	AVStream *stream = result >= 0 && !converted
 	                 ? format->streams[stream_index] : NULL;
 	/* H.264 explicitly uses the CPU decoder: thumbnail work must never claim
-	 * SceVideodec or compete for its CDRAM surfaces. */
+	 * SceVideodec or compete for its CDRAM surfaces. The single-threaded worker
+	 * stays at low priority and remains wall-bounded even while a video mini-player
+	 * is active, so uncached cells eventually receive their required frame cover. */
 	const AVCodec *codec = result >= 0 && !converted
 	                       ? avcodec_find_decoder_by_name("h264") : NULL;
 	if (result >= 0 && !converted && !codec) result = AVERROR_DECODER_NOT_FOUND;
@@ -754,53 +945,42 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	if (result >= 0 && !converted) {
 		decoder->thread_count = 1;
 		decoder->thread_type = 0;
+		decoder->skip_loop_filter = AVDISCARD_ALL;
+		decoder->flags2 |= AV_CODEC_FLAG2_FAST;
 		result = avcodec_open2(decoder, codec, NULL);
 	}
 	if (result >= 0 && !converted && !thumbnail_interrupted(&interrupt)) {
-		choose_target_and_seek(format, stream_index);
-		avcodec_flush_buffers(decoder);
-		packet = av_packet_alloc();
-		frame = av_frame_alloc();
-		if (!packet || !frame) result = AVERROR(ENOMEM);
+		result = choose_target_and_seek(format, stream_index);
+		if (result >= 0) {
+			avcodec_flush_buffers(decoder);
+			packet = av_packet_alloc();
+			frame = av_frame_alloc();
+			if (!packet || !frame) result = AVERROR(ENOMEM);
+		}
 	}
-	int packets_read = 0;
+	int packets_read = 0, video_packets = 0;
 	while (result >= 0 && !converted && packets_read < THUMB_MAX_DEMUX_PACKETS &&
+	       video_packets < THUMB_MAX_VIDEO_PACKETS &&
 	       !thumbnail_interrupted(&interrupt)) {
 		int read_result = av_read_frame(format, packet);
 		if (read_result < 0) {
-			avcodec_send_packet(decoder, NULL);
-			while (!thumbnail_interrupted(&interrupt) &&
-			       avcodec_receive_frame(decoder, frame) >= 0) {
-				result = frame_to_rgb565(frame, pixels);
-				av_frame_unref(frame);
-				if (result >= 0) converted = 1;
-				break;
-			}
+			result = send_thumbnail_packet(decoder, NULL, frame, pixels,
+			                               &interrupt, &converted);
 			if (!converted && result >= 0) result = read_result;
 			break;
 		}
 		packets_read++;
 		if (packet->stream_index == stream_index) {
-			int send_result = avcodec_send_packet(decoder, packet);
-			if (send_result >= 0 || send_result == AVERROR(EAGAIN)) {
-				for (;;) {
-					int receive_result = avcodec_receive_frame(decoder, frame);
-					if (receive_result == AVERROR(EAGAIN) ||
-					    receive_result == AVERROR_EOF) break;
-					if (receive_result < 0) { result = receive_result; break; }
-					result = frame_to_rgb565(frame, pixels);
-					av_frame_unref(frame);
-					if (result >= 0) converted = 1;
-					break;
-				}
-			} else if (send_result < 0) {
-				result = send_result;
-			}
+			video_packets++;
+			result = send_thumbnail_packet(decoder, packet, frame, pixels,
+			                               &interrupt, &converted);
 		}
 		av_packet_unref(packet);
 	}
 	if (thumbnail_interrupted(&interrupt)) result = AVERROR_EXIT;
 	else if (!converted && result >= 0) result = AVERROR(EIO);
+	else if (converted && origin_out && *origin_out == THUMB_ORIGIN_NONE)
+		*origin_out = THUMB_ORIGIN_FRAME;
 	av_frame_free(&frame);
 	av_packet_free(&packet);
 	avcodec_free_context(&decoder);
@@ -808,7 +988,8 @@ static int decode_thumbnail(const ThumbnailRequest *request,
 	return result;
 }
 
-static void remember_failure(const ThumbnailRequest *request) {
+static void remember_failure(const ThumbnailRequest *request,
+	                         uint64_t retry_delay_us) {
 	uint64_t now = sceKernelGetProcessTimeWide();
 	int slot = 0;
 	for (int i = 0; i < THUMB_FAILURE_CAPACITY; i++) {
@@ -819,7 +1000,7 @@ static void remember_failure(const ThumbnailRequest *request) {
 	ThumbnailFailure *failure = &g_thumbnail.failures[slot];
 	failure->key = request->key;
 	failure->source_size = request->source_size;
-	failure->retry_after_us = now + THUMB_FAILURE_RETRY_US;
+	failure->retry_after_us = now + retry_delay_us;
 	snprintf(failure->path, sizeof(failure->path), "%s", request->path);
 }
 
@@ -832,15 +1013,32 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		thumbnail_lock();
 		if (!state->stop && state->enabled && !state->result.pixels &&
 		    state->request_count > 0) {
-			request = state->requests[0];
+			/* The selected cell has a higher priority than its neighbours. Within
+			 * the same class, prefer the newest viewport so rapid scrolling cannot
+			 * strand the user behind stale off-screen five-second jobs. */
+			int request_index = 0;
+			for (int i = 1; i < state->request_count; i++) {
+				if (state->requests[i].priority >
+				        state->requests[request_index].priority ||
+				    (state->requests[i].priority ==
+				         state->requests[request_index].priority &&
+				     state->requests[i].sequence >
+				         state->requests[request_index].sequence))
+					request_index = i;
+			}
+			request = state->requests[request_index];
 			state->request_count--;
-			if (state->request_count > 0)
-				memmove(state->requests, state->requests + 1,
-				        sizeof(state->requests[0]) * state->request_count);
+			if (request_index < state->request_count)
+				memmove(state->requests + request_index,
+				        state->requests + request_index + 1,
+				        sizeof(state->requests[0]) *
+				            (state->request_count - request_index));
 			memset(&state->requests[state->request_count], 0,
 			       sizeof(state->requests[state->request_count]));
 			state->active = request;
 			state->active_valid = 1;
+			state->worker_busy = 1;
+			state->active_cancel = 0;
 			have_request = 1;
 		}
 		int should_stop = state->stop;
@@ -850,9 +1048,11 @@ static int thumbnail_worker(SceSize args, void *argp) {
 			sceKernelDelayThread(8 * 1000);
 			continue;
 		}
+		uint64_t started_us = sceKernelGetProcessTimeWide();
 		uint16_t *pixels = malloc(THUMB_BYTES);
 		int result = pixels ? cache_load(&request, pixels) : AVERROR(ENOMEM);
 		int from_cache = result == 0;
+		int origin = THUMB_ORIGIN_NONE;
 		if (result < 0 && pixels && state->enabled && !state->stop) {
 			VtDecoderStreamFactory factory;
 			VtNetworkStreamFactory remote;
@@ -868,32 +1068,74 @@ static int thumbnail_worker(SceSize args, void *argp) {
 			if (result >= 0)
 				result = decode_thumbnail(&request,
 				                          request.remote ? &remote.factory : &factory,
-				                          pixels);
+				                          pixels, &origin);
 			memset(&remote.credential, 0, sizeof(remote.credential));
-			if (result == 0) cache_store(&request, pixels);
 		}
+		uint16_t *cache_pixels = NULL;
+		if (result == 0 && !from_cache && pixels) {
+			cache_pixels = malloc(THUMB_BYTES);
+			if (cache_pixels) memcpy(cache_pixels, pixels, THUMB_BYTES);
+		}
+		uint64_t elapsed_ms =
+		    (sceKernelGetProcessTimeWide() - started_us) / 1000ULL;
+		int report_ready = 0;
+		int report_failure = 0;
+		int report_preempted = 0;
 		thumbnail_lock();
+		int was_preempted = state->active_cancel;
+		state->active_cancel = 0;
 		state->active_valid = 0;
 		memset(&state->active, 0, sizeof(state->active));
-		if (result == 0 && state->enabled && !state->stop &&
+		if (result == 0 && !was_preempted && state->enabled && !state->stop &&
 		    request.generation == state->generation &&
 		    !state->result.pixels) {
 			state->result.key = request.key;
 			state->result.source_size = request.source_size;
-			state->result.generation = request.generation;
+				state->result.generation = request.generation;
 			snprintf(state->result.path, sizeof(state->result.path), "%s",
 			         request.path);
-			state->result.pixels = pixels;
+				state->result.pixels = pixels;
+				state->result_retry_after_us = 0;
 			pixels = NULL;
-			if (!from_cache)
-				log_printf("video thumbnail generated: %s", request.path);
+			report_ready = 1;
 		} else if (result < 0 && state->enabled && !state->stop &&
 		           request.generation == state->generation) {
-			remember_failure(&request);
-			log_printf("video thumbnail unavailable: %s -> %d",
-			           request.path, result);
+			if (was_preempted) report_preempted = 1;
+			else {
+				remember_failure(&request,
+				                 result == AVERROR(EAGAIN)
+				                     ? 2ULL * 1000ULL * 1000ULL
+				                     : THUMB_FAILURE_RETRY_US);
+				report_failure = 1;
+			}
+		} else if (was_preempted && state->enabled && !state->stop &&
+		           request.generation == state->generation) {
+			report_preempted = 1;
 		}
 		thumbnail_unlock();
+		/* Publish to the UI before optional flash persistence. The UI owns `pixels`;
+		 * the worker writes an independent copy so upload can happen immediately. */
+		if (report_ready && cache_pixels) cache_store(&request, cache_pixels);
+		free(cache_pixels);
+		thumbnail_lock();
+		state->worker_busy = 0;
+		thumbnail_unlock();
+		if (report_ready) {
+			const char *method = from_cache ? "cache" :
+			                     origin == THUMB_ORIGIN_EMBEDDED ? "embedded" :
+			                     origin == THUMB_ORIGIN_FRAME ? "frame" : "unknown";
+			log_printf("video thumbnail ready [%s] %llums: %s\n", method,
+			           (unsigned long long)elapsed_ms, request.path);
+		} else if (report_failure) {
+			char error[96];
+			if (av_strerror(result, error, sizeof(error)) < 0)
+				snprintf(error, sizeof(error), "code %d", result);
+			log_printf("video thumbnail failed %llums: %s -> %d (%s)\n",
+			           (unsigned long long)elapsed_ms, request.path, result, error);
+		} else if (report_preempted) {
+			log_printf("video thumbnail preempted %llums: %s\n",
+			           (unsigned long long)elapsed_ms, request.path);
+		}
 		free(pixels);
 		memset(&request.credential, 0, sizeof(request.credential));
 	}
@@ -920,6 +1162,7 @@ int vt_video_thumbnail_init(void) {
 		return result;
 	}
 	g_thumbnail.initialized = 1;
+	log_printf("video thumbnail worker ready\n");
 	return 0;
 }
 
@@ -927,6 +1170,11 @@ void vt_video_thumbnail_resume(void) {
 	if (!g_thumbnail.initialized) return;
 	thumbnail_lock();
 	g_thumbnail.enabled = 1;
+	/* suspend() raises active_cancel even when the worker is already idle. If it
+	 * is not cleared here, the next local/remote factory receives a permanently
+	 * pre-cancelled flag and every cover fails after the first scene change. An
+	 * in-flight worker keeps ownership until it acknowledges the cancellation. */
+	if (!g_thumbnail.worker_busy) g_thumbnail.active_cancel = 0;
 	thumbnail_unlock();
 }
 
@@ -935,6 +1183,9 @@ void vt_video_thumbnail_suspend(void) {
 	uint16_t *pixels = NULL;
 	thumbnail_lock();
 	g_thumbnail.enabled = 0;
+	g_thumbnail.active_cancel = 1;
+	if (g_thumbnail.active_abort && g_thumbnail.active_abort_opaque)
+		g_thumbnail.active_abort(g_thumbnail.active_abort_opaque);
 	g_thumbnail.generation++;
 	g_thumbnail.request_count = 0;
 	memset(g_thumbnail.requests, 0, sizeof(g_thumbnail.requests));
@@ -944,37 +1195,49 @@ void vt_video_thumbnail_suspend(void) {
 	memset(&g_thumbnail.active, 0, sizeof(g_thumbnail.active));
 	pixels = g_thumbnail.result.pixels;
 	memset(&g_thumbnail.result, 0, sizeof(g_thumbnail.result));
+	g_thumbnail.result_retry_after_us = 0;
 	thumbnail_unlock();
 	free(pixels);
+}
+
+void vt_video_thumbnail_prepare_playback(void) {
+	if (!g_thumbnail.initialized) return;
+	vt_video_thumbnail_suspend();
+	/* All browser scenes fence their last frame before returning, but keep this
+	 * API self-contained because it is also called by mini-player restoration. */
+	vita2d_wait_rendering_done();
+	int released = 0;
+	for (int i = 0; i < THUMB_TEXTURE_CAPACITY; i++) {
+		if (g_thumbnail.textures[i].texture) {
+			vita2d_free_texture(g_thumbnail.textures[i].texture);
+			released++;
+		}
+		memset(&g_thumbnail.textures[i], 0,
+		       sizeof(g_thumbnail.textures[i]));
+	}
+	uint64_t deadline = sceKernelGetProcessTimeWide() + 250 * 1000ULL;
+	while (g_thumbnail.worker_busy &&
+	       sceKernelGetProcessTimeWide() < deadline)
+		sceKernelDelayThread(1000);
+	log_printf("video thumbnail playback handoff: textures=%d worker=%s\n",
+	           released, g_thumbnail.worker_busy ? "still cancelling" : "idle");
 }
 
 void vt_video_thumbnail_pump(void) {
 	if (!g_thumbnail.initialized || !g_thumbnail.enabled) return;
 	ThumbnailResult result;
 	memset(&result, 0, sizeof(result));
+	uint64_t now = sceKernelGetProcessTimeWide();
 	thumbnail_lock();
-	if (g_thumbnail.result.pixels) {
+	if (g_thumbnail.result.pixels &&
+	    (!g_thumbnail.result_retry_after_us ||
+	     now >= g_thumbnail.result_retry_after_us)) {
 		result = g_thumbnail.result;
 		memset(&g_thumbnail.result, 0, sizeof(g_thumbnail.result));
+		g_thumbnail.result_retry_after_us = 0;
 	}
 	thumbnail_unlock();
 	if (!result.pixels) return;
-	vita2d_texture *texture = vita2d_create_empty_texture_format(
-		THUMB_WIDTH, THUMB_HEIGHT, SCE_GXM_TEXTURE_FORMAT_R5G6B5);
-	if (!texture) {
-		free(result.pixels);
-		return;
-	}
-	unsigned int stride = vita2d_texture_get_stride(texture);
-	unsigned char *destination = vita2d_texture_get_datap(texture);
-	for (int row = 0; row < THUMB_HEIGHT; row++)
-		memcpy(destination + row * stride,
-		       result.pixels + row * THUMB_WIDTH,
-		       THUMB_WIDTH * sizeof(uint16_t));
-	vita2d_texture_set_filters(texture, SCE_GXM_TEXTURE_FILTER_LINEAR,
-	                           SCE_GXM_TEXTURE_FILTER_LINEAR);
-	free(result.pixels);
-	uint64_t now = sceKernelGetProcessTimeWide();
 	int slot = 0;
 	for (int i = 0; i < THUMB_TEXTURE_CAPACITY; i++) {
 		if (!g_thumbnail.textures[i].texture) { slot = i; break; }
@@ -982,19 +1245,69 @@ void vt_video_thumbnail_pump(void) {
 		    g_thumbnail.textures[slot].used_us) slot = i;
 	}
 	ThumbnailTexture *cached = &g_thumbnail.textures[slot];
-	if (cached->texture) vita2d_free_texture(cached->texture);
+	/* Free an evictable texture before allocating its replacement. Requiring a
+	 * transient 13th CDRAM allocation made successful decodes disappear under
+	 * normal decoder/UI pressure. */
+	if (cached->texture) {
+		vita2d_wait_rendering_done();
+		vita2d_free_texture(cached->texture);
+		memset(cached, 0, sizeof(*cached));
+	}
+	vita2d_texture *texture = vita2d_create_empty_texture_format(
+		THUMB_WIDTH, THUMB_HEIGHT, SCE_GXM_TEXTURE_FORMAT_R5G6B5);
+	if (!texture) {
+		log_printf("video thumbnail GPU upload allocation failed: %s\n",
+		           result.path);
+		thumbnail_lock();
+		if (g_thumbnail.enabled && !g_thumbnail.stop &&
+		    result.generation == g_thumbnail.generation &&
+		    !g_thumbnail.result.pixels) {
+			g_thumbnail.result = result;
+			g_thumbnail.result_retry_after_us = now + THUMB_UPLOAD_RETRY_US;
+			result.pixels = NULL;
+		}
+		thumbnail_unlock();
+		free(result.pixels);
+		return;
+	}
+	unsigned int stride = vita2d_texture_get_stride(texture);
+	unsigned char *destination = vita2d_texture_get_datap(texture);
+	if (!destination || stride < THUMB_WIDTH * sizeof(uint16_t)) {
+		log_printf("video thumbnail GPU upload layout invalid: %s\n",
+		           result.path);
+		vita2d_free_texture(texture);
+		thumbnail_lock();
+		if (g_thumbnail.enabled && !g_thumbnail.stop &&
+		    result.generation == g_thumbnail.generation &&
+		    !g_thumbnail.result.pixels) {
+			g_thumbnail.result = result;
+			g_thumbnail.result_retry_after_us = now + THUMB_UPLOAD_RETRY_US;
+			result.pixels = NULL;
+		}
+		thumbnail_unlock();
+		free(result.pixels);
+		return;
+	}
+	for (int row = 0; row < THUMB_HEIGHT; row++)
+		memcpy(destination + row * stride,
+		       result.pixels + row * THUMB_WIDTH,
+		       THUMB_WIDTH * sizeof(uint16_t));
+	vita2d_texture_set_filters(texture, SCE_GXM_TEXTURE_FILTER_LINEAR,
+	                           SCE_GXM_TEXTURE_FILTER_LINEAR);
+	free(result.pixels);
 	memset(cached, 0, sizeof(*cached));
 	cached->key = result.key;
 	cached->source_size = result.source_size;
 	cached->used_us = now;
 	cached->texture = texture;
 	snprintf(cached->path, sizeof(cached->path), "%s", result.path);
+	log_printf("video thumbnail uploaded: slot=%d %s\n", slot, result.path);
 }
 
 static vita2d_texture *thumbnail_get(
 	const VtNetworkSource *source,
 	const VtNetworkCredential *credential,
-	const char *path, uint64_t source_size) {
+	const char *path, uint64_t source_size, int priority) {
 	if (!g_thumbnail.initialized || !g_thumbnail.enabled || !path || !path[0] ||
 	    strlen(path) >= THUMB_PATH_MAX) return NULL;
 	uint64_t key = source ? remote_thumbnail_key(source, path, source_size)
@@ -1003,7 +1316,8 @@ static vita2d_texture *thumbnail_get(
 	for (int i = 0; i < THUMB_TEXTURE_CAPACITY; i++) {
 		ThumbnailTexture *cached = &g_thumbnail.textures[i];
 		if (cached->texture && cached->key == key &&
-		    cached->source_size == source_size) {
+		    cached->source_size == source_size &&
+		    strcmp(cached->path, path) == 0) {
 			cached->used_us = now;
 			return cached->texture;
 		}
@@ -1012,7 +1326,8 @@ static vita2d_texture *thumbnail_get(
 	unsigned int generation = g_thumbnail.generation;
 	for (int i = 0; i < THUMB_FAILURE_CAPACITY; i++) {
 		ThumbnailFailure *failure = &g_thumbnail.failures[i];
-		if (failure->key == key && failure->source_size == source_size) {
+		if (failure->key == key && failure->source_size == source_size &&
+		    strcmp(failure->path, path) == 0) {
 			if (now < failure->retry_after_us) {
 				thumbnail_unlock();
 				return NULL;
@@ -1021,34 +1336,69 @@ static vita2d_texture *thumbnail_get(
 			break;
 		}
 	}
-	if ((g_thumbnail.active_valid &&
-	     same_request(key, source_size, generation, path, &g_thumbnail.active)) ||
-	    (g_thumbnail.result.pixels && g_thumbnail.result.key == key &&
-	     g_thumbnail.result.source_size == source_size &&
-	     g_thumbnail.result.generation == generation)) {
+	if (g_thumbnail.active_valid &&
+	    same_request(key, source_size, generation, path, &g_thumbnail.active)) {
+		if (priority > g_thumbnail.active.priority)
+			g_thumbnail.active.priority = priority;
 		thumbnail_unlock();
 		return NULL;
+	}
+	if (g_thumbnail.result.pixels && g_thumbnail.result.key == key &&
+	    g_thumbnail.result.source_size == source_size &&
+	    g_thumbnail.result.generation == generation &&
+	    strcmp(g_thumbnail.result.path, path) == 0) {
+		thumbnail_unlock();
+		return NULL;
+	}
+	/* A newly selected cell must not wait behind an off-screen decode. Protocol
+	 * setup and every later stream read/seek observe this cancellation flag. */
+	if (g_thumbnail.active_valid &&
+	    (priority > g_thumbnail.active.priority ||
+	     (priority >= 100 && priority == g_thumbnail.active.priority))) {
+		g_thumbnail.active_cancel = 1;
+		if (g_thumbnail.active_abort && g_thumbnail.active_abort_opaque)
+			g_thumbnail.active_abort(g_thumbnail.active_abort_opaque);
+	}
+	/* There is only one selected cell. Demote an older selected request so it
+	 * cannot remain ahead of the current viewport after rapid navigation. */
+	if (priority >= 100) {
+		for (int i = 0; i < g_thumbnail.request_count; i++)
+			if (g_thumbnail.requests[i].priority >= 100)
+				g_thumbnail.requests[i].priority = 10;
 	}
 	for (int i = 0; i < g_thumbnail.request_count; i++) {
 		if (same_request(key, source_size, generation, path,
 		                 &g_thumbnail.requests[i])) {
+			if (priority > g_thumbnail.requests[i].priority)
+				g_thumbnail.requests[i].priority = priority;
+			g_thumbnail.requests[i].sequence = ++g_thumbnail.request_sequence;
 			thumbnail_unlock();
 			return NULL;
 		}
 	}
+	ThumbnailRequest *request;
 	if (g_thumbnail.request_count == THUMB_REQUEST_CAPACITY) {
-		memmove(g_thumbnail.requests, g_thumbnail.requests + 1,
-		        sizeof(g_thumbnail.requests[0]) * (THUMB_REQUEST_CAPACITY - 1));
-		g_thumbnail.request_count--;
-		memset(&g_thumbnail.requests[g_thumbnail.request_count], 0,
-		       sizeof(g_thumbnail.requests[g_thumbnail.request_count]));
+		int weakest = 0;
+		for (int i = 1; i < g_thumbnail.request_count; i++) {
+			if (g_thumbnail.requests[i].priority <
+			        g_thumbnail.requests[weakest].priority ||
+			    (g_thumbnail.requests[i].priority ==
+			         g_thumbnail.requests[weakest].priority &&
+			     g_thumbnail.requests[i].sequence <
+			         g_thumbnail.requests[weakest].sequence))
+				weakest = i;
+		}
+		request = &g_thumbnail.requests[weakest];
+		memset(&request->credential, 0, sizeof(request->credential));
+	} else {
+		request = &g_thumbnail.requests[g_thumbnail.request_count++];
 	}
-	ThumbnailRequest *request =
-		&g_thumbnail.requests[g_thumbnail.request_count++];
 	memset(request, 0, sizeof(*request));
 	request->key = key;
 	request->source_size = source_size;
+	request->sequence = ++g_thumbnail.request_sequence;
 	request->generation = generation;
+	request->priority = priority;
 	request->remote = source != NULL;
 	if (source) request->source = *source;
 	if (credential) request->credential = *credential;
@@ -1058,7 +1408,12 @@ static vita2d_texture *thumbnail_get(
 }
 
 vita2d_texture *vt_video_thumbnail_get(const char *path, uint64_t source_size) {
-	return thumbnail_get(NULL, NULL, path, source_size);
+	return thumbnail_get(NULL, NULL, path, source_size, 0);
+}
+
+vita2d_texture *vt_video_thumbnail_get_priority(
+	const char *path, uint64_t source_size, int priority) {
+	return thumbnail_get(NULL, NULL, path, source_size, priority);
 }
 
 vita2d_texture *vt_video_thumbnail_get_remote(
@@ -1066,7 +1421,15 @@ vita2d_texture *vt_video_thumbnail_get_remote(
 	const VtNetworkCredential *credential,
 	const char *path, uint64_t source_size) {
 	if (!source || !credential) return NULL;
-	return thumbnail_get(source, credential, path, source_size);
+	return thumbnail_get(source, credential, path, source_size, 0);
+}
+
+vita2d_texture *vt_video_thumbnail_get_remote_priority(
+	const VtNetworkSource *source,
+	const VtNetworkCredential *credential,
+	const char *path, uint64_t source_size, int priority) {
+	if (!source || !credential) return NULL;
+	return thumbnail_get(source, credential, path, source_size, priority);
 }
 
 void vt_video_thumbnail_shutdown(void) {
