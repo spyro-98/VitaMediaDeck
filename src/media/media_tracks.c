@@ -25,7 +25,8 @@
 #define SUBTITLE_ABORT_GRACE_MS 40U
 #define SUBTITLE_TEXT_CAPACITY 512
 #define SUBTITLE_NORMALIZED_CAPACITY 2048
-#define SUBTITLE_THREAD_PRIORITY 0x10000140
+#define SUBTITLE_THREAD_CREATE_PRIORITY  0x10000100
+#define SUBTITLE_THREAD_RUNTIME_PRIORITY 0xA0
 #define SUBTITLE_THREAD_STACK 0x40000
 
 typedef struct VtMediaInput {
@@ -912,6 +913,12 @@ void vt_subtitle_reader_tick(VtSubtitleReader *reader) {
 static int subtitle_worker(SceSize args, void *argp) {
 	(void)args;
 	VtSubtitleReader *reader = *(VtSubtitleReader **)argp;
+	int priority_before = sceKernelGetThreadCurrentPriority();
+	int priority_ret = sceKernelChangeThreadPriority(
+		sceKernelGetThreadId(), SUBTITLE_THREAD_RUNTIME_PRIORITY);
+	log_printf("subtitle: thread priority %d -> %d ret=0x%08X\n",
+	           priority_before, sceKernelGetThreadCurrentPriority(),
+	           (unsigned)priority_ret);
 	AVPacket *packet = av_packet_alloc();
 	if (!packet) {
 		subtitle_request_lock(reader);
@@ -1199,7 +1206,8 @@ static int subtitle_reader_start(VtSubtitleReader *reader) {
 	reader->cancel = 0;
 	reader->operation_cancel = 0;
 	reader->thid = sceKernelCreateThread(
-		"VitaMediaDeckSubtitles", subtitle_worker, SUBTITLE_THREAD_PRIORITY,
+		"VitaMediaDeckSubtitles", subtitle_worker,
+		SUBTITLE_THREAD_CREATE_PRIORITY,
 		SUBTITLE_THREAD_STACK, 0, 0, NULL);
 	if (reader->thid < 0) return reader->thid;
 	VtSubtitleReader *self = reader;

@@ -46,7 +46,8 @@
 #define THUMB_MAX_VIDEO_PACKETS     240
 #define THUMB_AVIO_BUFFER_SIZE      (32 * 1024)
 #define THUMB_COVER_MAX_PIXELS      (1024U * 1024U)
-#define THUMB_THREAD_PRIORITY       0x10000120
+#define THUMB_THREAD_CREATE_PRIORITY  0x10000100
+#define THUMB_THREAD_RUNTIME_PRIORITY 0xB0
 #define THUMB_THREAD_STACK          0x100000
 #define THUMB_CACHE_DIR             "ux0:data/VitaMediaDeck/thumbs"
 
@@ -1028,6 +1029,12 @@ static void remember_failure(const ThumbnailRequest *request,
 static int thumbnail_worker(SceSize args, void *argp) {
 	(void)args;
 	ThumbnailState *state = *(ThumbnailState **)argp;
+	int priority_before = sceKernelGetThreadCurrentPriority();
+	int priority_ret = sceKernelChangeThreadPriority(
+		sceKernelGetThreadId(), THUMB_THREAD_RUNTIME_PRIORITY);
+	log_printf("video thumbnail: thread priority %d -> %d ret=0x%08X\n",
+	           priority_before, sceKernelGetThreadCurrentPriority(),
+	           (unsigned)priority_ret);
 	for (;;) {
 		ThumbnailRequest request;
 		int have_request = 0;
@@ -1171,7 +1178,8 @@ int vt_video_thumbnail_init(void) {
 	g_thumbnail.thid = -1;
 	g_thumbnail.self = &g_thumbnail;
 	g_thumbnail.thid = sceKernelCreateThread(
-		"VitaMediaDeckThumbnail", thumbnail_worker, THUMB_THREAD_PRIORITY,
+		"VitaMediaDeckThumbnail", thumbnail_worker,
+		THUMB_THREAD_CREATE_PRIORITY,
 		THUMB_THREAD_STACK, 0, 0, NULL);
 	if (g_thumbnail.thid < 0) return g_thumbnail.thid;
 	int result = sceKernelStartThread(g_thumbnail.thid,

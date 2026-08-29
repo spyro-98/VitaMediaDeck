@@ -111,6 +111,9 @@ fresh physical-Vita screenshot pass.
   video mini-player runs; a temporary GPU-memory failure retains the decoded
   pixels for a cheap retry instead of decoding the movie again. Thumbnail cache
   version 6 invalidates prior failed, black, or incorrect local-cover results.
+  The thumbnail worker is created with Vita's valid default priority sentinel
+  and demotes itself only after startup; invalid synthetic priority values would
+  prevent the thread from existing and leave the striped placeholder forever.
   Local `ux0:/` and `uma0:/` media use the proven `sceIo`-backed seekable AVIO
   route instead of treating Vita device prefixes as FFmpeg URL protocols. Valid
   embedded JPEG/PNG artwork is preferred; an all-black or effectively uniform
@@ -143,6 +146,9 @@ fresh physical-Vita screenshot pass.
   cursor, while authenticated remote subtitles retain their protocol-specific
   isolated cursor. A failed
   request remains visibly selected instead of silently reverting to Off.
+  The persistent subtitle worker follows the same valid-create/runtime-demotion
+  priority contract, avoiding `SCE_KERNEL_ERROR_ILLEGAL_PRIORITY` during player
+  startup or track selection.
   Read-ahead is bounded by both cue count and a
   short playback-time horizon so sparse subtitles cannot scan far into a movie.
   Every indexed-seek fallback clears stale AVIO error/EOF state, so one missing
