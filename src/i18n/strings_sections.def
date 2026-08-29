@@ -1,4 +1,5 @@
 VT_STR(SECTIONS_TITLE, "Sezioni", "Sections")
+VT_STR(SECTIONS_PLAYER, "Player attivo", "Active player")
 VT_STR(SECTIONS_HOME, "Home", "Home")
 VT_STR(SECTIONS_NETWORK, "Sorgenti di rete", "Network sources")
 VT_STR(SECTIONS_SETTINGS, "Impostazioni", "Settings")

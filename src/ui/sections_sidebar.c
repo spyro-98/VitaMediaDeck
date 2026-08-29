@@ -5,6 +5,7 @@
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
+#include "media/background_playback.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/runtime.h"
@@ -87,7 +88,8 @@ void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active) {
 	sidebar->open = 0;
 	sidebar->active = active >= 0 && active < UI_SECTION_COUNT
 	                ? active : UI_SECTION_LOCAL_MEDIA;
-	sidebar->cursor = sidebar->active;
+	sidebar->player_available = vt_background_playback_can_resume_fullscreen();
+	sidebar->cursor = sidebar->active + sidebar->player_available;
 	sidebar->animation = 0.0f;
 	sidebar->focus_cursor = (float)sidebar->cursor;
 	sidebar->repeat_button = 0;
@@ -95,8 +97,21 @@ void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active) {
 	sidebar->animation_last_us = 0;
 }
 
+static void sync_player_slot(UiSectionsSidebar *sidebar) {
+	if (!sidebar) return;
+	int available = vt_background_playback_can_resume_fullscreen();
+	if (available == sidebar->player_available) return;
+	if (available) sidebar->cursor++;
+	else if (sidebar->cursor > 0) sidebar->cursor--;
+	else sidebar->cursor = sidebar->active;
+	sidebar->player_available = available;
+	sidebar->focus_cursor = (float)sidebar->cursor;
+}
+
 static int activate(UiSectionsSidebar *sidebar) {
-	int selected = sidebar->cursor;
+	int selected = sidebar->player_available && sidebar->cursor == 0
+	             ? UI_SECTION_PLAYER
+	             : sidebar->cursor - sidebar->player_available;
 	sidebar->open = 0;
 	return selected == sidebar->active ? UI_SECTION_NONE : selected;
 }
@@ -106,9 +121,11 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 	                                   unsigned int held_buttons,
 	                                   unsigned char analog_y) {
 	if (!sidebar || !pressed) return UI_SECTION_NONE;
+	sync_player_slot(sidebar);
 	if (*pressed & SCE_CTRL_LTRIGGER) {
 		sidebar->open = !sidebar->open;
-		if (sidebar->open) sidebar->cursor = sidebar->active;
+		if (sidebar->open)
+			sidebar->cursor = sidebar->active + sidebar->player_available;
 		sidebar->repeat_button = 0;
 		*pressed &= ~SCE_CTRL_LTRIGGER;
 		return UI_SECTION_NONE;
@@ -121,7 +138,8 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 	sidebar->repeat_button = repeat.direction;
 	sidebar->repeat_next_us = repeat.repeat_next_us;
 	if ((navigated & SCE_CTRL_UP) && sidebar->cursor > 0) sidebar->cursor--;
-	if ((navigated & SCE_CTRL_DOWN) && sidebar->cursor + 1 < UI_SECTION_COUNT)
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available;
+	if ((navigated & SCE_CTRL_DOWN) && sidebar->cursor + 1 < slot_count)
 		sidebar->cursor++;
 	int selected = (*pressed & SCE_CTRL_CROSS) ? activate(sidebar) : UI_SECTION_NONE;
 	if (*pressed & SCE_CTRL_CIRCLE) sidebar->open = 0;
@@ -135,8 +153,10 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
 	                                 unsigned int touch_flags, int x, int y) {
 	if (!sidebar || !sidebar->open || !(touch_flags & UI_TOUCH_EVENT_TAP))
 		return UI_SECTION_NONE;
+	sync_player_slot(sidebar);
 	int offset_x = (int)(-(float)SIDEBAR_WIDTH * (1.0f - sidebar->animation));
-	for (int i = 0; i < UI_SECTION_COUNT; i++) {
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available;
+	for (int i = 0; i < slot_count; i++) {
 		if (!ui_touch_hit_rect(x, y, offset_x + ITEM_X, ITEM_Y + i * ITEM_STEP,
 		                       ITEM_W, ITEM_H)) continue;
 		sidebar->cursor = i;
@@ -148,6 +168,7 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
 
 void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	if (!sidebar) return;
+	sync_player_slot(sidebar);
 	uint64_t now = sceKernelGetProcessTimeWide();
 	uint64_t elapsed = sidebar->animation_last_us &&
 	                   now > sidebar->animation_last_us
@@ -171,7 +192,11 @@ void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	}
 }
 
-void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor) {
+void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
+	if (!sidebar) return;
+	int cursor = sidebar->cursor;
+	float animation = sidebar->animation;
+	float focus_cursor = sidebar->open ? sidebar->focus_cursor : -1.0f;
 	const char *items[] = {
 		vt_i18n_str(VT_STR_SECTIONS_HOME),
 		vt_i18n_str(VT_STR_SECTIONS_NETWORK),
@@ -226,19 +251,25 @@ void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor) {
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
 		                      3, ITEM_H, VT_THEME_SPECTRAL);
 	}
-	for (int i = 0; i < UI_SECTION_COUNT; i++) {
-		unsigned int color = has_focus && i == cursor ? VT_THEME_TEXT
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available;
+	for (int slot = 0; slot < slot_count; slot++) {
+		int player_slot = sidebar->player_available && slot == 0;
+		int section = slot - sidebar->player_available;
+		const char *label = player_slot ? vt_i18n_str(VT_STR_SECTIONS_PLAYER)
+		                                : items[section];
+		const char *index = player_slot ? "LIVE" : indices[section];
+		unsigned int color = has_focus && slot == cursor ? VT_THEME_TEXT
 		                                      : VT_THEME_TEXT_MUTED;
 		if (small)
-			ui_font_draw_text(small, (int)ox + 34, 179 + i * ITEM_STEP,
-			                  has_focus && i == cursor ? VT_THEME_SIGNAL_BRIGHT
+			ui_font_draw_text(small, (int)ox + 34, 179 + slot * ITEM_STEP,
+			                  has_focus && slot == cursor ? VT_THEME_SIGNAL_BRIGHT
 			                                                : VT_THEME_TEXT_FAINT,
-			                  UI_FONT_SMALL, indices[i]);
-		vita2d_draw_rectangle(ox + 63, 169 + i * ITEM_STEP, 18, 1,
-		                      has_focus && i == cursor ? VT_THEME_SIGNAL_BRIGHT
+			                  UI_FONT_SMALL, index);
+		vita2d_draw_rectangle(ox + 76, 169 + slot * ITEM_STEP, 18, 1,
+		                      has_focus && slot == cursor ? VT_THEME_SIGNAL_BRIGHT
 		                                                : VT_THEME_BORDER_DIM);
-		ui_font_draw_text(font, (int)ox + 92, 181 + i * ITEM_STEP, color,
-		                      UI_FONT_BODY, items[i]);
+		ui_font_draw_text(font, (int)ox + 104, 181 + slot * ITEM_STEP, color,
+		                      UI_FONT_BODY, label);
 	}
 	if (small)
 		ui_font_draw_text(small, (int)ox + 28, 514, VT_THEME_TEXT_MUTED,

@@ -63,6 +63,7 @@ void vt_background_playback_seek_relative(int64_t delta_ms);
  * the position currently owned by the compact background player. */
 void vt_background_playback_set_fullscreen_resume(
 	VtBackgroundFullscreenResume resume, void *ctx);
+int vt_background_playback_can_resume_fullscreen(void);
 int vt_background_playback_resume_fullscreen(void);
 
 void vt_background_playback_request_stop(void);

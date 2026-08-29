@@ -151,7 +151,8 @@ int ui_about_screen(int player_context) {
 		if (open_logs) {
 			int log_result = ui_log_viewer_screen();
 			ui_touch_reset();
-			if (log_result >= UI_SECTION_LOCAL_MEDIA && log_result < UI_SECTION_COUNT) {
+			if (log_result >= UI_SECTION_LOCAL_MEDIA &&
+			    log_result <= UI_SECTION_PLAYER) {
 				result = log_result;
 				break;
 			}
@@ -298,8 +299,7 @@ int ui_about_screen(int player_context) {
 		}
 		ui_mini_player_draw();
 		if (sidebar.animation > 0.01f)
-			ui_sections_sidebar_draw(sidebar.cursor, sidebar.animation,
-			                         sidebar.open ? sidebar.focus_cursor : -1.0f);
+			ui_sections_sidebar_draw(&sidebar);
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();

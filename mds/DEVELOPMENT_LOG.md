@@ -41,6 +41,14 @@ Sources, Settings, and About from the shared sidebar.
 - Added progressive cover previews to local and authenticated-remote video
   cells: sidecar artwork remains first, then embedded cover art, then a bounded
   representative-frame fallback with a checked RGB565 disk cache.
+- Restored complete-but-bounded stream discovery for thumbnail and playback
+  inputs, preventing indexed long videos and embedded covers from being opened
+  with incomplete codec parameters. Failed saved-position seeks now retry from
+  the beginning instead of linearly decoding across the file.
+- Added a conditional **Active player** destination above Home, fullscreen
+  restoration from the mini-player title and the selected active grid cell,
+  audio-only expansion guards, and an opening-screen **Play from beginning**
+  action. ECO mode now separates its status text from the input-lock badge.
 - Extended playback history to stable per-video local and remote IDs, including
   duration-aware completion cleanup and a conditional R1 **Start from
   beginning** action for recovered sessions.

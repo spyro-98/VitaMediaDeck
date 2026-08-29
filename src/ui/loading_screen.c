@@ -225,9 +225,18 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 				                           UI_FONT_SMALL, detail);
 			}
 		}
+		if (info && info->start_over_requested) {
+			vita2d_draw_rectangle(338, 382, 284, 42, VT_THEME_SURFACE_FOCUS);
+			vita2d_draw_rectangle(338, 382, 3, 42, VT_THEME_SIGNAL_BRIGHT);
+			ui_font_draw_text_centered(
+			    small, SCREEN_WIDTH / 2, 409, 252, COLOR_TEXT, UI_FONT_SMALL,
+			    vt_i18n_str(VT_STR_LOADING_PLAYER_START_OVER));
+		}
 		if (info && info->cancellable)
 			ui_font_draw_text_centered(
-				small, SCREEN_WIDTH / 2, 426, SCREEN_WIDTH - 96, COLOR_MUTED,
+				small, SCREEN_WIDTH / 2,
+				info->start_over_requested ? 456 : 426,
+				SCREEN_WIDTH - 96, COLOR_MUTED,
 				UI_FONT_SMALL, vt_i18n_str(VT_STR_LOADING_PLAYER_CANCEL_HINT));
 	}
 
@@ -340,6 +349,14 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 			previous = ctrl;
 			UiTouchEvent touch;
 			unsigned int touch_flags = ui_touch_poll(&touch);
+			int start_over_touch = draw_info.start_over_requested &&
+			    (touch_flags & UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x, touch.y, 338, 382, 284, 42);
+			if (draw_info.start_over_requested &&
+			    ((pressed & SCE_CTRL_CROSS) || start_over_touch)) {
+				*draw_info.start_over_requested = 1;
+				*cancel_flag = 1;
+			}
 			if ((pressed & SCE_CTRL_CIRCLE) ||
 			    touch_is_cancel_hold(touch_flags, &touch)) {
 				*cancel_flag = 1;

@@ -12,7 +12,8 @@
 | Touch | Activate supported visible controls. |
 
 An open sidebar owns navigation before the underlying screen. Circle closes the
-active panel before leaving its page.
+active panel before leaving its page. While resumable playback is running, the
+sidebar adds **Active player** above Home; selecting it restores the full player.
 
 ## Local Media
 
@@ -100,13 +101,16 @@ playback.
 Each local or remote video remembers its last useful playback position. If the
 player opens from that position, the R1 panel adds **Start from beginning** as a
 fifth row. Activating it seeks to `00:00`, removes the saved resume point
-immediately, and closes the panel.
+immediately, and closes the panel. While a recovered video is still opening,
+Cross on **Play from beginning** cancels that attempt and performs a clean open
+at `00:00`, so the action does not depend on the R1 panel becoming available.
 
 Local video mini-player hand-off retains the playback position and selected
 audio/subtitle tracks when fullscreen is restored. It uses the same HW/SW
 decoder stack as fullscreen playback and renders the live video surface. Tap
-the video or media identity area to expand/collapse it at one quarter of the
-screen width; press Start to restore fullscreen. Authenticated remote video
+the video surface to expand/collapse it at one quarter of the screen width;
+tap the title or press Start to restore fullscreen. Selecting the same active
+video in the grid also restores it instead of restarting it. Authenticated remote video
 keeps ECO and input-lock controls, but is not detached into the local-only
 mini-player service.
 
@@ -140,8 +144,10 @@ it is disabled by default.
 | Select | Immediately lock or unlock player input. |
 | Circle | Stop full-screen playback. |
 | Start in mini-player | Restore the active local media fullscreen. |
-| Tap mini-player media area | Expand or collapse the live video to one quarter of the screen width. |
+| Tap mini-player title | Restore the full music or video player. |
+| Tap mini-player video | Expand or collapse live video to one quarter of the screen width; audio-only playback ignores this action. |
 | Mini-player controls | Seek, pause/resume, or stop the active local track. |
 
 Audio-only media uses artwork when available; local video uses the same decoder
-compatibility path as fullscreen playback.
+compatibility path as fullscreen playback. The ECO status and input-lock badge
+use separate positions so the lock never covers the OLED ECO label.

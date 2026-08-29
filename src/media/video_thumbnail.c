@@ -123,12 +123,6 @@ typedef struct ThumbnailState {
 
 static ThumbnailState g_thumbnail = { .thid = -1 };
 
-static int indexed_container(const AVFormatContext *format) {
-	const char *name = format && format->iformat ? format->iformat->name : NULL;
-	return name && (strstr(name, "mov,mp4") || strstr(name, "matroska") ||
-	                strstr(name, "webm") || strstr(name, "avi"));
-}
-
 static void thumbnail_lock(void) {
 	while (__sync_lock_test_and_set(&g_thumbnail.lock, 1))
 		sceKernelDelayThread(100);
@@ -356,16 +350,12 @@ static int thumbnail_input_open(ThumbnailInput *input,
 	input->format->interrupt_callback.opaque = interrupt;
 	input->format->probesize = 1024 * 1024;
 	input->format->max_analyze_duration = 2 * AV_TIME_BASE;
-	/* Embedded cover streams commonly use MJPEG or PNG. H.264 remains the
-	 * representative-frame fallback and is explicitly the CPU decoder here. */
-	input->format->codec_whitelist = av_strdup("h264,mjpeg,png");
-	if (!input->format->codec_whitelist) {
-		thumbnail_input_close(input);
-		return AVERROR(ENOMEM);
-	}
 	result = avformat_open_input(&input->format, NULL, NULL, NULL);
-	if (result >= 0 && !indexed_container(input->format))
-		result = avformat_find_stream_info(input->format, NULL);
+	/* Even indexed containers can defer attached-picture packets or codec
+	 * dimensions until stream discovery. The interrupt deadline keeps this
+	 * bounded while guaranteeing that the cover/frame fallback has complete
+	 * parameters instead of silently rejecting every request. */
+	if (result >= 0) result = avformat_find_stream_info(input->format, NULL);
 	if (result < 0) thumbnail_input_close(input);
 	return result;
 }

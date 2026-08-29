@@ -645,6 +645,12 @@ void vt_background_playback_set_fullscreen_resume(
 	g_background.fullscreen_resume_ctx = ctx;
 }
 
+int vt_background_playback_can_resume_fullscreen(void) {
+	VtBackgroundPlaybackSnapshot snapshot;
+	return g_background.fullscreen_resume != NULL &&
+	       vt_background_playback_snapshot(&snapshot) != 0;
+}
+
 int vt_background_playback_resume_fullscreen(void) {
 	VtBackgroundFullscreenResume resume = g_background.fullscreen_resume;
 	void *ctx = g_background.fullscreen_resume_ctx;

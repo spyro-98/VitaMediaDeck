@@ -92,7 +92,9 @@ fresh physical-Vita screenshot pass.
   uses the same persistent grid/list choice as WebDAV, SFTP, and SMB folders.
 - **Video cover previews:** local cells prefer matching artwork sidecars, then
   local and remote cells use an embedded cover when present or asynchronously
-  extract and cache a representative video frame.
+  extract and cache a representative video frame. Bounded stream discovery is
+  still performed for indexed containers so attached pictures and codec
+  dimensions are not silently missed.
 - **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
   verified host fingerprints, and authenticated SMB2/SMB3 shares.
 - **Selectable H.264 decoding:** Settings offers Auto (hardware with software
@@ -123,9 +125,12 @@ fresh physical-Vita screenshot pass.
   mini-player position with its selected audio/subtitle tracks restored. The
   local-video mini-player uses the main decoder for live frames and matching
   audio compatibility; tapping its media area expands it to one quarter of the
-  screen width, while Start restores fullscreen playback.
+  screen width, while Start or the mini-player title restores fullscreen
+  playback. The L1 sidebar exposes an **Active player** row above Home whenever
+  a minimized music or video session can be restored.
 - **Per-video resume history:** distinct local files and authenticated remote
   streams resume from their last useful position. When playback was recovered,
+  the opening screen exposes **Play from beginning** immediately; once open,
   the R1 panel exposes **Start from beginning** and clears that saved point.
 - **Packaged playback stack:** hardware decode, software fallback and HTTPS/TLS
   live in the independent `vita-hw-decoder`, `vita-sw-decoder` and `vita-https`

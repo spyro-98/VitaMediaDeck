@@ -735,7 +735,26 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		.status = opening_status,
 		.quality_height = source->expected_height
 	};
+	volatile int start_over_requested = 0;
+	if (open.config.start_position_ms > 0)
+		loading.start_over_requested = &start_over_requested;
 	int ret = ui_player_loading_run(&loading, open_task, &open, &cancel, NULL, NULL);
+	if (start_over_requested) {
+		/* The first worker exits through the decoder interrupt callback. Reuse the
+		 * source only after it has joined, then perform a clean open at zero with a
+		 * fresh player so no cancelled backend survives into the retry. */
+		vt_decoder_destroy(player);
+		player = vt_decoder_create();
+		if (!player) {
+			vt_performance_end_video(&clock_guard);
+			return -1;
+		}
+		open.player = player;
+		cancel = 0;
+		open.config.start_position_ms = 0;
+		loading.start_over_requested = NULL;
+		ret = ui_player_loading_run(&loading, open_task, &open, &cancel, NULL, NULL);
+	}
 	if (ret < 0) {
 		vt_decoder_destroy(player);
 		vt_performance_end_video(&clock_guard);
@@ -767,7 +786,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	int right_cursor = 0;
 	int pending_audio_track = vt_decoder_active_audio_track(player);
 	int pending_subtitle_track = vt_decoder_active_subtitle_track(player);
-	int resume_available = source->start_position_ms > 0;
+	int resume_available = open.config.start_position_ms > 0;
 	float right_animation = 0.0f;
 	float right_focus_position = 0.0f;
 	float buffering_opacity = 0.0f;
@@ -1224,7 +1243,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			player_power_save_lock_position(energy_lock_position,
 			                                &lock_x, &lock_y);
 			draw_player_power_save_status_at(lock_x, lock_y);
-			if (input_lock.locked) draw_player_input_lock_at(lock_x, lock_y);
+			if (input_lock.locked)
+				draw_player_input_lock_at(lock_x,
+				    lock_y > 430 ? lock_y - 50 : lock_y + 34);
 		} else {
 			char subtitle[512];
 			if (vt_decoder_subtitle_text(player, status.position_ms,
@@ -1238,8 +1259,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			draw_buffering_overlay(buffering_opacity, now);
 			if (input_lock.locked) draw_player_input_lock_at(24, 86);
 			if (sidebar.animation > 0.01f)
-				ui_sections_sidebar_draw(sidebar.cursor, sidebar.animation,
-				                         sidebar.open ? sidebar.focus_cursor : -1.0f);
+				ui_sections_sidebar_draw(&sidebar);
 			draw_player_right_sidebar(right_animation, right_focus_position,
 			                          right_cursor, player, &status,
 			                          resume_available, pending_audio_track,

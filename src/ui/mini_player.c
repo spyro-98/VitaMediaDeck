@@ -588,24 +588,26 @@ int ui_mini_player_handle_touch(unsigned int touch_flags,
 	int now_in_bar = touch->y >= bar_y;
 	int began_in_video = mini_video_hit(&video_rect, touch->down_x, touch->down_y);
 	int now_in_video = mini_video_hit(&video_rect, touch->x, touch->y);
+	int expects_visual = (snapshot.video_width && snapshot.video_height) || g_artwork;
 	if (g_mini_input_lock.locked) return 1;
 	if (!began_in_bar && !now_in_bar && !began_in_video && !now_in_video) return 0;
 	if (!active) return 1;
-	if ((touch_flags & UI_TOUCH_EVENT_TAP) && began_in_video && now_in_video) {
+	if ((touch_flags & UI_TOUCH_EVENT_TAP) && expects_visual &&
+	    began_in_video && now_in_video) {
 		g_mini_video_expanded = !g_mini_video_expanded;
 		return 1;
 	}
 	if ((touch_flags & UI_TOUCH_EVENT_TAP) && began_in_bar && now_in_bar) {
-		int expects_visual = (snapshot.video_width && snapshot.video_height) ||
-		                     g_artwork;
 		int title_x = expects_visual ? MINI_TITLE_X : 24;
 		int title_w = expects_visual ? MINI_TITLE_W : 504;
 		if (touch->down_x >= title_x &&
 		    touch->down_x < title_x + title_w &&
 		    touch->down_y < bar_y + 56) {
-			/* The whole media identity area owns compact/quarter-screen expansion.
-			 * START remains the unambiguous fullscreen restore command. */
-			g_mini_video_expanded = !g_mini_video_expanded;
+			/* The title is the media identity, so it restores the full player for
+			 * video and audio. Quarter-screen expansion belongs only to the live
+			 * video surface above; audio-only sessions can never enter that state. */
+			vt_background_playback_video_render_complete();
+			vt_background_playback_resume_fullscreen();
 		}
 		else if (ui_touch_hit_rect(
 		             touch->x, touch->y, (int)MINI_TRANSPORT_CLOSE_X - 26,

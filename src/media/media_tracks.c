@@ -81,6 +81,26 @@ static int indexed_container(const AVFormatContext *format) {
 	                strstr(name, "webm") || strstr(name, "avi"));
 }
 
+static int track_streams_ready(const AVFormatContext *format) {
+	if (!format || !format->nb_streams) return 0;
+	for (unsigned int i = 0; i < format->nb_streams; i++) {
+		const AVStream *stream = format->streams[i];
+		const AVCodecParameters *params = stream->codecpar;
+		if (params->codec_type != AVMEDIA_TYPE_AUDIO &&
+		    params->codec_type != AVMEDIA_TYPE_VIDEO &&
+		    params->codec_type != AVMEDIA_TYPE_SUBTITLE) continue;
+		if (params->codec_id == AV_CODEC_ID_NONE || stream->time_base.den <= 0)
+			return 0;
+		if (params->codec_type == AVMEDIA_TYPE_VIDEO &&
+		    !(stream->disposition & AV_DISPOSITION_ATTACHED_PIC) &&
+		    (params->width <= 0 || params->height <= 0)) return 0;
+		if (params->codec_type == AVMEDIA_TYPE_AUDIO &&
+		    (params->sample_rate <= 0 || params->ch_layout.nb_channels <= 0))
+			return 0;
+	}
+	return 1;
+}
+
 static void media_input_close(VtMediaInput *input) {
 	if (!input) return;
 	if (input->format) avformat_close_input(&input->format);
@@ -129,7 +149,8 @@ static int media_input_open(VtMediaInput *input,
 	input->format->probesize = 1024 * 1024;
 	input->format->max_analyze_duration = 2 * AV_TIME_BASE;
 	ret = avformat_open_input(&input->format, NULL, NULL, NULL);
-	if (ret >= 0 && !indexed_container(input->format))
+	if (ret >= 0 && !(indexed_container(input->format) &&
+	                  track_streams_ready(input->format)))
 		ret = avformat_find_stream_info(input->format, NULL);
 	if (ret < 0) media_input_close(input);
 	return ret;
