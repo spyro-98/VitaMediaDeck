@@ -551,10 +551,18 @@ void vt_decoder_set_volume(VtDecoderPlayer *player, int percent) {
 
 int vt_decoder_seek(VtDecoderPlayer *player, uint64_t position_ms) {
 	if (!player) return -1;
+	VtDecoderBackend attempted_backend = player->backend;
 	int result = player->backend == VT_DECODER_BACKEND_HARDWARE
 	     ? vita_hw_decoder_seek(player->hardware, position_ms)
 	     : player->backend == VT_DECODER_BACKEND_SOFTWARE
 	     ? vita_sw_decoder_seek(player->software, position_ms) : -1;
+	if (result < 0 && attempted_backend == VT_DECODER_BACKEND_HARDWARE &&
+	    player->config.preferred_backend == VT_DECODER_BACKEND_NONE &&
+	    !(player->config.cancel_flag && *player->config.cancel_flag)) {
+		log_printf("decoder seek: hardware ret=%d; reopening software at %llu ms\n",
+		           result, (unsigned long long)position_ms);
+		result = vt_decoder_fallback_to_software(player, position_ms);
+	}
 	if (result >= 0) open_selected_subtitles(player, position_ms);
 	return result;
 }

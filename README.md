@@ -99,7 +99,8 @@ fresh physical-Vita screenshot pass.
   only missing or undecodable artwork falls back to a representative H.264
   frame from a 45–90 second window. Frame extraction receives a fresh
   local/remote decode budget after artwork inspection. The selected cell
-  preempts stale viewport work, invalid
+  preempts stale viewport work, and its worker runs above background catalog
+  scanning so embedded artwork is not starved by the active grid. Invalid
   sidecars are failure-cached, and cache/decode/upload outcomes are written to
   diagnostics.
   Its single-threaded CPU fallback remains low-priority and bounded while the
@@ -113,6 +114,9 @@ fresh physical-Vita screenshot pass.
   successful until a real video frame exists; a silent hardware session is
   rejected so Auto can recover instead of playing audio behind an endless
   Preparing video overlay.
+  A seek that cannot produce a hardware frame within its bounded restart window
+  is treated as a real failure; Auto reopens the software backend at the same
+  requested position instead of resuming audio into an endless buffer state.
 - **Multiple media tracks:** the playback panel discovers and switches between
   AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
   subtitles without leaving the video. The same seekable-cursor path is used
