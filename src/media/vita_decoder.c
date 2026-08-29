@@ -8,6 +8,8 @@
 #include <vita_hw_decoder.h>
 #include <vita_sw_decoder.h>
 
+#include "media/media_tracks.h"
+
 _Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaHwDecoderPlayerStatus),
 	           "hardware status ABI changed");
 _Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaSwDecoderPlayerStatus),
@@ -23,6 +25,13 @@ struct VtDecoderPlayer {
 	VtDecoderPlayerConfig config;
 	VitaHwDecoderPlayer *hardware;
 	VitaSwDecoderPlayer *software;
+	VtDecoderTrackInfo audio_tracks[VT_DECODER_MAX_AUDIO_TRACKS];
+	VtDecoderTrackInfo subtitle_tracks[VT_DECODER_MAX_SUBTITLE_TRACKS];
+	int audio_track_count;
+	int subtitle_track_count;
+	int active_audio_track;
+	int active_subtitle_track;
+	VtSubtitleReader *subtitles;
 };
 
 static int local_read(void *opaque, void *buffer, size_t size) {
@@ -100,13 +109,57 @@ int vt_decoder_prepare_hardware_runtime(void) {
 }
 
 VtDecoderPlayer *vt_decoder_create(void) {
-	return calloc(1, sizeof(VtDecoderPlayer));
+	VtDecoderPlayer *player = calloc(1, sizeof(VtDecoderPlayer));
+	if (!player) return NULL;
+	player->subtitles = vt_subtitle_reader_create();
+	if (!player->subtitles) {
+		free(player);
+		return NULL;
+	}
+	return player;
+}
+
+static void open_selected_subtitles(VtDecoderPlayer *player,
+	                                uint64_t position_ms) {
+	if (!player || !player->subtitles) return;
+	if (player->active_subtitle_track <= 0 ||
+	    player->active_subtitle_track > player->subtitle_track_count) {
+		vt_subtitle_reader_close(player->subtitles);
+		player->active_subtitle_track = 0;
+		return;
+	}
+	int index = player->active_subtitle_track - 1;
+	if (vt_subtitle_reader_open(player->subtitles, &player->source,
+	                            player->subtitle_tracks[index].stream_index,
+	                            position_ms,
+	                            player->config.cancel_flag) < 0)
+		player->active_subtitle_track = 0;
 }
 
 int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config) {
 	if (!player || !config || !config->stream.open) return -1;
 	player->source = config->stream;
 	player->config = *config;
+	player->audio_track_count = 0;
+	player->subtitle_track_count = 0;
+	int probe_result = vt_media_tracks_probe(
+	    &player->source, player->audio_tracks, &player->audio_track_count,
+	    player->subtitle_tracks, &player->subtitle_track_count,
+	    config->cancel_flag);
+	/* Track discovery uses the same factory and demux configuration as
+	 * playback. Do not silently downgrade to an unselectable first track if
+	 * the discovery cursor fails, especially for a transient remote source. */
+	if (probe_result < 0) return probe_result;
+	player->active_audio_track = config->audio_track;
+	if (player->active_audio_track < 0 ||
+	    player->active_audio_track >= player->audio_track_count)
+		player->active_audio_track = 0;
+	player->active_subtitle_track = config->subtitle_track;
+	if (player->active_subtitle_track < 0 ||
+	    player->active_subtitle_track > player->subtitle_track_count)
+		player->active_subtitle_track = 0;
+	player->config.audio_track = player->active_audio_track;
+	player->config.subtitle_track = player->active_subtitle_track;
 	VtDecoderBackend preference = config->preferred_backend;
 	if (preference != VT_DECODER_BACKEND_HARDWARE &&
 	    preference != VT_DECODER_BACKEND_SOFTWARE)
@@ -115,6 +168,7 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	if (preference != VT_DECODER_BACKEND_SOFTWARE) {
 		VitaHwDecoderPlayerConfig hardware = {
 			.stream = { &player->source, hw_stream_open },
+			.audio_track = player->active_audio_track,
 			.expected_width = config->expected_width,
 			.expected_height = config->expected_height,
 			.expected_fps = config->expected_fps,
@@ -127,6 +181,7 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 		       ? vita_hw_decoder_open(player->hardware, &hardware) : -1;
 		if (result >= 0) {
 			player->backend = VT_DECODER_BACKEND_HARDWARE;
+			open_selected_subtitles(player, config->start_position_ms);
 			return 0;
 		}
 		if (player->hardware) vita_hw_decoder_destroy(player->hardware);
@@ -138,6 +193,7 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	 * arrives here directly without initializing the hardware backend. */
 	VitaSwDecoderPlayerConfig software = {
 		.stream = { &player->source, sw_stream_open },
+		.audio_track = player->active_audio_track,
 		.expected_width = config->expected_width,
 		.expected_height = config->expected_height,
 		.expected_fps = config->expected_fps,
@@ -148,7 +204,10 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	player->software = vita_sw_decoder_create();
 	result = player->software
 	       ? vita_sw_decoder_open(player->software, &software) : -1;
-	if (result >= 0) player->backend = VT_DECODER_BACKEND_SOFTWARE;
+	if (result >= 0) {
+		player->backend = VT_DECODER_BACKEND_SOFTWARE;
+		open_selected_subtitles(player, config->start_position_ms);
+	}
 	return result;
 }
 
@@ -165,6 +224,7 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 	}
 	VitaSwDecoderPlayerConfig software = {
 		.stream = { &player->source, sw_stream_open },
+		.audio_track = player->active_audio_track,
 		.expected_width = player->config.expected_width,
 		.expected_height = player->config.expected_height,
 		.expected_fps = player->config.expected_fps,
@@ -182,6 +242,7 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 
 void vt_decoder_destroy(VtDecoderPlayer *player) {
 	if (!player) return;
+	vt_subtitle_reader_destroy(player->subtitles);
 	if (player->hardware) vita_hw_decoder_destroy(player->hardware);
 	if (player->software) vita_sw_decoder_destroy(player->software);
 	free(player);
@@ -206,10 +267,103 @@ void vt_decoder_set_volume(VtDecoderPlayer *player, int percent) {
 
 int vt_decoder_seek(VtDecoderPlayer *player, uint64_t position_ms) {
 	if (!player) return -1;
-	return player->backend == VT_DECODER_BACKEND_HARDWARE
+	int result = player->backend == VT_DECODER_BACKEND_HARDWARE
 	     ? vita_hw_decoder_seek(player->hardware, position_ms)
 	     : player->backend == VT_DECODER_BACKEND_SOFTWARE
 	     ? vita_sw_decoder_seek(player->software, position_ms) : -1;
+	if (result >= 0) open_selected_subtitles(player, position_ms);
+	return result;
+}
+
+int vt_decoder_select_audio_track(VtDecoderPlayer *player, int audio_track,
+	                              uint64_t position_ms) {
+	if (!player || audio_track < 0 || audio_track >= player->audio_track_count)
+		return -1;
+	if (audio_track == player->active_audio_track) return 0;
+	int result = player->backend == VT_DECODER_BACKEND_HARDWARE
+	           ? vita_hw_decoder_select_audio_track(player->hardware,
+	                                                audio_track, position_ms)
+	           : player->backend == VT_DECODER_BACKEND_SOFTWARE
+	           ? vita_sw_decoder_select_audio_track(player->software,
+	                                                audio_track, position_ms)
+	           : -1;
+	if (result >= 0) {
+		player->active_audio_track = audio_track;
+		player->config.audio_track = audio_track;
+	}
+	return result;
+}
+
+int vt_decoder_select_subtitle_track(VtDecoderPlayer *player,
+	                                 int subtitle_track,
+	                                 uint64_t position_ms) {
+	if (!player || subtitle_track < 0 ||
+	    subtitle_track > player->subtitle_track_count) return -1;
+	if (subtitle_track == player->active_subtitle_track) return 0;
+	if (subtitle_track == 0) {
+		vt_subtitle_reader_close(player->subtitles);
+		player->active_subtitle_track = 0;
+		player->config.subtitle_track = 0;
+		return 0;
+	}
+	int index = subtitle_track - 1;
+	int result = vt_subtitle_reader_open(
+	    player->subtitles, &player->source,
+	    player->subtitle_tracks[index].stream_index, position_ms,
+	    player->config.cancel_flag);
+	if (result >= 0) {
+		player->active_subtitle_track = subtitle_track;
+		player->config.subtitle_track = subtitle_track;
+	} else {
+		player->active_subtitle_track = 0;
+		player->config.subtitle_track = 0;
+	}
+	return result;
+}
+
+int vt_decoder_audio_track_count(const VtDecoderPlayer *player) {
+	return player ? player->audio_track_count : 0;
+}
+
+int vt_decoder_subtitle_track_count(const VtDecoderPlayer *player) {
+	return player ? player->subtitle_track_count : 0;
+}
+
+int vt_decoder_active_audio_track(const VtDecoderPlayer *player) {
+	return player ? player->active_audio_track : 0;
+}
+
+int vt_decoder_active_subtitle_track(const VtDecoderPlayer *player) {
+	return player ? player->active_subtitle_track : 0;
+}
+
+int vt_decoder_audio_track_info(const VtDecoderPlayer *player, int index,
+	                            VtDecoderTrackInfo *info) {
+	if (!player || !info || index < 0 || index >= player->audio_track_count)
+		return -1;
+	*info = player->audio_tracks[index];
+	return 0;
+}
+
+int vt_decoder_subtitle_track_info(const VtDecoderPlayer *player, int index,
+	                               VtDecoderTrackInfo *info) {
+	if (!player || !info || index < 0 || index >= player->subtitle_track_count)
+		return -1;
+	*info = player->subtitle_tracks[index];
+	return 0;
+}
+
+int vt_decoder_subtitle_text(VtDecoderPlayer *player, uint64_t position_ms,
+	                         char *text, size_t text_size) {
+	if (!player) return -1;
+	int result = vt_subtitle_reader_text(player->subtitles, position_ms,
+	                                    text, text_size);
+	if (result < 0) {
+		vt_subtitle_reader_close(player->subtitles);
+		player->active_subtitle_track = 0;
+		player->config.subtitle_track = 0;
+	}
+	return result;
 }
 
 int vt_decoder_present(VtDecoderPlayer *player, int fill_screen) {

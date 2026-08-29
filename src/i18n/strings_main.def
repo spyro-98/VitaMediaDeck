@@ -1,6 +1,7 @@
 VT_STR(MAIN_RENAME_MEDIA, "Rinomina media", "Rename media")
 VT_STR(MAIN_PLAYBACK_FAILED, "Riproduzione non riuscita", "Playback failed")
 VT_STR(MAIN_AUDIO_OPEN_FAILED, "Impossibile aprire questo file audio", "This audio file could not be opened")
+VT_STR(MAIN_VIDEO_MINI_FAILED, "Il formato video non supporta il mini-player; la riproduzione a schermo intero è stata chiusa", "This video format does not support the mini-player; fullscreen playback was closed")
 VT_STR(MAIN_UNSUPPORTED_MEDIA, "Media non supportato", "Unsupported media")
 VT_STR(MAIN_UNSUPPORTED_DETAIL, "La riproduzione richiede una traccia video H.264; l'audio AAC e' opzionale", "Playback requires an H.264 video track; AAC audio is optional")
 VT_STR(MAIN_RENAME_FAILED, "Rinomina non riuscita", "Rename failed")

@@ -21,6 +21,29 @@ Sources, Settings, and About from the shared sidebar.
 - Added authenticated SMB2/SMB3 browsing/read/positioned-I/O through libsmb2.
 - Added one protocol-neutral stream factory shared by local files and all
   remote transports.
+- Added metadata discovery and in-player switching for multiple AAC audio and
+  embedded text-subtitle tracks over that same local/remote factory contract.
+- Added a bounded subtitle demux worker and Unicode-aware renderer that honors
+  subtitle font, foreground/background colors, size, outline, width,
+  minimum/maximum line count, and position preferences.
+- Added exact-size Inter Medium/SemiBold subtitle faces, native Vita
+  Japanese/Chinese/Korean PGF fallback, and a per-script Settings preview.
+- Rebuilt every shared UI surface around the original Signal / Shell design:
+  OLED-black planes, amber acquisition geometry, scene identity blocks,
+  full-height navigation and player drawers, album-aware signal fields, and a
+  Reduce motion-safe ambient layer.
+- Restored the VitaTube player contract across music, video, and the compact
+  player: short Start minimization, Start-hold OLED ECO mode, and immediate
+  Select input lock. Local video resumes at the background position with the
+  previous audio/subtitle selections.
+- Added a cool machine-telemetry palette and deterministic memory-scan sweep
+  while retaining amber for focus and direct action.
+- Added progressive cover previews to local and authenticated-remote video
+  cells: sidecar artwork remains first, then embedded cover art, then a bounded
+  representative-frame fallback with a checked RGB565 disk cache.
+- Extended playback history to stable per-video local and remote IDs, including
+  duration-aware completion cleanup and a conditional R1 **Start from
+  beginning** action for recovered sessions.
 - Extracted the decoder/presenter boundary into the `vita_hw_player` static
   module with public headers and a local-file example.
 - Kept the complete public H.264 hardware decoder, AAC path, direct NV12
@@ -56,6 +79,15 @@ the physical console. Those tests remain mandatory.
    on.
 9. Verify local MP3/M4A/AAC/WAV behavior, artwork, mini-player, shuffle, repeat,
    and display-awake preferences.
+10. Switch repeatedly between at least two AAC tracks and two text-subtitle
+    tracks in local, WebDAV, SFTP, and SMB videos, including seek, pause, loop,
+    Off, and decoder-fallback transitions.
+11. Verify short Start versus held Start timing, ECO exit, immediate Select
+    lock/unlock, local-video mini-player hand-off, and position/track restoration.
+12. Verify sidecar, embedded-cover, and frame-fallback previews in local storage,
+    WebDAV, SFTP, and SMB grid/list views, including slow and failed connections.
+13. Stop and reopen multiple local and remote videos, verify distinct resume
+    points, completion cleanup, and the conditional R1 restart action.
 
 ## Near-term work
 

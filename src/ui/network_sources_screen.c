@@ -10,6 +10,7 @@
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
+#include "media/video_thumbnail.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/components.h"
@@ -198,11 +199,9 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 	int page_has_focus = !ui_mini_player_input_locked() && !remove_confirm &&
 	                     (!sidebar || (!sidebar->open &&
 	                                  sidebar->animation <= 0.01f));
-	if (body) ui_font_draw_text(body, SOURCE_LIST_X, 94, VT_THEME_TEXT,
-		                            UI_FONT_BODY, vt_i18n_str(VT_STR_NETWORK_SERVERS_TITLE));
-	if (small) ui_font_draw_text(small, SOURCE_LIST_X, 116, VT_THEME_TEXT_MUTED,
-	                             UI_FONT_SMALL,
-		                             vt_i18n_str(VT_STR_NETWORK_PRIVACY));
+	ui_scene_identity(SOURCE_LIST_X, 68, 604, "NET/03",
+	                  vt_i18n_str(VT_STR_NETWORK_SERVERS_TITLE),
+	                  vt_i18n_str(VT_STR_NETWORK_PRIVACY));
 	ui_action_button(720, 70, 194, 43, VT_THEME_BLUE_BRIGHT,
 		                 "Square", vt_i18n_str(VT_STR_NETWORK_ADD_SOURCE), 0);
 	if (!count) {
@@ -258,6 +257,12 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		const VtNetworkSource *source = &sources[selected];
 		ui_panel(642, SOURCE_LIST_Y, 272, 174, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_BLUE_LIGHT, 0);
+		vita2d_draw_rectangle(654, SOURCE_LIST_Y + 18, 2, 138,
+		                      VT_THEME_SIGNAL_DIM);
+		for (int node = 0; node < 4; node++)
+			vita2d_draw_rectangle(651, SOURCE_LIST_Y + 29 + node * 28, 8, 8,
+			                      node == 0 ? VT_THEME_SIGNAL_LIGHT
+			                                : VT_THEME_SIGNAL_DIM);
 		if (small) {
 			ui_font_draw_text(small, 666, 154, VT_THEME_BLUE_LIGHT, UI_FONT_SMALL,
 			                  vt_i18n_str(VT_STR_NETWORK_CONNECTION));
@@ -291,7 +296,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 	if (remove_confirm) {
 		vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 		                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(0, 3, 7, 186));
-		ui_panel(208, 174, 544, 190, RGBA8(3, 8, 15, 255),
+		ui_panel(208, 174, 544, 190, RGBA8(9, 8, 7, 255),
 		         VT_THEME_DANGER, 0);
 		if (body) ui_font_draw_text(body, 244, 224, VT_THEME_TEXT, UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_NETWORK_REMOVE_TITLE));
@@ -334,19 +339,41 @@ static void draw_browser_icon(const VtNetworkEntry *entry, int x, int y) {
 	}
 	for (int stripe = 0; stripe < 5; stripe++)
 		vita2d_draw_rectangle(x + 18 + stripe * 20, y + 14, 10, 88,
-		                      stripe & 1 ? RGBA8(9, 27, 47, 255)
-		                                 : RGBA8(5, 16, 29, 255));
-	vita2d_draw_fill_circle(x + 68, y + 58, 21, RGBA8(2, 8, 17, 220));
+		                      stripe & 1 ? RGBA8(47, 34, 22, 255)
+		                                 : RGBA8(18, 16, 14, 255));
+	vita2d_draw_fill_circle(x + 68, y + 58, 21, RGBA8(5, 5, 6, 220));
 	for (int line = 0; line < 18; line++)
 		vita2d_draw_rectangle(x + 62, y + 49 + line, 7 + line / 2, 1,
 		                      VT_THEME_TEXT);
 }
 
+static void draw_video_preview(vita2d_texture *texture, float x, float y,
+	                           float width, float height) {
+	if (!texture) return;
+	float tw = (float)vita2d_texture_get_width(texture);
+	float th = (float)vita2d_texture_get_height(texture);
+	if (tw <= 0.0f || th <= 0.0f) return;
+	float source_x = 0.0f, source_y = 0.0f;
+	float source_w = tw, source_h = th;
+	if (tw / th > width / height) {
+		source_w = th * width / height;
+		source_x = (tw - source_w) * 0.5f;
+	} else {
+		source_h = tw * height / width;
+		source_y = (th - source_h) * 0.5f;
+	}
+	vita2d_draw_texture_part_scale(texture, x, y, source_x, source_y,
+	                               source_w, source_h,
+	                               width / source_w, height / source_h);
+}
+
 static void draw_browser(const VtNetworkSource *source, const char *path,
+	                     const VtNetworkCredential *credential,
 	                     const VtNetworkEntry *entries, int count,
 	                     int selected, int top, int grid_mode,
 	                     const UiFocusMotion *focus_motion) {
 	ui_mini_player_pump();
+	vt_video_thumbnail_pump();
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
@@ -356,13 +383,14 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 	char breadcrumb[192];
 	snprintf(breadcrumb, sizeof(breadcrumb), "%s / %s", source->name,
 	         path && path[0] ? path : "");
-	ui_panel(LIST_X, 68, LIST_W, 34, VT_THEME_SURFACE,
+	ui_panel(LIST_X, 68, LIST_W, 34, VT_THEME_SURFACE_RAISED,
 	         VT_THEME_BLUE_LIGHT, 0);
+	vita2d_draw_rectangle(LIST_X + 12, 78, 3, 14, VT_THEME_SIGNAL);
 	if (small) {
 		char fitted_breadcrumb[192];
 		clip(small, UI_FONT_SMALL, breadcrumb, fitted_breadcrumb,
 		     sizeof(fitted_breadcrumb), LIST_W - 190);
-		ui_font_draw_text(small, LIST_X + 16, 91, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text(small, LIST_X + 26, 91, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, fitted_breadcrumb);
 		const char *view_hint = grid_mode
 		                        ? vt_i18n_str(VT_STR_NETWORK_VIEW_GRID)
@@ -397,16 +425,29 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		for (int i = top; i < count && i < top + render_rows(); i++) {
 			int y = LIST_Y + (i - top) * ROW_H;
 			const VtNetworkEntry *entry = &entries[i];
+			vita2d_texture *preview = entry->is_video
+			                        ? vt_video_thumbnail_get_remote(
+			                              source, credential, entry->path, entry->size)
+			                        : NULL;
 			ui_panel(LIST_X, y, LIST_W, ROW_H - 6,
 			         VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : (entry->is_video || entry->is_audio)
 			             ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER,
 			         0);
+			if (preview) {
+				vita2d_draw_rectangle(LIST_X + 9, y + 6, 70, 40,
+				                      VT_THEME_MEDIA_BACKDROP);
+				draw_video_preview(preview, LIST_X + 9, y + 6, 70, 40);
+				vita2d_draw_rectangle(LIST_X + 9, y + 44, 70, 2,
+				                      VT_THEME_COLD);
+			}
 			if (body) {
 				char title[192];
-				clip(body, UI_FONT_BODY, entry->name, title, sizeof(title), 600);
-				ui_font_draw_text(body, LIST_X + 22, y + 33, VT_THEME_TEXT,
+				clip(body, UI_FONT_BODY, entry->name, title, sizeof(title),
+				     preview ? 520 : 600);
+				ui_font_draw_text(body, LIST_X + (preview ? 94 : 22), y + 33,
+				                  VT_THEME_TEXT,
 				                  UI_FONT_BODY, title);
 			}
 			if (small) {
@@ -442,13 +483,28 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			int x = LIST_X + col * (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X);
 			int y = LIST_Y + row * (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y);
 			const VtNetworkEntry *entry = &entries[i];
+			vita2d_texture *preview = entry->is_video
+			                        ? vt_video_thumbnail_get_remote(
+			                              source, credential, entry->path, entry->size)
+			                        : NULL;
 			ui_panel(x, y, BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H,
 			         VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : (entry->is_video || entry->is_audio)
 			             ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER,
 			         0);
-			draw_browser_icon(entry, x + 30, y + 2);
+			if (preview) {
+				vita2d_draw_rectangle(x + 6, y + 6,
+				                      BROWSER_GRID_CARD_W - 12, 96,
+				                      VT_THEME_MEDIA_BACKDROP);
+				draw_video_preview(preview, x + 6, y + 6,
+				                   BROWSER_GRID_CARD_W - 12, 96);
+				vita2d_draw_rectangle(x + 6, y + 100,
+				                      BROWSER_GRID_CARD_W - 12, 2,
+				                      VT_THEME_COLD);
+			} else {
+				draw_browser_icon(entry, x + 30, y + 2);
+			}
 			if (small) {
 				char title[128];
 				clip(small, UI_FONT_SMALL, entry->name, title, sizeof(title),
@@ -968,6 +1024,7 @@ static int browse_source(const VtNetworkSource *source,
 		free(entries);
 		return load_result;
 	}
+	vt_video_thumbnail_resume();
 	int selected = 0, top = 0;
 	int grid_mode = vt_preferences_file_browser_grid();
 	UiFocusMotion focus_motion;
@@ -1064,8 +1121,11 @@ static int browse_source(const VtNetworkSource *source,
 			VtNetworkEntry *entry = &entries[selected];
 			if (entry->is_directory) {
 				snprintf(path, sizeof(path), "%s", entry->path);
-				if (load_directory(source, credential, path, entries, &count) == 0)
+				if (load_directory(source, credential, path, entries, &count) == 0) {
 					selected = top = 0;
+					vt_video_thumbnail_suspend();
+					vt_video_thumbnail_resume();
+				}
 				network_resync_input(&previous, &nav_repeat);
 				continue;
 			} else if (entry->is_video) {
@@ -1076,6 +1136,7 @@ static int browse_source(const VtNetworkSource *source,
 					snprintf(selection->path, sizeof(selection->path), "%s", entry->path);
 					snprintf(selection->title, sizeof(selection->title), "%s", entry->name);
 				}
+				vt_video_thumbnail_suspend();
 				free(entries);
 				return UI_NETWORK_ACTION_PLAY;
 			}
@@ -1083,16 +1144,20 @@ static int browse_source(const VtNetworkSource *source,
 		if (pressed & SCE_CTRL_CIRCLE) {
 			char *slash = strrchr(path, '/');
 			if (!path[0]) {
+				vt_video_thumbnail_suspend();
 				free(entries);
 				return 0;
 			}
 			if (slash) *slash = '\0'; else path[0] = '\0';
-			if (load_directory(source, credential, path, entries, &count) == 0)
+			if (load_directory(source, credential, path, entries, &count) == 0) {
 				selected = top = 0;
+				vt_video_thumbnail_suspend();
+				vt_video_thumbnail_resume();
+			}
 			network_resync_input(&previous, &nav_repeat);
 			continue;
 		}
-		draw_browser(source, path, entries, count, selected, top, grid_mode,
+		draw_browser(source, path, credential, entries, count, selected, top, grid_mode,
 		             &focus_motion);
 		sceKernelDelayThread(1000);
 	}

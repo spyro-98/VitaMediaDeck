@@ -14,6 +14,7 @@
 #include "i18n/i18n.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
+#include "ui/components.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
 #include "ui/touch.h"
@@ -112,6 +113,27 @@ static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 	 * a GXM fault. */
 }
 
+static void draw_acquisition_frame(float center_x, float center_y,
+	                               float half_width, float half_height,
+	                               unsigned int opacity) {
+	unsigned int signal = VT_THEME_SIGNAL_A(opacity);
+	unsigned int dim = VT_THEME_SIGNAL_A(opacity / 4U);
+	const float mark = 24.0f;
+	const float thickness = 2.0f;
+	float left = center_x - half_width, right = center_x + half_width;
+	float top = center_y - half_height, bottom = center_y + half_height;
+	vita2d_draw_line(left, center_y, right, center_y, dim);
+	vita2d_draw_line(center_x, top, center_x, bottom, dim);
+	vita2d_draw_rectangle(left, top, mark, thickness, signal);
+	vita2d_draw_rectangle(left, top, thickness, mark, signal);
+	vita2d_draw_rectangle(right - mark, top, mark, thickness, signal);
+	vita2d_draw_rectangle(right - thickness, top, thickness, mark, signal);
+	vita2d_draw_rectangle(left, bottom - thickness, mark, thickness, signal);
+	vita2d_draw_rectangle(left, bottom - mark, thickness, mark, signal);
+	vita2d_draw_rectangle(right - mark, bottom - thickness, mark, thickness, signal);
+	vita2d_draw_rectangle(right - thickness, bottom - mark, thickness, mark, signal);
+}
+
 static void draw_loading_frame(const char *query, const char *message,
 	                           const volatile long *progress_current,
 	                           const volatile long *progress_total,
@@ -120,9 +142,12 @@ static void draw_loading_frame(const char *query, const char *message,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_brand_set_loading(1);
+	ui_chrome_background(COLOR_BG, COLOR_ACCENT);
 	ui_brand_draw_header(query);
 
-	/* Loading is part of the page, not an overlaid dialog. */
+	/* Loading is a signal-acquisition scene, not an overlaid dialog. */
+	draw_acquisition_frame(480.0f, 246.0f, 184.0f, 106.0f, 152U);
+	vita2d_draw_rectangle(476, 242, 8, 8, VT_THEME_SIGNAL_DIM);
 	ui_draw_spinner(480.0f, 246.0f, now);
 	draw_centered_text(330, COLOR_TEXT, UI_FONT_DISPLAY,
 	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_MESSAGE));
@@ -180,6 +205,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 	vita2d_draw_rectangle(0, 74, SCREEN_WIDTH, 24, RGBA8(0, 0, 0, 132));
 	vita2d_draw_rectangle(0, 98, SCREEN_WIDTH, 18, RGBA8(0, 0, 0, 62));
 	vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, 3, COLOR_ACCENT);
+	draw_acquisition_frame(480.0f, 252.0f, 176.0f, 104.0f, 132U);
 	draw_clipped_line(body, 32, 45, 760, UI_FONT_BODY, COLOR_TEXT, title);
 	draw_clipped_line(small, 32, 72, 760, UI_FONT_SMALL, COLOR_MUTED, channel);
 
@@ -228,7 +254,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 		}
 		int quality_w = ui_font_text_width(small, UI_FONT_SMALL, quality);
 		vita2d_draw_rectangle(SCREEN_WIDTH - quality_w - 54, 462,
-		                      quality_w + 30, 32, RGBA8(8, 18, 32, 224));
+		                      quality_w + 30, 32, RGBA8(16, 13, 10, 224));
 		vita2d_draw_rectangle(SCREEN_WIDTH - quality_w - 54, 462, 3, 32,
 		                      COLOR_ACCENT);
 		ui_font_draw_text(small, SCREEN_WIDTH - quality_w - 38, 484,
@@ -424,12 +450,14 @@ void ui_message_show(const char *message, const char *detail, int duration_ms) {
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_brand_set_loading(0);
+	ui_chrome_background(COLOR_BG, VT_THEME_DANGER);
 	ui_brand_draw_header(NULL);
-	/* Errors stay a full page: no modal box breaking
-	 * the app's visual continuity. */
-	vita2d_draw_fill_circle(480.0f, 226.0f, 25.0f, VT_THEME_DANGER);
+	/* Errors stay a full acquisition page: no modal box breaks the app's
+	 * visual continuity. */
+	draw_acquisition_frame(480.0f, 226.0f, 112.0f, 72.0f, 112U);
+	vita2d_draw_rectangle(451.0f, 197.0f, 58.0f, 58.0f, VT_THEME_DANGER);
 	vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, COLOR_TEXT);
-	vita2d_draw_fill_circle(480.0f, 237.0f, 2.5f, COLOR_TEXT);
+	vita2d_draw_rectangle(478.0f, 237.0f, 4.0f, 4.0f, COLOR_TEXT);
 	draw_centered_text(312, COLOR_TEXT, UI_FONT_DISPLAY,
 	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_ERROR_MESSAGE));
 	if (detail && detail[0]) {

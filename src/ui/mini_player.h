@@ -19,7 +19,7 @@ int ui_mini_player_input_locked(void);
 
 /* START is reserved globally for mini-player mode. When a fullscreen resume
  * handler is installed it reopens that player; it never doubles as stop.
- * SELECT held for 900 ms locks/unlocks every mini-player and page input. */
+ * SELECT locks/unlocks every mini-player and page input on a discrete press. */
 int ui_mini_player_handle_buttons(unsigned int *pressed);
 
 /* Draws into the already-open vita2d frame. No-op when the service has not

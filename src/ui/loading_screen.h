@@ -52,7 +52,7 @@ int ui_loading_run_with_query(const char *query,
                               const volatile long *progress_total);
 
 /* Full-screen version dedicated to video. No panel or dialog: title top
- * left, quality bottom right, centered spinner, and cyan progress on the
+ * left, quality bottom right, centered acquisition mark, and signal progress on the
  * timeline. */
 void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
                             const volatile long *progress_current,

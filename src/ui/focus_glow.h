@@ -20,7 +20,7 @@ void ui_focus_motion_reset(UiFocusMotion *motion);
 void ui_focus_motion_tick(UiFocusMotion *motion, float x, float y,
 	                      float width, float height);
 
-/* Drawn before the poster/card: only the oversized blue halo remains visible
+/* Drawn before the poster/card: only the oversized amber halo remains visible
  * around its edges, so the selector is physically behind it on the Z axis. */
 void ui_focus_glow_draw(float x, float y, float width, float height,
 	                    uint64_t now_us, int viewport_top,

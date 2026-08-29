@@ -33,6 +33,17 @@
 
 static int g_network_ready;
 
+typedef struct {
+	int valid;
+	VtLocalMediaItem item;
+	int audio_track;
+	int subtitle_track;
+} VtMinimizedLocalVideo;
+
+static VtMinimizedLocalVideo g_minimized_local_video;
+
+static int resume_minimized_local_video(uint64_t position_ms, void *ctx);
+
 static void media_id(const char *path, char out[16]) {
 	uint32_t hash = 2166136261U;
 	for (const unsigned char *cursor = (const unsigned char *)path;
@@ -41,6 +52,40 @@ static void media_id(const char *path, char out[16]) {
 		hash *= 16777619U;
 	}
 	snprintf(out, 16, "media%08x", hash);
+}
+
+static uint64_t history_hash_text(uint64_t hash, const char *text) {
+	for (const unsigned char *cursor = (const unsigned char *)text;
+	     cursor && *cursor; cursor++) {
+		hash ^= *cursor;
+		hash *= 1099511628211ULL;
+	}
+	hash ^= 0xffU;
+	return hash * 1099511628211ULL;
+}
+
+static uint64_t history_hash_u64(uint64_t hash, uint64_t value) {
+	for (unsigned int shift = 0; shift < 64; shift += 8) {
+		hash ^= (unsigned char)(value >> shift);
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+static void remote_media_id(const UiNetworkSelection *selection, char out[16]) {
+	uint64_t hash = 14695981039346656037ULL;
+	if (selection) {
+		hash = history_hash_u64(hash, selection->source.protocol);
+		hash = history_hash_text(hash, selection->source.host);
+		hash = history_hash_u64(hash, selection->source.port);
+		hash = history_hash_text(hash, selection->source.username);
+		hash = history_hash_text(hash, selection->source.domain);
+		hash = history_hash_text(hash, selection->source.root_path);
+		hash = history_hash_text(hash, selection->source.share);
+		hash = history_hash_text(hash, selection->path);
+	}
+	snprintf(out, 16, "r%014llx",
+	         (unsigned long long)(hash & 0x00ffffffffffffffULL));
 }
 
 static int valid_filename(const char *name) {
@@ -115,6 +160,8 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 }
 
 static int play_local_audio(VtLocalMediaItem item) {
+	memset(&g_minimized_local_video, 0, sizeof(g_minimized_local_video));
+	vt_background_playback_set_fullscreen_resume(NULL, NULL);
 	for (;;) {
 		char id[16];
 		media_id(item.path, id);
@@ -144,7 +191,15 @@ static int play_local_audio(VtLocalMediaItem item) {
 	}
 }
 
-static int play_local_video(const VtLocalMediaItem *item) {
+static int run_local_video_fullscreen(const VtLocalMediaItem *item,
+	                                  uint64_t start_position_ms,
+	                                  int start_audio_track,
+	                                  int start_subtitle_track,
+	                                  uint64_t *last_position_ms,
+	                                  uint64_t *last_duration_ms,
+	                                  int *last_audio_track,
+	                                  int *last_subtitle_track) {
+	if (!item) return -1;
 	char id[16];
 	media_id(item->path, id);
 	VtDecoderStreamFactory factory;
@@ -153,16 +208,103 @@ static int play_local_video(const VtLocalMediaItem *item) {
 		.stream = factory,
 		.title = item->name,
 		.location = vt_i18n_str(VT_STR_LOCAL_MEDIA_TITLE),
+		.history_id = id,
 		.authenticated_remote = 0,
-		.start_position_ms = vt_playback_history_position(id, item->duration_ms),
+		.allow_minimize = 1,
+		.start_position_ms = start_position_ms,
+		.start_audio_track = start_audio_track,
+		.start_subtitle_track = start_subtitle_track,
 		.expected_width = 0,
 		.expected_height = 0,
 		.expected_fps = 0
 	};
-	uint64_t last_position = 0;
-	int ret = vt_hw_player_screen_run(&source, &last_position);
+	return vt_hw_player_screen_run(&source, last_position_ms, last_duration_ms,
+	                               last_audio_track, last_subtitle_track);
+}
+
+static int minimize_local_video(const VtLocalMediaItem *item,
+	                            uint64_t position_ms,
+	                            int audio_track,
+	                            int subtitle_track) {
+	if (!item) return -1;
+	char id[16];
+	media_id(item->path, id);
+	int ret = vt_background_playback_prepare_local(
+	    item->path, id, item->name,
+	    item->artist[0] ? item->artist : vt_i18n_str(VT_STR_LOCAL_MEDIA_TITLE),
+	    item->artwork_path[0] ? item->artwork_path : NULL,
+	    item->duration_ms);
+	if (ret < 0) return ret;
+	g_minimized_local_video.valid = 1;
+	g_minimized_local_video.item = *item;
+	g_minimized_local_video.audio_track = audio_track;
+	g_minimized_local_video.subtitle_track = subtitle_track;
+	vt_background_playback_set_fullscreen_resume(
+	    resume_minimized_local_video, &g_minimized_local_video);
+	ret = vt_background_playback_activate(position_ms);
+	if (ret < 0) {
+		vt_background_playback_set_fullscreen_resume(NULL, NULL);
+		vt_background_playback_stop();
+		memset(&g_minimized_local_video, 0, sizeof(g_minimized_local_video));
+	}
+	return ret;
+}
+
+static int resume_minimized_local_video(uint64_t position_ms, void *ctx) {
+	VtMinimizedLocalVideo *session = ctx;
+	if (!session || !session->valid) return -1;
+	VtLocalMediaItem item = session->item;
+	int audio_track = session->audio_track;
+	int subtitle_track = session->subtitle_track;
+	vt_background_playback_stop();
+	uint64_t last_position = position_ms;
+	uint64_t last_duration = item.duration_ms;
+	int last_audio_track = audio_track;
+	int last_subtitle_track = subtitle_track;
+	int ret = run_local_video_fullscreen(
+	    &item, position_ms, audio_track, subtitle_track, &last_position,
+	    &last_duration, &last_audio_track, &last_subtitle_track);
+	char id[16];
+	media_id(item.path, id);
+	vt_playback_history_update(id, last_position,
+	                           last_duration ? last_duration : item.duration_ms);
+	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE) {
+		if (minimize_local_video(&item, last_position, last_audio_track,
+		                         last_subtitle_track) < 0) {
+			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
+			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
+			return -1;
+		}
+		return 0;
+	}
+	vt_background_playback_set_fullscreen_resume(NULL, NULL);
+	memset(&g_minimized_local_video, 0, sizeof(g_minimized_local_video));
+	return ret;
+}
+
+static int play_local_video(const VtLocalMediaItem *item) {
+	char id[16];
+	media_id(item->path, id);
+	vt_background_playback_set_fullscreen_resume(NULL, NULL);
+	vt_background_playback_stop();
+	uint64_t last_position = vt_playback_history_position(id, item->duration_ms);
+	uint64_t last_duration = item->duration_ms;
+	int last_audio_track = 0;
+	int last_subtitle_track = 0;
+	int ret = run_local_video_fullscreen(item, last_position, 0, 0,
+	                                    &last_position, &last_duration,
+	                                    &last_audio_track,
+	                                    &last_subtitle_track);
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-	vt_playback_history_update(id, last_position, item->duration_ms);
+	vt_playback_history_update(id, last_position,
+	                           last_duration ? last_duration : item->duration_ms);
+	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE) {
+		if (minimize_local_video(item, last_position, last_audio_track,
+		                         last_subtitle_track) < 0)
+			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
+			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
+		return UI_SECTION_LOCAL_MEDIA;
+	}
 	if (ret < 0)
 		ui_message_show(vt_i18n_str(VT_STR_MAIN_UNSUPPORTED_MEDIA),
 		                vt_i18n_str(VT_STR_MAIN_UNSUPPORTED_DETAIL), 3200);
@@ -227,16 +369,27 @@ static int browse_network(void) {
 		if (vt_network_stream_factory_init(&remote, &selection.source,
 		                                  &selection.credential,
 		                                  selection.path) < 0) continue;
+		char id[16];
+		remote_media_id(&selection, id);
+		uint64_t last_position = vt_playback_history_position(id, 0);
+		uint64_t last_duration = 0;
 		VtHwPlayerScreenSource source = {
 			.stream = remote.factory,
 			.title = selection.title,
 			.location = selection.source.name,
-			.authenticated_remote = 1
+			.history_id = id,
+			.authenticated_remote = 1,
+			.allow_minimize = 0,
+			.start_position_ms = last_position
 		};
 		vt_background_playback_request_stop();
-		uint64_t ignored = 0;
-		int ret = vt_hw_player_screen_run(&source, &ignored);
+		int last_audio_track = 0;
+		int last_subtitle_track = 0;
+		int ret = vt_hw_player_screen_run(&source, &last_position,
+		                                  &last_duration, &last_audio_track,
+		                                  &last_subtitle_track);
 		log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+		vt_playback_history_update(id, last_position, last_duration);
 		memset(&selection.credential, 0, sizeof(selection.credential));
 		memset(&remote.credential, 0, sizeof(remote.credential));
 		if (ret < 0)

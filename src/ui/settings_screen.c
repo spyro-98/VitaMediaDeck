@@ -25,16 +25,18 @@
 #define SCREEN_WIDTH 960
 #define TAB_X 32
 #define TAB_Y 67
-#define TAB_W 216
+#define TAB_W 171
 #define TAB_H 40
 #define ROW_X 44
 #define ROW_Y 130
 #define ROW_W 872
 #define ROW_H 56
 #define ROW_STEP 64
+#define SETTINGS_VISIBLE_ROWS 5
 
 enum {
 	TAB_PLAYBACK = 0,
+	TAB_SUBTITLES,
 	TAB_INTERFACE,
 	TAB_SYSTEM,
 	TAB_CONTROLS,
@@ -53,17 +55,83 @@ enum {
 	ROW_CLOCK,
 	ROW_MAPPING,
 	ROW_DECODER,
+	ROW_SUBTITLE_FONT,
+	ROW_SUBTITLE_FOREGROUND,
+	ROW_SUBTITLE_BACKGROUND,
+	ROW_SUBTITLE_SIZE,
+	ROW_SUBTITLE_WIDTH,
+	ROW_SUBTITLE_ROWS,
+	ROW_SUBTITLE_POSITION,
 	ROW_ACTION
 };
 
 static const char *tab_label(int tab) {
 	static const VtStringId labels[TAB_COUNT] = {
 		VT_STR_SETTINGS_TAB_PLAYBACK,
+		VT_STR_SETTINGS_TAB_SUBTITLES,
 		VT_STR_SETTINGS_TAB_INTERFACE,
 		VT_STR_SETTINGS_TAB_SYSTEM,
 		VT_STR_SETTINGS_TAB_CONTROLS
 	};
 	return tab >= 0 && tab < TAB_COUNT ? vt_i18n_str(labels[tab]) : "";
+}
+
+static const char *subtitle_font_label(int font) {
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_SUBTITLE_FONT_MEDIUM,
+		VT_STR_SETTINGS_SUBTITLE_FONT_SEMIBOLD,
+		VT_STR_SETTINGS_SUBTITLE_FONT_SYSTEM
+	};
+	return vt_i18n_str(font >= VT_SUBTITLE_FONT_INTER_MEDIUM &&
+	                   font <= VT_SUBTITLE_FONT_VITA_SYSTEM
+	                   ? labels[font] : labels[0]);
+}
+
+static const char *subtitle_foreground_label(int color) {
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_SUBTITLE_COLOR_WHITE,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_YELLOW,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_CYAN,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_GREEN
+	};
+	return vt_i18n_str(color >= VT_SUBTITLE_TEXT_WHITE &&
+	                   color <= VT_SUBTITLE_TEXT_GREEN
+	                   ? labels[color] : labels[0]);
+}
+
+static const char *subtitle_background_label(int color) {
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_SUBTITLE_BG_TRANSPARENT,
+		VT_STR_SETTINGS_SUBTITLE_BG_BLACK,
+		VT_STR_SETTINGS_SUBTITLE_BG_MIDNIGHT,
+		VT_STR_SETTINGS_SUBTITLE_BG_WHITE
+	};
+	return vt_i18n_str(color >= VT_SUBTITLE_BACKGROUND_TRANSPARENT &&
+	                   color <= VT_SUBTITLE_BACKGROUND_WHITE
+	                   ? labels[color] : labels[0]);
+}
+
+static const char *subtitle_size_label(int size) {
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_SUBTITLE_SIZE_SMALL,
+		VT_STR_SETTINGS_SUBTITLE_SIZE_MEDIUM,
+		VT_STR_SETTINGS_SUBTITLE_SIZE_LARGE
+	};
+	return vt_i18n_str(size >= VT_SUBTITLE_SIZE_SMALL &&
+	                   size <= VT_SUBTITLE_SIZE_LARGE
+	                   ? labels[size] : labels[VT_SUBTITLE_SIZE_MEDIUM]);
+}
+
+static const char *subtitle_position_label(int position) {
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_SUBTITLE_POSITION_BOTTOM,
+		VT_STR_SETTINGS_SUBTITLE_POSITION_LOW,
+		VT_STR_SETTINGS_SUBTITLE_POSITION_CENTER,
+		VT_STR_SETTINGS_SUBTITLE_POSITION_HIGH
+	};
+	return vt_i18n_str(position >= VT_SUBTITLE_POSITION_BOTTOM &&
+	                   position <= VT_SUBTITLE_POSITION_HIGH
+	                   ? labels[position] : labels[0]);
 }
 
 static void draw_toggle(float x, float y, int enabled) {
@@ -114,6 +182,17 @@ static int rows_for_tab(int tab, SettingRow rows[8]) {
 		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_KEEP_MUSIC_AWAKE), vt_preferences_music_keep_display_awake(), ROW_TOGGLE };
 		return 4;
 	}
+	if (tab == TAB_SUBTITLES) {
+		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_FONT), vt_preferences_subtitle_font(), ROW_SUBTITLE_FONT };
+		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_FOREGROUND), vt_preferences_subtitle_text_color(), ROW_SUBTITLE_FOREGROUND };
+		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_BACKGROUND), vt_preferences_subtitle_background_color(), ROW_SUBTITLE_BACKGROUND };
+		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_SIZE), vt_preferences_subtitle_size(), ROW_SUBTITLE_SIZE };
+		rows[4] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_WIDTH), vt_preferences_subtitle_max_width(), ROW_SUBTITLE_WIDTH };
+		rows[5] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_MIN_ROWS), vt_preferences_subtitle_min_rows(), ROW_SUBTITLE_ROWS };
+		rows[6] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_MAX_ROWS), vt_preferences_subtitle_max_rows(), ROW_SUBTITLE_ROWS };
+		rows[7] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_POSITION), vt_preferences_subtitle_position(), ROW_SUBTITLE_POSITION };
+		return 8;
+	}
 	if (tab == TAB_INTERFACE) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_LANGUAGE), vt_preferences_language(), ROW_LANGUAGE };
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_REDUCE_MOTION), vt_preferences_reduce_motion(), ROW_TOGGLE };
@@ -147,6 +226,71 @@ static int apply_row(int tab, int row, int direction) {
 			case 1: return vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 			case 2: return vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
 			case 3: return vt_preferences_set_music_keep_display_awake(!vt_preferences_music_keep_display_awake());
+		}
+	} else if (tab == TAB_SUBTITLES) {
+		switch (row) {
+			case 0: {
+				int value = vt_preferences_subtitle_font() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_FONT_INTER_MEDIUM)
+					value = VT_SUBTITLE_FONT_VITA_SYSTEM;
+				if (value > VT_SUBTITLE_FONT_VITA_SYSTEM)
+					value = VT_SUBTITLE_FONT_INTER_MEDIUM;
+				return vt_preferences_set_subtitle_font(value);
+			}
+			case 1: {
+				int value = vt_preferences_subtitle_text_color() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_TEXT_WHITE) value = VT_SUBTITLE_TEXT_GREEN;
+				if (value > VT_SUBTITLE_TEXT_GREEN) value = VT_SUBTITLE_TEXT_WHITE;
+				return vt_preferences_set_subtitle_text_color(value);
+			}
+			case 2: {
+				int value = vt_preferences_subtitle_background_color() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_BACKGROUND_TRANSPARENT)
+					value = VT_SUBTITLE_BACKGROUND_WHITE;
+				if (value > VT_SUBTITLE_BACKGROUND_WHITE)
+					value = VT_SUBTITLE_BACKGROUND_TRANSPARENT;
+				return vt_preferences_set_subtitle_background_color(value);
+			}
+			case 3: {
+				int value = vt_preferences_subtitle_size() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_SIZE_SMALL) value = VT_SUBTITLE_SIZE_LARGE;
+				if (value > VT_SUBTITLE_SIZE_LARGE) value = VT_SUBTITLE_SIZE_SMALL;
+				return vt_preferences_set_subtitle_size(value);
+			}
+			case 4: {
+				int value = vt_preferences_subtitle_max_width() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_WIDTH_60) value = VT_SUBTITLE_WIDTH_96;
+				if (value > VT_SUBTITLE_WIDTH_96) value = VT_SUBTITLE_WIDTH_60;
+				return vt_preferences_set_subtitle_max_width(value);
+			}
+			case 5: {
+				int value = vt_preferences_subtitle_min_rows() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_MIN_ROWS) value = VT_SUBTITLE_MAX_ROWS;
+				if (value > VT_SUBTITLE_MAX_ROWS) value = VT_SUBTITLE_MIN_ROWS;
+				return vt_preferences_set_subtitle_min_rows(value);
+			}
+			case 6: {
+				int value = vt_preferences_subtitle_max_rows() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_MIN_ROWS) value = VT_SUBTITLE_MAX_ROWS;
+				if (value > VT_SUBTITLE_MAX_ROWS) value = VT_SUBTITLE_MIN_ROWS;
+				return vt_preferences_set_subtitle_max_rows(value);
+			}
+			case 7: {
+				int value = vt_preferences_subtitle_position() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_POSITION_BOTTOM)
+					value = VT_SUBTITLE_POSITION_HIGH;
+				if (value > VT_SUBTITLE_POSITION_HIGH)
+					value = VT_SUBTITLE_POSITION_BOTTOM;
+				return vt_preferences_set_subtitle_position(value);
+			}
 		}
 	} else if (tab == TAB_INTERFACE) {
 		if (row == 0) {
@@ -182,6 +326,38 @@ static int apply_row(int tab, int row, int direction) {
 	return 0;
 }
 
+static int first_visible_row(int cursor, int row_count) {
+	if (row_count <= SETTINGS_VISIBLE_ROWS) return 0;
+	int first = cursor - SETTINGS_VISIBLE_ROWS / 2;
+	if (first < 0) first = 0;
+	int maximum = row_count - SETTINGS_VISIBLE_ROWS;
+	if (first > maximum) first = maximum;
+	return first;
+}
+
+static void draw_subtitle_script_preview(vita2d_font *label_font) {
+	static const char *const samples[] = {
+		"Aa \xC3\x80\xC3\xA9 \xD0\x91\xD0\xB1", /* Western + Cyrillic */
+		"\xE3\x81\x82\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E", /* Japanese */
+		"\xE4\xB8\xAD\xE6\x96\x87",                         /* Chinese */
+		"\xED\x95\x9C\xEA\xB8\x80"                        /* Korean */
+	};
+	vita2d_font *preview_font = ui_runtime_subtitle_font(
+	    vt_preferences_subtitle_font(), UI_FONT_SMALL);
+	int x = ROW_X;
+	if (label_font) {
+		const char *label = vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_PREVIEW);
+		ui_font_draw_text(label_font, x, 462, VT_THEME_TEXT_MUTED,
+		                  UI_FONT_SMALL, label);
+		x += ui_font_text_width(label_font, UI_FONT_SMALL, label) + 12;
+	}
+	for (size_t i = 0; i < sizeof(samples) / sizeof(samples[0]); i++) {
+		ui_font_draw_text(preview_font, x, 462, VT_THEME_TEXT,
+		                  UI_FONT_SMALL, samples[i]);
+		x += ui_font_text_width(preview_font, UI_FONT_SMALL, samples[i]) + 18;
+	}
+}
+
 void ui_settings_show_controls_reference(void) {
 	ui_text_reader_run_tabbed(vt_i18n_str(VT_STR_SETTINGS_TITLE),
 	                          vt_i18n_str(VT_STR_SETTINGS_TAB_CONTROLS),
@@ -194,6 +370,10 @@ static void draw_screen(int tab, int cursor, float focus,
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	SettingRow rows[8];
 	int row_count = rows_for_tab(tab, rows);
+	int first_row = first_visible_row(cursor, row_count);
+	int visible_rows = row_count - first_row;
+	if (visible_rows > SETTINGS_VISIBLE_ROWS)
+		visible_rows = SETTINGS_VISIBLE_ROWS;
 	int page_has_focus = !ui_mini_player_input_locked() && !sidebar->open &&
 	                     sidebar->animation <= 0.01f;
 	vita2d_start_drawing();
@@ -203,23 +383,34 @@ static void draw_screen(int tab, int cursor, float focus,
 
 	for (int i = 0; i < TAB_COUNT; i++) {
 		int x = TAB_X + i * (TAB_W + 8);
-		vita2d_draw_rectangle(x, TAB_Y, TAB_W, TAB_H,
-		                      i == tab ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE);
-		if (i == tab)
-			vita2d_draw_rectangle(x, TAB_Y + TAB_H - 3, TAB_W, 3,
-			                      VT_THEME_BLUE_LIGHT);
-		if (body) ui_font_draw_text(body, x + 16, TAB_Y + 27,
+		ui_panel(x, TAB_Y, TAB_W, TAB_H,
+		         i == tab ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE,
+		         i == tab ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM,
+		         0);
+		if (small) {
+			char index[4];
+			snprintf(index, sizeof(index), "%02d", i + 1);
+			ui_font_draw_text(small, x + 11, TAB_Y + 26,
+			                  i == tab ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
+			                  UI_FONT_SMALL, index);
+		}
+		if (body) ui_font_draw_text(body, x + 43, TAB_Y + 27,
 		                             i == tab ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
-			                             UI_FONT_BODY, tab_label(i));
+		                             UI_FONT_BODY, tab_label(i));
 	}
 	if (page_has_focus)
 		ui_focus_glow_draw(ROW_X, ROW_Y + focus * ROW_STEP, ROW_W, ROW_H,
 		                   sceKernelGetProcessTimeWide(), ROW_Y, 432);
 
-	for (int i = 0; i < row_count; i++) {
-		int y = ROW_Y + i * ROW_STEP;
-		vita2d_draw_rectangle(ROW_X, y, ROW_W, ROW_H, VT_THEME_SURFACE);
-		vita2d_draw_rectangle(ROW_X, y, 4, ROW_H, VT_THEME_BORDER);
+	for (int slot = 0; slot < visible_rows; slot++) {
+		int i = first_row + slot;
+		int y = ROW_Y + slot * ROW_STEP;
+		ui_panel(ROW_X, y, ROW_W, ROW_H, VT_THEME_SURFACE,
+		         page_has_focus && i == cursor
+		             ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
+		vita2d_draw_rectangle(ROW_X + 12, y + 14, 3, ROW_H - 28,
+		                      page_has_focus && i == cursor
+		                          ? VT_THEME_SIGNAL : VT_THEME_BORDER_DIM);
 		if (body) ui_font_draw_text(body, ROW_X + 22, y + 35,
 		                             page_has_focus && i == cursor
 		                                 ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
@@ -238,7 +429,39 @@ static void draw_screen(int tab, int cursor, float focus,
 			    : VT_STR_SETTINGS_CONTROL_SHOULDERS_PANELS));
 		else if (rows[i].kind == ROW_DECODER)
 			draw_value(small, y, decoder_label(rows[i].value));
+		else if (rows[i].kind == ROW_SUBTITLE_FONT)
+			draw_value(small, y, subtitle_font_label(rows[i].value));
+		else if (rows[i].kind == ROW_SUBTITLE_FOREGROUND)
+			draw_value(small, y, subtitle_foreground_label(rows[i].value));
+		else if (rows[i].kind == ROW_SUBTITLE_BACKGROUND)
+			draw_value(small, y, subtitle_background_label(rows[i].value));
+		else if (rows[i].kind == ROW_SUBTITLE_SIZE)
+			draw_value(small, y, subtitle_size_label(rows[i].value));
+		else if (rows[i].kind == ROW_SUBTITLE_WIDTH) {
+			static const int widths[] = { 60, 75, 88, 96 };
+			char value[16];
+			int index = rows[i].value >= VT_SUBTITLE_WIDTH_60 &&
+			            rows[i].value <= VT_SUBTITLE_WIDTH_96
+			          ? rows[i].value : VT_SUBTITLE_WIDTH_88;
+			snprintf(value, sizeof(value), "%d%%", widths[index]);
+			draw_value(small, y, value);
+		} else if (rows[i].kind == ROW_SUBTITLE_ROWS) {
+			char value[16];
+			snprintf(value, sizeof(value),
+			         vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_ROWS_FORMAT),
+			         rows[i].value);
+			draw_value(small, y, value);
+		} else if (rows[i].kind == ROW_SUBTITLE_POSITION)
+			draw_value(small, y, subtitle_position_label(rows[i].value));
 		else draw_value(small, y, vt_i18n_str(VT_STR_SETTINGS_OPEN));
+	}
+	if (row_count > SETTINGS_VISIBLE_ROWS && small) {
+		if (first_row > 0)
+			ui_font_draw_text(small, ROW_X + ROW_W - 18, ROW_Y - 7,
+			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "^");
+		if (first_row + visible_rows < row_count)
+			ui_font_draw_text(small, ROW_X + ROW_W - 18, 453,
+			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "v");
 	}
 	if (tab == TAB_SYSTEM && small) {
 		char path[192];
@@ -250,9 +473,16 @@ static void draw_screen(int tab, int cursor, float focus,
 		ui_font_draw_text(small, ROW_X + 12, 382, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, path);
 	}
-	if (small)
+	if (tab == TAB_SUBTITLES) {
+		draw_subtitle_script_preview(small);
+	} else if (small) {
+		const char *footer = vt_i18n_str(VT_STR_SETTINGS_FOOTER_HINT);
+		char fitted[512];
+		ui_font_fit_text(small, UI_FONT_SMALL, footer, fitted, sizeof(fitted),
+		                 ROW_W);
 		ui_font_draw_text(small, ROW_X, 462, VT_THEME_TEXT_MUTED,
-		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_SETTINGS_FOOTER_HINT));
+		                  UI_FONT_SMALL, fitted);
+	}
 
 	ui_mini_player_draw();
 	if (sidebar->animation > 0.01f)
@@ -350,9 +580,15 @@ int ui_settings_screen(void) {
 						cursor = 0;
 					}
 				}
-				for (int i = 0; i < count; i++) {
+				count = rows_for_tab(tab, rows);
+				int first_row = first_visible_row(cursor, count);
+				int visible_rows = count - first_row;
+				if (visible_rows > SETTINGS_VISIBLE_ROWS)
+					visible_rows = SETTINGS_VISIBLE_ROWS;
+				for (int slot = 0; slot < visible_rows; slot++) {
+					int i = first_row + slot;
 					if (ui_touch_hit_rect(touch.x, touch.y, ROW_X,
-					                      ROW_Y + i * ROW_STEP, ROW_W, ROW_H)) {
+					                      ROW_Y + slot * ROW_STEP, ROW_W, ROW_H)) {
 						cursor = i;
 						if (tab == TAB_CONTROLS && cursor == 1)
 							ui_settings_show_controls_reference();
@@ -366,7 +602,10 @@ int ui_settings_screen(void) {
 				}
 			}
 		} else ui_nav_repeat_reset(&nav_repeat);
-		float target = (float)cursor;
+		SettingRow focus_rows[8];
+		int focus_count = rows_for_tab(tab, focus_rows);
+		int focus_first = first_visible_row(cursor, focus_count);
+		float target = (float)(cursor - focus_first);
 		if (vt_preferences_reduce_motion()) focus = target;
 		else {
 			uint64_t now = sceKernelGetProcessTimeWide();

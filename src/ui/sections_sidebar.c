@@ -12,12 +12,12 @@
 #include "ui/touch.h"
 
 #define SCREEN_HEIGHT 544
-#define SIDEBAR_WIDTH 286
-#define ITEM_X 18
-#define ITEM_Y 156
-#define ITEM_W 250
-#define ITEM_H 40
-#define ITEM_STEP 54
+#define SIDEBAR_WIDTH 314
+#define ITEM_X 20
+#define ITEM_Y 148
+#define ITEM_W 274
+#define ITEM_H 48
+#define ITEM_STEP 62
 
 #define ANALOG_LOW 64
 #define ANALOG_HIGH 191
@@ -178,44 +178,67 @@ void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor) {
 		vt_i18n_str(VT_STR_SECTIONS_SETTINGS),
 		vt_i18n_str(VT_STR_SECTIONS_ABOUT)
 	};
+	static const char *const indices[] = { "01", "02", "03", "04" };
 	float ox = -(float)SIDEBAR_WIDTH * (1.0f - animation);
-	/* The drawer is a true edge-to-edge layer.  Stopping below the header made
-	 * it look detached from the screen and exposed the page below while it was
-	 * moving in. */
+	/* The signal index is modal and full height. The veil follows the same
+	 * interpolation so the page recedes as the rail enters. */
+	if (animation > 0.01f)
+		vita2d_draw_rectangle(ox + SIDEBAR_WIDTH, 0,
+		                      960 - (ox + SIDEBAR_WIDTH), SCREEN_HEIGHT,
+		                      RGBA8(0, 0, 0, (unsigned int)(150.0f * animation)));
 	vita2d_draw_rectangle(ox, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT,
-	                      RGBA8(3, 8, 15, 250));
-	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 4, 0, 4, SCREEN_HEIGHT,
-	                      VT_THEME_BLUE_BRIGHT);
+	                      RGBA8(7, 7, 8, 252));
+	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 3, 0, 3, SCREEN_HEIGHT,
+	                      VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 8, 0, 5, SCREEN_HEIGHT,
+	                      RGBA8(255, 148, 40, 30));
 	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	/* The physical-key cap anchors the drawer to Vita navigation and makes the
-	 * otherwise quiet full-height top area useful. */
+	/* Packet-like marks provide depth without suggesting unavailable controls. */
+	for (int i = 0; i < 11; i++) {
+		float px = ox + 214.0f + (float)((i * 29) % 72);
+		float py = 68.0f + (float)((i * 47) % 390);
+		vita2d_draw_rectangle(px, py, i % 4 == 0 ? 3.0f : 2.0f, 2.0f,
+		                      VT_THEME_PARTICLE_A(32 + i * 5));
+	}
 	vita2d_draw_rectangle(ox + 20, 18, 42, 26, VT_THEME_SURFACE_RAISED);
+	vita2d_draw_rectangle(ox + 20, 18, 3, 26, VT_THEME_SIGNAL_BRIGHT);
 	if (small) {
 		int key_width = ui_font_text_width(small, UI_FONT_SMALL, "L1");
 		ui_font_draw_text(small, (int)ox + 41 - key_width / 2, 38,
 		                  VT_THEME_TEXT, UI_FONT_SMALL, "L1");
 		ui_font_draw_text(small, (int)ox + 76, 38, VT_THEME_TEXT_MUTED,
-		                  UI_FONT_SMALL, "VitaMediaDeck");
+		                  UI_FONT_SMALL, "VMD // SIGNAL INDEX");
 	}
 	if (!font) return;
-	ui_font_draw_text(font, (int)ox + 28, 116, VT_THEME_TEXT,
+	ui_font_draw_text(font, (int)ox + 28, 108, VT_THEME_TEXT,
 	                      UI_FONT_BODY, vt_i18n_str(VT_STR_SECTIONS_TITLE));
-	vita2d_draw_rectangle(ox + ITEM_X, 132, ITEM_W, 1, VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(ox + ITEM_X, 124, ITEM_W, 1, VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(ox + ITEM_X, 128, 72, 2, VT_THEME_SIGNAL_DIM);
 	int has_focus = focus_cursor >= 0.0f;
 	if (has_focus) {
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
 		                      ITEM_W, ITEM_H, VT_THEME_SURFACE_FOCUS);
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
-		                      4, ITEM_H, VT_THEME_BLUE_LIGHT);
+		                      ITEM_W, 2, VT_THEME_SIGNAL_LIGHT);
+		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
+		                      3, ITEM_H, VT_THEME_SIGNAL_BRIGHT);
 	}
 	for (int i = 0; i < UI_SECTION_COUNT; i++) {
-		unsigned int color = has_focus && i == cursor ? VT_THEME_BLUE_LIGHT
+		unsigned int color = has_focus && i == cursor ? VT_THEME_SIGNAL_LIGHT
 		                                      : VT_THEME_TEXT_MUTED;
-		ui_font_draw_text(font, (int)ox + 34, 183 + i * ITEM_STEP, color,
+		if (small)
+			ui_font_draw_text(small, (int)ox + 34, 179 + i * ITEM_STEP,
+			                  has_focus && i == cursor ? VT_THEME_SIGNAL_BRIGHT
+			                                                : VT_THEME_TEXT_FAINT,
+			                  UI_FONT_SMALL, indices[i]);
+		vita2d_draw_rectangle(ox + 63, 169 + i * ITEM_STEP, 18, 1,
+		                      has_focus && i == cursor ? VT_THEME_SIGNAL_BRIGHT
+		                                                : VT_THEME_BORDER_DIM);
+		ui_font_draw_text(font, (int)ox + 92, 181 + i * ITEM_STEP, color,
 		                      UI_FONT_BODY, items[i]);
 	}
 	if (small)
-		ui_font_draw_text(small, (int)ox + 28, 516, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text(small, (int)ox + 28, 514, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_SECTIONS_FOOTER_HINT));
 }

@@ -36,7 +36,9 @@ not depend on a companion transcoding or discovery service.
 - Authenticated SFTP browsing with SHA-256 host-key pinning.
 - Authenticated SMB2/SMB3 browsing.
 - Seekable remote H.264 playback with optional AAC audio.
-- Local playback resume history.
+- Per-video local and authenticated-remote playback resume history.
+- Local and remote video-cell previews from artwork, embedded covers, or a
+  representative frame fallback.
 - Protocol-neutral reusable hardware player module.
 - English and Italian application catalogues.
 - Opt-in disk diagnostics; in-memory diagnostics remain available while the app
@@ -62,8 +64,10 @@ a new handle containing:
 - an idempotent close operation;
 - independent cursor state.
 
-Two handles may exist concurrently for the same file because audio and video
-demux independently. A backend must not share mutable offsets between them.
+Multiple handles may exist concurrently for the same file because track
+discovery, video, the selected audio stream, and the selected subtitle stream
+demux independently. A backend must return a fresh cursor for every `open` and
+must not share mutable offsets between handles.
 
 ## Remote protocol requirements
 
@@ -93,21 +97,44 @@ demux independently. A backend must not share mutable offsets between them.
 ## Playback architecture
 
 - FFmpeg MOV/MP4 and Matroska demux on custom AVIO cursors.
-- H.264 video with optional AAC audio track selection.
+- H.264 video with runtime selection across all embedded AAC audio tracks.
+- Embedded SubRip, ASS/SSA, WebVTT, and MP4 timed-text discovery, background
+  demux, styled rendering, and runtime Off/track selection.
+- UTF-8 subtitle layout wraps at codepoint boundaries (including text without
+  spaces), limits cues to one through four lines, and never splits a multibyte
+  character when truncating with an ellipsis.
+- Western and Cyrillic UI/subtitle runs use exact-size Inter Medium or SemiBold;
+  Japanese, Chinese, and Korean runs use their native PS Vita system PGFs. The
+  fully native system-font option remains available for all runs.
+- Subtitle settings persist font, foreground/background colors, size, maximum
+  width, minimum/maximum lines, and vertical position with V1/V2 settings-file
+  migration into the checksummed V3 record.
 - User-selectable decoder policy: Auto (`h264_vita` preferred with FFmpeg
   software fallback), HW H.264 only, or SW FFmpeg only.
 - Hardware AAC decode for the reusable video player.
 - NV12 CDRAM surfaces presented directly through GXM/vita2d.
-- Audio PTS as master clock.
+- The selected audio track's PTS as master clock.
 - Bounded PTS reorder window and late-frame recovery.
 - Cooperative cancellation and deterministic thread joins.
+- Shared VitaTube player gestures: short Start hands supported local media to
+  the mini-player, a 900 ms Start hold toggles OLED ECO mode without stopping
+  playback, and Select immediately locks/unlocks player input.
+- Local-video mini-player restoration preserves position plus the selected
+  audio and subtitle track. The compact background decoder is `SceAvPlayer`, so
+  its accepted local container set can be narrower than the main HW/SW path.
+- A bounded software-only thumbnail worker prefers embedded MJPEG/PNG cover
+  streams, otherwise seeks to a representative H.264 frame, and caches only
+  checked RGB565 pixels. Local sidecar artwork remains the first choice.
+- Local paths and non-secret remote endpoint/path fields produce stable,
+  distinct history IDs. Credentials are excluded. A recovered session exposes
+  an R1 **Start from beginning** action that clears its saved point.
 
 ## Storage
 
 - `local_media.idx`: bounded on-disk local index, maximum 65,536 records.
 - `network/sources.bin`: maximum 32 non-secret source definitions.
 - `network/passwords.txt`: optional plaintext passwords, disabled by default.
-- `playback_history.bin`: local resume positions.
+- `playback_history.bin`: local and remote resume positions.
 - `settings.bin`: application preferences.
 - `session_log.txt`: written only when persistent diagnostics are enabled.
 

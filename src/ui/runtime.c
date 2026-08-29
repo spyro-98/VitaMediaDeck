@@ -7,6 +7,9 @@ static int g_runtime_ready = 0;
 static vita2d_font *g_font_small = NULL;
 static vita2d_font *g_font_body = NULL;
 static vita2d_font *g_font_display = NULL;
+static vita2d_font *g_subtitle_medium_display = NULL;
+static vita2d_font *g_subtitle_semibold_small = NULL;
+static vita2d_font *g_subtitle_semibold_body = NULL;
 static vita2d_texture *g_logo = NULL;
 
 int ui_runtime_init(void) {
@@ -44,6 +47,12 @@ void ui_runtime_load_assets(void) {
 	if (!g_font_small) g_font_small = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_font_body) g_font_body = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_font_display) g_font_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	if (!g_subtitle_medium_display)
+		g_subtitle_medium_display = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_subtitle_semibold_small)
+		g_subtitle_semibold_small = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	if (!g_subtitle_semibold_body)
+		g_subtitle_semibold_body = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_font_small || !g_font_body || !g_font_display)
 		log_printf("ui asset warning: one or more Inter font instances unavailable");
 	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/icon0.png");
@@ -60,9 +69,15 @@ void ui_runtime_term(void) {
 		if (g_font_small) vita2d_free_font(g_font_small);
 		if (g_font_body) vita2d_free_font(g_font_body);
 		if (g_font_display) vita2d_free_font(g_font_display);
+		if (g_subtitle_medium_display) vita2d_free_font(g_subtitle_medium_display);
+		if (g_subtitle_semibold_small) vita2d_free_font(g_subtitle_semibold_small);
+		if (g_subtitle_semibold_body) vita2d_free_font(g_subtitle_semibold_body);
 		g_font_small = NULL;
 		g_font_body = NULL;
 		g_font_display = NULL;
+		g_subtitle_medium_display = NULL;
+		g_subtitle_semibold_small = NULL;
+		g_subtitle_semibold_body = NULL;
 		ui_font_fallback_term();
 		vita2d_fini();
 		g_runtime_ready = 0;
@@ -84,6 +99,23 @@ vita2d_font *ui_runtime_font(unsigned int size) {
 	if (g_font_body) return g_font_body;
 	if (g_font_small) return g_font_small;
 	return g_font_display;
+}
+
+vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
+	/* Variant 2 is the native Vita system face. A NULL packaged face is the
+	 * established signal that makes the mixed renderer select its Latin/J/C/K
+	 * PGFs directly. Fall back to Inter only if PGF initialization failed. */
+	if (variant == 2)
+		return ui_font_fallback_ready() ? NULL : ui_runtime_font(size);
+	if (variant == 1) {
+		vita2d_font *semibold = size == UI_FONT_SMALL ? g_subtitle_semibold_small
+		                       : size == UI_FONT_BODY ? g_subtitle_semibold_body
+		                       : size == UI_FONT_DISPLAY ? g_font_display : NULL;
+		if (semibold) return semibold;
+	}
+	if (size == UI_FONT_DISPLAY && g_subtitle_medium_display)
+		return g_subtitle_medium_display;
+	return ui_runtime_font(size);
 }
 
 vita2d_texture *ui_runtime_logo(void) {

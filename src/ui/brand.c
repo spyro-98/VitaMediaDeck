@@ -22,17 +22,18 @@
 #define SCREEN_WIDTH  960
 #define SCREEN_HEIGHT 544
 
-#define HEADER_ICON_SIZE 48
+#define HEADER_ICON_SIZE 36
 #define HEADER_ICON_X 18
 #define HEADER_ICON_Y ((UI_BRAND_HEADER_HEIGHT - HEADER_ICON_SIZE) / 2)
 #define HEADER_NAME_X (HEADER_ICON_X + HEADER_ICON_SIZE + 14)
+#define HEADER_WORDMARK "VITA // MEDIA DECK"
 
 /* --- Header layout -------------------------------------------------------
  *
  * The optional title/editor field is horizontally centred on the 960px screen
  * and the status indicators are pinned to the right edge:
  *
- *   left block   : logo 18..66, then "VitaMediaDeck" from x=80. The title
+ *   left block   : 36px logo at x=18, then the compact command wordmark. The title
  *                  size is reduced only as far as needed to preserve a 12px
  *                  gap before the centred search field. Loading dots are
  *                  included in that width budget.
@@ -62,7 +63,7 @@
 #define COLOR_TEXT    VT_THEME_TEXT
 #define COLOR_MUTED   VT_THEME_TEXT_MUTED
 #define COLOR_BLUE    VT_THEME_BLUE_BRIGHT
-#define COLOR_FIELD   RGBA8(7, 15, 26, 238)
+#define COLOR_FIELD   RGBA8(17, 16, 14, 248)
 /* Status indicators: same palette family as the rest of the topbar. */
 #define COLOR_DIM     VT_THEME_BORDER
 #define COLOR_BATT_OK   RGBA8(76, 217, 100, 255)
@@ -339,21 +340,37 @@ static unsigned int mix_rgb(unsigned int from, unsigned int to, int step, int st
 static void draw_gradient_bar(void) {
 	const int strips = 48;
 	const float strip_w = (float)SCREEN_WIDTH / (float)strips;
-	/* Quiet enough to sit behind status text, with the blue energy concentrated
-	 * in the lower rule instead of flooding the whole top bar. */
 	const unsigned int black = VT_THEME_BG_SOFT;
-	const unsigned int deep_blue = RGBA8(7, 29, 52, 255);
+	const unsigned int warm_black = RGBA8(22, 17, 12, 255);
 	for (int i = 0; i < strips; i++) {
 		vita2d_draw_rectangle((float)i * strip_w, 0.0f, strip_w + 1.0f,
 		                       (float)UI_BRAND_HEADER_HEIGHT,
-		                       mix_rgb(black, deep_blue, i, strips - 1));
+		                       mix_rgb(black, warm_black, i, strips - 1));
 	}
+	/* Command-rail partitions are functional: brand, scene title, status. */
+	vita2d_draw_rectangle(248, 8, 1, 38, VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(708, 8, 1, 38, VT_THEME_BORDER_DIM);
 	vita2d_draw_rectangle(0.0f, (float)UI_BRAND_HEADER_HEIGHT - 2.0f,
-	                       (float)SCREEN_WIDTH, 2.0f, COLOR_BLUE);
+	                       (float)SCREEN_WIDTH, 2.0f, VT_THEME_SIGNAL_BRIGHT);
+	for (int i = 0; i < 9; i++)
+		vita2d_draw_rectangle(420.0f + i * 12.0f,
+		                      (float)UI_BRAND_HEADER_HEIGHT - 6.0f,
+		                      i == 4 ? 6.0f : 2.0f, 2.0f,
+		                      i == 4 ? VT_THEME_SIGNAL_LIGHT
+		                             : VT_THEME_SIGNAL_DIM);
 }
 
 static void draw_logo(void) {
 	vita2d_texture *logo = ui_runtime_logo();
+	/* Four acquisition brackets turn any supplied icon into part of the system
+	 * without modifying the user's artwork asset. */
+	unsigned int frame = VT_THEME_SIGNAL_BRIGHT;
+	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 10, 2, frame);
+	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 2, 10, frame);
+	vita2d_draw_rectangle(HEADER_ICON_X + HEADER_ICON_SIZE - 7,
+	                      HEADER_ICON_Y + HEADER_ICON_SIZE + 1, 10, 2, frame);
+	vita2d_draw_rectangle(HEADER_ICON_X + HEADER_ICON_SIZE + 1,
+	                      HEADER_ICON_Y + HEADER_ICON_SIZE - 7, 2, 10, frame);
 	if (logo) {
 		unsigned int w = vita2d_texture_get_width(logo);
 		unsigned int h = vita2d_texture_get_height(logo);
@@ -374,9 +391,12 @@ static void draw_logo(void) {
 	}
 
 	/* Always-visible fallback in case the PNG fails to load. */
-	vita2d_draw_fill_circle(HEADER_ICON_X + HEADER_ICON_SIZE * 0.5f,
-	                        HEADER_ICON_Y + HEADER_ICON_SIZE * 0.5f,
-	                        HEADER_ICON_SIZE * 0.46f, COLOR_BLUE);
+	vita2d_draw_rectangle(HEADER_ICON_X + 5, HEADER_ICON_Y + 5,
+	                      HEADER_ICON_SIZE - 10, HEADER_ICON_SIZE - 10,
+	                      VT_THEME_SIGNAL);
+	vita2d_draw_rectangle(HEADER_ICON_X + 11, HEADER_ICON_Y + 11,
+	                      HEADER_ICON_SIZE - 22, HEADER_ICON_SIZE - 22,
+	                      VT_THEME_BG);
 	/* No vita2d_draw_array() with auto-generated vertices: that function
 	 * forwards the pointer straight to GXM, and the stack isn't GPU-mapped memory. */
 }
@@ -463,7 +483,7 @@ static void draw_header(const char *query, int editing,
 		unsigned title_size = display ? UI_FONT_DISPLAY : UI_FONT_BODY;
 		int reserved_width = g_brand_loading ? HEADER_LOADING_RESERVE_W : 0;
 		while (title_size > UI_FONT_SMALL &&
-		       ui_font_text_width(title_font, title_size, "VitaMediaDeck") +
+		       ui_font_text_width(title_font, title_size, HEADER_WORDMARK) +
 		           reserved_width > HEADER_NAME_MAX_W) {
 			title_size--;
 		}
@@ -472,9 +492,9 @@ static void draw_header(const char *query, int editing,
 		ui_font_draw_text(title_font, HEADER_NAME_X,
 		                       title_baseline,
 		                       COLOR_TEXT, title_size,
-		                       "VitaMediaDeck");
+		                       HEADER_WORDMARK);
 		if (g_brand_loading) {
-			int title_w = ui_font_text_width(title_font, title_size, "VitaMediaDeck");
+			int title_w = ui_font_text_width(title_font, title_size, HEADER_WORDMARK);
 			float start_x = (float)(HEADER_NAME_X + title_w + 12);
 			int reduce_motion = vt_preferences_reduce_motion();
 			uint64_t phase = reduce_motion ? 0 :
@@ -483,8 +503,8 @@ static void draw_header(const char *query, int editing,
 				int step = reduce_motion ? (i == 0 ? 0 : 2) :
 				           (int)((phase + (uint64_t)i) % 4ULL);
 				float radius = step == 0 ? 3.8f : step == 1 ? 3.1f : 2.4f;
-				unsigned color = step == 0 ? VT_THEME_BLUE_LIGHT
-				               : step == 1 ? VT_THEME_BLUE_BRIGHT
+				unsigned color = step == 0 ? VT_THEME_SIGNAL_LIGHT
+				               : step == 1 ? VT_THEME_SIGNAL_BRIGHT
 				                           : VT_THEME_BORDER;
 				vita2d_draw_fill_circle(start_x + i * 10.0f, 27.0f, radius, color);
 			}
@@ -503,6 +523,13 @@ static void draw_header(const char *query, int editing,
 			fit_search_text(font, source, fitted, sizeof(fitted));
 			int width = ui_font_text_width(font, UI_FONT_BODY, fitted);
 			unsigned int source_color = query && query[0] ? COLOR_TEXT : COLOR_MUTED;
+			int left = (SCREEN_WIDTH - width) / 2;
+			vita2d_draw_rectangle(left - 26, SEARCH_BOX_Y + 25, 14, 2,
+			                      query && query[0] ? VT_THEME_SIGNAL_LIGHT
+			                                         : VT_THEME_SIGNAL_DIM);
+			vita2d_draw_rectangle(left + width + 12, SEARCH_BOX_Y + 25, 14, 2,
+			                      query && query[0] ? VT_THEME_SIGNAL_LIGHT
+			                                         : VT_THEME_SIGNAL_DIM);
 			ui_font_draw_text(font, (SCREEN_WIDTH - width) / 2,
 			                  SEARCH_BOX_Y + 36, source_color,
 			                  UI_FONT_BODY, fitted);
@@ -516,8 +543,11 @@ static void draw_header(const char *query, int editing,
 	vita2d_draw_rectangle((float)SEARCH_BOX_X, (float)(SEARCH_BOX_Y + 5),
 	                       (float)SEARCH_BOX_W, (float)(SEARCH_BOX_H - 10),
 	                       COLOR_FIELD);
+	vita2d_draw_rectangle((float)SEARCH_BOX_X, (float)(SEARCH_BOX_Y + 5),
+	                       3.0f, (float)(SEARCH_BOX_H - 10),
+	                       VT_THEME_SIGNAL_BRIGHT);
 	vita2d_draw_rectangle((float)SEARCH_BOX_X, (float)(SEARCH_BOX_Y + SEARCH_BOX_H - 2),
-	                       (float)SEARCH_BOX_W, 2.0f, COLOR_BLUE);
+	                       (float)SEARCH_BOX_W, 2.0f, VT_THEME_SIGNAL_BRIGHT);
 
 	if (font) {
 		char fitted[256];
@@ -552,9 +582,9 @@ static void draw_header(const char *query, int editing,
 	if (query && query[0]) {
 		/* Deliberately large clear button: 34px visible, with an even more
 		 * generous hit area via ui_brand_search_clear_hit(). */
-		vita2d_draw_fill_circle(SEARCH_CLEAR_X + SEARCH_CLEAR_SIZE * 0.5f,
-		                        SEARCH_CLEAR_Y + SEARCH_CLEAR_SIZE * 0.5f,
-		                        14.0f, RGBA8(31, 47, 68, 255));
+		vita2d_draw_rectangle(SEARCH_CLEAR_X + 3, SEARCH_CLEAR_Y + 3,
+		                      SEARCH_CLEAR_SIZE - 6, SEARCH_CLEAR_SIZE - 6,
+		                      RGBA8(55, 34, 22, 255));
 		vita2d_draw_line(SEARCH_CLEAR_X + 11.0f, SEARCH_CLEAR_Y + 11.0f,
 		                 SEARCH_CLEAR_X + 23.0f, SEARCH_CLEAR_Y + 23.0f,
 		                 COLOR_TEXT);
@@ -594,9 +624,26 @@ int ui_brand_search_clear_hit(int x, int y) {
 	       y >= SEARCH_BOX_Y && y < SEARCH_BOX_Y + SEARCH_BOX_H;
 }
 
+static void draw_text_input_signal_field(void) {
+	/* The system IME owns the lower screen. Keep the app-authored upper field
+	 * quiet, but visibly part of the same acquisition language. */
+	for (int line = 0; line < 5; line++)
+		vita2d_draw_rectangle(0, 112 + line * 76, SCREEN_WIDTH, 1,
+		                      VT_THEME_SIGNAL_A(line == 0 ? 44 : 16));
+	vita2d_draw_rectangle(146, 138, 34, 2, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(146, 138, 2, 34, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(780, 138, 34, 2, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(812, 138, 2, 34, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(146, 236, 34, 2, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(146, 204, 2, 34, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(780, 236, 34, 2, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(812, 204, 2, 34, VT_THEME_SIGNAL_DIM);
+}
+
 void ui_brand_draw_search_backdrop(const char *query) {
 	vita2d_draw_rectangle(0.0f, 0.0f, (float)SCREEN_WIDTH,
 	                       (float)SCREEN_HEIGHT, COLOR_BG);
+	draw_text_input_signal_field();
 	ui_brand_draw_header(query);
 
 	vita2d_font *font = ui_runtime_font(UI_FONT_DISPLAY);
@@ -629,6 +676,7 @@ void ui_brand_draw_search_backdrop_editing_label(const char *query,
 	                                             const char *hint) {
 	vita2d_draw_rectangle(0.0f, 0.0f, (float)SCREEN_WIDTH,
 	                       (float)SCREEN_HEIGHT, COLOR_BG);
+	draw_text_input_signal_field();
 	draw_header(query, 1, caret_byte, caret_visible, "");
 
 	vita2d_font *font = ui_runtime_font(UI_FONT_DISPLAY);

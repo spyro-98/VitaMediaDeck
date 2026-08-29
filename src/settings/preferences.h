@@ -64,6 +64,18 @@
 #define VT_SUBTITLE_POSITION_CENTER 2
 #define VT_SUBTITLE_POSITION_HIGH   3
 
+#define VT_SUBTITLE_FONT_INTER_MEDIUM   0
+#define VT_SUBTITLE_FONT_INTER_SEMIBOLD 1
+#define VT_SUBTITLE_FONT_VITA_SYSTEM    2
+
+#define VT_SUBTITLE_BACKGROUND_TRANSPARENT 0
+#define VT_SUBTITLE_BACKGROUND_BLACK       1
+#define VT_SUBTITLE_BACKGROUND_MIDNIGHT    2
+#define VT_SUBTITLE_BACKGROUND_WHITE       3
+
+#define VT_SUBTITLE_MIN_ROWS 1
+#define VT_SUBTITLE_MAX_ROWS 4
+
 /* Loads persistent preferences. A missing file uses defaults and is not an
  * error; a corrupt record is ignored in favor of defaults. */
 int vt_preferences_init(void);
@@ -186,5 +198,13 @@ int vt_preferences_subtitle_max_width(void);
 int vt_preferences_set_subtitle_max_width(int width);
 int vt_preferences_subtitle_position(void);
 int vt_preferences_set_subtitle_position(int position);
+int vt_preferences_subtitle_font(void);
+int vt_preferences_set_subtitle_font(int font);
+int vt_preferences_subtitle_background_color(void);
+int vt_preferences_set_subtitle_background_color(int color);
+int vt_preferences_subtitle_min_rows(void);
+int vt_preferences_set_subtitle_min_rows(int rows);
+int vt_preferences_subtitle_max_rows(void);
+int vt_preferences_set_subtitle_max_rows(int rows);
 
 #endif /* VITAMEDIADECK_SETTINGS_PREFERENCES_H */

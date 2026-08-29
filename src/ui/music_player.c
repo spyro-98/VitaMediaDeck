@@ -82,7 +82,7 @@ static void draw_music_sidebar_bitrate(float animation,
 	if (animation <= 0.01f || bitrate_kbps == 0) return;
 	float ox = -286.0f * (1.0f - animation);
 	vita2d_draw_rectangle(ox + 18.0f, 438.0f, 250.0f, 42.0f,
-	                      RGBA8(12, 31, 54, 246));
+	                      RGBA8(17, 15, 13, 246));
 	vita2d_draw_rectangle(ox + 18.0f, 438.0f, 3.0f, 42.0f,
 	                      VT_THEME_BLUE_LIGHT);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -97,12 +97,18 @@ static void draw_cover(vita2d_texture *cover, float x, float y, float size,
 	                   unsigned foreground) {
 	if (!cover) return;
 	unsigned frame = foreground == RGBA8(255, 255, 255, 255)
-	               ? RGBA8(2, 8, 16, 228) : RGBA8(248, 251, 254, 218);
+	               ? RGBA8(12, 10, 8, 228) : RGBA8(248, 245, 238, 218);
 	vita2d_draw_rectangle(x - 10, y + 8, size + 20, size + 12,
 	                      RGBA8(0, 0, 0, 62));
 	vita2d_draw_rectangle(x - 5, y - 5, size + 10, size + 10, frame);
 	vita2d_draw_rectangle(x - 5, y - 5, size + 10, 3,
 	                      (foreground & 0x00ffffffU) | (220U << 24));
+	/* Acquisition corners make the album object feel scanned, not framed. */
+	unsigned mark = (foreground & 0x00ffffffU) | (196U << 24);
+	vita2d_draw_rectangle(x - 12, y - 12, 28, 2, mark);
+	vita2d_draw_rectangle(x - 12, y - 12, 2, 28, mark);
+	vita2d_draw_rectangle(x + size - 16, y + size + 10, 28, 2, mark);
+	vita2d_draw_rectangle(x + size + 10, y + size - 16, 2, 28, mark);
 	float w = (float)vita2d_texture_get_width(cover);
 	float h = (float)vita2d_texture_get_height(cover);
 	float scale = size / (w > h ? w : h);
@@ -212,9 +218,9 @@ static unsigned palette_color(unsigned red, unsigned green, unsigned blue) {
 
 static void artwork_palette(vita2d_texture *cover, unsigned colors[5]) {
 	static const unsigned fallback[5] = {
-		RGBA8(22, 55, 102, 255), RGBA8(35, 111, 196, 255),
-		RGBA8(91, 184, 244, 255), RGBA8(203, 119, 222, 255),
-		RGBA8(235, 177, 201, 255)
+		RGBA8(9, 8, 7, 255), RGBA8(49, 31, 20, 255),
+		RGBA8(117, 61, 29, 255), RGBA8(201, 91, 38, 255),
+		RGBA8(255, 178, 62, 255)
 	};
 	memcpy(colors, fallback, sizeof(fallback));
 	if (!cover) return;
@@ -329,6 +335,23 @@ static void draw_flow_background(const unsigned colors[5], uint64_t now,
 	                      foreground == RGBA8(0, 0, 0, 255)
 	                          ? RGBA8(255, 255, 255, 94)
 	                          : RGBA8(0, 5, 12, 104));
+	/* The artwork palette remains unique to the track; a sparse wire signal
+	 * field connects it to the rest of the application visual language. */
+	unsigned int phase = vt_preferences_reduce_motion()
+	                   ? 0U : (unsigned int)((now / 52000ULL) % 360ULL);
+	for (unsigned int i = 0; i < 24; i++) {
+		unsigned int seed = 0x45D9F3BU * (i + 17U);
+		seed ^= seed >> 15;
+		float x = 36.0f + (float)(seed % 888U);
+		float y = 76.0f + (float)((seed / 277U + phase * (1U + i % 2U)) % 438U);
+		unsigned dot_alpha = 34U + seed % 62U;
+		vita2d_draw_rectangle(x, y, i % 6U == 0U ? 3.0f : 2.0f,
+		                      i % 6U == 0U ? 3.0f : 2.0f,
+		                      with_alpha(foreground, dot_alpha));
+		if (i % 7U == 0U)
+			vita2d_draw_line(x, y, 480.0f, 204.0f,
+			                 with_alpha(foreground, 22U));
+	}
 }
 
 static void draw_metadata_scrim(float title_y, unsigned foreground,
@@ -366,7 +389,7 @@ static void draw_music_state(const VtBackgroundPlaybackSnapshot *snapshot,
 	int label_width = ui_font_text_width(small, UI_FONT_SMALL, label);
 	int width = label_width + (loading ? 54 : 30);
 	unsigned panel = foreground == RGBA8(255, 255, 255, 255)
-	               ? RGBA8(2, 8, 18, 218) : RGBA8(250, 252, 254, 224);
+	               ? RGBA8(12, 10, 8, 218) : RGBA8(250, 247, 240, 224);
 	unsigned state_color = ui_contrast_bw(panel);
 	vita2d_draw_rectangle(72, 82, width, 34, fade_color(panel, opacity));
 	vita2d_draw_rectangle(72, 82, 3, 34,
@@ -391,12 +414,18 @@ static void draw_music_action_button(float x, float y, float width,
 	                                 int active, float opacity) {
 	if (opacity <= 0.01f) return;
 	unsigned foreground = ui_contrast_bw(fill);
-	unsigned accent = active ? VT_THEME_BLUE_LIGHT : VT_THEME_BORDER;
+	unsigned accent = active ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER;
 	vita2d_draw_rectangle(x, y, width, height, fade_color(fill, opacity));
-	vita2d_draw_rectangle(x, y, 4, height, fade_color(accent, opacity));
-	vita2d_draw_rectangle(x + 4, y, width - 4, 1,
+	vita2d_draw_rectangle(x, y, width, 2, fade_color(accent, opacity));
+	vita2d_draw_rectangle(x + 1, y + height - 1, width - 2, 1,
 	                      fade_color(active ? accent : VT_THEME_BORDER_DIM,
 	                                 opacity));
+	vita2d_draw_rectangle(x, y, 12, 2, fade_color(accent, opacity));
+	vita2d_draw_rectangle(x, y, 2, 10, fade_color(accent, opacity));
+	vita2d_draw_rectangle(x + width - 12, y + height - 2, 12, 2,
+	                      fade_color(accent, opacity));
+	vita2d_draw_rectangle(x + width - 2, y + height - 10, 2, 10,
+	                      fade_color(accent, opacity));
 
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	float key_width = 0.0f;
@@ -431,9 +460,9 @@ static void draw_music_action_button(float x, float y, float width,
 
 static void draw_input_lock_at(int x, int y) {
 	unsigned color = VT_THEME_TEXT;
-	unsigned panel = RGBA8(8, 18, 32, 224);
+	unsigned panel = RGBA8(17, 15, 13, 224);
 	vita2d_draw_rectangle(x, y, 54, 44, panel);
-	vita2d_draw_rectangle(x, y, 3, 44, VT_THEME_BLUE_LIGHT);
+	vita2d_draw_rectangle(x, y, 3, 44, VT_THEME_COLD_LIGHT);
 	vita2d_draw_line(x + 20, y + 19, x + 20, y + 12, color);
 	vita2d_draw_line(x + 20, y + 12, x + 27, y + 6, color);
 	vita2d_draw_line(x + 27, y + 6, x + 34, y + 12, color);
@@ -441,6 +470,18 @@ static void draw_input_lock_at(int x, int y) {
 	vita2d_draw_rectangle(x + 16, y + 18, 22, 18, color);
 	vita2d_draw_fill_circle((float)x + 27.0f, (float)y + 26.0f, 2.0f, panel);
 	vita2d_draw_rectangle(x + 26, y + 26, 3, 6, panel);
+}
+
+static void draw_power_save_status_at(int x, int y) {
+	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+	int text_x = x > 660 ? x - 218 : x + 18;
+	int baseline = y > 470 ? y - 5 : y + 16;
+	vita2d_draw_rectangle(x, y + 5, 12, 2, VT_THEME_COLD_DIM);
+	vita2d_draw_rectangle(x + 4, y + 1, 4, 10, VT_THEME_COLD_A(86));
+	if (small)
+		ui_font_draw_text(small, text_x, baseline, VT_THEME_COLD_DIM,
+		                  UI_FONT_SMALL,
+		                  vt_i18n_str(VT_STR_PLAYER_POWER_SAVE_ACTIVE));
 }
 
 static void draw_marquee(vita2d_font *font, float size, const char *text,
@@ -489,7 +530,7 @@ static void draw_music_volume(int percent, float opacity,
 	unsigned alpha = (unsigned)(220.0f * opacity);
 	vita2d_draw_rectangle(x - 18, y - 32, 55, h + 62,
 	                      foreground == RGBA8(255, 255, 255, 255)
-	                          ? RGBA8(2, 8, 18, alpha)
+	                          ? RGBA8(12, 10, 8, alpha)
 	                          : RGBA8(255, 255, 255, alpha));
 	vita2d_draw_rectangle(x, y, 9, h, with_alpha(foreground, alpha / 2));
 	float fraction = (float)percent / (float)MUSIC_VOLUME_MAX;
@@ -508,7 +549,7 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	if (animation <= 0.01f) return;
 	const float width = MUSIC_RIGHT_PANEL_W;
 	float x = 960.0f - width * animation;
-	vita2d_draw_rectangle(x, 0, width, 544, RGBA8(2, 8, 17, 250));
+	vita2d_draw_rectangle(x, 0, width, 544, RGBA8(7, 6, 5, 250));
 	vita2d_draw_rectangle(x, 0, 4, 544, VT_THEME_BLUE_LIGHT);
 	vita2d_draw_rectangle(x + 4, 0, width - 4, 1, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
@@ -536,15 +577,15 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	};
 	for (int i = 0; i < 2; i++) {
 		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
-		vita2d_draw_rectangle(x + 18, y, width - 36, 56, VT_THEME_SURFACE);
+		ui_panel(x + 18, y, width - 36, 56, VT_THEME_SURFACE,
+		         VT_THEME_BORDER_DIM, 0);
 	}
 	if (focused) {
 		float focus_y = MUSIC_RIGHT_ROW_Y + focus_position * MUSIC_RIGHT_ROW_STEP;
 		vita2d_draw_rectangle(x + 14, focus_y - 4, width - 28, 64,
 		                      VT_THEME_HALO_A(76));
-		vita2d_draw_rectangle(x + 18, focus_y, width - 36, 56,
-		                      VT_THEME_SURFACE_FOCUS);
-		vita2d_draw_rectangle(x + 18, focus_y, 4, 56, VT_THEME_BLUE_LIGHT);
+		ui_panel(x + 18, focus_y, width - 36, 56,
+		         VT_THEME_SURFACE_FOCUS, VT_THEME_SIGNAL_LIGHT, 0);
 	}
 	for (int i = 0; i < 2; i++) {
 		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
@@ -904,7 +945,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			vt_display_keep_awake_tick();
 		uint64_t now = sceKernelGetProcessTimeWide();
 		if (energy_saving) {
-			if (input_lock.locked && now >= energy_lock_move_us) {
+			if (now >= energy_lock_move_us) {
 				energy_lock_position =
 				    (energy_lock_position + 1) % PLAYER_POWER_SAVE_LOCK_POSITIONS;
 				energy_lock_move_us = now + PLAYER_POWER_SAVE_LOCK_MOVE_US;
@@ -914,10 +955,11 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				vita2d_start_drawing();
 				vita2d_clear_screen();
 				vita2d_draw_rectangle(0, 0, 960, 544, RGBA8(0, 0, 0, 255));
+				int lock_x, lock_y;
+				player_power_save_lock_position(energy_lock_position,
+				                                &lock_x, &lock_y);
+				draw_power_save_status_at(lock_x, lock_y);
 				if (input_lock.locked) {
-					int lock_x, lock_y;
-					player_power_save_lock_position(energy_lock_position,
-					                                &lock_x, &lock_y);
 					draw_input_lock_at(lock_x, lock_y);
 				}
 				vita2d_end_drawing();
@@ -939,6 +981,17 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		vita2d_font *display = ui_runtime_font(UI_FONT_DISPLAY);
 		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+		if (small && hud_opacity > 0.01f) {
+			char shortcuts[192];
+			ui_font_fit_text(small, UI_FONT_SMALL,
+			                 vt_i18n_str(VT_STR_PLAYER_SHORTCUTS_HINT), shortcuts,
+			                 sizeof(shortcuts), 300);
+			vita2d_draw_rectangle(626, 94, 2, 30,
+			                      fade_color(VT_THEME_COLD, hud_opacity));
+			ui_font_draw_text(small, 640, 114,
+			                  fade_color(VT_THEME_COLD_LIGHT, hud_opacity),
+			                  UI_FONT_SMALL, shortcuts);
+		}
 		float title_y = cover ? 355.0f : 238.0f;
 		/* Metadata itself stays readable in the quiet state. Only the protective
 		 * panel belongs to the HUD and therefore dissolves with the controls. */
@@ -979,7 +1032,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			                  UI_FONT_SMALL, duration);
 		}
 		unsigned button_fill = foreground == RGBA8(255, 255, 255, 255)
-		                     ? RGBA8(3, 11, 22, 224)
+		                     ? RGBA8(17, 15, 13, 224)
 		                     : RGBA8(240, 244, 248, 230);
 		draw_music_action_button(46, MUSIC_CONTROLS_Y, 166, 56,
 		                 music_control_fill(button_fill, MUSIC_CONTROL_SHUFFLE,
