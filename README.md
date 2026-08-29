@@ -25,10 +25,12 @@ catalogues. It has no account integration with third-party media platforms and
 does not provide a download or audio-extraction feature.
 
 The application UI follows the evolved **Spectral Reassembly** direction:
-pitch-black OLED fields, cold blue/teal atmospheric volume, spectral-white
-material, and amber/copper projection accents. Slow layered particle clouds,
-micro-fragments, and scan traces replace the former mostly fixed background
-graphic without removing the warm light present in the film references. Its
+pitch-black OLED fields, spectral-cyan interaction signals, cold blue/teal
+atmospheric volume, and silver-white material. Muted oxidized amber is limited
+to warnings and isolated telemetry sparks instead of repeating across active
+controls. Slow layered particle clouds, micro-fragments, and scan traces
+replace the former mostly fixed background graphic while preserving the mixed
+lighting present in the film references. Its
 design rationale and multilingual typography contract are
 documented in
 [`mds/UI_SIGNAL_SHELL.md`](mds/UI_SIGNAL_SHELL.md).
@@ -81,8 +83,8 @@ cover and a predictable multi-track Matroska output are desired.
 </table>
 
 These photographs document the decoder paths on real hardware. The current
-Spectral Reassembly theme, expanded player panels, and new icon still need a
-fresh physical-Vita screenshot pass.
+cyan-led Spectral Reassembly theme, expanded player panels, and optical
+memory-shell icon still need a fresh physical-Vita screenshot pass.
 
 ## Highlights
 

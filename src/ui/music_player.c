@@ -219,7 +219,7 @@ static unsigned palette_color(unsigned red, unsigned green, unsigned blue) {
 static void artwork_palette(vita2d_texture *cover, unsigned colors[5]) {
 	static const unsigned fallback[5] = {
 		RGBA8(0, 0, 0, 255), RGBA8(4, 18, 20, 255),
-		RGBA8(29, 77, 84, 255), RGBA8(198, 101, 31, 255),
+		RGBA8(29, 77, 84, 255), RGBA8(132, 82, 43, 255),
 		RGBA8(222, 237, 236, 255)
 	};
 	memcpy(colors, fallback, sizeof(fallback));
