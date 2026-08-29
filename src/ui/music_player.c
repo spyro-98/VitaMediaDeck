@@ -954,7 +954,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				                                &lock_x, &lock_y);
 				draw_power_save_status_at(lock_x, lock_y);
 				if (input_lock.locked) {
-					draw_input_lock_at(lock_x, lock_y);
+					draw_input_lock_at(lock_x,
+					    lock_y > 430 ? lock_y - 50 : lock_y + 34);
 				}
 				vita2d_end_drawing();
 				vita2d_wait_rendering_done();
@@ -1074,8 +1075,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			draw_music_volume(vt_audio_volume_percent(), volume_opacity, foreground);
 		if (input_lock.locked) draw_input_lock_at(24, 86);
 		if (sidebar.animation > 0.01f)
-			ui_sections_sidebar_draw(sidebar.cursor, sidebar.animation,
-			                         sidebar.open ? sidebar.focus_cursor : -1.0f);
+			ui_sections_sidebar_draw(&sidebar);
 		draw_music_sidebar_bitrate(sidebar.animation, average_bitrate_kbps);
 		draw_music_right_sidebar(right_animation, right_focus_position,
 		                         right_cursor, right_open);

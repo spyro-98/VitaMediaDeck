@@ -498,8 +498,7 @@ static void draw_screen(int tab, int cursor, float focus,
 
 	ui_mini_player_draw();
 	if (sidebar->animation > 0.01f)
-		ui_sections_sidebar_draw(sidebar->cursor, sidebar->animation,
-		                         sidebar->open ? sidebar->focus_cursor : -1.0f);
+		ui_sections_sidebar_draw(sidebar);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();

@@ -20,6 +20,9 @@ typedef struct {
 	const char *status;
 	int quality_height; /* 0 = quality still in automatic resolution */
 	int cancellable;
+	/* Optional action shown only for a recovered video. CROSS requests that the
+	 * current open be cancelled and retried from timestamp zero. */
+	volatile int *start_over_requested;
 	UiLoadingProgressTickFn progress_tick; /* optional, run on the UI thread */
 	/* Optional one-line live diagnostics, formatted on the UI thread from
 	 * atomic/volatile counters owned by the worker. */

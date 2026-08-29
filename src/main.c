@@ -40,9 +40,16 @@ typedef struct {
 	int subtitle_track;
 } VtMinimizedLocalVideo;
 
+typedef struct {
+	int valid;
+	VtLocalMediaItem item;
+} VtMinimizedLocalAudio;
+
 static VtMinimizedLocalVideo g_minimized_local_video;
+static VtMinimizedLocalAudio g_minimized_local_audio;
 
 static int resume_minimized_local_video(uint64_t position_ms, void *ctx);
+static int resume_minimized_local_audio(uint64_t position_ms, void *ctx);
 
 static void media_id(const char *path, char out[16]) {
 	uint32_t hash = 2166136261U;
@@ -159,36 +166,87 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 	return 0;
 }
 
-static int play_local_audio(VtLocalMediaItem item) {
+static int active_media_matches(const char *path) {
+	char id[16];
+	VtBackgroundPlaybackSnapshot snapshot;
+	media_id(path, id);
+	return vt_background_playback_can_resume_fullscreen() &&
+	       vt_background_playback_snapshot(&snapshot) &&
+	       strcmp(snapshot.video_id, id) == 0;
+}
+
+static void remember_minimized_local_audio(const VtLocalMediaItem *item) {
+	if (!item) return;
+	g_minimized_local_audio.valid = 1;
+	g_minimized_local_audio.item = *item;
+	vt_background_playback_set_fullscreen_resume(
+	    resume_minimized_local_audio, &g_minimized_local_audio);
+}
+
+static int run_local_audio_session(VtLocalMediaItem item, int prepare_first,
+	                               int *navigated) {
+	if (navigated) *navigated = 0;
 	memset(&g_minimized_local_video, 0, sizeof(g_minimized_local_video));
-	vt_background_playback_set_fullscreen_resume(NULL, NULL);
 	for (;;) {
-		char id[16];
-		media_id(item.path, id);
-		vt_background_playback_request_stop();
-		int ret = vt_background_playback_prepare_local(
-		    item.path, id, item.name, item.artist,
-		    item.artwork_path[0] ? item.artwork_path : NULL, item.duration_ms);
-		if (ret == 0) ret = vt_background_playback_activate(0);
-		if (ret < 0) {
-			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
-			                vt_i18n_str(VT_STR_MAIN_AUDIO_OPEN_FAILED), 2800);
-			return 0;
+		vt_background_playback_set_fullscreen_resume(NULL, NULL);
+		if (prepare_first) {
+			char id[16];
+			media_id(item.path, id);
+			vt_background_playback_request_stop();
+			int ret = vt_background_playback_prepare_local(
+			    item.path, id, item.name, item.artist,
+			    item.artwork_path[0] ? item.artwork_path : NULL, item.duration_ms);
+			if (ret == 0) ret = vt_background_playback_activate(0);
+			if (ret < 0) {
+				ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
+				                vt_i18n_str(VT_STR_MAIN_AUDIO_OPEN_FAILED), 2800);
+				memset(&g_minimized_local_audio, 0,
+				       sizeof(g_minimized_local_audio));
+				return UI_SECTION_LOCAL_MEDIA;
+			}
 		}
 		uint32_t bitrate = item.duration_ms && item.size <= UINT64_MAX / 8ULL
 		                   ? (uint32_t)((item.size * 8ULL) / item.duration_ms) : 0;
 		int action = ui_music_player_run(item.artwork_path, item.album, bitrate);
-		if (action >= UI_MUSIC_PLAYER_SECTION_BASE)
+		if (action >= UI_MUSIC_PLAYER_SECTION_BASE) {
+			remember_minimized_local_audio(&item);
+			if (navigated) *navigated = 1;
 			return action - UI_MUSIC_PLAYER_SECTION_BASE;
-		if (action == UI_MUSIC_PLAYER_STOP || action == UI_MUSIC_PLAYER_MINIMIZE)
+		}
+		if (action == UI_MUSIC_PLAYER_MINIMIZE) {
+			remember_minimized_local_audio(&item);
 			return UI_SECTION_LOCAL_MEDIA;
+		}
+		if (action == UI_MUSIC_PLAYER_STOP) {
+			memset(&g_minimized_local_audio, 0,
+			       sizeof(g_minimized_local_audio));
+			vt_background_playback_set_fullscreen_resume(NULL, NULL);
+			return UI_SECTION_LOCAL_MEDIA;
+		}
 		VtLocalMediaItem next;
 		if (action != UI_MUSIC_PLAYER_REPEAT &&
 		    ui_local_media_next_audio(item.path, 1,
 		                              ui_music_player_shuffle_enabled(), &next) < 0)
 			return UI_SECTION_LOCAL_MEDIA;
 		if (action != UI_MUSIC_PLAYER_REPEAT) item = next;
+		prepare_first = 1;
 	}
+}
+
+static int resume_minimized_local_audio(uint64_t position_ms, void *ctx) {
+	(void)position_ms;
+	VtMinimizedLocalAudio *session = ctx;
+	if (!session || !session->valid) return -1;
+	VtLocalMediaItem item = session->item;
+	int navigated = 0;
+	int section = run_local_audio_session(item, 0, &navigated);
+	return navigated ? VT_HW_PLAYER_ACTION_SECTION_BASE + section : 0;
+}
+
+static int play_local_audio(VtLocalMediaItem item) {
+	if (active_media_matches(item.path)) return UI_SECTION_PLAYER;
+	int navigated = 0;
+	return run_local_audio_session(item, 1, &navigated);
 }
 
 static int run_local_video_fullscreen(const VtLocalMediaItem *item,
@@ -283,6 +341,7 @@ static int resume_minimized_local_video(uint64_t position_ms, void *ctx) {
 }
 
 static int play_local_video(const VtLocalMediaItem *item) {
+	if (active_media_matches(item->path)) return UI_SECTION_PLAYER;
 	char id[16];
 	media_id(item->path, id);
 	vt_background_playback_set_fullscreen_resume(NULL, NULL);
@@ -411,7 +470,16 @@ static int run_application(void) {
 		ui_touch_reset();
 	}
 	int section = UI_SECTION_LOCAL_MEDIA;
+	int return_section = UI_SECTION_LOCAL_MEDIA;
 	for (;;) {
+		if (section == UI_SECTION_PLAYER) {
+			int action = vt_background_playback_resume_fullscreen();
+			section = action >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
+			          action < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_COUNT
+			        ? action - VT_HW_PLAYER_ACTION_SECTION_BASE : return_section;
+			continue;
+		}
+		return_section = section;
 		if (section == UI_SECTION_LOCAL_MEDIA) section = browse_local();
 		else if (section == UI_SECTION_NETWORK) {
 			if (!g_network_ready) {

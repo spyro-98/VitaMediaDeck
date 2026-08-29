@@ -12,11 +12,13 @@ enum {
 };
 
 #define UI_SECTION_NONE (-1)
+#define UI_SECTION_PLAYER UI_SECTION_COUNT
 
 typedef struct {
 	int open;
 	int cursor;
 	int active;
+	int player_available;
 	float animation;
 	float focus_cursor;
 	unsigned int repeat_button;
@@ -52,6 +54,6 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
 	                                 unsigned int touch_flags, int x, int y);
 void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar);
-void ui_sections_sidebar_draw(int cursor, float animation, float focus_cursor);
+void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar);
 
 #endif /* VITAMEDIADECK_UI_SECTIONS_SIDEBAR_H */

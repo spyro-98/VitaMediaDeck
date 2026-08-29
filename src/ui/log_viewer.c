@@ -255,8 +255,7 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 	}
 	ui_mini_player_draw();
 	if (sidebar && sidebar->animation > 0.01f)
-		ui_sections_sidebar_draw(sidebar->cursor, sidebar->animation,
-		                         sidebar->open ? sidebar->focus_cursor : -1.0f);
+		ui_sections_sidebar_draw(sidebar);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();

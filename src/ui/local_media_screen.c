@@ -907,8 +907,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		                 "Cross", vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_DELETE), 1);
 	}
 	if (sidebar && sidebar->animation > 0.01f)
-		ui_sections_sidebar_draw(sidebar->cursor, sidebar->animation,
-		                         sidebar->open ? sidebar->focus_cursor : -1.0f);
+		ui_sections_sidebar_draw(sidebar);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
