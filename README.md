@@ -69,29 +69,29 @@ cover and a predictable multi-track Matroska output are desired.
 <table>
   <tr>
     <td colspan="2" align="center">
-      <img src="screenshots/hardware-decoder.jpeg" alt="VitaMediaDeck hardware H.264 decoder running on PlayStation Vita">
+      <img src="screenshots/hardware-decoder-spectral-ui.jpeg" alt="VitaMediaDeck hardware H.264 playback and Spectral Reassembly player UI on a PlayStation Vita">
     </td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><sub>Hardware H.264 decoder</sub></td>
+    <td colspan="2" align="center"><sub>Hardware H.264 playback on a physical PlayStation Vita</sub></td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="screenshots/software-decoder.jpeg" alt="VitaMediaDeck software H.264 decoder running on PlayStation Vita">
+      <img src="screenshots/library-cover-expanded-miniplayer.png" alt="VitaMediaDeck local library with embedded cover artwork and expanded live video mini-player">
     </td>
     <td width="50%" align="center">
-      <img src="screenshots/music-player.jpeg" alt="VitaMediaDeck music player running on PlayStation Vita">
+      <img src="screenshots/library-cover-miniplayer.png" alt="VitaMediaDeck local library with embedded cover artwork and compact live video mini-player">
     </td>
   </tr>
   <tr>
-    <td align="center"><sub>Software FFmpeg decoder</sub></td>
-    <td align="center"><sub>Local music playback</sub></td>
+    <td align="center"><sub>Expanded live video mini-player and embedded grid cover</sub></td>
+    <td align="center"><sub>Compact live video mini-player and embedded grid cover</sub></td>
   </tr>
 </table>
 
-These photographs document the decoder paths on real hardware. The current
-cyan-led Spectral Reassembly theme, expanded player panels, and optical
-memory-aperture icon still need a fresh physical-Vita screenshot pass.
+These captures document the current cyan-led Spectral Reassembly interface,
+embedded local-video cover artwork, both live mini-player sizes, and the
+hardware decoder running on a physical Vita.
 
 ## Highlights
 
