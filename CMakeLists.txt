@@ -73,6 +73,23 @@ set_target_properties(vitamediadeck_libssh2 PROPERTIES
   IMPORTED_LOCATION "${VITAMEDIADECK_LIBSSH2_ARCHIVE}"
   INTERFACE_LINK_LIBRARIES "mbedtls;mbedx509;mbedcrypto;z")
 
+# VitaSDK's packaged Jansson archive is built as PIC and contains
+# R_ARM_BASE_PREL relocations that vita-elf-create cannot encode. Use the
+# pinned non-PIC archive produced specifically for the Vita executable.
+set(VITAMEDIADECK_JANSSON_ROOT
+  "${CMAKE_CURRENT_SOURCE_DIR}/build/deps/jansson-vita"
+  CACHE PATH "Prefix produced by tools/build-jansson-vita.sh")
+set(VITAMEDIADECK_JANSSON_ARCHIVE
+  "${VITAMEDIADECK_JANSSON_ROOT}/lib/libjansson.a")
+if(NOT EXISTS "${VITAMEDIADECK_JANSSON_ARCHIVE}")
+  message(FATAL_ERROR
+    "Missing ${VITAMEDIADECK_JANSSON_ARCHIVE}; run tools/build-jansson-vita.sh before building VitaMediaDeck.")
+endif()
+add_library(vitamediadeck_jansson STATIC IMPORTED GLOBAL)
+set_target_properties(vitamediadeck_jansson PROPERTIES
+  IMPORTED_LOCATION "${VITAMEDIADECK_JANSSON_ARCHIVE}"
+  INTERFACE_INCLUDE_DIRECTORIES "${VITAMEDIADECK_JANSSON_ROOT}/include")
+
 set(VITAMEDIADECK_RELEASE_LICENSE_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/build/release-licenses"
   CACHE PATH "License bundle produced by tools/prepare-release-licenses.sh")
@@ -80,7 +97,7 @@ set(VITAMEDIADECK_REQUIRED_RELEASE_LICENSES
   libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt
   mpg123-COPYING.txt vita2d-MIT.txt FreeType-FTL.txt
   libjpeg-turbo-LICENSE.md libjpeg-turbo-README.ijg libpng-LICENSE.txt
-  bzip2-LICENSE.txt pthread-embedded-COPYING.txt
+  bzip2-LICENSE.txt jansson-MIT.txt pthread-embedded-COPYING.txt
   pthread-embedded-LGPL-2.1.txt pthread-embedded-Vita-MIT.txt)
 foreach(license_file IN LISTS VITAMEDIADECK_REQUIRED_RELEASE_LICENSES)
   if(NOT EXISTS "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/${license_file}")
@@ -204,6 +221,7 @@ add_executable(${PROJECT_NAME}
   src/network/webdav_source.c
   src/network/sftp_source.c
   src/network/smb_source.c
+  src/network/jellyfin_source.c
   src/media/background_playback.c
   src/media/audio_volume.c
   src/media/avplayer_init.c
@@ -297,6 +315,7 @@ target_link_libraries(${PROJECT_NAME}
   vitamediadeck_libssh2    # authenticated SFTP with pinned host fingerprints
   smb2                # authenticated SMB2/SMB3 shares
   xml2                # namespace-safe WebDAV PROPFIND parser
+  vitamediadeck_jansson # bounded Jellyfin API parsing; pinned non-PIC Vita archive
   SceAvPlayer_stub    # sceAvPlayerInit/AddSource/GetVideoData/... (src/media/)
   ## Public H.264/AAC codecs used by the reusable player. Private *Internal
   ## imports are intentionally excluded.
@@ -364,6 +383,7 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libjpeg-turbo-README.ijg" licenses/libjpeg-turbo-README.ijg
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libpng-LICENSE.txt" licenses/libpng-LICENSE.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/bzip2-LICENSE.txt" licenses/bzip2-LICENSE.txt
+  FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/jansson-MIT.txt" licenses/jansson-MIT.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/pthread-embedded-COPYING.txt" licenses/pthread-embedded-COPYING.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/pthread-embedded-LGPL-2.1.txt" licenses/pthread-embedded-LGPL-2.1.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/pthread-embedded-Vita-MIT.txt" licenses/pthread-embedded-Vita-MIT.txt
@@ -372,7 +392,7 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   FILE "${VITAMEDIADECK_HTTPS_CURL_ROOT}/share/licenses/zlib-header-with-license.txt" licenses/zlib.txt
   FILE "${VITAMEDIADECK_HTTPS_CURL_ROOT}/share/licenses/zstd-package-notice.txt" licenses/zstd.txt
   FILE "${VITAMEDIADECK_HTTPS_PACKAGE}/licenses/certifi-MPL-2.0.txt" licenses/certifi-MPL-2.0.txt
-  FILE build/deps/libssh2-vita/share/licenses/libssh2-BSD-3-Clause.txt licenses/libssh2-BSD-3-Clause.txt
+  FILE "${VITAMEDIADECK_LIBSSH2_ROOT}/share/licenses/libssh2-BSD-3-Clause.txt" licenses/libssh2-BSD-3-Clause.txt
   ${VITAMEDIADECK_FFMPEG_LICENSE_RESOURCE}
   FILE "${VITAMEDIADECK_WILIWILI_LICENSE}" licenses/wiliwili-GPL-3.0.txt
   # Third-party MIT taiHEN compatibility module used instead of directly

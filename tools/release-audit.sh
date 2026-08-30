@@ -65,12 +65,21 @@ if grep -Eq 'OPENSSL_|SSL_(CTX|connect|read|write)' "$nm_output"; then
   fail "release curl still references OpenSSL"
 fi
 
-libssh2="$repo_root/build/deps/libssh2-vita/lib/libssh2.a"
+libssh2_root="${VITAMEDIADECK_LIBSSH2_ROOT:-$repo_root/build/deps/libssh2-vita}"
+libssh2="$libssh2_root/lib/libssh2.a"
 require_file "$libssh2"
 "$nm_tool" -u "$libssh2" > "$nm_output"
 grep -q 'mbedtls_' "$nm_output" || fail "release libssh2 is not linked to Mbed TLS"
 if grep -Eq 'OPENSSL_|SSL_(CTX|connect|read|write)' "$nm_output"; then
   fail "release libssh2 still references OpenSSL"
+fi
+
+jansson_root="${VITAMEDIADECK_JANSSON_ROOT:-$repo_root/build/deps/jansson-vita}"
+jansson="$jansson_root/lib/libjansson.a"
+require_file "$jansson"
+if "$VITASDK/bin/arm-vita-eabi-readelf" -r "$jansson" |
+   grep -Eq 'R_ARM_BASE_PREL|R_ARM_GOT_BREL'; then
+  fail "release Jansson archive contains Vita-incompatible PIC relocations"
 fi
 
 ffmpeg_root="${VITAMEDIADECK_H264_VITA_ROOT:-$repo_root/build/deps/ffmpeg-vita-hw}"
@@ -81,7 +90,8 @@ grep -q 'ff_matroska_demuxer' "$nm_output" || fail "release FFmpeg misses Matros
 
 for license in libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt mpg123-COPYING.txt \
   vita2d-MIT.txt FreeType-FTL.txt libjpeg-turbo-LICENSE.md \
-  libjpeg-turbo-README.ijg libpng-LICENSE.txt bzip2-LICENSE.txt pthread-embedded-COPYING.txt \
+  libjpeg-turbo-README.ijg libpng-LICENSE.txt bzip2-LICENSE.txt jansson-MIT.txt \
+  pthread-embedded-COPYING.txt \
   pthread-embedded-LGPL-2.1.txt pthread-embedded-Vita-MIT.txt; do
   require_file "$repo_root/build/release-licenses/$license"
 done
