@@ -388,7 +388,7 @@ static int thumbnail_input_open(ThumbnailInput *input,
 		return AVERROR(ENOMEM);
 	}
 	input->format->pb = input->avio;
-	input->format->flags |= AVFMT_FLAG_CUSTOM_IO;
+	input->format->flags |= AVFMT_FLAG_CUSTOM_IO | AVFMT_FLAG_FAST_SEEK;
 	input->format->interrupt_callback.callback = thumbnail_interrupted;
 	input->format->interrupt_callback.opaque = interrupt;
 	input->format->probesize = 1024 * 1024;

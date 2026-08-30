@@ -132,9 +132,12 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   sparse subtitles, font attachments, and embedded cover art cannot move
   playback to a later cluster. The preceding keyframe remains decoder preroll
   and only decoded pictures before the requested timestamp are suppressed. The
-  video and audio cursors discard all non-selected streams before seeking, so
-  alternate tracks, subtitles, attachments, and covers are not packetized while
-  jumping or resuming; seek logs expose the two demux costs independently.
+  video and audio cursors both hop through the primary H.264 Cue index, including
+  resume after closing the player, live seek, and audio-track replacement. No
+  AAC, sparse-subtitle, or multi-stream linear-seek fallback remains. After the
+  indexed hop each cursor exposes only its selected stream; seek logs expose the
+  two demux costs independently. Subtitle activation follows the same dense
+  video-clock hop with bounded preroll instead of seeking a sparse text track.
   A landing more than two seconds beyond the requested clock is rejected and
   retried through a fresh session, preventing a post-seek audio-only black screen.
   A seek that cannot produce a hardware frame within its bounded restart window

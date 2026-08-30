@@ -253,7 +253,7 @@ static int media_input_open(VtMediaInput *input,
 		return AVERROR(ENOMEM);
 	}
 	input->format->pb = input->avio;
-	input->format->flags |= AVFMT_FLAG_CUSTOM_IO;
+	input->format->flags |= AVFMT_FLAG_CUSTOM_IO | AVFMT_FLAG_FAST_SEEK;
 	input->format->interrupt_callback.callback = media_interrupt;
 	input->format->interrupt_callback.opaque = input;
 	input->format->probesize = 1024 * 1024;
@@ -645,15 +645,22 @@ static void subtitle_apply_stream_policy(AVFormatContext *format,
 		        ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
 }
 
+static void subtitle_apply_read_policy(AVFormatContext *format,
+	                                   int subtitle_stream) {
+	if (!format) return;
+	for (unsigned int i = 0; i < format->nb_streams; i++)
+		format->streams[i]->discard = (int)i == subtitle_stream
+		                                ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+}
+
 static int subtitle_seek_stream(AVFormatContext *format, int stream_index,
 	                            uint64_t position_ms) {
 	if (!format || stream_index < 0 ||
 	    (unsigned int)stream_index >= format->nb_streams ||
 	    !timed_stream(format->streams[stream_index])) return AVERROR(EINVAL);
 	AVStream *stream = format->streams[stream_index];
-	/* Custom AVIO retains a failed seek/EOF in these fields. Every fallback below
-	 * is an independent reposition attempt and must start from a clean transport
-	 * state, otherwise one sparse SubRip miss poisons the dense-clock fallback. */
+	/* Custom AVIO retains a failed seek/EOF in these fields. Clear the transport
+	 * state before the single indexed hop. */
 	if (format->pb) {
 		format->pb->error = 0;
 		format->pb->eof_reached = 0;
@@ -662,43 +669,24 @@ static int subtitle_seek_stream(AVFormatContext *format, int stream_index,
 	                            media_timeline_origin_ms(format);
 	int64_t target = av_rescale_q(logical_target_ms,
 	                              (AVRational){ 1, 1000 }, stream->time_base);
-	int ret = avformat_seek_file(format, stream_index, INT64_MIN, target, target,
-	                             0);
-	if (ret < 0) {
-		if (format->pb) {
-			format->pb->error = 0;
-			format->pb->eof_reached = 0;
-		}
-		ret = av_seek_frame(format, stream_index, target, AVSEEK_FLAG_BACKWARD);
-	}
-	return ret;
+	/* The dense video clock has Matroska Cue/keyframe offsets. An exact sparse
+	 * subtitle seek can fall back to walking clusters, so never use it here. */
+	return av_seek_frame(format, stream_index, target, AVSEEK_FLAG_BACKWARD);
 }
 
 static int subtitle_seek(VtMediaInput *input, int subtitle_stream,
 	                     int clock_stream, uint64_t position_ms) {
 	if (!input || !input->format) return AVERROR(EINVAL);
-	/* Indexed Matroska/MP4-style containers can jump directly to the preceding
-	 * selected-subtitle event. This preserves even a long SubRip cue that began
-	 * well before the requested point without scanning intervening video data. */
-	if (indexed_container(input->format) && subtitle_stream != clock_stream) {
-		int subtitle_ret = subtitle_seek_stream(input->format, subtitle_stream,
-		                                          position_ms);
-		if (subtitle_ret >= 0) {
-			avformat_flush(input->format);
-			return 0;
-		}
-	}
-	/* Seek through one stable, dense video/audio timeline. A global seek treats
-	 * every non-discarded track as active and can walk far back for sparse text.
-	 * A bounded preroll recovers a cue that began before the dense keyframe but
-	 * still spans the requested point without turning every switch into a scan
-	 * from the start of a long movie. */
+	/* Always hop through one stable, dense video timeline. A bounded preroll
+	 * recovers a subtitle cue that began shortly before the target; there is no
+	 * sparse-track or global-seek fallback that can become a linear scan. */
 	uint64_t seek_position = position_ms > SUBTITLE_SEEK_PREROLL_MS
 	                       ? position_ms - SUBTITLE_SEEK_PREROLL_MS : 0;
 	int ret = subtitle_seek_stream(input->format, clock_stream, seek_position);
-	if (ret < 0 && subtitle_stream != clock_stream)
-		ret = subtitle_seek_stream(input->format, subtitle_stream, position_ms);
-	if (ret >= 0) avformat_flush(input->format);
+	if (ret >= 0) {
+		avformat_flush(input->format);
+		subtitle_apply_read_policy(input->format, subtitle_stream);
+	}
 	return ret;
 }
 
