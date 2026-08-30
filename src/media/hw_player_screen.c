@@ -1325,16 +1325,19 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				draw_player_input_lock_at(lock_x,
 				    lock_y > 430 ? lock_y - 50 : lock_y + 34, 1.0f);
 		} else {
-			char subtitle[512];
-			if (vt_decoder_subtitle_text(player, status.position_ms,
-			                             subtitle, sizeof(subtitle)) > 0)
-				draw_subtitle_text(subtitle);
 			if (hud_opacity > 0.01f || volume_opacity > 0.01f)
 				draw_hud(source, &status, paused, vt_audio_volume_percent(),
 				         hud_opacity, volume_opacity, dragging, drag_fraction);
 			else if (vt_preferences_player_status_always_visible())
 				ui_brand_draw_status_indicators_alpha(1.0f);
 			draw_buffering_overlay(buffering_opacity, now);
+			/* Subtitles must remain above the HUD's opaque lower telemetry panel.
+			 * Drawing them before draw_hud made a correctly decoded bottom-position
+			 * cue look absent for the entire time the controls were visible. */
+			char subtitle[512];
+			if (vt_decoder_subtitle_text(player, status.position_ms,
+			                             subtitle, sizeof(subtitle)) > 0)
+				draw_subtitle_text(subtitle);
 			if (input_lock.locked && hud_opacity > 0.01f)
 				draw_player_input_lock_at(24, 86, hud_opacity);
 			if (sidebar.animation > 0.01f)
