@@ -13,13 +13,16 @@
 #define VT_NETWORK_PATH_MAX 768
 #define VT_NETWORK_USER_MAX 96
 #define VT_NETWORK_SECRET_MAX 192
+#define VT_NETWORK_TOKEN_MAX 256
+#define VT_NETWORK_USER_ID_MAX 64
 #define VT_NETWORK_FINGERPRINT_MAX 96
 #define VT_NETWORK_TLS_PIN_MAX 64
 
 typedef enum {
 	VT_NETWORK_WEBDAV = 1,
 	VT_NETWORK_SFTP = 2,
-	VT_NETWORK_SMB = 3
+	VT_NETWORK_SMB = 3,
+	VT_NETWORK_JELLYFIN = 4
 } VtNetworkProtocol;
 
 typedef struct {
@@ -41,6 +44,10 @@ typedef struct {
  * structure. */
 typedef struct {
 	char password[VT_NETWORK_SECRET_MAX];
+	/* Provider sessions remain memory-only. The optional credential store writes
+	 * only password; access tokens and user ids are reacquired after launch. */
+	char access_token[VT_NETWORK_TOKEN_MAX];
+	char user_id[VT_NETWORK_USER_ID_MAX];
 } VtNetworkCredential;
 
 typedef struct {
@@ -88,6 +95,12 @@ int vt_network_list(const VtNetworkSource *source,
 	                const char *path, VtNetworkEntry *entries,
 	                int capacity, char *detail, size_t detail_size);
 
+/* Authenticates providers that issue a session token. File-oriented providers
+ * need no preparation and return success immediately. */
+int vt_network_prepare_source(const VtNetworkSource *source,
+	                          VtNetworkCredential *credential,
+	                          char *detail, size_t detail_size);
+
 /* When SFTP has no trusted key yet, this returns the SHA-256 fingerprint to
  * show to the user before saving it into source.host_key_sha256. */
 int vt_network_sftp_probe_fingerprint(const VtNetworkSource *source,
@@ -102,10 +115,23 @@ int vt_network_webdav_probe_public_key(const VtNetworkSource *source,
 	                                   char *pin, size_t pin_size,
 	                                   char *detail, size_t detail_size);
 
+/* Shared HTTPS trust probe for WebDAV and Jellyfin. */
+int vt_network_https_probe_public_key(const VtNetworkSource *source,
+	                                  const VtNetworkCredential *credential,
+	                                  char *pin, size_t pin_size,
+	                                  char *detail, size_t detail_size);
+
 int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	                               const VtNetworkSource *source,
 	                               const VtNetworkCredential *credential,
 	                               const char *path);
+
+/* Returns provider artwork in an allocated buffer. The caller owns `data`.
+ * File-oriented providers return VT_NETWORK_UNSUPPORTED_MEDIA. */
+int vt_network_fetch_artwork(const VtNetworkSource *source,
+	                         const VtNetworkCredential *credential,
+	                         const char *path, unsigned char **data,
+	                         size_t *size, volatile int *cancel_flag);
 
 int vt_network_is_supported_media(const char *name, int *is_audio);
 const char *vt_network_protocol_name(VtNetworkProtocol protocol);

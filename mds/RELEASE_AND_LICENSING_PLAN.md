@@ -40,7 +40,9 @@ published under the same license. Before a standalone release:
 
 - No saved passwords or credentials in VPK resources, logs, fixtures, or Git
   history for the release commit.
-- WebDAV rejects plain HTTP and invalid TLS peers.
+- Jellyfin and WebDAV reject plain HTTP and invalid TLS peers.
+- Jellyfin access tokens are session-only and never written to the source or
+  optional password databases.
 - SFTP rejects unknown or changed host keys until explicit confirmation.
 - SMB does not fall back to guest access.
 - Remote operations are read-only.

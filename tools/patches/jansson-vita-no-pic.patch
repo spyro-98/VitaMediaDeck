@@ -1,0 +1,12 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a9f281b..76b615c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -352,7 +352,7 @@ else()
+       ${JANSSON_SRC}
+       ${JANSSON_HDR_PRIVATE}
+       ${JANSSON_HDR_PUBLIC})
+    set_target_properties(jansson PROPERTIES
+-      POSITION_INDEPENDENT_CODE true)
++      POSITION_INDEPENDENT_CODE false)
+ endif()
