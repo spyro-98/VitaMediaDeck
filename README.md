@@ -103,10 +103,31 @@ stream validation, and both command-line and interactive terminal interfaces.
 | SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
 | SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
 
-The player targets seekable H.264 video in MP4/M4V/MOV or Matroska containers,
-with optional mono/stereo AAC and embedded UTF-8 text subtitles. Local audio
-detection includes MP3, M4A, AAC, and WAV. Exact compatibility still depends on
-the selected decoder and the source media.
+### Supported video formats
+
+| Container | Video | Audio | Embedded subtitles | Scope |
+| --- | --- | --- | --- | --- |
+| MP4, M4V, MOV | H.264/AVC | Mono/stereo AAC | MOV text and compatible UTF-8 text tracks | Local, WebDAV, SFTP, SMB |
+| Matroska (`.mkv`) | H.264/AVC | Mono/stereo AAC | SubRip, ASS/SSA, WebVTT, MOV text, plain text, MicroDVD | Local, WebDAV, SFTP, SMB |
+
+Both containers use seekable H.264 indexes for startup, resume, seeking, and
+audio-track replacement. Unsupported video/audio codecs are rejected by the
+selected decoder instead of silently starting an audio-only session.
+
+### Supported audio formats
+
+| Format | Playback backend | Metadata and artwork | Current scope |
+| --- | --- | --- | --- |
+| MP3 | mpg123 | ID3 title, artist, and album; sidecar artwork | Local |
+| M4A | ReAvPlayer | Cached/sidecar metadata and artwork | Local |
+| AAC | ReAvPlayer | Cached/sidecar metadata and artwork | Local |
+| WAV | ReAvPlayer | Cached/sidecar metadata and artwork | Local |
+| FLAC | libFLAC | UTF-8 Vorbis comments, embedded JPEG/PNG `PICTURE`, and sidecar artwork | Local; mono/stereo, 4–32-bit source converted to signed 16-bit output, 8–48 kHz Vita-supported rates |
+
+FLAC seeking is sample-based and remains available in the full-screen music
+player and persistent mini-player. The Vita AudioOut interface accepts signed
+16-bit mono/stereo PCM; high-resolution FLAC above 48 kHz and multichannel FLAC
+are rejected rather than resampled or downmixed implicitly.
 
 VitaMediaDeck does not discover, download, extract, convert, or copy media from
 online catalogues. It only plays media already owned and provided by the user.
@@ -133,7 +154,7 @@ context-sensitive mapping.
 
 - VitaSDK and the normal Vita system stubs.
 - Vita ports of vita2d, FreeType, libjpeg-turbo, libpng, zlib, bzip2, mpg123,
-  Mbed TLS, libxml2, zstd, and libsmb2.
+  libFLAC, libogg, Mbed TLS, libxml2, zstd, and libsmb2.
 - CMake, Git, Patch, and standard archive/build tools.
 - Sibling checkouts of `vita-hw-decoder`, `vita-sw-decoder`, and `vita-https`,
   unless their paths are supplied through the matching CMake cache variables.

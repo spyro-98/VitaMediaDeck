@@ -20,6 +20,10 @@ fetch https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.3.tar.xz \
   "$work/libxml2.tar.xz" 78262a6e7ac170d6528ebfe2efccdf220191a5af6a6cd61ea4a9a9a5042c7a07
 fetch https://www.mpg123.de/download/mpg123-1.33.5.tar.bz2 \
   "$work/mpg123.tar.bz2" 0d7ebc8da0aff3ca383c8c6b5a6adbe402ee5bb256685b8c5499f3a739f9d6dd
+fetch https://github.com/xiph/flac/releases/download/1.3.4/flac-1.3.4.tar.xz \
+  "$work/flac.tar.xz" 8ff0607e75a322dd7cd6ec48f4f225471404ae2730d0ea945127b1355155e737
+fetch https://github.com/xiph/ogg/releases/download/v1.3.6/libogg-1.3.6.tar.xz \
+  "$work/libogg.tar.xz" 5c8253428e181840cd20d41f3ca16557a9cc04bad4a3d04cce84808677fa1061
 fetch https://download-mirror.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz \
   "$work/freetype.tar.xz" 36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f
 fetch https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz \
@@ -38,6 +42,8 @@ install -m 0644 "$work/libsmb2-libsmb2-6.1/COPYING" "$output/libsmb2-NOTICE.txt"
 install -m 0644 "$work/libsmb2-libsmb2-6.1/LICENCE-LGPL-2.1.txt" "$output/libsmb2-LGPL-2.1.txt"
 install -m 0644 "$work/libxml2-2.15.3/Copyright" "$output/libxml2-MIT.txt"
 install -m 0644 "$work/mpg123-1.33.5/COPYING" "$output/mpg123-COPYING.txt"
+install -m 0644 "$work/flac-1.3.4/COPYING.Xiph" "$output/FLAC-COPYING.Xiph.txt"
+install -m 0644 "$work/libogg-1.3.6/COPYING" "$output/libogg-COPYING.txt"
 install -m 0644 "$work/freetype-2.14.3/docs/FTL.TXT" "$output/FreeType-FTL.txt"
 install -m 0644 "$work/libjpeg-turbo-3.2.0/LICENSE.md" "$output/libjpeg-turbo-LICENSE.md"
 install -m 0644 "$work/libjpeg-turbo-3.2.0/README.ijg" "$output/libjpeg-turbo-README.ijg"
@@ -46,6 +52,8 @@ install -m 0644 "$work/bzip2-1.0.8/LICENSE" "$output/bzip2-LICENSE.txt"
 install -m 0644 "$work/libsmb2.tar.gz" "$sources/libsmb2-6.1.tar.gz"
 install -m 0644 "$work/libxml2.tar.xz" "$sources/libxml2-2.15.3.tar.xz"
 install -m 0644 "$work/mpg123.tar.bz2" "$sources/mpg123-1.33.5.tar.bz2"
+install -m 0644 "$work/flac.tar.xz" "$sources/flac-1.3.4.tar.xz"
+install -m 0644 "$work/libogg.tar.xz" "$sources/libogg-1.3.6.tar.xz"
 install -m 0644 "$work/freetype.tar.xz" "$sources/freetype-2.14.3.tar.xz"
 install -m 0644 "$work/libjpeg.tar.gz" "$sources/libjpeg-turbo-3.2.0.tar.gz"
 install -m 0644 "$work/libpng.tar.gz" "$sources/libpng-1.6.58.tar.gz"
@@ -78,6 +86,10 @@ libxml2.version=2.15.3
 libxml2.source.sha256=78262a6e7ac170d6528ebfe2efccdf220191a5af6a6cd61ea4a9a9a5042c7a07
 mpg123.version=1.33.5
 mpg123.source.sha256=0d7ebc8da0aff3ca383c8c6b5a6adbe402ee5bb256685b8c5499f3a739f9d6dd
+libFLAC.version=1.3.4
+libFLAC.source.sha256=8ff0607e75a322dd7cd6ec48f4f225471404ae2730d0ea945127b1355155e737
+libogg.version=1.3.6
+libogg.source.sha256=5c8253428e181840cd20d41f3ca16557a9cc04bad4a3d04cce84808677fa1061
 freetype.version=2.14.3
 freetype.source.sha256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f
 libjpeg-turbo.version=3.2.0

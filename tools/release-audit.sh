@@ -80,6 +80,7 @@ grep -q 'ff_mov_demuxer' "$nm_output" || fail "release FFmpeg misses MOV/MP4 dem
 grep -q 'ff_matroska_demuxer' "$nm_output" || fail "release FFmpeg misses Matroska demuxing"
 
 for license in libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt mpg123-COPYING.txt \
+  FLAC-COPYING.Xiph.txt libogg-COPYING.txt \
   vita2d-MIT.txt FreeType-FTL.txt libjpeg-turbo-LICENSE.md \
   libjpeg-turbo-README.ijg libpng-LICENSE.txt bzip2-LICENSE.txt pthread-embedded-COPYING.txt \
   pthread-embedded-LGPL-2.1.txt pthread-embedded-Vita-MIT.txt; do

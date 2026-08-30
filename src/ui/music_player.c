@@ -78,6 +78,7 @@ static vita2d_texture *load_artwork_texture(const char *path) {
 }
 
 static void draw_music_sidebar_bitrate(float animation,
+	                                   const char *codec_name,
 	                                   uint32_t bitrate_kbps) {
 	if (animation <= 0.01f || bitrate_kbps == 0) return;
 	float ox = -286.0f * (1.0f - animation);
@@ -90,6 +91,7 @@ static void draw_music_sidebar_bitrate(float animation,
 		ui_font_draw_textf(small, (int)ox + 34, 465, VT_THEME_TEXT,
 		                   UI_FONT_SMALL,
 		                   vt_i18n_str(VT_STR_MUSIC_PLAYER_BITRATE_FORMAT),
+		                   codec_name && codec_name[0] ? codec_name : "AUDIO",
 		                   bitrate_kbps);
 }
 
@@ -604,6 +606,7 @@ int ui_music_player_shuffle_enabled(void) { return g_shuffle; }
 int ui_music_player_repeat_one_enabled(void) { return g_repeat_one; }
 
 int ui_music_player_run(const char *artwork_path, const char *album,
+	                    const char *codec_name,
 	                    uint32_t average_bitrate_kbps) {
 	vita2d_texture *cover = load_artwork_texture(artwork_path);
 	unsigned palette[5];
@@ -1082,7 +1085,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			draw_input_lock_at(24, 86, hud_opacity);
 		if (sidebar.animation > 0.01f)
 			ui_sections_sidebar_draw(&sidebar);
-		draw_music_sidebar_bitrate(sidebar.animation, average_bitrate_kbps);
+		draw_music_sidebar_bitrate(sidebar.animation, codec_name,
+		                           average_bitrate_kbps);
 		draw_music_right_sidebar(right_animation, right_focus_position,
 		                         right_cursor, right_open);
 		vita2d_end_drawing();

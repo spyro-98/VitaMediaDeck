@@ -15,6 +15,7 @@
 
 #include "common/text_log.h"
 #include "i18n/i18n.h"
+#include "media/music_metadata.h"
 #include "media/video_thumbnail.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
@@ -108,7 +109,9 @@ static int ends_with_ci(const char *name, const char *suffix) {
 
 static VtLocalMediaType local_media_type(const char *name) {
 	static const char *const videos[] = { ".mp4", ".m4v", ".mov", ".mkv" };
-	static const char *const audio[] = { ".mp3", ".m4a", ".aac", ".wav" };
+	static const char *const audio[] = {
+		".mp3", ".m4a", ".aac", ".wav", ".flac"
+	};
 	for (unsigned int i = 0; i < sizeof(videos) / sizeof(videos[0]); i++)
 		if (ends_with_ci(name, videos[i])) return VT_LOCAL_MEDIA_VIDEO;
 	for (unsigned int i = 0; i < sizeof(audio) / sizeof(audio[0]); i++)
@@ -116,8 +119,8 @@ static VtLocalMediaType local_media_type(const char *name) {
 	return 0;
 }
 
-static void find_video_artwork(VtLocalMediaItem *media) {
-	if (!media || media->type != VT_LOCAL_MEDIA_VIDEO) return;
+static void find_media_artwork(VtLocalMediaItem *media) {
+	if (!media || !media->type) return;
 	static const char *const extensions[] = { ".jpg", ".jpeg", ".png" };
 	static const char *const folder_names[] = {
 		"poster", "cover", "folder", "thumb", "landscape"
@@ -257,7 +260,27 @@ static int load_entries(const char *path, LocalFileEntry *entries) {
 		entry->media.source = VT_LOCAL_MEDIA_SOURCE_FILE;
 		entry->media.size = source.d_stat.st_size > 0
 		                  ? (uint64_t)source.d_stat.st_size : 0;
-		find_video_artwork(&entry->media);
+		find_media_artwork(&entry->media);
+		if (type == VT_LOCAL_MEDIA_AUDIO) {
+			VtMusicMetadata metadata;
+			if (vt_music_metadata_load(entry->media.path, &metadata) == 0) {
+				if (metadata.title[0])
+					snprintf(entry->media.name, sizeof(entry->media.name), "%s",
+					         metadata.title);
+				if (metadata.artist[0])
+					snprintf(entry->media.artist, sizeof(entry->media.artist), "%s",
+					         metadata.artist);
+				if (metadata.album[0])
+					snprintf(entry->media.album, sizeof(entry->media.album), "%s",
+					         metadata.album);
+				if (!entry->media.artwork_path[0] && metadata.artwork_path[0])
+					snprintf(entry->media.artwork_path,
+					         sizeof(entry->media.artwork_path), "%s",
+					         metadata.artwork_path);
+				if (metadata.duration_ms)
+					entry->media.duration_ms = metadata.duration_ms;
+			}
+		}
 		entry->is_directory = is_directory;
 		count++;
 	}

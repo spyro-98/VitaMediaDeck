@@ -74,6 +74,29 @@ static void media_id(const char *path, char out[16]) {
 	snprintf(out, 16, "media%08x", hash);
 }
 
+static int path_suffix_ci(const char *path, const char *suffix) {
+	if (!path || !suffix) return 0;
+	size_t path_length = strlen(path), suffix_length = strlen(suffix);
+	if (path_length < suffix_length) return 0;
+	path += path_length - suffix_length;
+	for (size_t i = 0; i < suffix_length; i++) {
+		char left = path[i], right = suffix[i];
+		if (left >= 'A' && left <= 'Z') left += 'a' - 'A';
+		if (right >= 'A' && right <= 'Z') right += 'a' - 'A';
+		if (left != right) return 0;
+	}
+	return 1;
+}
+
+static const char *audio_codec_name(const char *path) {
+	if (path_suffix_ci(path, ".flac")) return "FLAC";
+	if (path_suffix_ci(path, ".mp3")) return "MP3";
+	if (path_suffix_ci(path, ".m4a")) return "M4A";
+	if (path_suffix_ci(path, ".aac")) return "AAC";
+	if (path_suffix_ci(path, ".wav")) return "WAV";
+	return "AUDIO";
+}
+
 static uint64_t history_hash_text(uint64_t hash, const char *text) {
 	for (const unsigned char *cursor = (const unsigned char *)text;
 	     cursor && *cursor; cursor++) {
@@ -225,7 +248,8 @@ static int run_local_audio_session(VtLocalMediaItem item, int prepare_first,
 		}
 		uint32_t bitrate = item.duration_ms && item.size <= UINT64_MAX / 8ULL
 		                   ? (uint32_t)((item.size * 8ULL) / item.duration_ms) : 0;
-		int action = ui_music_player_run(item.artwork_path, item.album, bitrate);
+		int action = ui_music_player_run(item.artwork_path, item.album,
+		                                 audio_codec_name(item.path), bitrate);
 		if (action >= UI_MUSIC_PLAYER_SECTION_BASE) {
 			remember_minimized_local_audio(&item);
 			if (navigated) *navigated = 1;

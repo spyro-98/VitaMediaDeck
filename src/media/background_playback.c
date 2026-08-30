@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <FLAC/stream_decoder.h>
 #include <mpg123.h>
 #include <psp2/audioout.h>
 #include <psp2/avplayer.h>
@@ -41,6 +42,7 @@ typedef struct {
 	uint64_t start_position_ms;
 	char input_path[512];
 	int mp3_source;
+	int flac_source;
 	int decoder_source;
 	int remote_video_source;
 	VtNetworkStreamFactory remote_factory;
@@ -122,6 +124,16 @@ static int path_is_mp3(const char *path) {
 	       (path[length - 3] == 'm' || path[length - 3] == 'M') &&
 	       (path[length - 2] == 'p' || path[length - 2] == 'P') &&
 	       path[length - 1] == '3';
+}
+
+static int path_is_flac(const char *path) {
+	if (!path) return 0;
+	size_t length = strlen(path);
+	return length >= 5 && path[length - 5] == '.' &&
+	       (path[length - 4] == 'f' || path[length - 4] == 'F') &&
+	       (path[length - 3] == 'l' || path[length - 3] == 'L') &&
+	       (path[length - 2] == 'a' || path[length - 2] == 'A') &&
+	       (path[length - 1] == 'c' || path[length - 1] == 'C');
 }
 
 static void set_port_volume(int port, int percent, int *applied) {
@@ -273,6 +285,319 @@ done:
 	if (fd >= 0) sceIoClose(fd);
 	mpg123_exit();
 	log_printf("local MP3 playback ended: result=0x%08X\n", (unsigned)ret);
+	return ret;
+}
+
+typedef struct {
+	BackgroundPlaybackJob *job;
+	SceUID fd;
+	FLAC__uint64 file_size;
+	unsigned int sample_rate;
+	unsigned int channels;
+	unsigned int bits_per_sample;
+	FLAC__uint64 total_samples;
+	FLAC__uint64 sample_position;
+	int port;
+	int applied_volume;
+	int output_error;
+	unsigned int pending_frames;
+	int16_t pcm[BACKGROUND_AUDIO_GRAIN * 2];
+	uint64_t last_power_tick;
+} FlacPlaybackContext;
+
+static int flac_rate_supported(unsigned int rate) {
+	static const unsigned int supported[] = {
+		8000, 11025, 12000, 16000, 22050,
+		24000, 32000, 44100, 48000
+	};
+	for (unsigned int i = 0; i < sizeof(supported) / sizeof(supported[0]); i++)
+		if (supported[i] == rate) return 1;
+	return 0;
+}
+
+static int16_t flac_pcm16(FLAC__int32 input, unsigned int bits_per_sample) {
+	int64_t value = input;
+	if (bits_per_sample > 16) {
+		unsigned int shift = bits_per_sample - 16;
+		int64_t rounding = 1LL << (shift - 1);
+		value = value >= 0 ? (value + rounding) >> shift
+		                   : -(((-value) + rounding) >> shift);
+	} else if (bits_per_sample < 16) {
+		value <<= 16 - bits_per_sample;
+	}
+	if (value > INT16_MAX) value = INT16_MAX;
+	else if (value < INT16_MIN) value = INT16_MIN;
+	return (int16_t)value;
+}
+
+static int flac_output_grain(FlacPlaybackContext *context,
+	                         unsigned int valid_frames) {
+	if (!context || context->port < 0 || valid_frames == 0) return 0;
+	if (valid_frames < BACKGROUND_AUDIO_GRAIN)
+		memset(context->pcm + valid_frames * 2, 0,
+		       (BACKGROUND_AUDIO_GRAIN - valid_frames) * 2 * sizeof(int16_t));
+	int requested_volume = vt_audio_volume_percent();
+	set_port_volume(context->port, requested_volume, &context->applied_volume);
+	if (requested_volume > 100)
+		amplify_pcm16(context->pcm, context->pcm, sizeof(context->pcm),
+		              requested_volume);
+	int ret = sceAudioOutOutput(context->port, context->pcm);
+	if (ret < 0) {
+		context->output_error = ret;
+		return ret;
+	}
+	context->sample_position += valid_frames;
+	snapshot_lock();
+	context->job->snapshot.position_ms = context->sample_rate
+		? context->sample_position * 1000ULL / context->sample_rate : 0;
+	snapshot_unlock();
+	uint64_t now = sceKernelGetProcessTimeWide();
+	if (!context->last_power_tick ||
+	    now - context->last_power_tick >= 1000 * 1000ULL) {
+		sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+		context->last_power_tick = now;
+	}
+	return 0;
+}
+
+static FLAC__StreamDecoderReadStatus flac_read_callback(
+	const FLAC__StreamDecoder *decoder, FLAC__byte buffer[], size_t *bytes,
+	void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	if (!context || !bytes || *bytes == 0 || context->job->cancel) {
+		if (bytes) *bytes = 0;
+		return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
+	}
+	int read = sceIoRead(context->fd, buffer, *bytes);
+	if (read < 0) {
+		*bytes = 0;
+		return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
+	}
+	*bytes = (size_t)read;
+	return read == 0 ? FLAC__STREAM_DECODER_READ_STATUS_END_OF_STREAM
+	                 : FLAC__STREAM_DECODER_READ_STATUS_CONTINUE;
+}
+
+static FLAC__StreamDecoderSeekStatus flac_seek_callback(
+	const FLAC__StreamDecoder *decoder, FLAC__uint64 absolute_byte_offset,
+	void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	if (!context || absolute_byte_offset > (FLAC__uint64)INT64_MAX)
+		return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
+	return sceIoLseek(context->fd, (SceOff)absolute_byte_offset, SCE_SEEK_SET) < 0
+	     ? FLAC__STREAM_DECODER_SEEK_STATUS_ERROR
+	     : FLAC__STREAM_DECODER_SEEK_STATUS_OK;
+}
+
+static FLAC__StreamDecoderTellStatus flac_tell_callback(
+	const FLAC__StreamDecoder *decoder, FLAC__uint64 *absolute_byte_offset,
+	void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	SceOff position = context ? sceIoLseek(context->fd, 0, SCE_SEEK_CUR) : -1;
+	if (position < 0) return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
+	*absolute_byte_offset = (FLAC__uint64)position;
+	return FLAC__STREAM_DECODER_TELL_STATUS_OK;
+}
+
+static FLAC__StreamDecoderLengthStatus flac_length_callback(
+	const FLAC__StreamDecoder *decoder, FLAC__uint64 *stream_length,
+	void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	if (!context || !context->file_size)
+		return FLAC__STREAM_DECODER_LENGTH_STATUS_ERROR;
+	*stream_length = context->file_size;
+	return FLAC__STREAM_DECODER_LENGTH_STATUS_OK;
+}
+
+static FLAC__bool flac_eof_callback(const FLAC__StreamDecoder *decoder,
+	                                void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	SceOff position = context ? sceIoLseek(context->fd, 0, SCE_SEEK_CUR) : -1;
+	return position >= 0 && (FLAC__uint64)position >= context->file_size;
+}
+
+static FLAC__StreamDecoderWriteStatus flac_write_callback(
+	const FLAC__StreamDecoder *decoder, const FLAC__Frame *frame,
+	const FLAC__int32 *const buffer[], void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	if (!context || !frame || !buffer || context->job->cancel)
+		return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+	if (frame->header.channels != context->channels ||
+	    frame->header.bits_per_sample != context->bits_per_sample ||
+	    frame->header.sample_rate != context->sample_rate)
+		return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+	for (unsigned int i = 0; i < frame->header.blocksize; i++) {
+		int16_t left = flac_pcm16(buffer[0][i], context->bits_per_sample);
+		int16_t right = context->channels == 2
+		              ? flac_pcm16(buffer[1][i], context->bits_per_sample) : left;
+		unsigned int output = context->pending_frames * 2;
+		context->pcm[output] = left;
+		context->pcm[output + 1] = right;
+		context->pending_frames++;
+		if (context->pending_frames == BACKGROUND_AUDIO_GRAIN) {
+			if (flac_output_grain(context, BACKGROUND_AUDIO_GRAIN) < 0)
+				return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+			context->pending_frames = 0;
+		}
+		if (context->job->cancel)
+			return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+	}
+	return FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
+}
+
+static void flac_metadata_callback(const FLAC__StreamDecoder *decoder,
+	                               const FLAC__StreamMetadata *metadata,
+	                               void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	if (!context || !metadata || metadata->type != FLAC__METADATA_TYPE_STREAMINFO)
+		return;
+	context->sample_rate = metadata->data.stream_info.sample_rate;
+	context->channels = metadata->data.stream_info.channels;
+	context->bits_per_sample = metadata->data.stream_info.bits_per_sample;
+	context->total_samples = metadata->data.stream_info.total_samples;
+}
+
+static void flac_error_callback(const FLAC__StreamDecoder *decoder,
+	                            FLAC__StreamDecoderErrorStatus status,
+	                            void *client_data) {
+	(void)decoder;
+	FlacPlaybackContext *context = client_data;
+	log_printf("FLAC decode error: status=%d path=%s\n", (int)status,
+	           context && context->job ? context->job->input_path : "");
+}
+
+static int play_flac(BackgroundPlaybackJob *job) {
+	FlacPlaybackContext context;
+	memset(&context, 0, sizeof(context));
+	context.job = job;
+	context.fd = -1;
+	context.port = -1;
+	context.applied_volume = -1;
+	FLAC__StreamDecoder *decoder = NULL;
+	int decoder_initialized = 0;
+	VtBackgroundAudioLease lease;
+	int lease_ready = 0;
+	int ret = -1;
+
+	context.fd = sceIoOpen(job->input_path, SCE_O_RDONLY, 0);
+	if (context.fd < 0) return context.fd;
+	SceOff end = sceIoLseek(context.fd, 0, SCE_SEEK_END);
+	if (end <= 0 || sceIoLseek(context.fd, 0, SCE_SEEK_SET) < 0) goto done;
+	context.file_size = (FLAC__uint64)end;
+	decoder = FLAC__stream_decoder_new();
+	if (!decoder) goto done;
+	FLAC__stream_decoder_set_md5_checking(decoder, 0);
+	FLAC__StreamDecoderInitStatus init = FLAC__stream_decoder_init_stream(
+		decoder, flac_read_callback, flac_seek_callback, flac_tell_callback,
+		flac_length_callback, flac_eof_callback, flac_write_callback,
+		flac_metadata_callback, flac_error_callback, &context);
+	if (init != FLAC__STREAM_DECODER_INIT_STATUS_OK) {
+		ret = -(int)init - 1;
+		goto done;
+	}
+	decoder_initialized = 1;
+	if (!FLAC__stream_decoder_process_until_end_of_metadata(decoder) ||
+	    !flac_rate_supported(context.sample_rate) ||
+	    (context.channels != 1 && context.channels != 2) ||
+	    context.bits_per_sample < 4 || context.bits_per_sample > 32) {
+		ret = -2;
+		goto done;
+	}
+	if (context.total_samples && !job->snapshot.duration_ms) {
+		snapshot_lock();
+		job->snapshot.duration_ms = context.total_samples * 1000ULL /
+		                            context.sample_rate;
+		snapshot_unlock();
+	}
+	uint64_t start_position_ms = player_start_position(job);
+	FLAC__uint64 start_sample = start_position_ms * context.sample_rate / 1000ULL;
+	if (context.total_samples && start_sample >= context.total_samples)
+		start_sample = context.total_samples - 1;
+	if (start_sample && !FLAC__stream_decoder_seek_absolute(decoder, start_sample)) {
+		ret = -3;
+		goto done;
+	}
+	context.sample_position = start_sample;
+	vt_background_audio_acquire(&lease);
+	lease_ready = 1;
+	context.port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM,
+	                                   BACKGROUND_AUDIO_GRAIN,
+	                                   (int)context.sample_rate,
+	                                   SCE_AUDIO_OUT_MODE_STEREO);
+	if (context.port < 0) {
+		ret = context.port;
+		goto done;
+	}
+	set_state(VT_BACKGROUND_PLAYING, 0);
+	unsigned int observed_toggle = job->toggle_serial;
+	player_lock(job);
+	unsigned int observed_seek = job->seek_serial;
+	player_unlock(job);
+	int paused = 0;
+	ret = 0;
+	while (!job->cancel) {
+		if (observed_toggle != job->toggle_serial) {
+			observed_toggle = job->toggle_serial;
+			paused = !paused;
+			set_state(paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
+		}
+		unsigned int pending_seek_serial;
+		uint64_t pending_seek_position_ms;
+		player_lock(job);
+		pending_seek_serial = job->seek_serial;
+		pending_seek_position_ms = job->seek_position_ms;
+		player_unlock(job);
+		if (observed_seek != pending_seek_serial) {
+			FLAC__uint64 target = pending_seek_position_ms * context.sample_rate /
+			                      1000ULL;
+			if (context.total_samples && target >= context.total_samples)
+				target = context.total_samples - 1;
+			context.pending_frames = 0;
+			if (!FLAC__stream_decoder_seek_absolute(decoder, target)) {
+				ret = -4;
+				break;
+			}
+			context.sample_position = target;
+			observed_seek = pending_seek_serial;
+			snapshot_lock();
+			job->snapshot.position_ms = context.sample_rate
+				? target * 1000ULL / context.sample_rate : 0;
+			snapshot_unlock();
+		}
+		if (paused) {
+			sceKernelDelayThread(10 * 1000);
+			continue;
+		}
+		if (!FLAC__stream_decoder_process_single(decoder)) {
+			ret = context.output_error ? context.output_error : -5;
+			break;
+		}
+		if (FLAC__stream_decoder_get_state(decoder) ==
+		    FLAC__STREAM_DECODER_END_OF_STREAM)
+			break;
+	}
+	if (!job->cancel && ret == 0 && context.pending_frames > 0)
+		ret = flac_output_grain(&context, context.pending_frames);
+	if (job->cancel) ret = -1;
+
+done:
+	if (context.port >= 0) sceAudioOutReleasePort(context.port);
+	if (lease_ready) vt_background_audio_release(&lease);
+	if (decoder) {
+		if (decoder_initialized) FLAC__stream_decoder_finish(decoder);
+		FLAC__stream_decoder_delete(decoder);
+	}
+	if (context.fd >= 0) sceIoClose(context.fd);
+	log_printf("local FLAC playback ended: result=0x%08X rate=%u channels=%u bits=%u\n",
+	           (unsigned)ret, context.sample_rate, context.channels,
+	           context.bits_per_sample);
 	return ret;
 }
 
@@ -591,6 +916,7 @@ static int background_thread(SceSize args, void *argp) {
 	while (!job->cancel && !job->activate) sceKernelDelayThread(10 * 1000);
 	int ret = job->cancel ? -1
 	        : job->mp3_source ? play_mp3(job)
+	        : job->flac_source ? play_flac(job)
 	        : job->decoder_source ? play_decoder_source(job)
 	                              : play_av_source(job);
 	if (ret < 0 && !job->cancel) {
@@ -631,6 +957,7 @@ static int prepare_local(const char *media_path, const char *media_id,
 	job->thid = -1;
 	job->active_player = AVPLAYER_INVALID_HANDLE;
 	job->mp3_source = path_is_mp3(media_path);
+	job->flac_source = path_is_flac(media_path);
 	job->decoder_source = decoder_source;
 	job->audio_track = audio_track;
 	copy_text(job->input_path, sizeof(job->input_path), media_path);

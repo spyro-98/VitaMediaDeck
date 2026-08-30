@@ -78,7 +78,8 @@ set(VITAMEDIADECK_RELEASE_LICENSE_ROOT
   CACHE PATH "License bundle produced by tools/prepare-release-licenses.sh")
 set(VITAMEDIADECK_REQUIRED_RELEASE_LICENSES
   libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt
-  mpg123-COPYING.txt vita2d-MIT.txt FreeType-FTL.txt
+  mpg123-COPYING.txt FLAC-COPYING.Xiph.txt libogg-COPYING.txt
+  vita2d-MIT.txt FreeType-FTL.txt
   libjpeg-turbo-LICENSE.md libjpeg-turbo-README.ijg libpng-LICENSE.txt
   bzip2-LICENSE.txt pthread-embedded-COPYING.txt
   pthread-embedded-LGPL-2.1.txt pthread-embedded-Vita-MIT.txt)
@@ -294,6 +295,8 @@ target_link_libraries(${PROJECT_NAME}
   vitamediadeck_avcodec    # complete h264_vita plus software H.264 fallback
   ${VITAMEDIADECK_AVUTIL_LINK}
   mpg123              # local MP3 playback
+  FLAC                 # native local FLAC decoding, seeking, tags and pictures
+  ogg                  # static libFLAC dependency supplied by the VitaSDK port
   vitamediadeck_libssh2    # authenticated SFTP with pinned host fingerprints
   smb2                # authenticated SMB2/SMB3 shares
   xml2                # namespace-safe WebDAV PROPFIND parser
@@ -358,6 +361,8 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libsmb2-LGPL-2.1.txt" licenses/libsmb2-LGPL-2.1.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libxml2-MIT.txt" licenses/libxml2-MIT.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/mpg123-COPYING.txt" licenses/mpg123-COPYING.txt
+  FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/FLAC-COPYING.Xiph.txt" licenses/FLAC-COPYING.Xiph.txt
+  FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libogg-COPYING.txt" licenses/libogg-COPYING.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/vita2d-MIT.txt" licenses/vita2d-MIT.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/FreeType-FTL.txt" licenses/FreeType-FTL.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libjpeg-turbo-LICENSE.md" licenses/libjpeg-turbo-LICENSE.md
