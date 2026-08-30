@@ -26,6 +26,7 @@ and installs the FFmpeg LGPL text for inclusion in the VPK.
   Apache-2.0: https://github.com/Mbed-TLS/mbedtls
 - **zstd**, BSD 3-Clause or GPL-2.0: https://github.com/facebook/zstd
 - **zlib**, zlib license: https://zlib.net/
+- **Jansson 2.15.1**, MIT: https://github.com/akheron/jansson
 
 libcurl and libssh2 are both built with the Mbed TLS backend. OpenSSL is not
 part of a releasable VitaMediaDeck binary. The pinned builders install licenses,

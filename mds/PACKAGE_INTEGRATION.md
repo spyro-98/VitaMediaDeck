@@ -55,14 +55,19 @@ deterministic and reusable.
 ## HTTPS ownership
 
 VitaMediaDeck calls `vita_https_init()` before network-source initialization and
-`vita_https_shutdown()` at application teardown. WebDAV listing uses
-`vita_https_perform()`. WebDAV playback uses
+`vita_https_shutdown()` at application teardown. Jellyfin authentication,
+library browsing, and poster retrieval use `vita_https_perform()`. Jellyfin
+direct play uses authenticated `HEAD` and bounded Range requests. Its access
+token stays in the session credential structure and is never serialized.
+WebDAV listing uses `vita_https_perform()`. WebDAV playback uses
 `vita_https_open_range_stream()`, which verifies an actual one-byte `206`
 response and returns a cached seekable cursor. VitaMediaDeck does not initialize
 libcurl/Mbed TLS or embed a second CA bundle.
 
-SFTP and SMB keep their protocol libraries but share the network lifecycle
-initialized by `vita-https`.
+The pinned non-PIC Jansson archive parses bounded Jellyfin API responses; the
+ordinary VitaSDK archive is not linked because its PIC relocations are rejected
+by `vita-elf-create`. SFTP and SMB keep their protocol libraries but share the
+network lifecycle initialized by `vita-https`.
 
 For release builds, `vita-https/tools/build-curl-mbedtls.sh` must run first and
 `VITAMEDIADECK_HTTPS_CURL_ROOT` must identify its output. The ordinary VitaSDK

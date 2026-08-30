@@ -15,9 +15,9 @@
 > development. Validate playback and network sources on your own PlayStation
 > Vita before relying on it day to day.
 
-VitaMediaDeck plays video and music stored on the Vita or on authenticated
-WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding, synchronization,
-and rendering run directly on the console; no companion service is required.
+VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
+or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
+synchronization, and rendering run directly on the console.
 
 The **Spectral Reassembly** interface combines pitch-black OLED fields,
 spectral-cyan controls, cold blue/teal atmosphere, restrained amber telemetry,
@@ -53,6 +53,8 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 
 - Local video and music libraries on `ux0:` and `uma0:`, with paged indexing,
   folder browsing, and persistent grid/list views.
+- Native Jellyfin library browsing with memory-only access tokens, server
+  posters, and seekable direct play over verified HTTPS.
 - Authenticated remote video browsing through WebDAV over HTTPS, SFTP with a
   confirmed SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
 - Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
@@ -86,7 +88,7 @@ tool and is not part of the VPK.
 | [`vita-hw-decoder`](https://github.com/spyro-98/vita-hw-decoder) | Hardware-only H.264/AAC backend using `h264_vita`, SceVideodec, and direct NV12/P2 presentation |
 | [`vita-sw-decoder`](https://github.com/spyro-98/vita-sw-decoder) | API-compatible CPU/FFmpeg H.264 fallback with the same stream and lifecycle contract |
 | [`VitaMediaDeck-Transcoder`](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional macOS, Windows, and Linux tool for producing Vita-oriented H.264/AAC Matroska files with multiple tracks and embedded covers |
-| [`vita-https`](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, certificate/SPKI verification, and seekable Range transport used by WebDAV |
+| [`vita-https`](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, certificate/SPKI verification, and seekable Range transport used by Jellyfin and WebDAV |
 
 The Transcoder preserves selected audio and subtitle tracks, chapters,
 language/title metadata, compatible font attachments, and existing artwork. If
@@ -99,6 +101,7 @@ stream validation, and both command-line and interactive terminal interfaces.
 | Source | Access contract | Current scope |
 | --- | --- | --- |
 | Local storage | Vita filesystem | Video and audio |
+| Jellyfin | Verified HTTPS API, username/password session, memory-only access token, byte ranges | Video libraries, server posters, direct play |
 | WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
 | SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
 | SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
@@ -154,7 +157,8 @@ context-sensitive mapping.
 
 - VitaSDK and the normal Vita system stubs.
 - Vita ports of vita2d, FreeType, libjpeg-turbo, libpng, zlib, bzip2, mpg123,
-  libFLAC, libogg, Mbed TLS, libxml2, zstd, and libsmb2.
+  libFLAC, libogg, Mbed TLS, libxml2, zstd, and libsmb2, plus the pinned
+  non-PIC Jansson build.
 - CMake, Git, Patch, and standard archive/build tools.
 - Sibling checkouts of `vita-hw-decoder`, `vita-sw-decoder`, and `vita-https`,
   unless their paths are supplied through the matching CMake cache variables.
@@ -167,6 +171,7 @@ export PATH="$VITASDK/bin:$PATH"
 
 ../vita-https/tools/build-curl-mbedtls.sh
 ./tools/build-libssh2-vita.sh
+./tools/build-jansson-vita.sh
 ./tools/build-ffmpeg-vita-hw.sh
 ./tools/prepare-release-licenses.sh
 
@@ -185,8 +190,9 @@ SMB test-server instructions are in
 - Remote passwords remain session-only by default. An explicit Settings opt-in
   stores them unencrypted at
   `ux0:data/VitaMediaDeck/network/passwords.txt` and displays a warning.
-- WebDAV rejects clear-text HTTP and validates TLS certificates or an explicitly
-  confirmed SPKI pin.
+- Jellyfin and WebDAV reject clear-text HTTP and validate TLS certificates or
+  an explicitly confirmed SPKI pin. Jellyfin access tokens remain in memory
+  and are reacquired after each application launch.
 - SFTP requires an explicitly confirmed server fingerprint.
 - SMB guest access is disabled and message signing is required.
 - Remote sources are read-only: the app does not upload, rename, or delete files.
@@ -197,6 +203,9 @@ SMB test-server instructions are in
   physical Vita hardware and different server configurations.
 - Remote audio browsing is not exposed yet; authenticated network sources are
   currently video-only.
+- Jellyfin currently uses direct play of files compatible with the Vita decoder.
+  Jellyfin transcoding, HLS, live TV, music libraries, and server discovery are
+  not exposed yet.
 - Bitmap subtitles such as PGS and VobSub may be preserved by the Transcoder but
   are not rendered by the current app.
 - Separate video, audio, subtitle, and thumbnail cursors can duplicate reads on

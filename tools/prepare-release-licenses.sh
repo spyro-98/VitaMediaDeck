@@ -36,6 +36,8 @@ fetch https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.xz 
   "$work/zlib.tar.xz" d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3
 fetch https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz \
   "$work/zstd.tar.gz" eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+fetch https://github.com/akheron/jansson/archive/refs/tags/v2.15.1.tar.gz \
+  "$work/jansson.tar.gz" dbf95cb0af903f4fb8b61507d96b45b67db7d1479688ede352e1d571394d06f7
 
 for archive in "$work"/*.tar.*; do tar -xf "$archive" -C "$work"; done
 install -m 0644 "$work/libsmb2-libsmb2-6.1/COPYING" "$output/libsmb2-NOTICE.txt"
@@ -49,6 +51,7 @@ install -m 0644 "$work/libjpeg-turbo-3.2.0/LICENSE.md" "$output/libjpeg-turbo-LI
 install -m 0644 "$work/libjpeg-turbo-3.2.0/README.ijg" "$output/libjpeg-turbo-README.ijg"
 install -m 0644 "$work/libpng-1.6.58/LICENSE" "$output/libpng-LICENSE.txt"
 install -m 0644 "$work/bzip2-1.0.8/LICENSE" "$output/bzip2-LICENSE.txt"
+install -m 0644 "$work/jansson-2.15.1/LICENSE" "$output/jansson-MIT.txt"
 install -m 0644 "$work/libsmb2.tar.gz" "$sources/libsmb2-6.1.tar.gz"
 install -m 0644 "$work/libxml2.tar.xz" "$sources/libxml2-2.15.3.tar.xz"
 install -m 0644 "$work/mpg123.tar.bz2" "$sources/mpg123-1.33.5.tar.bz2"
@@ -60,6 +63,7 @@ install -m 0644 "$work/libpng.tar.gz" "$sources/libpng-1.6.58.tar.gz"
 install -m 0644 "$work/bzip2.tar.gz" "$sources/bzip2-1.0.8.tar.gz"
 install -m 0644 "$work/zlib.tar.xz" "$sources/zlib-1.3.2.tar.xz"
 install -m 0644 "$work/zstd.tar.gz" "$sources/zstd-1.5.7.tar.gz"
+install -m 0644 "$work/jansson.tar.gz" "$sources/jansson-2.15.1.tar.gz"
 
 git clone --quiet https://github.com/xerpi/libvita2d.git "$work/libvita2d"
 git -C "$work/libvita2d" checkout --quiet a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed
@@ -102,6 +106,9 @@ zlib.version=1.3.2
 zlib.source.sha256=d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3
 zstd.version=1.5.7
 zstd.source.sha256=eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3
+jansson.version=2.15.1
+jansson.source.sha256=dbf95cb0af903f4fb8b61507d96b45b67db7d1479688ede352e1d571394d06f7
+jansson.vita_patch.sha256=98fe3a1733d08d26ba18a9a70b8c23e7e54edb328a4905dded13f5b9ed62d925
 vita2d.commit=a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed
 pthread-embedded.commit=11d2e5722d98c86f33c908fc47b2cf6e55205db5
 ReAvPlayer.commit=abff24a21ffec3e57fc1cd3b1d17dc26666251b0

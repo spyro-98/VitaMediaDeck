@@ -848,6 +848,7 @@ static int cover_payload_available(const AVStream *stream) {
 enum {
 	THUMB_ORIGIN_NONE = 0,
 	THUMB_ORIGIN_EMBEDDED,
+	THUMB_ORIGIN_PROVIDER,
 	THUMB_ORIGIN_FRAME
 };
 
@@ -1082,6 +1083,30 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		int from_cache = result == 0;
 		int origin = THUMB_ORIGIN_NONE;
 		if (result < 0 && pixels && state->enabled && !state->stop) {
+			if (request.remote &&
+			    request.source.protocol == VT_NETWORK_JELLYFIN) {
+				unsigned char *artwork = NULL;
+				size_t artwork_size = 0;
+				result = vt_network_fetch_artwork(
+				    &request.source, &request.credential, request.path,
+				    &artwork, &artwork_size, &state->active_cancel);
+				if (result == 0 && artwork) {
+					if (artwork_size >= 3 && artwork[0] == 0xff &&
+					    artwork[1] == 0xd8 && artwork[2] == 0xff)
+						result = decode_jpeg_cover(artwork, artwork_size, pixels);
+					else if (artwork_size >= 8 && artwork[0] == 0x89 &&
+					         !memcmp(artwork + 1, "PNG\r\n\x1a\n", 7))
+						result = decode_png_cover(artwork, artwork_size, pixels);
+					else result = AVERROR_INVALIDDATA;
+					if (result == 0 && thumbnail_information_score(pixels) > 0)
+						origin = THUMB_ORIGIN_PROVIDER;
+					else if (result == 0) result = AVERROR_INVALIDDATA;
+				}
+				free(artwork);
+			}
+		}
+		if (result < 0 && pixels && state->enabled && !state->stop &&
+		    !state->active_cancel) {
 			VtDecoderStreamFactory factory;
 			VtNetworkStreamFactory remote;
 			memset(&factory, 0, sizeof(factory));
@@ -1151,6 +1176,7 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		if (report_ready) {
 			const char *method = from_cache ? "cache" :
 			                     origin == THUMB_ORIGIN_EMBEDDED ? "embedded" :
+			                     origin == THUMB_ORIGIN_PROVIDER ? "provider" :
 			                     origin == THUMB_ORIGIN_FRAME ? "frame" : "unknown";
 			log_printf("video thumbnail ready [%s] %llums: %s\n", method,
 			           (unsigned long long)elapsed_ms, request.path);

@@ -147,6 +147,18 @@ PackageLicenseDeclared: BSD-3-Clause
 PackageCopyrightText: NOASSERTION
 Relationship: SPDXRef-Package-libFLAC DEPENDS_ON SPDXRef-Package-libogg
 
+##### Package: Jansson
+
+PackageName: Jansson
+SPDXID: SPDXRef-Package-Jansson
+PackageVersion: 2.15.1
+PackageDownloadLocation: https://github.com/akheron/jansson/archive/refs/tags/v2.15.1.tar.gz
+FilesAnalyzed: false
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-Jansson
+
 ##### Package: remaining runtime libraries
 
 PackageName: VitaMediaDeck-runtime-libraries

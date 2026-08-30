@@ -19,6 +19,10 @@ Sources, Settings, and About from the shared sidebar.
 - Added SFTP browsing/read/seek through libssh2 with explicit SHA-256 host-key
   confirmation.
 - Added authenticated SMB2/SMB3 browsing/read/positioned-I/O through libsmb2.
+- Added native Jellyfin sign-in, video-library navigation, Primary-image covers,
+  and authenticated seekable direct play over verified HTTPS. Provider tokens
+  remain memory-only; server transcoding and remote audio are intentionally not
+  part of this first provider integration.
 - Added one protocol-neutral stream factory shared by local files and all
   remote transports.
 - Added metadata discovery and in-player switching for multiple AAC audio and

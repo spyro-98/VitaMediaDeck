@@ -56,6 +56,12 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 | Cross | Browse the selected server; request a password if none is available. |
 | Circle | Return. |
 
+Jellyfin sources accept an HTTPS host, optional base path, username, and
+password. The app signs in when the source opens, keeps the returned access
+token only in memory, browses video libraries, and prefers the server Primary
+image for each grid cell. Playback requests the original compatible file with
+seekable byte ranges; server transcoding is not used.
+
 The password can be entered in the add/edit form and is retained while the app
 is running. The System setting can optionally remember it in plaintext at
 `ux0:data/VitaMediaDeck/network/passwords.txt`; this is disabled by default and the
@@ -64,8 +70,9 @@ the server SHA-256 fingerprint on a read-only confirmation page.
 
 ### Remote browser
 
-Remote video cells progressively show an embedded cover or a representative
-frame. Blank embedded artwork falls through to frame extraction; the selected
+Jellyfin video cells prefer server artwork. Other remote cells progressively
+show an embedded cover or a representative frame. Missing or blank artwork
+falls through to frame extraction; the selected
 cell can preempt obsolete viewport work. Preview decoding and network reads stay
 on the bounded thumbnail worker.
 

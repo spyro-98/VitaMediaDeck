@@ -125,11 +125,25 @@ typedef struct {
 	char detail[192];
 } WebDavPinTask;
 
-static int webdav_pin_task(void *opaque) {
+static int https_pin_task(void *opaque) {
 	WebDavPinTask *task = opaque;
-	return vt_network_webdav_probe_public_key(
+	return vt_network_https_probe_public_key(
 		task->source, task->credential, task->pin, sizeof(task->pin),
 		task->detail, sizeof(task->detail));
+}
+
+typedef struct {
+	const VtNetworkSource *source;
+	VtNetworkCredential *credential;
+	int result;
+	char detail[192];
+} PrepareSourceTask;
+
+static int prepare_source_task(void *opaque) {
+	PrepareSourceTask *task = opaque;
+	task->result = vt_network_prepare_source(task->source, task->credential,
+	                                         task->detail, sizeof(task->detail));
+	return task->result < 0 ? task->result : 0;
 }
 
 static void clip(vita2d_font *font, unsigned size, const char *source,
@@ -230,7 +244,8 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			ui_panel(SOURCE_LIST_X, y, SOURCE_LIST_W, SOURCE_ROW_H - 8,
 			         VT_THEME_SURFACE,
 			         sources[i].protocol == VT_NETWORK_SFTP ? VT_THEME_BLUE_LIGHT
-			                                              : VT_THEME_BLUE_BRIGHT,
+			         : sources[i].protocol == VT_NETWORK_JELLYFIN ? VT_THEME_COLD
+			                                                    : VT_THEME_BLUE_BRIGHT,
 			         0);
 			if (body) {
 				char name[128];
@@ -278,7 +293,8 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			                     ? vt_i18n_str(source->host_key_sha256[0]
 			                           ? VT_STR_NETWORK_HOST_KEY_PINNED
 			                           : VT_STR_NETWORK_HOST_KEY_UNVERIFIED)
-			                     : source->protocol == VT_NETWORK_WEBDAV
+				                 : (source->protocol == VT_NETWORK_WEBDAV ||
+				                    source->protocol == VT_NETWORK_JELLYFIN)
 			                           ? vt_i18n_str(source->tls_public_key_sha256[0]
 			                                 ? VT_STR_NETWORK_TLS_PINNED
 			                                 : VT_STR_NETWORK_TLS_CA_VERIFIED)
@@ -694,6 +710,12 @@ static void clear_transport_trust(VtNetworkSource *source) {
 	source->tls_public_key_sha256[0] = '\0';
 }
 
+static void clear_provider_session(VtNetworkCredential *credential) {
+	if (!credential) return;
+	secure_zero(credential->access_token, sizeof(credential->access_token));
+	secure_zero(credential->user_id, sizeof(credential->user_id));
+}
+
 static const char *editor_field_label(EditorField field) {
 	switch (field) {
 		case EDITOR_PROTOCOL: return vt_i18n_str(VT_STR_NETWORK_FIELD_PROTOCOL);
@@ -729,15 +751,19 @@ static const char *editor_field_value(const VtNetworkSource *source,
 	return "";
 }
 
-static void editor_change_protocol(VtNetworkSource *draft, int direction) {
+static void editor_change_protocol(VtNetworkSource *draft,
+	                               VtNetworkCredential *credential,
+	                               int direction) {
 	int protocol = (int)draft->protocol + direction;
-	if (protocol < VT_NETWORK_WEBDAV) protocol = VT_NETWORK_SMB;
-	if (protocol > VT_NETWORK_SMB) protocol = VT_NETWORK_WEBDAV;
+	if (protocol < VT_NETWORK_WEBDAV) protocol = VT_NETWORK_JELLYFIN;
+	if (protocol > VT_NETWORK_JELLYFIN) protocol = VT_NETWORK_WEBDAV;
 	draft->protocol = (VtNetworkProtocol)protocol;
 	clear_transport_trust(draft);
+	clear_provider_session(credential);
 	if (draft->protocol == VT_NETWORK_WEBDAV) draft->port = 443;
 	else if (draft->protocol == VT_NETWORK_SFTP) draft->port = 22;
-	else draft->port = 445;
+	else if (draft->protocol == VT_NETWORK_SMB) draft->port = 445;
+	else draft->port = 8920;
 }
 
 static void editor_edit_field(VtNetworkSource *draft,
@@ -747,8 +773,10 @@ static void editor_edit_field(VtNetworkSource *draft,
 		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_NAME), draft->name, sizeof(draft->name));
 	else if (field == EDITOR_HOST) {
 		if (edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_HOST), draft->host,
-		              sizeof(draft->host)) > 0)
+		              sizeof(draft->host)) > 0) {
 			clear_transport_trust(draft);
+			clear_provider_session(credential);
+		}
 	}
 	else if (field == EDITOR_PORT) {
 		char value[16];
@@ -758,14 +786,23 @@ static void editor_edit_field(VtNetworkSource *draft,
 			if (port > 0 && port <= 65535) {
 				draft->port = (uint16_t)port;
 				clear_transport_trust(draft);
+				clear_provider_session(credential);
 			}
 		}
-	} else if (field == EDITOR_ROOT)
-		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_ROOT), draft->root_path, sizeof(draft->root_path));
+	} else if (field == EDITOR_ROOT) {
+		if (edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_ROOT), draft->root_path,
+		              sizeof(draft->root_path)) > 0) {
+			clear_transport_trust(draft);
+			clear_provider_session(credential);
+		}
+	}
 	else if (field == EDITOR_SHARE)
 		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_SHARE), draft->share, sizeof(draft->share));
-	else if (field == EDITOR_USERNAME)
-		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_USERNAME), draft->username, sizeof(draft->username));
+	else if (field == EDITOR_USERNAME) {
+		if (edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_USERNAME), draft->username,
+		              sizeof(draft->username)) > 0)
+			clear_provider_session(credential);
+	}
 	else if (field == EDITOR_PASSWORD && credential) {
 		char next[VT_NETWORK_SECRET_MAX];
 		int result = ui_text_input_secure(
@@ -774,6 +811,7 @@ static void editor_edit_field(VtNetworkSource *draft,
 		if (result > 0) {
 			secure_zero(credential->password, sizeof(credential->password));
 			snprintf(credential->password, sizeof(credential->password), "%s", next);
+			clear_provider_session(credential);
 		}
 		secure_zero(next, sizeof(next));
 	}
@@ -827,12 +865,16 @@ static int source_editor(VtNetworkSource *source,
 			    ? VT_STR_NETWORK_PROTOCOL_WEBDAV_DETAIL
 			    : draft.protocol == VT_NETWORK_SFTP
 			          ? VT_STR_NETWORK_PROTOCOL_SFTP_DETAIL
-			          : VT_STR_NETWORK_PROTOCOL_SMB_DETAIL);
+			    : draft.protocol == VT_NETWORK_SMB
+			          ? VT_STR_NETWORK_PROTOCOL_SMB_DETAIL
+			          : VT_STR_NETWORK_PROTOCOL_JELLYFIN_DETAIL);
 			const char *security = vt_i18n_str(draft.protocol == VT_NETWORK_WEBDAV
 			    ? VT_STR_NETWORK_WEBDAV_SECURITY
 			    : draft.protocol == VT_NETWORK_SFTP
 			          ? VT_STR_NETWORK_SFTP_SECURITY
-			          : VT_STR_NETWORK_SMB_SECURITY);
+			    : draft.protocol == VT_NETWORK_SMB
+			          ? VT_STR_NETWORK_SMB_SECURITY
+			          : VT_STR_NETWORK_JELLYFIN_SECURITY);
 			draw_wrapped(small, UI_FONT_SMALL, detail, 58, 158, 188, 20, 2,
 			             VT_THEME_TEXT);
 			vita2d_draw_rectangle(58, 194, 188, 1, VT_THEME_BORDER);
@@ -934,7 +976,8 @@ static int source_editor(VtNetworkSource *source,
 		if ((nav & SCE_CTRL_DOWN) && cursor < field_count) cursor++;
 		if (cursor < field_count && fields[cursor] == EDITOR_PROTOCOL &&
 		    (nav & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
-			editor_change_protocol(&draft, (nav & SCE_CTRL_RIGHT) ? 1 : -1);
+			editor_change_protocol(&draft, credential,
+			                       (nav & SCE_CTRL_RIGHT) ? 1 : -1);
 			cursor = 0;
 		}
 		if (pressed & SCE_CTRL_CROSS) {
@@ -971,13 +1014,14 @@ static int load_directory(const VtNetworkSource *source,
 	return 0;
 }
 
-static int prepare_webdav_trust(VtNetworkSource *source,
-	                            const VtNetworkCredential *credential) {
-	if (source->protocol != VT_NETWORK_WEBDAV ||
+static int prepare_https_trust(VtNetworkSource *source,
+	                           const VtNetworkCredential *credential) {
+	if ((source->protocol != VT_NETWORK_WEBDAV &&
+	     source->protocol != VT_NETWORK_JELLYFIN) ||
 	    source->tls_public_key_sha256[0]) return 0;
 	WebDavPinTask task = { source, credential, { 0 }, { 0 } };
 	int ret = ui_loading_run(vt_i18n_str(VT_STR_NETWORK_CHECKING_TLS),
-	                         webdav_pin_task, &task, NULL, NULL, NULL);
+	                         https_pin_task, &task, NULL, NULL, NULL);
 	if (ret < 0 || !task.pin[0]) {
 		ui_message_show(vt_i18n_str(VT_STR_NETWORK_TLS_UNAVAILABLE),
 		                task.detail[0] ? task.detail
@@ -989,6 +1033,24 @@ static int prepare_webdav_trust(VtNetworkSource *source,
 	snprintf(source->tls_public_key_sha256,
 	         sizeof(source->tls_public_key_sha256), "%s", task.pin);
 	return 1;
+}
+
+static int prepare_provider_session(const VtNetworkSource *source,
+	                                VtNetworkCredential *credential) {
+	if (!source || source->protocol != VT_NETWORK_JELLYFIN) return 0;
+	PrepareSourceTask task = { source, credential, -1, { 0 } };
+	int ret = ui_loading_run(
+	    vt_i18n_str(VT_STR_NETWORK_AUTHENTICATING_JELLYFIN),
+	    prepare_source_task, &task, NULL, NULL, NULL);
+	if (ret < 0 || task.result < 0) {
+		if (task.result != VT_NETWORK_TLS_TRUST_REQUIRED)
+			ui_message_show(vt_i18n_str(VT_STR_NETWORK_CONNECTION_FAILED),
+			                task.detail[0] ? task.detail
+			                               : vt_i18n_str(VT_STR_NETWORK_READ_FAILED),
+			                2800);
+		return task.result < 0 ? task.result : ret;
+	}
+	return 0;
 }
 
 static int prepare_sftp_trust(VtNetworkSource *source) {
@@ -1019,6 +1081,7 @@ static int browse_source(const VtNetworkSource *source,
 		return 0;
 	}
 	char path[VT_NETWORK_PATH_MAX] = "";
+	char display_path[192] = "";
 	int count = 0;
 	int load_result = load_directory(source, credential, path, entries, &count);
 	if (load_result < 0) {
@@ -1121,8 +1184,15 @@ static int browse_source(const VtNetworkSource *source,
 		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
 			VtNetworkEntry *entry = &entries[selected];
 			if (entry->is_directory) {
+				char folder_name[sizeof(entry->name)];
+				snprintf(folder_name, sizeof(folder_name), "%s", entry->name);
 				snprintf(path, sizeof(path), "%s", entry->path);
 				if (load_directory(source, credential, path, entries, &count) == 0) {
+					if (source->protocol == VT_NETWORK_JELLYFIN) {
+						size_t used = strlen(display_path);
+						snprintf(display_path + used, sizeof(display_path) - used,
+						         "%s%s", used ? " / " : "", folder_name);
+					}
 					selected = top = 0;
 					vt_video_thumbnail_suspend();
 					vt_video_thumbnail_resume();
@@ -1150,6 +1220,14 @@ static int browse_source(const VtNetworkSource *source,
 				return 0;
 			}
 			if (slash) *slash = '\0'; else path[0] = '\0';
+			if (source->protocol == VT_NETWORK_JELLYFIN) {
+				char *display_slash = strrchr(display_path, '/');
+				if (display_slash) {
+					while (display_slash > display_path && display_slash[-1] == ' ')
+						display_slash--;
+					*display_slash = '\0';
+				} else display_path[0] = '\0';
+			}
 			if (load_directory(source, credential, path, entries, &count) == 0) {
 				selected = top = 0;
 				vt_video_thumbnail_suspend();
@@ -1158,7 +1236,9 @@ static int browse_source(const VtNetworkSource *source,
 			network_resync_input(&previous, &nav_repeat);
 			continue;
 		}
-		draw_browser(source, path, credential, entries, count, selected, top, grid_mode,
+		draw_browser(source,
+		             source->protocol == VT_NETWORK_JELLYFIN ? display_path : path,
+		             credential, entries, count, selected, top, grid_mode,
 		             &focus_motion);
 		sceKernelDelayThread(1000);
 	}
@@ -1363,7 +1443,8 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				network_resync_input(&previous, &nav_repeat);
 				if (trust < 0) continue;
 				VtNetworkCredential *credential = &credentials[selected];
-				if (!credential->password[0]) {
+				if (!credential->password[0] &&
+				    sources[selected].protocol != VT_NETWORK_JELLYFIN) {
 					int password_result = ui_text_input_secure(
 					    vt_i18n_str(VT_STR_NETWORK_PASSWORD_PROMPT), "",
 					    credential->password, sizeof(credential->password));
@@ -1373,12 +1454,32 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 						continue;
 					}
 				}
+				int provider_result = prepare_provider_session(
+				    &sources[selected], credential);
+				if (provider_result == VT_NETWORK_TLS_TRUST_REQUIRED &&
+				    sources[selected].protocol == VT_NETWORK_JELLYFIN &&
+				    !sources[selected].tls_public_key_sha256[0]) {
+					int tls_trust = prepare_https_trust(&sources[selected], credential);
+					if (tls_trust > 0) {
+						int save_result = vt_network_sources_save(sources, count);
+						if (save_result < 0) show_save_error(save_result);
+						else persist_remembered_credentials(credentials, count);
+						provider_result = prepare_provider_session(
+						    &sources[selected], credential);
+					}
+				}
+				if (provider_result < 0) {
+					if (provider_result == VT_NETWORK_AUTH_FAILED)
+						secure_zero(credential, sizeof(*credential));
+					network_resync_input(&previous, &nav_repeat);
+					continue;
+				}
 				int browse_result = browse_source(&sources[selected], credential,
 				                                  selection);
 				if (browse_result == VT_NETWORK_TLS_TRUST_REQUIRED &&
 				    sources[selected].protocol == VT_NETWORK_WEBDAV &&
 				    !sources[selected].tls_public_key_sha256[0]) {
-					int tls_trust = prepare_webdav_trust(&sources[selected], credential);
+					int tls_trust = prepare_https_trust(&sources[selected], credential);
 					if (tls_trust > 0) {
 						int save_result = vt_network_sources_save(sources, count);
 						if (save_result < 0) show_save_error(save_result);
