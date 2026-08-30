@@ -123,6 +123,30 @@ PackageLicenseDeclared: BSD-3-Clause
 PackageCopyrightText: NOASSERTION
 Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-libssh2
 
+##### Package: libFLAC
+
+PackageName: libFLAC
+SPDXID: SPDXRef-Package-libFLAC
+PackageVersion: 1.3.4
+PackageDownloadLocation: https://github.com/xiph/flac/releases/download/1.3.4/flac-1.3.4.tar.xz
+FilesAnalyzed: false
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-libFLAC
+
+##### Package: libogg
+
+PackageName: libogg
+SPDXID: SPDXRef-Package-libogg
+PackageVersion: 1.3.6
+PackageDownloadLocation: https://github.com/xiph/ogg/releases/download/v1.3.6/libogg-1.3.6.tar.xz
+FilesAnalyzed: false
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-libFLAC DEPENDS_ON SPDXRef-Package-libogg
+
 ##### Package: remaining runtime libraries
 
 PackageName: VitaMediaDeck-runtime-libraries

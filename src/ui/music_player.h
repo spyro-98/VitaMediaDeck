@@ -15,6 +15,7 @@ enum {
  * background-playback session. The return value tells the local-media owner
  * whether the queue should stop, advance, repeat, or remain in mini-player. */
 int ui_music_player_run(const char *artwork_path, const char *album,
+	                    const char *codec_name,
 	                    uint32_t average_bitrate_kbps);
 int ui_music_player_shuffle_enabled(void);
 int ui_music_player_repeat_one_enabled(void);

@@ -225,7 +225,9 @@ static int ends_with_ci(const char *name, const char *suffix) {
 
 static VtLocalMediaType media_type(const char *name) {
 	static const char *const video[] = { ".mp4", ".m4v", ".mov", ".mkv" };
-	static const char *const audio[] = { ".mp3", ".m4a", ".aac", ".wav" };
+	static const char *const audio[] = {
+		".mp3", ".m4a", ".aac", ".wav", ".flac"
+	};
 	for (unsigned i = 0; i < sizeof(video) / sizeof(video[0]); i++)
 		if (ends_with_ci(name, video[i])) return VT_LOCAL_MEDIA_VIDEO;
 	for (unsigned i = 0; i < sizeof(audio) / sizeof(audio[0]); i++)
@@ -296,6 +298,9 @@ static void finish_external_item(VtLocalMediaItem *item) {
 				snprintf(item->artist, sizeof(item->artist), "%s", metadata.artist);
 			if (metadata.album[0])
 				snprintf(item->album, sizeof(item->album), "%s", metadata.album);
+			if (!item->artwork_path[0] && metadata.artwork_path[0])
+				snprintf(item->artwork_path, sizeof(item->artwork_path), "%s",
+				         metadata.artwork_path);
 			if (metadata.duration_ms) item->duration_ms = metadata.duration_ms;
 		}
 	}
@@ -388,7 +393,7 @@ static int scan_media(LocalMediaIndexHeader *result_index) {
 		return -1;
 	}
 	memcpy(index.magic, "VTLOCAL4", 8);
-	index.version = 4;
+	index.version = 5;
 	index.record_size = sizeof(VtLocalMediaItem);
 	/* Reserve the header, then append local video and local audio groups. */
 	sceIoWrite(final_fd, &index, sizeof(index));
@@ -447,7 +452,7 @@ static int local_index_load(LocalMediaIndexHeader *out) {
 	uint64_t expected = sizeof(header) +
 	                    (uint64_t)header.total_count * sizeof(VtLocalMediaItem);
 	if (bytes != (int)sizeof(header) || memcmp(header.magic, "VTLOCAL4", 8) ||
-	    header.version != 4 || header.record_size != sizeof(VtLocalMediaItem) ||
+	    header.version != 5 || header.record_size != sizeof(VtLocalMediaItem) ||
 	    header.total_count > LOCAL_MAX_ITEMS || grouped != header.total_count ||
 	    expected != (uint64_t)stat.st_size) return -1;
 	*out = header;

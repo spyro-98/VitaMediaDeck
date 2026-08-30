@@ -36,6 +36,11 @@ source archives and build provenance beside their generated libraries.
 - **ReAvPlayer**, MIT. The notice is preserved in
   `licenses/ReAvPlayer-MIT.txt` and packaged beside the module.
 - **mpg123**, LGPL-2.1-or-later: https://www.mpg123.de/
+- **libFLAC 1.3.4**, Xiph BSD-style license, used for native local FLAC
+  decoding, seeking, Vorbis comments, and embedded pictures:
+  https://github.com/xiph/flac
+- **libogg 1.3.6**, Xiph BSD-style license and static libFLAC dependency:
+  https://github.com/xiph/ogg
 - **vita2d**, MIT: https://github.com/xerpi/libvita2d
 - **FreeType**, FreeType License or GPL-2.0: https://freetype.org/license.html
 - **libjpeg-turbo**, BSD-style/IJG/zlib licenses:
