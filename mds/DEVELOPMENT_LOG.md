@@ -73,6 +73,10 @@ Sources, Settings, and About from the shared sidebar.
   still wakes transport I/O immediately.
 - Reduced runtime seek preroll to the first decoded frame with a 600 ms cap in
   both reusable decoders.
+- Promoted both decoder AudioOut workers above video scheduling so local AAC
+  refill cannot be starved during H.264 or UI bursts. Their teardown summaries
+  now record delayed 1024-frame grains and the maximum refill gap without
+  logging from the live output loop.
 - Removed the app's synchronous third track-discovery cursor. Both decoder
   packages now snapshot AAC and supported text-subtitle metadata from the
   already-open video demux, so startup needs only the video and selected-audio

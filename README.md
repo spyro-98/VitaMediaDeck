@@ -172,6 +172,11 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
 - **Audio-master synchronization:** bounded queues, presentation-time ordering,
   late-frame recovery, and independent audio/video stream cursors keep playback
   synchronized.
+- **Deadline-safe AAC output:** both decoder packages schedule the 1024-frame
+  AudioOut refill worker immediately above video decode, protecting its 21.3 ms
+  submission window from H.264/UI bursts. Session diagnostics summarize delayed
+  grains and the maximum refill gap without writing from inside the live audio
+  loop.
 - **Full-screen music player:** supports MP3 and other local audio formats,
   artwork, metadata, seeking, shuffle/repeat, animated backgrounds, and the
   persistent mini-player.
