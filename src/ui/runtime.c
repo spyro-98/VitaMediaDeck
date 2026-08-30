@@ -89,6 +89,7 @@ int ui_runtime_is_ready(void) {
 }
 
 vita2d_font *ui_runtime_font(unsigned int size) {
+	ui_font_set_system_preference(UI_FONT_SYSTEM_AUTO);
 	vita2d_font *preferred = size == UI_FONT_SMALL ? g_font_small
 	                       : size == UI_FONT_BODY ? g_font_body
 	                       : size == UI_FONT_DISPLAY ? g_font_display : NULL;
@@ -102,10 +103,16 @@ vita2d_font *ui_runtime_font(unsigned int size) {
 }
 
 vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
-	/* Variant 2 is the native Vita system face. A NULL packaged face is the
+	int system_preference = UI_FONT_SYSTEM_AUTO;
+	if (variant == 3) system_preference = UI_FONT_SYSTEM_JAPANESE;
+	else if (variant == 4) system_preference = UI_FONT_SYSTEM_CHINESE;
+	else if (variant == 5) system_preference = UI_FONT_SYSTEM_KOREAN;
+	else if (variant == 6) system_preference = UI_FONT_SYSTEM_LATIN;
+	ui_font_set_system_preference(system_preference);
+	/* Variants 2+ are native Vita system faces. A NULL packaged face is the
 	 * established signal that makes the mixed renderer select its Latin/J/C/K
 	 * PGFs directly. Fall back to Inter only if PGF initialization failed. */
-	if (variant == 2)
+	if (variant >= 2)
 		return ui_font_fallback_ready() ? NULL : ui_runtime_font(size);
 	if (variant == 1) {
 		vita2d_font *semibold = size == UI_FONT_SMALL ? g_subtitle_semibold_small

@@ -15,6 +15,16 @@ void ui_font_fallback_term(void);
 int ui_font_fallback_ready(void);
 int ui_font_fallback_language_mask(void);
 
+/* Selects the native PGF used for ambiguous Han glyphs. Script-specific
+ * characters still use their matching Vita face and missing glyphs always
+ * fall back safely. AUTO follows the text and console language. */
+#define UI_FONT_SYSTEM_AUTO     (-1)
+#define UI_FONT_SYSTEM_JAPANESE 0
+#define UI_FONT_SYSTEM_CHINESE  1
+#define UI_FONT_SYSTEM_KOREAN   2
+#define UI_FONT_SYSTEM_LATIN    3
+void ui_font_set_system_preference(int preference);
+
 int ui_font_draw_text(vita2d_font *latin_font, int x, int y,
 	                  unsigned int color, unsigned int size,
 	                  const char *text);

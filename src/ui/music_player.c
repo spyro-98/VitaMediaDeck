@@ -451,11 +451,12 @@ static void draw_music_action_button(float x, float y, float width,
 	}
 }
 
-static void draw_input_lock_at(int x, int y) {
-	unsigned color = VT_THEME_TEXT;
-	unsigned panel = VT_THEME_GLASS_A(224);
+static void draw_input_lock_at(int x, int y, float opacity) {
+	unsigned color = fade_color(VT_THEME_TEXT, opacity);
+	unsigned panel = fade_color(VT_THEME_GLASS_A(224), opacity);
 	vita2d_draw_rectangle(x, y, 54, 44, panel);
-	vita2d_draw_rectangle(x, y, 3, 44, VT_THEME_COLD_LIGHT);
+	vita2d_draw_rectangle(x, y, 3, 44,
+	                      fade_color(VT_THEME_COLD_LIGHT, opacity));
 	vita2d_draw_line(x + 20, y + 19, x + 20, y + 12, color);
 	vita2d_draw_line(x + 20, y + 12, x + 27, y + 6, color);
 	vita2d_draw_line(x + 27, y + 6, x + 34, y + 12, color);
@@ -615,6 +616,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	PlayerInputLock input_lock;
 	memset(&input_lock, 0, sizeof(input_lock));
+	input_lock.armed = (previous.buttons & SCE_CTRL_SELECT) == 0;
 	PlayerPowerSaveInput power_save_input;
 	memset(&power_save_input, 0, sizeof(power_save_input));
 	power_save_input.armed = (previous.buttons & SCE_CTRL_START) == 0;
@@ -672,11 +674,14 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		                                            input_now);
 		if (lock_changed) {
 			energy_redraw = 1;
+			hud_visible = 1;
+			hud_deadline_us = input_now + MUSIC_HUD_VISIBLE_US;
 			dragging_timeline = 0;
 			touch_reveal_only = 0;
 			sidebar.open = 0;
 			right_open = 0;
 		}
+		pressed &= ~SCE_CTRL_SELECT;
 		UiTouchEvent touch;
 		unsigned touch_flags = ui_touch_poll(&touch);
 		unsigned touch_sequence_flags = touch_flags;
@@ -955,7 +960,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				draw_power_save_status_at(lock_x, lock_y);
 				if (input_lock.locked) {
 					draw_input_lock_at(lock_x,
-					    lock_y > 430 ? lock_y - 50 : lock_y + 34);
+					    lock_y > 430 ? lock_y - 50 : lock_y + 34, 1.0f);
 				}
 				vita2d_end_drawing();
 				vita2d_wait_rendering_done();
@@ -1073,7 +1078,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		}
 		if (!right_open)
 			draw_music_volume(vt_audio_volume_percent(), volume_opacity, foreground);
-		if (input_lock.locked) draw_input_lock_at(24, 86);
+		if (input_lock.locked && hud_opacity > 0.01f)
+			draw_input_lock_at(24, 86, hud_opacity);
 		if (sidebar.animation > 0.01f)
 			ui_sections_sidebar_draw(&sidebar);
 		draw_music_sidebar_bitrate(sidebar.animation, average_bitrate_kbps);

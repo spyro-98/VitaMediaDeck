@@ -106,6 +106,12 @@ _Static_assert(sizeof(VtPreferencesDiskV3) == 40,
 #define VT_SUBTITLE_MIN_ROWS_SHIFT    4u
 #define VT_SUBTITLE_MAX_ROWS_SHIFT    6u
 #define VT_SUBTITLE_EXTRA_MASK(shift) (3u << (shift))
+/* High bits extend the historically two-bit font/color values to three bits
+ * without changing the V3 record size or invalidating existing checksums. */
+#define VT_SUBTITLE_FONT_HIGH_BIT       (1u << 8)
+#define VT_SUBTITLE_BACKGROUND_HIGH_BIT (1u << 9)
+#define VT_SUBTITLE_TEXT_HIGH_BIT       (1u << 10)
+#define VT_SUBTITLE_BORDER_HIGH_BIT     (1u << 11)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -612,6 +618,34 @@ static int set_subtitle_field(unsigned int shift, unsigned int encoded) {
 	return ret;
 }
 
+static uint32_t with_subtitle_field(uint32_t flags, unsigned int shift,
+	                                unsigned int encoded) {
+	uint32_t mask = VT_SUBTITLE_FIELD_MASK(shift);
+	return (flags & ~mask) | ((encoded & 3u) << shift);
+}
+
+static unsigned int subtitle_high_bit(uint32_t bit) {
+	if (!g_loaded) vt_preferences_init();
+	return (g_subtitle_flags & bit) ? 4u : 0u;
+}
+
+static uint32_t with_subtitle_high_bit(uint32_t flags, uint32_t bit,
+	                                   unsigned int encoded) {
+	return encoded & 4u ? flags | bit : flags & ~bit;
+}
+
+static int persist_subtitle_pair(uint32_t playback, uint32_t subtitle) {
+	if (!g_loaded) vt_preferences_init();
+	if (playback == g_playback_flags && subtitle == g_subtitle_flags) return 0;
+	int ret = persist_record_all(g_default_quality, g_default_frame_rate,
+	                             g_language, playback, subtitle);
+	if (ret == 0) {
+		g_playback_flags = playback;
+		g_subtitle_flags = subtitle;
+	}
+	return ret;
+}
+
 int vt_preferences_subtitle_outline_thickness(void) {
 	unsigned int encoded = subtitle_field(VT_SUBTITLE_OUTLINE_SHIFT);
 	return encoded < 3u ? (int)encoded + 1 : VT_SUBTITLE_OUTLINE_1;
@@ -625,23 +659,39 @@ int vt_preferences_set_subtitle_outline_thickness(int thickness) {
 }
 
 int vt_preferences_subtitle_border_color(void) {
-	return (int)subtitle_field(VT_SUBTITLE_BORDER_SHIFT);
+	return (int)(subtitle_field(VT_SUBTITLE_BORDER_SHIFT) |
+	             subtitle_high_bit(VT_SUBTITLE_BORDER_HIGH_BIT));
 }
 
 int vt_preferences_set_subtitle_border_color(int color) {
 	if (color < VT_SUBTITLE_BORDER_BLACK ||
-	    color > VT_SUBTITLE_BORDER_YELLOW) return -1;
-	return set_subtitle_field(VT_SUBTITLE_BORDER_SHIFT, (unsigned int)color);
+	    color > VT_SUBTITLE_BORDER_GRAY) return -1;
+	if (!g_loaded) vt_preferences_init();
+	uint32_t playback = with_subtitle_field(g_playback_flags,
+	                                        VT_SUBTITLE_BORDER_SHIFT,
+	                                        (unsigned int)color);
+	uint32_t subtitle = with_subtitle_high_bit(g_subtitle_flags,
+	                                           VT_SUBTITLE_BORDER_HIGH_BIT,
+	                                           (unsigned int)color);
+	return persist_subtitle_pair(playback, subtitle);
 }
 
 int vt_preferences_subtitle_text_color(void) {
-	return (int)subtitle_field(VT_SUBTITLE_TEXT_SHIFT);
+	return (int)(subtitle_field(VT_SUBTITLE_TEXT_SHIFT) |
+	             subtitle_high_bit(VT_SUBTITLE_TEXT_HIGH_BIT));
 }
 
 int vt_preferences_set_subtitle_text_color(int color) {
-	if (color < VT_SUBTITLE_TEXT_WHITE || color > VT_SUBTITLE_TEXT_GREEN)
+	if (color < VT_SUBTITLE_TEXT_WHITE || color > VT_SUBTITLE_TEXT_GRAY)
 		return -1;
-	return set_subtitle_field(VT_SUBTITLE_TEXT_SHIFT, (unsigned int)color);
+	if (!g_loaded) vt_preferences_init();
+	uint32_t playback = with_subtitle_field(g_playback_flags,
+	                                        VT_SUBTITLE_TEXT_SHIFT,
+	                                        (unsigned int)color);
+	uint32_t subtitle = with_subtitle_high_bit(g_subtitle_flags,
+	                                           VT_SUBTITLE_TEXT_HIGH_BIT,
+	                                           (unsigned int)color);
+	return persist_subtitle_pair(playback, subtitle);
 }
 
 int vt_preferences_subtitle_size(void) {
@@ -703,39 +753,42 @@ static uint32_t with_subtitle_extra_field(uint32_t flags, unsigned int shift,
 }
 
 static int persist_subtitle_flags(uint32_t next) {
-	if (!g_loaded) vt_preferences_init();
-	if (next == g_subtitle_flags) return 0;
-	int ret = persist_record_all(g_default_quality, g_default_frame_rate,
-	                             g_language, g_playback_flags, next);
-	if (ret == 0) g_subtitle_flags = next;
-	return ret;
+	return persist_subtitle_pair(g_playback_flags, next);
 }
 
 int vt_preferences_subtitle_font(void) {
-	int font = (int)subtitle_extra_field(VT_SUBTITLE_FONT_SHIFT);
-	return font <= VT_SUBTITLE_FONT_VITA_SYSTEM
+	int font = (int)(subtitle_extra_field(VT_SUBTITLE_FONT_SHIFT) |
+	                 subtitle_high_bit(VT_SUBTITLE_FONT_HIGH_BIT));
+	return font <= VT_SUBTITLE_FONT_VITA_LATIN
 	     ? font : VT_SUBTITLE_FONT_INTER_MEDIUM;
 }
 
 int vt_preferences_set_subtitle_font(int font) {
 	if (font < VT_SUBTITLE_FONT_INTER_MEDIUM ||
-	    font > VT_SUBTITLE_FONT_VITA_SYSTEM) return -1;
+	    font > VT_SUBTITLE_FONT_VITA_LATIN) return -1;
 	if (!g_loaded) vt_preferences_init();
-	return persist_subtitle_flags(with_subtitle_extra_field(
-	    g_subtitle_flags, VT_SUBTITLE_FONT_SHIFT, (unsigned int)font));
+	uint32_t next = with_subtitle_extra_field(
+	    g_subtitle_flags, VT_SUBTITLE_FONT_SHIFT, (unsigned int)font);
+	next = with_subtitle_high_bit(next, VT_SUBTITLE_FONT_HIGH_BIT,
+	                              (unsigned int)font);
+	return persist_subtitle_flags(next);
 }
 
 int vt_preferences_subtitle_background_color(void) {
-	return (int)subtitle_extra_field(VT_SUBTITLE_BACKGROUND_SHIFT);
+	return (int)(subtitle_extra_field(VT_SUBTITLE_BACKGROUND_SHIFT) |
+	             subtitle_high_bit(VT_SUBTITLE_BACKGROUND_HIGH_BIT));
 }
 
 int vt_preferences_set_subtitle_background_color(int color) {
 	if (color < VT_SUBTITLE_BACKGROUND_TRANSPARENT ||
-	    color > VT_SUBTITLE_BACKGROUND_WHITE) return -1;
+	    color > VT_SUBTITLE_BACKGROUND_SMOKE) return -1;
 	if (!g_loaded) vt_preferences_init();
-	return persist_subtitle_flags(with_subtitle_extra_field(
+	uint32_t next = with_subtitle_extra_field(
 	    g_subtitle_flags, VT_SUBTITLE_BACKGROUND_SHIFT,
-	    (unsigned int)color));
+	    (unsigned int)color);
+	next = with_subtitle_high_bit(next, VT_SUBTITLE_BACKGROUND_HIGH_BIT,
+	                              (unsigned int)color);
+	return persist_subtitle_flags(next);
 }
 
 int vt_preferences_subtitle_min_rows(void) {

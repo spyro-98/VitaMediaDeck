@@ -225,11 +225,12 @@ static void draw_skip_button(vita2d_font *font, float center_x,
 	}
 }
 
-static void draw_player_input_lock_at(int x, int y) {
-	unsigned color = VT_THEME_TEXT;
-	unsigned panel = RGBA8(7, 14, 17, 230);
+static void draw_player_input_lock_at(int x, int y, float opacity) {
+	unsigned color = fade_color(VT_THEME_TEXT, opacity);
+	unsigned panel = fade_color(RGBA8(7, 14, 17, 230), opacity);
 	vita2d_draw_rectangle(x, y, 54, 44, panel);
-	vita2d_draw_rectangle(x, y, 3, 44, VT_THEME_COLD_LIGHT);
+	vita2d_draw_rectangle(x, y, 3, 44,
+	                      fade_color(VT_THEME_COLD_LIGHT, opacity));
 	vita2d_draw_line(x + 20, y + 19, x + 20, y + 12, color);
 	vita2d_draw_line(x + 20, y + 12, x + 27, y + 6, color);
 	vita2d_draw_line(x + 27, y + 6, x + 34, y + 12, color);
@@ -441,6 +442,10 @@ static unsigned subtitle_text_color(void) {
 		case VT_SUBTITLE_TEXT_YELLOW: return RGBA8(255, 232, 96, 255);
 		case VT_SUBTITLE_TEXT_CYAN: return RGBA8(108, 235, 255, 255);
 		case VT_SUBTITLE_TEXT_GREEN: return RGBA8(124, 244, 148, 255);
+		case VT_SUBTITLE_TEXT_ORANGE: return RGBA8(255, 174, 72, 255);
+		case VT_SUBTITLE_TEXT_MAGENTA: return RGBA8(255, 120, 218, 255);
+		case VT_SUBTITLE_TEXT_BLUE: return RGBA8(130, 174, 255, 255);
+		case VT_SUBTITLE_TEXT_GRAY: return RGBA8(196, 204, 212, 255);
 		default: return RGBA8(255, 255, 255, 255);
 	}
 }
@@ -450,6 +455,10 @@ static unsigned subtitle_border_color(void) {
 		case VT_SUBTITLE_BORDER_MIDNIGHT: return RGBA8(3, 18, 34, 255);
 		case VT_SUBTITLE_BORDER_WHITE: return RGBA8(255, 255, 255, 255);
 		case VT_SUBTITLE_BORDER_YELLOW: return RGBA8(255, 210, 48, 255);
+		case VT_SUBTITLE_BORDER_CYAN: return RGBA8(28, 218, 235, 255);
+		case VT_SUBTITLE_BORDER_ORANGE: return RGBA8(242, 116, 44, 255);
+		case VT_SUBTITLE_BORDER_BLUE: return RGBA8(46, 112, 232, 255);
+		case VT_SUBTITLE_BORDER_GRAY: return RGBA8(90, 102, 112, 255);
 		default: return RGBA8(0, 0, 0, 255);
 	}
 }
@@ -459,6 +468,10 @@ static unsigned subtitle_background_color(void) {
 		case VT_SUBTITLE_BACKGROUND_BLACK: return RGBA8(0, 0, 0, 198);
 		case VT_SUBTITLE_BACKGROUND_MIDNIGHT: return RGBA8(3, 18, 34, 210);
 		case VT_SUBTITLE_BACKGROUND_WHITE: return RGBA8(255, 255, 255, 205);
+		case VT_SUBTITLE_BACKGROUND_NAVY: return RGBA8(3, 26, 52, 214);
+		case VT_SUBTITLE_BACKGROUND_BURGUNDY: return RGBA8(50, 5, 18, 214);
+		case VT_SUBTITLE_BACKGROUND_FOREST: return RGBA8(4, 38, 28, 214);
+		case VT_SUBTITLE_BACKGROUND_SMOKE: return RGBA8(38, 45, 50, 205);
 		default: return 0;
 	}
 }
@@ -821,6 +834,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	ui_touch_reset();
 	PlayerInputLock input_lock;
 	memset(&input_lock, 0, sizeof(input_lock));
+	input_lock.armed = (previous.buttons & SCE_CTRL_SELECT) == 0;
 	PlayerPowerSaveInput power_save_input;
 	memset(&power_save_input, 0, sizeof(power_save_input));
 	power_save_input.armed = (previous.buttons & SCE_CTRL_START) == 0;
@@ -1309,7 +1323,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			draw_player_power_save_status_at(lock_x, lock_y);
 			if (input_lock.locked)
 				draw_player_input_lock_at(lock_x,
-				    lock_y > 430 ? lock_y - 50 : lock_y + 34);
+				    lock_y > 430 ? lock_y - 50 : lock_y + 34, 1.0f);
 		} else {
 			char subtitle[512];
 			if (vt_decoder_subtitle_text(player, status.position_ms,
@@ -1321,7 +1335,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			else if (vt_preferences_player_status_always_visible())
 				ui_brand_draw_status_indicators_alpha(1.0f);
 			draw_buffering_overlay(buffering_opacity, now);
-			if (input_lock.locked) draw_player_input_lock_at(24, 86);
+			if (input_lock.locked && hud_opacity > 0.01f)
+				draw_player_input_lock_at(24, 86, hud_opacity);
 			if (sidebar.animation > 0.01f)
 				ui_sections_sidebar_draw(&sidebar);
 			draw_player_right_sidebar(right_animation, right_focus_position,
