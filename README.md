@@ -162,8 +162,11 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   startup or track selection.
   Read-ahead is bounded by both cue count and a
   short playback-time horizon so sparse subtitles cannot scan far into a movie.
-  Every indexed-seek fallback clears stale AVIO error/EOF state, so one missing
-  sparse SubRip index entry cannot poison all later reposition attempts.
+  The selected text stream and dense video clock remain active together after
+  the indexed hop, allowing that horizon to advance without consuming the rest
+  of the movie. There is no sparse-track linear-seek fallback. Subtitle glyphs
+  are composed after the opaque HUD telemetry surface, so a valid bottom cue
+  stays visible while controls are open.
   A five-second watchdog converts a stalled request into a retryable failure;
   selecting the same pending or failed track retries it without blocking Circle
   or the navigation menu.
@@ -176,8 +179,12 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   Korean, and Latin/Cyrillic rendering. A full-width OLED-black mock movie
   frame includes Latin, Cyrillic, Japanese, Chinese, and Korean samples with
   the selected style, safe width, row limits, and position before playback.
+  Border names follow the border palette's actual order, matching the preview
+  and player renderer.
 - **Live video information:** the player HUD and right-side information panel
-  show decoder, resolution, frame rate, and the stream-reported video bitrate.
+  show decoder, resolution, frame rate, and video bitrate. Matroska sources that
+  omit bitrate metadata use the average derived from seekable size and duration
+  instead of displaying an empty value.
 - **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled
   by GXM/vita2d instead of converting every frame to RGBA on the CPU.
 - **Audio-master synchronization:** bounded queues, presentation-time ordering,

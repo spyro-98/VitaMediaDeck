@@ -115,7 +115,19 @@ static const char *subtitle_foreground_label(int color) {
 }
 
 static const char *subtitle_border_label(int color) {
-	return subtitle_foreground_label(color);
+	static const VtStringId labels[] = {
+		VT_STR_SETTINGS_SUBTITLE_BG_BLACK,
+		VT_STR_SETTINGS_SUBTITLE_BG_MIDNIGHT,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_WHITE,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_YELLOW,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_CYAN,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_ORANGE,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_BLUE,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_GRAY
+	};
+	return vt_i18n_str(color >= VT_SUBTITLE_BORDER_BLACK &&
+	                   color <= VT_SUBTITLE_BORDER_GRAY
+	                   ? labels[color] : labels[0]);
 }
 
 static const char *subtitle_background_label(int color) {

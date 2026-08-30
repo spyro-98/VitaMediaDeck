@@ -645,14 +645,6 @@ static void subtitle_apply_stream_policy(AVFormatContext *format,
 		        ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
 }
 
-static void subtitle_apply_read_policy(AVFormatContext *format,
-	                                   int subtitle_stream) {
-	if (!format) return;
-	for (unsigned int i = 0; i < format->nb_streams; i++)
-		format->streams[i]->discard = (int)i == subtitle_stream
-		                                ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
-}
-
 static int subtitle_seek_stream(AVFormatContext *format, int stream_index,
 	                            uint64_t position_ms) {
 	if (!format || stream_index < 0 ||
@@ -683,10 +675,11 @@ static int subtitle_seek(VtMediaInput *input, int subtitle_stream,
 	uint64_t seek_position = position_ms > SUBTITLE_SEEK_PREROLL_MS
 	                       ? position_ms - SUBTITLE_SEEK_PREROLL_MS : 0;
 	int ret = subtitle_seek_stream(input->format, clock_stream, seek_position);
-	if (ret >= 0) {
-		avformat_flush(input->format);
-		subtitle_apply_read_policy(input->format, subtitle_stream);
-	}
+	/* Keep the dense clock stream visible to av_read_frame after the hop. The
+	 * worker uses its timestamps to stop at the bounded read-ahead horizon; if it
+	 * is discarded, demux_position_ms never advances and subtitle packets can be
+	 * consumed far beyond the playback window. */
+	if (ret >= 0) avformat_flush(input->format);
 	return ret;
 }
 
