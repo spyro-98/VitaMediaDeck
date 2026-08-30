@@ -131,7 +131,10 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   Backward seeks use the selected H.264 stream for Matroska index lookup, so
   sparse subtitles, font attachments, and embedded cover art cannot move
   playback to a later cluster. The preceding keyframe remains decoder preroll
-  and only decoded pictures before the requested timestamp are suppressed.
+  and only decoded pictures before the requested timestamp are suppressed. The
+  video and audio cursors discard all non-selected streams before seeking, so
+  alternate tracks, subtitles, attachments, and covers are not packetized while
+  jumping or resuming; seek logs expose the two demux costs independently.
   A landing more than two seconds beyond the requested clock is rejected and
   retried through a fresh session, preventing a post-seek audio-only black screen.
   A seek that cannot produce a hardware frame within its bounded restart window
