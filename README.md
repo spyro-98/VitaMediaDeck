@@ -2,11 +2,6 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-> [!IMPORTANT]
-> **Public beta** — VitaMediaDeck is available publicly, but remains in active
-> development. Expect rough edges and validate playback, network sources, and
-> UI behavior on your own PlayStation Vita before relying on it day to day.
-
 <p align="center">
   <img src="assets/branding/vitamediadeck-icon.png" width="256" height="256" alt="VitaMediaDeck app icon">
 </p>
@@ -15,54 +10,19 @@
   <strong>A native local and authenticated-network media player for PlayStation Vita.</strong>
 </p>
 
-VitaMediaDeck plays video and music already owned and stored by the user. Media can
-come from the Vita memory card or from an authenticated WebDAV, SFTP, or
-SMB server. Browsing, demuxing, hardware decoding, audio/video synchronization,
-and rendering all run on the console; no companion service is required.
+> [!IMPORTANT]
+> **Public beta** — VitaMediaDeck is available publicly but remains in active
+> development. Validate playback and network sources on your own PlayStation
+> Vita before relying on it day to day.
 
-VitaMediaDeck does not discover, acquire, export, convert, or copy media from online
-catalogues. It has no account integration with third-party media platforms and
-does not provide a download or audio-extraction feature.
+VitaMediaDeck plays video and music stored on the Vita or on authenticated
+WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding, synchronization,
+and rendering run directly on the console; no companion service is required.
 
-The application UI follows the evolved **Spectral Reassembly** direction:
-pitch-black OLED fields, spectral-cyan interaction signals, cold blue/teal
-atmospheric volume, and silver-white material. Muted oxidized amber is limited
-to warnings and isolated telemetry sparks instead of repeating across active
-controls. Slow layered particle clouds, micro-fragments, and scan traces
-replace the former mostly fixed background graphic while preserving the mixed
-lighting present in the film references. Its
-design rationale and multilingual typography contract are
-documented in
-[`mds/UI_SIGNAL_SHELL.md`](mds/UI_SIGNAL_SHELL.md).
-
-The active **memory-aperture** icon master is stored in
-[`assets/branding/vitamediadeck-memory-aperture-master.png`](assets/branding/vitamediadeck-memory-aperture-master.png).
-Its indexed 128 x 128 runtime export is mirrored to `sce_sys/icon0.png`,
-`icon0alpha.png`, `vitamediadecklogo.png`, and `vitamediadecklogoalpha.png`, so
-the LiveArea tile, launcher artwork, and in-app branding share one visual
-language.
-
-> The local/network redesign is under active development. The application and
-> reusable player module compile as a complete VPK, but the new remote backends
-> still require broad validation on physical Vita hardware and different
-> servers before a stable release is published.
-
-## VitaMediaDeck project family
-
-VitaMediaDeck is the console application. Its runtime packages stay reusable,
-and the optional transcoder runs only on a desktop computer:
-
-| Repository | Responsibility | Included in the VPK |
-| --- | --- | --- |
-| [`VitaMediaDeck`](https://github.com/spyro-98/VitaMediaDeck) | Local/network library, Spectral Reassembly UI, subtitles, player orchestration, previews, and resume history | Application |
-| [`vita-hw-decoder`](https://github.com/spyro-98/vita-hw-decoder) | Hardware-only H.264/AAC playback through `h264_vita`, SceVideodec, and direct NV12 presentation | Yes |
-| [`vita-sw-decoder`](https://github.com/spyro-98/vita-sw-decoder) | CPU H.264 fallback with the same stream and lifecycle contract | Yes |
-| [`vita-https`](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, CA/SPKI verification, WebDAV requests, and seekable Range streams | Yes |
-| [`VitaMediaDeck-Transcoder`](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional macOS/Windows/Linux conversion to the Vita-oriented H.264/AAC/Matroska profile | No |
-
-No host tool is required for playback. The transcoder is useful when source
-media does not already satisfy the Vita decoder contract, or when an embedded
-cover and a predictable multi-track Matroska output are desired.
+The **Spectral Reassembly** interface combines pitch-black OLED fields,
+spectral-cyan controls, cold blue/teal atmosphere, restrained amber telemetry,
+particle clouds, and scan traces. Its visual and multilingual typography
+contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 
 ## Running on PlayStation Vita
 
@@ -84,303 +44,101 @@ cover and a predictable multi-track Matroska output are desired.
     </td>
   </tr>
   <tr>
-    <td align="center"><sub>Expanded live video mini-player and embedded grid cover</sub></td>
-    <td align="center"><sub>Compact live video mini-player and embedded grid cover</sub></td>
+    <td align="center"><sub>Expanded live mini-player and embedded cover</sub></td>
+    <td align="center"><sub>Compact live mini-player and embedded cover</sub></td>
   </tr>
 </table>
 
-These captures document the current cyan-led Spectral Reassembly interface,
-embedded local-video cover artwork, both live mini-player sizes, and the
-hardware decoder running on a physical Vita.
-
 ## Highlights
 
-- **Local media library:** indexes compatible files under `ux0:video`,
-  `uma0:video`, `ux0:movies`, `uma0:movies`, `ux0:music`, and `uma0:music`
-  without loading the whole
-  collection into RAM.
-- **Finder-style folder browser:** explores `ux0:` and `uma0:` directly and
-  uses the same persistent grid/list choice as WebDAV, SFTP, and SMB folders.
-- **Video cover previews:** local cells prefer matching artwork sidecars, then
-  local and remote cells use an embedded cover when present or asynchronously
-  extract and cache a representative H.264 frame. Local media uses libavformat's
-  proven direct file path, while authenticated remote media retains its isolated
-  seekable cursor. Indexed MP4/Matroska artwork is decoded directly from the
-  container index. Matroska discovery handles both
-  `attached_pic` packets and image attachments backed by codec data. Valid
-  embedded artwork is always respected, including intentionally dark covers;
-  only missing or undecodable artwork falls back to a representative H.264
-  frame from a bounded 2–10 second representative window. Frame extraction receives a fresh
-  local/remote decode budget after artwork inspection. The selected cell
-  preempts stale viewport work, and its worker runs above background catalog
-  scanning so embedded artwork is not starved by the active grid. Invalid
-  sidecars are failure-cached, and cache/decode/upload outcomes are written to
-  diagnostics.
-  Its single-threaded CPU fallback remains low-priority and bounded while the
-  video mini-player runs; a temporary GPU-memory failure retains the decoded
-  pixels for a cheap retry instead of decoding the movie again. Thumbnail cache
-  version 6 invalidates prior failed, black, or incorrect local-cover results.
-  The thumbnail worker is created with Vita's valid default priority sentinel
-  and demotes itself only after startup; invalid synthetic priority values would
-  prevent the thread from existing and leave the striped placeholder forever.
-  Returning through mini-player and fullscreen clears the shared cancellation
-  flag immediately while the previous request remains invalidated by generation,
-  so covers repopulate without requiring an extra Circle scene transition.
-  Local `ux0:/` and `uma0:/` media use the proven `sceIo`-backed seekable AVIO
-  route instead of treating Vita device prefixes as FFmpeg URL protocols. Valid
-  embedded JPEG/PNG artwork is preferred; an all-black or effectively uniform
-  attachment is treated as unusable and falls back to a representative H.264
-  frame.
-- **Authenticated remote browsing:** connects to WebDAV over HTTPS, SFTP with
-  verified host fingerprints, and authenticated SMB2/SMB3 shares.
-- **Selectable H.264 decoding:** Settings offers Auto (hardware with software
-  fallback), HW H.264 only, or SW FFmpeg only. Startup is not considered
-  successful until a real video frame exists; a silent hardware session is
-  rejected so Auto can recover instead of playing audio behind an endless
-  Preparing video overlay.
-  Backward seeks use the selected H.264 stream for Matroska index lookup, so
-  sparse subtitles, font attachments, and embedded cover art cannot move
-  playback to a later cluster. The preceding keyframe remains decoder preroll
-  and only decoded pictures before the requested timestamp are suppressed. The
-  video and audio cursors both hop through the primary H.264 Cue index, including
-  resume after closing the player, live seek, and audio-track replacement. No
-  AAC, sparse-subtitle, or multi-stream linear-seek fallback remains. After the
-  indexed hop each cursor exposes only its selected stream; seek logs expose the
-  two demux costs independently. Subtitle activation follows the same dense
-  video-clock hop with bounded preroll instead of seeking a sparse text track.
-  A landing more than two seconds beyond the requested clock is rejected and
-  retried through a fresh session, preventing a post-seek audio-only black screen.
-  A seek that cannot produce a hardware frame within its bounded restart window
-  is treated as a real failure; Auto reopens the software backend at the same
-  requested position instead of resuming audio into an endless buffer state.
-- **Multiple media tracks:** the playback panel discovers and switches between
-  AAC audio streams and embedded SubRip, ASS/SSA, WebVTT, or MP4 timed-text
-  subtitles without leaving the video. The same seekable-cursor path is used
-  for local files, WebDAV, SFTP, and SMB. Left/Right stages a track choice and
-  X applies it, preventing accidental playback restarts while browsing. The
-  first subtitle activation and every later switch are serial requests handled
-  by one persistent low-priority worker reserved before playback: cursor
-  open/probe/seek never takes over
-  the player UI, healthy cursors are repositioned after a cooperative cancel,
-  stale text clears immediately, and the R panel reports pending or failed
-  requests in place. Local subtitles use an isolated `sceIo`-backed seekable
-  cursor, while authenticated remote subtitles retain their protocol-specific
-  isolated cursor. A failed
-  request remains visibly selected instead of silently reverting to Off.
-  The persistent subtitle worker follows the same valid-create/runtime-demotion
-  priority contract, avoiding `SCE_KERNEL_ERROR_ILLEGAL_PRIORITY` during player
-  startup or track selection.
-  Read-ahead is bounded by both cue count and a
-  short playback-time horizon so sparse subtitles cannot scan far into a movie.
-  The selected text stream and dense video clock remain active together after
-  the indexed hop, allowing that horizon to advance without consuming the rest
-  of the movie. There is no sparse-track linear-seek fallback. Subtitle glyphs
-  are composed after the opaque HUD telemetry surface, so a valid bottom cue
-  stays visible while controls are open.
-  A five-second watchdog converts a stalled request into a retryable failure;
-  selecting the same pending or failed track retries it without blocking Circle
-  or the navigation menu.
-- **Configurable multilingual subtitles:** a dedicated Settings tab controls
-  font, foreground/background/border color, size, maximum width,
-  minimum/maximum line count, and vertical position. Eight foreground, eight
-  background, and eight border colors are persisted without invalidating older
-  settings files. Exact-size Inter faces keep Western and Cyrillic text crisp;
-  selectable native PS Vita profiles cover automatic, Japanese, Chinese,
-  Korean, and Latin/Cyrillic rendering. A full-width OLED-black mock movie
-  frame includes Latin, Cyrillic, Japanese, Chinese, and Korean samples with
-  the selected style, safe width, row limits, and position before playback.
-  Border names follow the border palette's actual order, matching the preview
-  and player renderer.
-- **Live video information:** the player HUD and right-side information panel
-  show decoder, resolution, frame rate, and video bitrate. Matroska sources that
-  omit bitrate metadata use the average derived from seekable size and duration
-  instead of displaying an empty value.
-- **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled
-  by GXM/vita2d instead of converting every frame to RGBA on the CPU.
-- **Audio-master synchronization:** bounded queues, presentation-time ordering,
-  late-frame recovery, and independent audio/video stream cursors keep playback
-  synchronized.
-- **Deadline-safe AAC output:** both decoder packages schedule the 1024-frame
-  AudioOut refill worker immediately above video decode, protecting its 21.3 ms
-  submission window from H.264/UI bursts. Session diagnostics summarize delayed
-  grains and the maximum refill gap without writing from inside the live audio
-  loop.
-- **Full-screen music player:** supports MP3 and other local audio formats,
-  artwork, metadata, seeking, shuffle/repeat, animated backgrounds, and the
-  persistent mini-player.
-- **VitaTube player gestures restored:** a short Start minimizes local music,
-  local video, and authenticated remote video; holding Start toggles the
-  OLED-black ECO view, and holding Select for 900 ms locks or unlocks input.
-  The lock indicator follows the player HUD fade instead of remaining over the
-  movie. Local video resumes fullscreen at the
-  mini-player position with its selected audio/subtitle tracks restored. The
-  video mini-player uses the main decoder for live frames and matching audio
-  compatibility; tapping its media area expands it to one quarter of the
-  screen width, while Start or the mini-player title restores fullscreen
-  playback. The L1 sidebar exposes an **Active player** row above Home whenever
-  a minimized music or video session can be restored. Choosing another L1 menu
-  section from fullscreen performs the same background hand-off and navigates
-  without stopping the active local movie, streamed movie, or music session.
-- **Per-video resume history:** distinct local files and authenticated remote
-  streams resume from their last useful position. When playback was recovered,
-  the opening screen exposes **Play from beginning** immediately; once open,
-  the R1 panel exposes **Start from beginning** and clears that saved point.
-- **Packaged playback stack:** hardware decode, software fallback and HTTPS/TLS
-  live in the independent `vita-hw-decoder`, `vita-sw-decoder` and `vita-https`
-  repositories, each with an installable CMake target and minimal example.
-- **Privacy-conscious state:** remote passwords are session-only by default.
-  An explicit Settings opt-in stores them unencrypted at
-  `ux0:data/VitaMediaDeck/network/passwords.txt`; the path and plaintext warning are
-  displayed beside the toggle.
+- Local video and music libraries on `ux0:` and `uma0:`, with paged indexing,
+  folder browsing, and persistent grid/list views.
+- Authenticated remote video browsing through WebDAV over HTTPS, SFTP with a
+  confirmed SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
+- Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
+- Indexed H.264 cue seeking for startup, live seek, saved-position resume, and
+  AAC track replacement without multi-stream linear-seek fallbacks.
+- Runtime switching between multiple AAC audio tracks and embedded SubRip,
+  ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
+- Configurable multilingual subtitles with font profiles for Western, Cyrillic,
+  Japanese, Chinese, and Korean text; foreground, background, border, size,
+  width, row-count, and position controls; and a full-width Settings preview.
+- Grid covers from sidecar or embedded artwork, with bounded representative
+  H.264 frame extraction and persistent caching when artwork is unavailable.
+- Per-video resume history for local and remote media, plus explicit restart
+  from the beginning.
+- Live video mini-player, persistent music mini-player, full-screen music
+  player, artwork, metadata, shuffle, repeat, and seeking.
+- Player telemetry for backend, resolution, frame rate, and video bitrate,
+  including a calculated fallback when the container omits bitrate metadata.
+- VitaTube-style controls: press Start to minimize, hold Start for OLED ECO
+  mode, and hold Select for 900 ms to lock or unlock player input.
+
+## Project family
+
+The playback stack is split into reusable repositories. The decoder packages
+are included in the application build; the Transcoder is an optional desktop
+tool and is not part of the VPK.
+
+| Repository | Purpose |
+| --- | --- |
+| [`VitaMediaDeck`](https://github.com/spyro-98/VitaMediaDeck) | PS Vita application, media library, network browsing, subtitles, covers, mini-player, and playback orchestration |
+| [`vita-hw-decoder`](https://github.com/spyro-98/vita-hw-decoder) | Hardware-only H.264/AAC backend using `h264_vita`, SceVideodec, and direct NV12/P2 presentation |
+| [`vita-sw-decoder`](https://github.com/spyro-98/vita-sw-decoder) | API-compatible CPU/FFmpeg H.264 fallback with the same stream and lifecycle contract |
+| [`VitaMediaDeck-Transcoder`](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional macOS, Windows, and Linux tool for producing Vita-oriented H.264/AAC Matroska files with multiple tracks and embedded covers |
+| [`vita-https`](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, certificate/SPKI verification, and seekable Range transport used by WebDAV |
+
+The Transcoder preserves selected audio and subtitle tracks, chapters,
+language/title metadata, compatible font attachments, and existing artwork. If
+no usable cover exists, it extracts and embeds a representative 480×272 frame.
+It also provides Vita-oriented quality presets, HDR-to-SDR tone mapping, final
+stream validation, and both command-line and interactive terminal interfaces.
 
 ## Media sources
 
-| Source | Browsing and access contract | Current playback scope |
+| Source | Access contract | Current scope |
 | --- | --- | --- |
 | Local storage | Vita filesystem | Video and audio |
-| WebDAV | HTTPS only, username/password, public CA or explicitly confirmed SPKI pin, byte-range support | Remote video |
-| SFTP | Username/password plus explicitly confirmed SHA-256 host fingerprint | Remote video |
-| SMB | Authenticated SMB2/SMB3 share with message signing required | Remote video |
+| WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
+| SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
+| SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
 
-Remote video currently requires a seekable MP4/M4V/MOV or Matroska (`.mkv`)
-container with H.264 video, optional mono/stereo AAC audio tracks, and optional embedded
-UTF-8 text-subtitle tracks. WebDAV servers must answer
-an actual initial 512 KiB-or-smaller Range request with `206 Partial Content`
-and a valid total length; an `Accept-Ranges` header alone is not accepted. That
-verified response seeds the first cache window, and the cursor reuses the same
-libcurl handle/connection for later reads and seeks.
-Every protocol factory creates independent video and selected-audio cursors.
-The active decoder snapshots selectable track metadata from its already-open
-video demux, avoiding a third synchronous startup connection/probe. A subtitle
-cursor is opened only after a text track is requested, and its bounded
-background cue queue keeps remote I/O off the render loop.
+The player targets seekable H.264 video in MP4/M4V/MOV or Matroska containers,
+with optional mono/stereo AAC and embedded UTF-8 text subtitles. Local audio
+detection includes MP3, M4A, AAC, and WAV. Exact compatibility still depends on
+the selected decoder and the source media.
 
-Local audio detection currently includes MP3, M4A, AAC, and WAV. Local video
-detection includes MP4, M4V, MOV, and MKV. Codec/container compatibility still
-depends on the active Vita backend.
-
-## Architecture
-
-```mermaid
-flowchart LR
-    L["Vita files"] --> F["Seekable stream factory"]
-    W["WebDAV"] --> T["vita-https + verified Range"]
-    T --> F
-    S["SFTP + pinned host key"] --> F
-    M["Authenticated SMB2/3"] --> F
-    F --> D1["Video demux cursor"]
-    F --> D2["Audio demux cursor"]
-    F --> D3["Subtitle demux cursor"]
-    D1 --> H["vita-hw-decoder"]
-    H -->|"open/runtime failure"| SW["vita-sw-decoder"]
-    H --> O["Track metadata snapshot / R1 selectors"]
-    SW --> O
-    F --> T0["Asynchronous cover/frame cursor"]
-    T0 --> V["Video-cell preview cache"]
-    D2 --> A["Vita AAC / local audio path"]
-    D3 --> U["Unicode subtitle renderer"]
-    H --> P["PTS-aware NV12 presenter"]
-    SW --> P
-    A --> C["Audio master clock"]
-    C --> P
-    P --> G["GXM / vita2d display scaling"]
-```
-
-The player API never receives a URL. It receives a `VtDecoderStreamFactory` whose
-`open` callback returns a new readable and seekable cursor. Protocol code owns
-authentication and transport; the player owns demux, decode, synchronization,
-and presentation. This boundary lets new transports be added without coupling
-them to decoder internals.
-
-The three runtime-package READMEs document their public APIs, lifecycle, and
-copyable examples. The separate transcoder README documents the compatible
-output profile but is not part of the console runtime. VitaMediaDeck's
-`src/media/vita_decoder.c` is deliberately a small dispatcher: Auto opens the
-hardware package first and recreates the session through the software package
-on either startup or delayed runtime failure, while the two explicit Settings
-choices force one backend. Each package exposes a fixed-size snapshot of the
-track metadata already present in its video demux; the app owns selection UI
-and the separate asynchronous text-subtitle demux policy.
-
-## Network security model
-
-- Saved source records contain protocol, endpoint, path, username, and approved
-  SFTP/TLS fingerprints. Passwords are serialized only when the plaintext
-  remember-passwords option is enabled.
-- WebDAV rejects clear-text `http://` endpoints. Public servers validate the TLS
-  certificate chain and hostname against the bundled CA store. A private or
-  self-signed server is accepted only after its displayed SPKI SHA-256 pin is
-  copied back and confirmed; a later key mismatch stops the session.
-- SFTP refuses authenticated I/O until the displayed SHA-256 server fingerprint
-  is copied back and confirmed by the user. A later mismatch stops the session.
-- SMB guest access is not used and SMB message signing is required. Encryption
-  remains a server/share policy; use SMB3 encryption when crossing an untrusted
-  network.
-- The application only reads remote media. It does not upload, rename, delete,
-  or otherwise mutate remote files.
+VitaMediaDeck does not discover, download, extract, convert, or copy media from
+online catalogues. It only plays media already owned and provided by the user.
 
 ## Controls
 
-The essential mapping is:
-
 | Input | Browser | Video | Music |
 | --- | --- | --- | --- |
-| D-pad / left stick | Move focus | Seek left/right | Navigate/seek |
+| D-pad / left stick | Move focus | Seek | Navigate/seek |
 | Cross | Open/confirm | Pause/resume | Pause/resume |
 | Circle | Back | Stop | Back/minimize |
-| L1 | Open/close sections | Sections panel | Sections panel |
-| R1 | Context actions or grid/list view | Playback/info panel | Playback/options panel |
+| L1 | Sections | Sections | Sections |
+| R1 | Actions / view | Playback and tracks | Playback options |
 | Right stick | — | Volume | Volume |
 | Touch timeline | — | Seek | Seek |
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
-saved server definition. A password can be entered in the add/edit form and is
-kept for the application session; if it is absent, the app requests it when the
-source is opened. The opt-in System setting can persist passwords unencrypted
-and clearly advertises the storage path.
-Settings can swap the player-only L1/R1 panel mapping with D-pad Left/Right;
-the historical L1/R1 panel mapping is the default.
-The complete context-sensitive reference is in [CONTROLS.md](mds/CONTROLS.md).
-
-The Library R1 panel includes **Browse folders** for direct local filesystem
-navigation. Local and remote folder browsers default to a four-column grid;
-R1 switches both to a compact list and remembers the shared choice.
-Folders and all files remain visible; compatible media uses the colored media
-accent and can be played, while unsupported files remain read-only.
-Dot-prefixed local files and folders stay hidden, matching Finder's default.
-Video cells progressively replace their placeholder with a sidecar or embedded
-cover, falling back to a representative frame generated by the bounded
-thumbnail worker. A versioned RGB565 cache rejects corrupt and low-information
-entries before GPU upload, and the currently selected cell has priority over
-nearby previews. Remote passwords are never written to the thumbnail cache.
-
-## Data layout
-
-Application state is stored below `ux0:data/VitaMediaDeck`:
-
-```text
-local_media.idx        paged local media index
-playback_history.bin   local and remote resume positions
-settings.bin           application preferences
-thumbs/*.rgb           disposable checked RGB565 video previews
-network/sources.bin    source definitions without passwords
-network/passwords.txt  optional plaintext passwords (explicit opt-in)
-session_log.txt        optional diagnostics when disk logging is enabled
-```
-
-The local index supports up to 65,536 items and loads only a bounded visible
-page plus nearby artwork into memory.
+saved server. See [CONTROLS.md](mds/CONTROLS.md) for the complete
+context-sensitive mapping.
 
 ## Building
 
 ### Requirements
 
-- VitaSDK and the normal Vita system stubs
+- VitaSDK and the normal Vita system stubs.
 - Vita ports of vita2d, FreeType, libjpeg-turbo, libpng, zlib, bzip2, mpg123,
-  Mbed TLS, libxml2, zstd, and libsmb2
-- CMake, Git, Patch, and normal archive/build tools
+  Mbed TLS, libxml2, zstd, and libsmb2.
+- CMake, Git, Patch, and standard archive/build tools.
+- Sibling checkouts of `vita-hw-decoder`, `vita-sw-decoder`, and `vita-https`,
+  unless their paths are supplied through the matching CMake cache variables.
 
-Build the pinned release dependencies first:
+Build the pinned dependencies and application:
 
 ```sh
 export VITASDK=/absolute/path/to/vitasdk
@@ -390,108 +148,57 @@ export PATH="$VITASDK/bin:$PATH"
 ./tools/build-libssh2-vita.sh
 ./tools/build-ffmpeg-vita-hw.sh
 ./tools/prepare-release-licenses.sh
-```
 
-Then build the application:
-
-```sh
-# Keep the four repositories as siblings (or override the three
-# VITAMEDIADECK_*_PACKAGE CMake cache paths).
-# VitaMediaDeck/  vita-hw-decoder/  vita-sw-decoder/  vita-https/
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 unzip -t build/VitaMediaDeck.vpk
 ```
 
-Release builds use Cortex-A9/NEON optimization, `-O3`, LTO for the final
-application, function/data sections, and linker garbage collection. Exact
-pinned revisions and configuration flags are recorded by the build scripts.
-The ordinary VitaSDK libcurl/OpenSSL archives are deliberately not accepted;
-HTTPS and SFTP both use Mbed TLS in a releasable build.
-
-For a complete setup walkthrough, see
-[TOOLCHAIN_SETUP.md](mds/setup/TOOLCHAIN_SETUP.md).
-
-## Local streaming test servers
-
-Three read-only Python servers are included for testing the remote backends
-directly against a Mac on the same LAN: WebDAV HTTPS with byte ranges, SFTP and
-authenticated SMB2. Setup, copyable Terminal commands and the exact VitaMediaDeck
-source fields are documented in
+For the complete environment and dependency setup, see
+[TOOLCHAIN_SETUP.md](mds/setup/TOOLCHAIN_SETUP.md). Read-only WebDAV, SFTP, and
+SMB test-server instructions are in
 [tools/local_streaming/README.md](tools/local_streaming/README.md).
 
-## Project structure
+## Privacy and security
 
-```text
-../vita-hw-decoder/      standalone hardware player package
-../vita-sw-decoder/      standalone software fallback package
-../vita-https/           standalone HTTPS/TLS and Range-stream package
-src/media/               player UI, audio, presentation and local playback
-src/network/             WebDAV, SFTP and SMB stream factories
-src/ui/                  local library, local/remote folder browsers and application UI
-src/system/              clocks, display-awake and background-audio helpers
-tools/                   dependency builders and local streaming test servers
-mds/                     architecture, controls and development documents
-```
+- Remote passwords remain session-only by default. An explicit Settings opt-in
+  stores them unencrypted at
+  `ux0:data/VitaMediaDeck/network/passwords.txt` and displays a warning.
+- WebDAV rejects clear-text HTTP and validates TLS certificates or an explicitly
+  confirmed SPKI pin.
+- SFTP requires an explicitly confirmed server fingerprint.
+- SMB guest access is disabled and message signing is required.
+- Remote sources are read-only: the app does not upload, rename, or delete files.
 
 ## Known limitations
 
-- Remote backends and their cancellation/error paths need validation across a
-  representative server matrix on real hardware.
-- Remote audio browsing is not exposed yet; the network section is video-only.
-- The reusable player currently targets seekable H.264 media in ISO-BMFF or
-  Matroska containers; known mono/stereo AAC audio is supported when present.
-  Known multichannel AAC is not advertised by the Vita audio-track selector.
-- Video, selected audio, requested subtitles, and thumbnail extraction retain
-  independent seekable cursors. This keeps cancellation and ownership isolated
-  but can duplicate interleaved reads, especially over a remote source; the
-  performance audit documents the bounded behavior and shared-demux follow-up.
-- SFTP and SMB hostname resolution, connection setup, authentication, stat/open,
-  and transport reads are cancelable and wall-bounded. Cursor creation uses one
-  end-to-end deadline rather than restarting the timeout for every stage. Normal
-  seek/track operations first use
-  a short cooperative stop so a healthy remote cursor is not reauthenticated
-  unless a destructive socket wake-up is actually required.
-- Bitmap subtitles such as PGS and VobSub may be retained by the transcoder but
-  are not rendered by the current app. The selectable subtitle path supports
-  SubRip, ASS/SSA text, WebVTT, MOV text, generic text, and MicroDVD.
-- Some local formats recognized by the library may still be rejected when they
-  do not satisfy the active decoder/container contract.
-- The Vita display is 960×544. A 1280×720 source is decoded at source
-  resolution and scaled only while GXM samples the NV12 surface for display.
+- Remote transports and cancellation paths still need broader validation on
+  physical Vita hardware and different server configurations.
+- Remote audio browsing is not exposed yet; authenticated network sources are
+  currently video-only.
+- Bitmap subtitles such as PGS and VobSub may be preserved by the Transcoder but
+  are not rendered by the current app.
+- Separate video, audio, subtitle, and thumbnail cursors can duplicate reads on
+  remote interleaved media.
+- Some recognised containers or codecs may still be rejected when they do not
+  meet the active Vita decoder contract.
 
 ## Documentation
 
 - [Project specification](mds/PROJECT_SPECIFICATION.md)
+- [Package integration](mds/PACKAGE_INTEGRATION.md)
 - [Controls](mds/CONTROLS.md)
-- [Development status](mds/DEVELOPMENT_LOG.md)
+- [Development log](mds/DEVELOPMENT_LOG.md)
 - [Playback performance audit](mds/PLAYBACK_PERFORMANCE_AUDIT.md)
-- [Hardware acceleration](mds/H264_ACCELERATION_RESEARCH_PLAN.md)
-- [PS Vita hardware resources](mds/research/PSVITA_HARDWARE_GPU_RESOURCES.md)
+- [UI and typography system](mds/UI_SIGNAL_SHELL.md)
+- [Toolchain setup](mds/setup/TOOLCHAIN_SETUP.md)
+- [Release and licensing plan](mds/RELEASE_AND_LICENSING_PLAN.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 ## License
 
-VitaMediaDeck is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE).
-Third-party components retain their own licenses and notices; see
+VitaMediaDeck is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-VitaMediaDeck is an independent homebrew project. PlayStation, PS Vita, Sony, and
-their related marks belong to their respective owners.
-
-## Release hardening
-
-Run `tools/release-audit.sh --vpk build/VitaMediaDeck.vpk` before distributing a
-binary. Every VPK must be accompanied by the archive produced by
-`tools/package-corresponding-source.sh` from the same checkout and dependency
-prefixes. `release/VitaMediaDeck.spdx` is the release SBOM and is embedded in both
-the VPK and the corresponding-source archive.
-
-The existing private development history contains retired experiments and is
-not a publication artifact. `tools/public-export.sh` creates a history-free
-source snapshot. It does not push, publish or rewrite the local repository.
-
-The optional CI binary job remains disabled until the repository owner sets
-`VITAMEDIADECK_HW_REPOSITORY`, `VITAMEDIADECK_SW_REPOSITORY` and
-`VITAMEDIADECK_HTTPS_REPOSITORY`. This keeps hosting names and publication timing
-under the owner's control.
+VitaMediaDeck is an independent homebrew project. PlayStation, PS Vita, Sony,
+and their related marks belong to their respective owners.
