@@ -42,6 +42,10 @@ Sources, Settings, and About from the shared sidebar.
 - Replaced the cartoon-like particle-play icon with a fractured obsidian-glass
   memory shell whose central playback aperture stays legible in the indexed
   128x128 LiveArea export.
+- Replaced that material-heavy shell with a sharper memory aperture matching
+  the final UI: three optical signal membranes, fine cyan particle reassembly,
+  sparse HUD arcs, pitch-black OLED negative space, and one restrained amber
+  telemetry trace. The literal Play button is no longer the dominant symbol.
 - Added progressive cover previews to local and authenticated-remote video
   cells: sidecar artwork remains first, then embedded cover art, then a bounded
   representative-frame fallback with a checked RGB565 disk cache.

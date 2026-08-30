@@ -84,7 +84,7 @@ cover and a predictable multi-track Matroska output are desired.
 
 These photographs document the decoder paths on real hardware. The current
 cyan-led Spectral Reassembly theme, expanded player panels, and optical
-memory-shell icon still need a fresh physical-Vita screenshot pass.
+memory-aperture icon still need a fresh physical-Vita screenshot pass.
 
 ## Highlights
 
@@ -116,6 +116,9 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   The thumbnail worker is created with Vita's valid default priority sentinel
   and demotes itself only after startup; invalid synthetic priority values would
   prevent the thread from existing and leave the striped placeholder forever.
+  Returning through mini-player and fullscreen clears the shared cancellation
+  flag immediately while the previous request remains invalidated by generation,
+  so covers repopulate without requiring an extra Circle scene transition.
   Local `ux0:/` and `uma0:/` media use the proven `sceIo`-backed seekable AVIO
   route instead of treating Vita device prefixes as FFmpeg URL protocols. Valid
   embedded JPEG/PNG artwork is preferred; an all-black or effectively uniform

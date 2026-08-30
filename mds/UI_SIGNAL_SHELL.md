@@ -72,9 +72,10 @@ fully native system-font preference available for subtitles. No reference
 image is packaged in the application: particles, rings, lines, panels, and
 focus fields are drawn by vita2d.
 
-The active icon condenses the same grammar into a fractured optical memory
-shell: a dark central iris and playback aperture, spectral-white glass,
-silver/cyan particle dissolution, restrained teal refraction, and rare amber
-data sparks on pitch black. Its 128x128 indexed export preserves the material
-silhouette in LiveArea without importing imagery or branding from the
-references.
+The active icon condenses the same grammar into an optical memory aperture:
+three asymmetric signal membranes surround a black iris while spectral-white
+and cyan particles dissolve into fine telemetry lines. Sparse HUD arcs and one
+restrained amber trace sit on pitch black. The central form suggests forward
+signal flow without becoming a literal Play button, and its 128x128 indexed
+export preserves a crisp silhouette in LiveArea without importing imagery or
+branding from the references.
