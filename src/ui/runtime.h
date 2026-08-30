@@ -29,8 +29,8 @@ int ui_runtime_is_ready(void);
 vita2d_font *ui_runtime_font(unsigned int size);
 /* Subtitle faces are loaded as independent exact-size instances so switching
  * weight never reuses a blurry atlas created at another size. Variant values
- * match VT_SUBTITLE_FONT_*; the system variant returns NULL intentionally and
- * is rendered by ui/font.c through native Vita PGFs. */
+ * match VT_SUBTITLE_FONT_*; system variants return NULL intentionally and are
+ * rendered by ui/font.c through native Vita PGFs. */
 vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size);
 vita2d_texture *ui_runtime_logo(void);
 

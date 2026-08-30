@@ -159,12 +159,14 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   selecting the same pending or failed track retries it without blocking Circle
   or the navigation menu.
 - **Configurable multilingual subtitles:** a dedicated Settings tab controls
-  font, foreground/background color, size, maximum width, minimum/maximum line
-  count, and vertical position. Exact-size Inter faces keep Western and
-  Cyrillic text crisp, while native PS Vita PGFs cover Japanese, Chinese, and
-  Korean. A full-width OLED-black mock movie frame renders natural dialogue
-  with the selected font, colors, size, safe width, row limits, and position,
-  exposing the real screen-relative subtitle result before playback.
+  font, foreground/background/border color, size, maximum width,
+  minimum/maximum line count, and vertical position. Eight foreground, eight
+  background, and eight border colors are persisted without invalidating older
+  settings files. Exact-size Inter faces keep Western and Cyrillic text crisp;
+  selectable native PS Vita profiles cover automatic, Japanese, Chinese,
+  Korean, and Latin/Cyrillic rendering. A full-width OLED-black mock movie
+  frame includes Latin, Cyrillic, Japanese, Chinese, and Korean samples with
+  the selected style, safe width, row limits, and position before playback.
 - **Live video information:** the player HUD and right-side information panel
   show decoder, resolution, frame rate, and the stream-reported video bitrate.
 - **Direct NV12 presentation:** decoded CDRAM surfaces are composed and scaled
@@ -182,8 +184,9 @@ memory-shell icon still need a fresh physical-Vita screenshot pass.
   persistent mini-player.
 - **VitaTube player gestures restored:** a short Start minimizes local music,
   local video, and authenticated remote video; holding Start toggles the
-  OLED-black ECO view, and Select
-  immediately locks or unlocks input. Local video resumes fullscreen at the
+  OLED-black ECO view, and holding Select for 900 ms locks or unlocks input.
+  The lock indicator follows the player HUD fade instead of remaining over the
+  movie. Local video resumes fullscreen at the
   mini-player position with its selected audio/subtitle tracks restored. The
   video mini-player uses the main decoder for live frames and matching audio
   compatibility; tapping its media area expands it to one quarter of the

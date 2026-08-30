@@ -28,6 +28,7 @@ static vita2d_pgf *g_system_fonts[SYSTEM_FONT_COUNT];
 static int g_system_base_heights[SYSTEM_FONT_COUNT];
 static int g_system_init_attempted;
 static int g_system_language = SCE_SYSTEM_PARAM_LANG_ENGLISH_US;
+static int g_system_preference = UI_FONT_SYSTEM_AUTO;
 
 static int cjk_codepoint(unsigned int cp) {
 	return (cp >= 0x1100U && cp <= 0x11FFU) ||
@@ -188,6 +189,10 @@ static vita2d_pgf *first_cjk_font(void) {
 }
 
 static vita2d_pgf *cjk_font_for_text(const char *text) {
+	if (g_system_preference >= SYSTEM_FONT_JAPANESE &&
+	    g_system_preference <= SYSTEM_FONT_KOREAN &&
+	    g_system_fonts[g_system_preference])
+		return g_system_fonts[g_system_preference];
 	int has_japanese = 0;
 	int has_korean = 0;
 	for (const char *cursor = text; cursor && *cursor;) {
@@ -412,6 +417,13 @@ int ui_font_fallback_language_mask(void) {
 		if (g_system_fonts[i]) mask |= 1 << i;
 	}
 	return mask;
+}
+
+void ui_font_set_system_preference(int preference) {
+	if (preference < UI_FONT_SYSTEM_AUTO ||
+	    preference > UI_FONT_SYSTEM_LATIN)
+		preference = UI_FONT_SYSTEM_AUTO;
+	g_system_preference = preference;
 }
 
 int ui_font_draw_text(vita2d_font *latin_font, int x, int y,

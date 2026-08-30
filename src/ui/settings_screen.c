@@ -63,6 +63,7 @@ enum {
 	ROW_DECODER,
 	ROW_SUBTITLE_FONT,
 	ROW_SUBTITLE_FOREGROUND,
+	ROW_SUBTITLE_BORDER,
 	ROW_SUBTITLE_BACKGROUND,
 	ROW_SUBTITLE_SIZE,
 	ROW_SUBTITLE_WIDTH,
@@ -86,10 +87,14 @@ static const char *subtitle_font_label(int font) {
 	static const VtStringId labels[] = {
 		VT_STR_SETTINGS_SUBTITLE_FONT_MEDIUM,
 		VT_STR_SETTINGS_SUBTITLE_FONT_SEMIBOLD,
-		VT_STR_SETTINGS_SUBTITLE_FONT_SYSTEM
+		VT_STR_SETTINGS_SUBTITLE_FONT_SYSTEM,
+		VT_STR_SETTINGS_SUBTITLE_FONT_JAPANESE,
+		VT_STR_SETTINGS_SUBTITLE_FONT_CHINESE,
+		VT_STR_SETTINGS_SUBTITLE_FONT_KOREAN,
+		VT_STR_SETTINGS_SUBTITLE_FONT_LATIN
 	};
 	return vt_i18n_str(font >= VT_SUBTITLE_FONT_INTER_MEDIUM &&
-	                   font <= VT_SUBTITLE_FONT_VITA_SYSTEM
+	                   font <= VT_SUBTITLE_FONT_VITA_LATIN
 	                   ? labels[font] : labels[0]);
 }
 
@@ -98,11 +103,19 @@ static const char *subtitle_foreground_label(int color) {
 		VT_STR_SETTINGS_SUBTITLE_COLOR_WHITE,
 		VT_STR_SETTINGS_SUBTITLE_COLOR_YELLOW,
 		VT_STR_SETTINGS_SUBTITLE_COLOR_CYAN,
-		VT_STR_SETTINGS_SUBTITLE_COLOR_GREEN
+		VT_STR_SETTINGS_SUBTITLE_COLOR_GREEN,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_ORANGE,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_MAGENTA,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_BLUE,
+		VT_STR_SETTINGS_SUBTITLE_COLOR_GRAY
 	};
 	return vt_i18n_str(color >= VT_SUBTITLE_TEXT_WHITE &&
-	                   color <= VT_SUBTITLE_TEXT_GREEN
+	                   color <= VT_SUBTITLE_TEXT_GRAY
 	                   ? labels[color] : labels[0]);
+}
+
+static const char *subtitle_border_label(int color) {
+	return subtitle_foreground_label(color);
 }
 
 static const char *subtitle_background_label(int color) {
@@ -110,10 +123,14 @@ static const char *subtitle_background_label(int color) {
 		VT_STR_SETTINGS_SUBTITLE_BG_TRANSPARENT,
 		VT_STR_SETTINGS_SUBTITLE_BG_BLACK,
 		VT_STR_SETTINGS_SUBTITLE_BG_MIDNIGHT,
-		VT_STR_SETTINGS_SUBTITLE_BG_WHITE
+		VT_STR_SETTINGS_SUBTITLE_BG_WHITE,
+		VT_STR_SETTINGS_SUBTITLE_BG_NAVY,
+		VT_STR_SETTINGS_SUBTITLE_BG_BURGUNDY,
+		VT_STR_SETTINGS_SUBTITLE_BG_FOREST,
+		VT_STR_SETTINGS_SUBTITLE_BG_SMOKE
 	};
 	return vt_i18n_str(color >= VT_SUBTITLE_BACKGROUND_TRANSPARENT &&
-	                   color <= VT_SUBTITLE_BACKGROUND_WHITE
+	                   color <= VT_SUBTITLE_BACKGROUND_SMOKE
 	                   ? labels[color] : labels[0]);
 }
 
@@ -181,7 +198,7 @@ static const char *decoder_label(int decoder) {
 	                   ? labels[decoder] : labels[VT_VIDEO_DECODER_AUTO]);
 }
 
-static int rows_for_tab(int tab, SettingRow rows[8]) {
+static int rows_for_tab(int tab, SettingRow rows[9]) {
 	if (tab == TAB_PLAYBACK) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_VIDEO_DECODER), vt_preferences_video_decoder(), ROW_DECODER };
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_FILL_SCREEN), vt_preferences_fill_screen(), ROW_TOGGLE };
@@ -192,13 +209,14 @@ static int rows_for_tab(int tab, SettingRow rows[8]) {
 	if (tab == TAB_SUBTITLES) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_FONT), vt_preferences_subtitle_font(), ROW_SUBTITLE_FONT };
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_FOREGROUND), vt_preferences_subtitle_text_color(), ROW_SUBTITLE_FOREGROUND };
-		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_BACKGROUND), vt_preferences_subtitle_background_color(), ROW_SUBTITLE_BACKGROUND };
-		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_SIZE), vt_preferences_subtitle_size(), ROW_SUBTITLE_SIZE };
-		rows[4] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_WIDTH), vt_preferences_subtitle_max_width(), ROW_SUBTITLE_WIDTH };
-		rows[5] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_MIN_ROWS), vt_preferences_subtitle_min_rows(), ROW_SUBTITLE_ROWS };
-		rows[6] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_MAX_ROWS), vt_preferences_subtitle_max_rows(), ROW_SUBTITLE_ROWS };
-		rows[7] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_POSITION), vt_preferences_subtitle_position(), ROW_SUBTITLE_POSITION };
-		return 8;
+		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_BORDER), vt_preferences_subtitle_border_color(), ROW_SUBTITLE_BORDER };
+		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_BACKGROUND), vt_preferences_subtitle_background_color(), ROW_SUBTITLE_BACKGROUND };
+		rows[4] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_SIZE), vt_preferences_subtitle_size(), ROW_SUBTITLE_SIZE };
+		rows[5] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_WIDTH), vt_preferences_subtitle_max_width(), ROW_SUBTITLE_WIDTH };
+		rows[6] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_MIN_ROWS), vt_preferences_subtitle_min_rows(), ROW_SUBTITLE_ROWS };
+		rows[7] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_MAX_ROWS), vt_preferences_subtitle_max_rows(), ROW_SUBTITLE_ROWS };
+		rows[8] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_POSITION), vt_preferences_subtitle_position(), ROW_SUBTITLE_POSITION };
+		return 9;
 	}
 	if (tab == TAB_INTERFACE) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_LANGUAGE), vt_preferences_language(), ROW_LANGUAGE };
@@ -240,56 +258,63 @@ static int apply_row(int tab, int row, int direction) {
 				int value = vt_preferences_subtitle_font() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_FONT_INTER_MEDIUM)
-					value = VT_SUBTITLE_FONT_VITA_SYSTEM;
-				if (value > VT_SUBTITLE_FONT_VITA_SYSTEM)
+					value = VT_SUBTITLE_FONT_VITA_LATIN;
+				if (value > VT_SUBTITLE_FONT_VITA_LATIN)
 					value = VT_SUBTITLE_FONT_INTER_MEDIUM;
 				return vt_preferences_set_subtitle_font(value);
 			}
 			case 1: {
 				int value = vt_preferences_subtitle_text_color() +
 				            (direction < 0 ? -1 : 1);
-				if (value < VT_SUBTITLE_TEXT_WHITE) value = VT_SUBTITLE_TEXT_GREEN;
-				if (value > VT_SUBTITLE_TEXT_GREEN) value = VT_SUBTITLE_TEXT_WHITE;
+				if (value < VT_SUBTITLE_TEXT_WHITE) value = VT_SUBTITLE_TEXT_GRAY;
+				if (value > VT_SUBTITLE_TEXT_GRAY) value = VT_SUBTITLE_TEXT_WHITE;
 				return vt_preferences_set_subtitle_text_color(value);
 			}
 			case 2: {
+				int value = vt_preferences_subtitle_border_color() +
+				            (direction < 0 ? -1 : 1);
+				if (value < VT_SUBTITLE_BORDER_BLACK) value = VT_SUBTITLE_BORDER_GRAY;
+				if (value > VT_SUBTITLE_BORDER_GRAY) value = VT_SUBTITLE_BORDER_BLACK;
+				return vt_preferences_set_subtitle_border_color(value);
+			}
+			case 3: {
 				int value = vt_preferences_subtitle_background_color() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_BACKGROUND_TRANSPARENT)
-					value = VT_SUBTITLE_BACKGROUND_WHITE;
-				if (value > VT_SUBTITLE_BACKGROUND_WHITE)
+					value = VT_SUBTITLE_BACKGROUND_SMOKE;
+				if (value > VT_SUBTITLE_BACKGROUND_SMOKE)
 					value = VT_SUBTITLE_BACKGROUND_TRANSPARENT;
 				return vt_preferences_set_subtitle_background_color(value);
 			}
-			case 3: {
+			case 4: {
 				int value = vt_preferences_subtitle_size() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_SIZE_SMALL) value = VT_SUBTITLE_SIZE_LARGE;
 				if (value > VT_SUBTITLE_SIZE_LARGE) value = VT_SUBTITLE_SIZE_SMALL;
 				return vt_preferences_set_subtitle_size(value);
 			}
-			case 4: {
+			case 5: {
 				int value = vt_preferences_subtitle_max_width() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_WIDTH_60) value = VT_SUBTITLE_WIDTH_96;
 				if (value > VT_SUBTITLE_WIDTH_96) value = VT_SUBTITLE_WIDTH_60;
 				return vt_preferences_set_subtitle_max_width(value);
 			}
-			case 5: {
+			case 6: {
 				int value = vt_preferences_subtitle_min_rows() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_MIN_ROWS) value = VT_SUBTITLE_MAX_ROWS;
 				if (value > VT_SUBTITLE_MAX_ROWS) value = VT_SUBTITLE_MIN_ROWS;
 				return vt_preferences_set_subtitle_min_rows(value);
 			}
-			case 6: {
+			case 7: {
 				int value = vt_preferences_subtitle_max_rows() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_MIN_ROWS) value = VT_SUBTITLE_MAX_ROWS;
 				if (value > VT_SUBTITLE_MAX_ROWS) value = VT_SUBTITLE_MIN_ROWS;
 				return vt_preferences_set_subtitle_max_rows(value);
 			}
-			case 7: {
+			case 8: {
 				int value = vt_preferences_subtitle_position() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_POSITION_BOTTOM)
@@ -351,6 +376,10 @@ static unsigned subtitle_preview_text_color(void) {
 		case VT_SUBTITLE_TEXT_YELLOW: return RGBA8(255, 232, 96, 255);
 		case VT_SUBTITLE_TEXT_CYAN: return RGBA8(108, 235, 255, 255);
 		case VT_SUBTITLE_TEXT_GREEN: return RGBA8(124, 244, 148, 255);
+		case VT_SUBTITLE_TEXT_ORANGE: return RGBA8(255, 174, 72, 255);
+		case VT_SUBTITLE_TEXT_MAGENTA: return RGBA8(255, 120, 218, 255);
+		case VT_SUBTITLE_TEXT_BLUE: return RGBA8(130, 174, 255, 255);
+		case VT_SUBTITLE_TEXT_GRAY: return RGBA8(196, 204, 212, 255);
 		default: return RGBA8(255, 255, 255, 255);
 	}
 }
@@ -360,6 +389,10 @@ static unsigned subtitle_preview_border_color(void) {
 		case VT_SUBTITLE_BORDER_MIDNIGHT: return RGBA8(3, 18, 34, 255);
 		case VT_SUBTITLE_BORDER_WHITE: return RGBA8(255, 255, 255, 255);
 		case VT_SUBTITLE_BORDER_YELLOW: return RGBA8(255, 210, 48, 255);
+		case VT_SUBTITLE_BORDER_CYAN: return RGBA8(28, 218, 235, 255);
+		case VT_SUBTITLE_BORDER_ORANGE: return RGBA8(242, 116, 44, 255);
+		case VT_SUBTITLE_BORDER_BLUE: return RGBA8(46, 112, 232, 255);
+		case VT_SUBTITLE_BORDER_GRAY: return RGBA8(90, 102, 112, 255);
 		default: return RGBA8(0, 0, 0, 255);
 	}
 }
@@ -369,6 +402,10 @@ static unsigned subtitle_preview_background_color(void) {
 		case VT_SUBTITLE_BACKGROUND_BLACK: return RGBA8(0, 0, 0, 198);
 		case VT_SUBTITLE_BACKGROUND_MIDNIGHT: return RGBA8(3, 18, 34, 210);
 		case VT_SUBTITLE_BACKGROUND_WHITE: return RGBA8(255, 255, 255, 205);
+		case VT_SUBTITLE_BACKGROUND_NAVY: return RGBA8(3, 26, 52, 214);
+		case VT_SUBTITLE_BACKGROUND_BURGUNDY: return RGBA8(50, 5, 18, 214);
+		case VT_SUBTITLE_BACKGROUND_FOREST: return RGBA8(4, 38, 28, 214);
+		case VT_SUBTITLE_BACKGROUND_SMOKE: return RGBA8(38, 45, 50, 205);
 		default: return 0;
 	}
 }
@@ -389,10 +426,10 @@ static unsigned subtitle_preview_font_size(void) {
 
 static void draw_subtitle_preview(vita2d_font *label_font) {
 	static const char *const samples[] = {
-		"The network is quiet tonight.",
-		"That does not mean nobody is listening.",
-		"Keep moving. We are almost there.",
-		"I will contact you on the other side."
+		"Signal // 記憶 // 기억 // Память",
+		"接続は安定しています。",
+		"네트워크 신호가 안정적입니다.",
+		"Система готова к воспроизведению."
 	};
 	const int viewport_x = SUBTITLE_PREVIEW_X;
 	const int viewport_y = SUBTITLE_PREVIEW_Y + 24;
@@ -507,7 +544,7 @@ static void draw_screen(int tab, int cursor, float focus,
 	                    UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	SettingRow rows[8];
+	SettingRow rows[9];
 	int row_count = rows_for_tab(tab, rows);
 	int row_limit = visible_rows_for_tab(tab);
 	int first_row = first_visible_row(cursor, row_count, row_limit);
@@ -586,6 +623,8 @@ static void draw_screen(int tab, int cursor, float focus,
 			draw_value(small, y, row_width, subtitle_font_label(rows[i].value));
 		else if (rows[i].kind == ROW_SUBTITLE_FOREGROUND)
 			draw_value(small, y, row_width, subtitle_foreground_label(rows[i].value));
+		else if (rows[i].kind == ROW_SUBTITLE_BORDER)
+			draw_value(small, y, row_width, subtitle_border_label(rows[i].value));
 		else if (rows[i].kind == ROW_SUBTITLE_BACKGROUND)
 			draw_value(small, y, row_width, subtitle_background_label(rows[i].value));
 		else if (rows[i].kind == ROW_SUBTITLE_SIZE)
@@ -706,7 +745,7 @@ int ui_settings_screen(void) {
 				tab = (tab + 1) % TAB_COUNT;
 				cursor = 0;
 			}
-			SettingRow rows[8];
+			SettingRow rows[9];
 			int count = rows_for_tab(tab, rows);
 			if ((nav & SCE_CTRL_UP) && cursor > 0) cursor--;
 			if ((nav & SCE_CTRL_DOWN) && cursor + 1 < count) cursor++;
@@ -757,7 +796,7 @@ int ui_settings_screen(void) {
 				}
 			}
 		} else ui_nav_repeat_reset(&nav_repeat);
-		SettingRow focus_rows[8];
+		SettingRow focus_rows[9];
 		int focus_count = rows_for_tab(tab, focus_rows);
 		int focus_first = first_visible_row(cursor, focus_count,
 		                                    visible_rows_for_tab(tab));
