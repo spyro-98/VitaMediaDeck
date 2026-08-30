@@ -1199,11 +1199,12 @@ void vt_video_thumbnail_resume(void) {
 	if (!g_thumbnail.initialized) return;
 	thumbnail_lock();
 	g_thumbnail.enabled = 1;
-	/* suspend() raises active_cancel even when the worker is already idle. If it
-	 * is not cleared here, the next local/remote factory receives a permanently
-	 * pre-cancelled flag and every cover fails after the first scene change. An
-	 * in-flight worker keeps ownership until it acknowledges the cancellation. */
-	if (!g_thumbnail.worker_busy) g_thumbnail.active_cancel = 0;
+	/* suspend() increments generation before raising active_cancel. Therefore an
+	 * old in-flight request remains cancelled by its generation mismatch even
+	 * after this shared flag is cleared. Waiting for worker_busy here created a
+	 * race on mini-player/full-player return: the new grid inherited cancel=1 and
+	 * could not request any cover until another scene transition. */
+	g_thumbnail.active_cancel = 0;
 	thumbnail_unlock();
 }
 

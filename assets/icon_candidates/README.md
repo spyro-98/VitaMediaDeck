@@ -17,18 +17,19 @@ theme-specific iterations:
    amber, and teal particle reassembly on pitch-black OLED
 10. `10-memory-shell.png` — fractured obsidian-glass memory shell with a
     spectral playback aperture, silver/cyan dust, and rare amber data sparks
+11. `11-memory-aperture.png` — asymmetric optical aperture with three signal
+    membranes, cyan particle reassembly, fine HUD traces, and OLED-black space
 
 Each numbered PNG is a PS Vita-ready 128x128 indexed PNG. The `masters/`
 directory contains the original first-round artwork; later high-resolution
-masters live in `assets/branding/`. Candidate 8 is retained as an earlier
-exploration. Candidate 10 is active at `sce_sys/icon0.png` and is mirrored to
-the three legacy branding filenames.
-Its glass shell, dark central iris, negative-space playback aperture, fine
-particle dissolution, and pitch-black field follow the selected visual
-references. The master is
-`assets/branding/vitamediadeck-memory-shell-master.png`; the mark is assembled
-from optical material instead of drawn as a solid cartoon-style button.
+masters live in `assets/branding/`. Earlier candidates remain available for
+comparison. Candidate 11 is active at `sce_sys/icon0.png` and is mirrored to
+the three legacy branding filenames. Its asymmetric black iris, optical signal
+membranes, cyan particle dissolution, sparse amber telemetry, and pitch-black
+field match the current UI more closely than the previous fractured glass
+shell. The master is
+`assets/branding/vitamediadeck-memory-aperture-master.png`.
 
-`comparison.png` records the original five-concept review. Candidates 6–10
+`comparison.png` records the original five-concept review. Candidates 6–11
 were produced during the later Signal / Shell pass and are documented by their
 numbered previews and full-resolution masters.
