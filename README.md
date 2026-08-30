@@ -35,6 +35,13 @@ design rationale and multilingual typography contract are
 documented in
 [`mds/UI_SIGNAL_SHELL.md`](mds/UI_SIGNAL_SHELL.md).
 
+The active **memory-aperture** icon master is stored in
+[`assets/branding/vitamediadeck-memory-aperture-master.png`](assets/branding/vitamediadeck-memory-aperture-master.png).
+Its indexed 128 x 128 runtime export is mirrored to `sce_sys/icon0.png`,
+`icon0alpha.png`, `vitamediadecklogo.png`, and `vitamediadecklogoalpha.png`, so
+the LiveArea tile, launcher artwork, and in-app branding share one visual
+language.
+
 > The local/network redesign is under active development. The application and
 > reusable player module compile as a complete VPK, but the new remote backends
 > still require broad validation on physical Vita hardware and different
