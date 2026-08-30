@@ -34,6 +34,16 @@ mbedtls libxml2 zstd libsmb2
 
 The exact archive order in `CMakeLists.txt` is authoritative.
 
+## Build the pinned Jellyfin JSON parser
+
+```sh
+./tools/build-jansson-vita.sh
+```
+
+The script builds Jansson 2.15.1 without position-independent-code relocations,
+which the Vita SELF converter cannot encode. It verifies the source checksum
+and rejects an output archive containing `R_ARM_BASE_PREL` or `R_ARM_GOT_BREL`.
+
 ## Build pinned libssh2
 
 ```sh
@@ -74,6 +84,7 @@ export VITAMEDIADECK_H264_VITA_ROOT=/absolute/ffmpeg-prefix
 cmake -S . -B build \
   -DVITAMEDIADECK_H264_VITA_ROOT="$VITAMEDIADECK_H264_VITA_ROOT" \
   -DVITAMEDIADECK_LIBSSH2_ROOT=/absolute/libssh2-prefix \
+  -DVITAMEDIADECK_JANSSON_ROOT=/absolute/jansson-prefix \
   -DVITAMEDIADECK_HTTPS_CURL_ROOT=/absolute/curl-mbedtls-prefix
 ```
 

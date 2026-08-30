@@ -4,15 +4,17 @@
 
 VitaMediaDeck is a native media client for homebrew-enabled PlayStation Vita
 systems. It plays user-provided local media and streams user-authorized video
-from authenticated WebDAV, SFTP, and SMB servers. It is self-contained and does
-not depend on a companion transcoding or discovery service.
+from Jellyfin or authenticated WebDAV, SFTP, and SMB servers. Jellyfin is the
+only supported media-server provider; file transports require no companion
+service.
 
 ## Product principles
 
 1. **The user chooses the source.** VitaMediaDeck browses only local storage and
    explicitly configured servers.
 2. **Authentication is explicit.** Remote sources require a username and a
-   password. SFTP additionally requires host-key confirmation.
+   password. Jellyfin returns a session-only access token, while SFTP
+   additionally requires host-key confirmation.
 3. **Passwords are ephemeral by default.** Secrets never enter `sources.bin`,
    logs, or media history. An explicit opt-in stores them unencrypted in the
    separately advertised `network/passwords.txt` file.
@@ -35,6 +37,8 @@ not depend on a companion transcoding or discovery service.
 - Authenticated WebDAV browsing over verified HTTPS.
 - Authenticated SFTP browsing with SHA-256 host-key pinning.
 - Authenticated SMB2/SMB3 browsing.
+- Authenticated Jellyfin video-library browsing, server posters, and seekable
+  direct play over verified HTTPS.
 - Seekable remote H.264 playback with optional AAC audio.
 - Per-video local and authenticated-remote playback resume history.
 - Local and remote video-cell previews from artwork, embedded covers, or a
@@ -51,6 +55,7 @@ not depend on a companion transcoding or discovery service.
 - Credential synchronization, cloud accounts, or a hosted VitaMediaDeck service.
 - DRM, decryption, access-control bypasses, or protected media workflows.
 - Anonymous/guest remote sources.
+- Jellyfin transcoding, HLS, live TV, music libraries, and server discovery.
 - A custom H.264 codec or undocumented firmware decoder interface.
 
 ## Supported source contract
@@ -72,6 +77,15 @@ backend must return a fresh cursor for every `open` and must not share mutable
 offsets between handles.
 
 ## Remote protocol requirements
+
+### Jellyfin
+
+- HTTPS only, with public-CA validation or an explicitly confirmed SPKI pin.
+- Username/password authentication through the Jellyfin API.
+- Access token and user identifier retained only for the running session.
+- Video-library browsing and Primary-image cover retrieval.
+- Original-file direct play with authenticated byte ranges; no HLS or server
+  transcoding in the current provider.
 
 ### WebDAV
 

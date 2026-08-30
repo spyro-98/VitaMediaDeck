@@ -332,8 +332,21 @@ int vt_network_list(const VtNetworkSource *source,
 		case VT_NETWORK_SMB:
 			return vt_smb_list(source, credential, path, entries, capacity,
 			                   detail, detail_size);
+		case VT_NETWORK_JELLYFIN:
+			return vt_jellyfin_list(source, credential, path, entries, capacity,
+			                        detail, detail_size);
 		default: return -1;
 	}
+}
+
+int vt_network_prepare_source(const VtNetworkSource *source,
+	                          VtNetworkCredential *credential,
+	                          char *detail, size_t detail_size) {
+	if (!source || !credential) return -1;
+	if (detail && detail_size) detail[0] = '\0';
+	if (source->protocol == VT_NETWORK_JELLYFIN)
+		return vt_jellyfin_authenticate(source, credential, detail, detail_size);
+	return 0;
 }
 
 int vt_network_sftp_probe_fingerprint(const VtNetworkSource *source,
@@ -350,6 +363,20 @@ int vt_network_webdav_probe_public_key(const VtNetworkSource *source,
 	                                   char *detail, size_t detail_size) {
 	return vt_webdav_probe_public_key(source, credential, pin, pin_size,
 	                                  detail, detail_size);
+}
+
+int vt_network_https_probe_public_key(const VtNetworkSource *source,
+	                                  const VtNetworkCredential *credential,
+	                                  char *pin, size_t pin_size,
+	                                  char *detail, size_t detail_size) {
+	if (!source) return -1;
+	if (source->protocol == VT_NETWORK_WEBDAV)
+		return vt_webdav_probe_public_key(source, credential, pin, pin_size,
+		                                  detail, detail_size);
+	if (source->protocol == VT_NETWORK_JELLYFIN)
+		return vt_jellyfin_probe_public_key(source, pin, pin_size,
+		                                    detail, detail_size);
+	return -1;
 }
 
 static int network_factory_open_cancelable(void *opaque,
@@ -370,6 +397,10 @@ static int network_factory_open_cancelable(void *opaque,
 			return vt_smb_open_stream(&factory->source,
 			                          &factory->credential, factory->path, out,
 			                          cancel_flag);
+		case VT_NETWORK_JELLYFIN:
+			return vt_jellyfin_open_stream(&factory->source,
+			                               &factory->credential, factory->path, out,
+			                               cancel_flag);
 		default: return -1;
 	}
 }
@@ -391,6 +422,19 @@ int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	factory->factory.open = network_factory_open;
 	factory->factory.open_cancelable = network_factory_open_cancelable;
 	return 0;
+}
+
+int vt_network_fetch_artwork(const VtNetworkSource *source,
+	                         const VtNetworkCredential *credential,
+	                         const char *path, unsigned char **data,
+	                         size_t *size, volatile int *cancel_flag) {
+	if (!source || !data || !size) return -1;
+	*data = NULL;
+	*size = 0;
+	if (source->protocol == VT_NETWORK_JELLYFIN)
+		return vt_jellyfin_fetch_primary_image(source, credential, path,
+		                                       data, size, cancel_flag);
+	return VT_NETWORK_UNSUPPORTED_MEDIA;
 }
 
 static int suffix_ci(const char *name, const char *suffix) {
@@ -421,6 +465,7 @@ const char *vt_network_protocol_name(VtNetworkProtocol protocol) {
 		case VT_NETWORK_WEBDAV: return "WebDAV";
 		case VT_NETWORK_SFTP: return "SFTP";
 		case VT_NETWORK_SMB: return "SMB";
+		case VT_NETWORK_JELLYFIN: return "Jellyfin";
 		default: return "?";
 	}
 }
