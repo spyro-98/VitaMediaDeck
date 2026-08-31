@@ -64,7 +64,10 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 - Indexed H.264 cue seeking for startup, live seek, saved-position resume, and
   AAC track replacement without multi-stream linear-seek fallbacks. Jellyfin
   maps each cue hop to a directly aligned HTTP Range window and keeps its
-  prefetch worker alive across the decoder's temporary seek cancellation.
+  prefetch worker alive across the decoder's temporary seek cancellation. The
+  decoder validates both the first video frame and first audio packet before it
+  commits a live seek, reopening directly at the target if either cursor did
+  not actually land there.
 - Runtime switching between multiple AAC audio tracks and embedded SubRip,
   ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
 - Jellyfin text subtitles, including server-extracted embedded tracks, are
@@ -83,8 +86,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   player, artwork, metadata, shuffle, repeat, and seeking.
 - Player telemetry for backend, resolution, frame rate, and video bitrate,
   including a calculated fallback when the container omits bitrate metadata,
-  plus a colored timeline trace and numeric reserve for the currently resident
-  Jellyfin byte range.
+  plus a colored timeline trace and numeric reserve for the video cursor's
+  currently resident Jellyfin byte range. Independent audio read-ahead cannot
+  overwrite or flicker that HUD snapshot.
 - VitaTube-style controls: press Start to minimize, hold Start for OLED ECO
   mode, and hold Select for 900 ms to lock or unlock player input.
 
