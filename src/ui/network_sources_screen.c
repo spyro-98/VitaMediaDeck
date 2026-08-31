@@ -97,12 +97,30 @@ typedef struct {
 	char detail[192];
 } ListTask;
 
+typedef struct {
+	const VtNetworkSource *source;
+	const VtNetworkCredential *credential;
+	const char *path;
+	VtJellyfinMetadata *metadata;
+	volatile int cancel;
+	int result;
+	char detail[192];
+} MetadataTask;
+
 static int list_task(void *opaque) {
 	ListTask *task = opaque;
 	task->result = vt_network_list(task->source, task->credential, task->path,
 	                               task->entries, VT_NETWORK_MAX_ENTRIES,
 	                               task->detail, sizeof(task->detail));
 	return task->result < 0 ? task->result : 0;
+}
+
+static int metadata_task(void *opaque) {
+	MetadataTask *task = opaque;
+	task->result = vt_network_jellyfin_metadata(
+	    task->source, task->credential, task->path, task->metadata,
+	    task->detail, sizeof(task->detail), &task->cancel);
+	return task->result;
 }
 
 typedef struct {
@@ -386,6 +404,236 @@ static void draw_video_preview(vita2d_texture *texture, float x, float y,
 	                               width / source_w, height / source_h);
 }
 
+static void format_metadata_runtime(uint64_t runtime_ms, char out[32]) {
+	if (!runtime_ms) {
+		snprintf(out, 32, "--");
+		return;
+	}
+	uint64_t minutes = runtime_ms / 60000ULL;
+	if (minutes >= 60)
+		snprintf(out, 32, "%lluh %02llum", (unsigned long long)(minutes / 60),
+		         (unsigned long long)(minutes % 60));
+	else snprintf(out, 32, "%llum", (unsigned long long)minutes);
+}
+
+static void format_browser_entry_detail(const VtNetworkSource *source,
+	                                    const VtNetworkEntry *entry,
+	                                    char *out, size_t out_size) {
+	if (!out || !out_size || !entry) return;
+	if (entry->is_directory) {
+		snprintf(out, out_size, "%s", vt_i18n_str(VT_STR_NETWORK_FOLDER));
+		return;
+	}
+	if (source && source->protocol == VT_NETWORK_JELLYFIN &&
+	    (entry->production_year > 0 || entry->runtime_ms > 0 ||
+	     entry->community_rating > 0.0f)) {
+		char runtime[32] = "";
+		if (entry->runtime_ms) format_metadata_runtime(entry->runtime_ms, runtime);
+		if (entry->production_year > 0 && entry->community_rating > 0.0f)
+			snprintf(out, out_size, "%d  /  %s  /  %.1f",
+			         entry->production_year, runtime, entry->community_rating);
+		else if (entry->production_year > 0)
+			snprintf(out, out_size, "%d%s%s", entry->production_year,
+			         runtime[0] ? "  /  " : "", runtime);
+		else if (entry->community_rating > 0.0f)
+			snprintf(out, out_size, "%s%s%.1f", runtime,
+			         runtime[0] ? "  /  " : "", entry->community_rating);
+		else snprintf(out, out_size, "%s", runtime);
+		return;
+	}
+	if (entry->size >= 1024ULL * 1024ULL * 1024ULL)
+		snprintf(out, out_size, "%.2f GB",
+		         (double)entry->size / (1024.0 * 1024.0 * 1024.0));
+	else snprintf(out, out_size, "%.1f MB",
+	              (double)entry->size / (1024.0 * 1024.0));
+}
+
+static int draw_metadata_chip(vita2d_font *font, int x, int y,
+	                          const char *text, unsigned accent) {
+	if (!font || !text || !text[0]) return x;
+	int width = ui_font_text_width(font, UI_FONT_SMALL, text) + 20;
+	if (width > 152) width = 152;
+	vita2d_draw_rectangle(x, y, width, 26, VT_THEME_SURFACE_FOCUS);
+	vita2d_draw_rectangle(x, y, 2, 26, accent);
+	char fitted[96];
+	clip(font, UI_FONT_SMALL, text, fitted, sizeof(fitted), width - 14);
+	ui_font_draw_text(font, x + 9, y + 19, VT_THEME_TEXT,
+	                  UI_FONT_SMALL, fitted);
+	return x + width + 8;
+}
+
+static void draw_metadata_field(vita2d_font *font, int x, int baseline,
+	                            int width, const char *label,
+	                            const char *value) {
+	if (!font || !label) return;
+	ui_font_draw_text(font, x, baseline, VT_THEME_COLD_LIGHT,
+	                  UI_FONT_SMALL, label);
+	char fitted[256];
+	clip(font, UI_FONT_SMALL, value && value[0] ? value : "--", fitted,
+	     sizeof(fitted), width - 126);
+	ui_font_draw_text(font, x + 126, baseline, VT_THEME_TEXT_MUTED,
+	                  UI_FONT_SMALL, fitted);
+}
+
+static int show_jellyfin_metadata(const VtNetworkSource *source,
+	                              const VtNetworkCredential *credential,
+	                              const VtNetworkEntry *entry,
+	                              const VtJellyfinMetadata *metadata) {
+	if (!source || !credential || !entry || !metadata) return 0;
+	SceCtrlData controls, previous;
+	memset(&controls, 0, sizeof(controls));
+	sceCtrlPeekBufferPositive(0, &previous, 1);
+	ui_touch_reset();
+	for (;;) {
+		ui_mini_player_pump();
+		vt_video_thumbnail_pump();
+		vita2d_start_drawing();
+		vita2d_clear_screen();
+		ui_chrome_background(VT_THEME_BG, VT_THEME_COLD_LIGHT);
+		ui_brand_draw_header_placeholder(NULL, source->name);
+		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
+		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+		ui_action_button(38, 70, 146, 34, VT_THEME_SURFACE,
+		                 "Circle", vt_i18n_str(VT_STR_NETWORK_BACK), 0);
+		ui_scene_identity(204, 68, 508, "JF/META",
+		                  vt_i18n_str(VT_STR_NETWORK_DATA_RECORD), entry->name);
+		ui_action_button(734, 70, 190, 34, VT_THEME_SIGNAL,
+		                 "Cross", vt_i18n_str(VT_STR_NETWORK_PLAY), 1);
+
+		/* The selected record is reconstructed across two asymmetric panes. The
+		 * interrupted rail and sparse nodes carry the app's spectral material
+		 * language without competing with the poster or synopsis. */
+		ui_panel(38, 116, 296, 350, VT_THEME_SURFACE_RAISED,
+		         VT_THEME_COLD, 0);
+		ui_panel(354, 116, 570, 350, VT_THEME_SURFACE,
+		         VT_THEME_SIGNAL, 0);
+		vita2d_draw_rectangle(366, 130, 2, 318, VT_THEME_SIGNAL_DIM);
+		for (int node = 0; node < 6; node++) {
+			int y = 139 + node * 58;
+			vita2d_draw_rectangle(362, y, 10, 4,
+			                      node == 0 ? VT_THEME_SIGNAL_LIGHT
+			                                : VT_THEME_COLD_DIM);
+			vita2d_draw_rectangle(374, y + 1, 18 + node * 7, 1,
+			                      VT_THEME_BORDER_DIM);
+		}
+		vita2d_texture *preview = vt_video_thumbnail_get_remote_priority(
+		    source, credential, entry->path, entry->size, 200);
+		vita2d_draw_rectangle(50, 128, 272, 153, VT_THEME_MEDIA_BACKDROP);
+		if (preview) draw_video_preview(preview, 50, 128, 272, 153);
+		else draw_browser_icon(entry, 110, 144);
+		vita2d_draw_rectangle(50, 279, 272, 2, VT_THEME_SIGNAL_BRIGHT);
+
+		char title[256];
+		clip(body, UI_FONT_BODY,
+		     metadata->title[0] ? metadata->title : entry->name,
+		     title, sizeof(title), 516);
+		if (body) ui_font_draw_text(body, 390, 148, VT_THEME_SPECTRAL_LIGHT,
+		                            UI_FONT_BODY, title);
+		const char *secondary_title = metadata->series_name[0]
+		                            ? metadata->series_name
+		                            : metadata->original_title;
+		if (small && secondary_title[0] &&
+		    strcmp(secondary_title, metadata->title)) {
+			char original[256];
+			clip(small, UI_FONT_SMALL, secondary_title, original,
+			     sizeof(original), 510);
+			ui_font_draw_text(small, 390, 170, VT_THEME_TEXT_MUTED,
+			                  UI_FONT_SMALL, original);
+		}
+
+		if (small) {
+			char year[24] = "";
+			char runtime[32];
+			char rating[40] = "";
+			if (metadata->production_year > 0)
+				snprintf(year, sizeof(year), "%d", metadata->production_year);
+			format_metadata_runtime(metadata->runtime_ms, runtime);
+			if (metadata->community_rating > 0.0f)
+				snprintf(rating, sizeof(rating), "%.1f / 10",
+				         metadata->community_rating);
+			int chip_x = 390;
+			chip_x = draw_metadata_chip(small, chip_x, 181, year,
+			                            VT_THEME_SIGNAL_BRIGHT);
+			chip_x = draw_metadata_chip(small, chip_x, 181, runtime,
+			                            VT_THEME_COLD_LIGHT);
+			chip_x = draw_metadata_chip(small, chip_x, 181, rating,
+			                            VT_THEME_WARM_LIGHT);
+			(void)draw_metadata_chip(small, chip_x, 181,
+			                         metadata->official_rating,
+			                         VT_THEME_SPECTRAL);
+			if (metadata->tagline[0]) {
+				char tagline[256];
+				clip(small, UI_FONT_SMALL, metadata->tagline, tagline,
+				     sizeof(tagline), 510);
+				ui_font_draw_text(small, 390, 226, VT_THEME_COLD_LIGHT,
+				                  UI_FONT_SMALL, tagline);
+			}
+			ui_font_draw_text(small, 390, 250, VT_THEME_SIGNAL_LIGHT,
+			                  UI_FONT_SMALL, vt_i18n_str(VT_STR_NETWORK_OVERVIEW));
+			draw_wrapped(small, UI_FONT_SMALL,
+			             metadata->overview[0] ? metadata->overview
+			                                   : vt_i18n_str(VT_STR_NETWORK_NO_OVERVIEW),
+			             390, 273, 510, 18, 5, VT_THEME_TEXT);
+			draw_metadata_field(small, 390, 375, 510,
+			                    vt_i18n_str(VT_STR_NETWORK_STUDIOS), metadata->studios);
+			draw_metadata_field(small, 390, 397, 510,
+			                    vt_i18n_str(VT_STR_NETWORK_GENRES), metadata->genres);
+			draw_metadata_field(small, 390, 419, 510,
+			                    vt_i18n_str(VT_STR_NETWORK_DIRECTORS),
+			                    metadata->directors);
+			draw_metadata_field(small, 390, 441, 510,
+			                    vt_i18n_str(VT_STR_NETWORK_CAST), metadata->cast);
+
+			char audio_count[48], subtitle_count[64];
+			snprintf(audio_count, sizeof(audio_count), "%d",
+			         metadata->audio_track_count);
+			snprintf(subtitle_count, sizeof(subtitle_count), "%d  /  %d %s",
+			         metadata->subtitle_track_count,
+			         metadata->external_subtitle_count,
+			         vt_i18n_str(VT_STR_NETWORK_EXTERNAL_SUBTITLES));
+			int state_x = 58;
+			if (metadata->favorite)
+				state_x = draw_metadata_chip(
+				    small, state_x, 292, vt_i18n_str(VT_STR_NETWORK_FAVORITE),
+				    VT_THEME_WARM_LIGHT);
+			if (metadata->played)
+				(void)draw_metadata_chip(
+				    small, state_x, 292, vt_i18n_str(VT_STR_NETWORK_PLAYED),
+				    VT_THEME_SUCCESS);
+			draw_metadata_field(small, 58, 344, 254,
+			                    vt_i18n_str(VT_STR_NETWORK_AUDIO_TRACKS), audio_count);
+			draw_wrapped(small, UI_FONT_SMALL, metadata->audio_summary,
+			             58, 368, 254, 18, 2, VT_THEME_TEXT_MUTED);
+			draw_metadata_field(small, 58, 410, 254,
+			                    vt_i18n_str(VT_STR_NETWORK_SUBTITLE_TRACKS),
+			                    subtitle_count);
+			draw_wrapped(small, UI_FONT_SMALL, metadata->subtitle_summary,
+			             58, 434, 254, 18, 1, VT_THEME_TEXT_MUTED);
+		}
+		ui_mini_player_draw();
+		vita2d_end_drawing();
+		vita2d_wait_rendering_done();
+		vita2d_swap_buffers();
+
+		sceCtrlPeekBufferPositive(0, &controls, 1);
+		unsigned pressed = controls.buttons & ~previous.buttons;
+		previous = controls;
+		ui_mini_player_handle_buttons(&pressed);
+		UiTouchEvent touch;
+		unsigned touch_flags = ui_touch_poll(&touch);
+		if (ui_mini_player_handle_touch(touch_flags, &touch)) touch_flags = 0;
+		if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
+		    ui_touch_hit_rect(touch.x, touch.y, 734, 70, 190, 34))
+			pressed |= SCE_CTRL_CROSS;
+		else if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
+		         ui_touch_hit_rect(touch.x, touch.y, 38, 70, 146, 34))
+			pressed |= SCE_CTRL_CIRCLE;
+		if (pressed & SCE_CTRL_CROSS) return 1;
+		if (pressed & SCE_CTRL_CIRCLE) return 0;
+		sceKernelDelayThread(1000);
+	}
+}
+
 static void draw_browser(const VtNetworkSource *source, const char *path,
 	                     const VtNetworkCredential *credential,
 	                     const VtNetworkEntry *entries, int count,
@@ -414,8 +662,12 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		const char *view_hint = grid_mode
 		                        ? vt_i18n_str(VT_STR_NETWORK_VIEW_GRID)
 		                        : vt_i18n_str(VT_STR_NETWORK_VIEW_LIST);
-		char hint[64];
-		snprintf(hint, sizeof(hint), "R1  %s", view_hint);
+		char hint[128];
+		if (source->protocol == VT_NETWORK_JELLYFIN && selected >= 0 &&
+		    selected < count && entries[selected].is_video)
+			snprintf(hint, sizeof(hint), "Triangle  %s   R1  %s",
+			         vt_i18n_str(VT_STR_NETWORK_INFO), view_hint);
+		else snprintf(hint, sizeof(hint), "R1  %s", view_hint);
 		int hint_width = ui_font_text_width(small, UI_FONT_SMALL, hint);
 		vita2d_draw_rectangle(LIST_X + LIST_W - hint_width - 28, 73,
 		                      hint_width + 20, 24, VT_THEME_SURFACE_RAISED);
@@ -472,13 +724,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			}
 			if (small) {
 				char detail[64];
-				if (entry->is_directory) snprintf(detail, sizeof(detail), "%s",
-				                                      vt_i18n_str(VT_STR_NETWORK_FOLDER));
-				else if (entry->size >= 1024ULL * 1024ULL * 1024ULL)
-					snprintf(detail, sizeof(detail), "%.2f GB",
-					         (double)entry->size / (1024.0 * 1024.0 * 1024.0));
-				else snprintf(detail, sizeof(detail), "%.1f MB",
-				              (double)entry->size / (1024.0 * 1024.0));
+				format_browser_entry_detail(source, entry, detail, sizeof(detail));
 				int width = ui_font_text_width(small, UI_FONT_SMALL, detail);
 				ui_font_draw_text(small, LIST_X + LIST_W - width - 18, y + 31,
 				                  VT_THEME_TEXT_MUTED, UI_FONT_SMALL, detail);
@@ -533,14 +779,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 				ui_font_draw_text(small, x + 12, y + 126, VT_THEME_TEXT,
 				                  UI_FONT_SMALL, title);
 				char detail[64];
-				if (entry->is_directory)
-					snprintf(detail, sizeof(detail), "%s",
-					         vt_i18n_str(VT_STR_NETWORK_FOLDER));
-				else if (entry->size >= 1024ULL * 1024ULL * 1024ULL)
-					snprintf(detail, sizeof(detail), "%.2f GB",
-					         (double)entry->size / (1024.0 * 1024.0 * 1024.0));
-				else snprintf(detail, sizeof(detail), "%.1f MB",
-				              (double)entry->size / (1024.0 * 1024.0));
+				format_browser_entry_detail(source, entry, detail, sizeof(detail));
 				ui_font_draw_text(small, x + 12, y + 148, VT_THEME_TEXT_MUTED,
 				                  UI_FONT_SMALL, detail);
 			}
@@ -1020,6 +1259,29 @@ static int load_directory(const VtNetworkSource *source,
 	return 0;
 }
 
+static int load_jellyfin_metadata(const VtNetworkSource *source,
+	                               const VtNetworkCredential *credential,
+	                               const char *path,
+	                               VtJellyfinMetadata *metadata) {
+	MetadataTask task = {
+		.source = source,
+		.credential = credential,
+		.path = path,
+		.metadata = metadata,
+		.result = -1
+	};
+	int ret = ui_loading_run(vt_i18n_str(VT_STR_NETWORK_METADATA_LOADING),
+	                         metadata_task, &task, &task.cancel, NULL, NULL);
+	if (ret < 0 || task.result < 0) {
+		ui_message_show(vt_i18n_str(VT_STR_NETWORK_METADATA_FAILED),
+		                task.detail[0] ? task.detail
+		                               : vt_i18n_str(VT_STR_NETWORK_READ_FAILED),
+		                2600);
+		return task.result < 0 ? task.result : ret;
+	}
+	return 0;
+}
+
 static int prepare_https_trust(VtNetworkSource *source,
 	                           const VtNetworkCredential *credential) {
 	if ((source->protocol != VT_NETWORK_WEBDAV &&
@@ -1101,6 +1363,10 @@ static int browse_source(const VtNetworkSource *source,
 	int grid_mode = vt_preferences_file_browser_grid();
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
+	VtJellyfinMetadata metadata_cache;
+	memset(&metadata_cache, 0, sizeof(metadata_cache));
+	char metadata_path[VT_NETWORK_PATH_MAX] = "";
+	int metadata_valid = 0;
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
 	SceCtrlData controls, previous;
@@ -1157,6 +1423,21 @@ static int browse_source(const VtNetworkSource *source,
 			top = 0;
 			ui_focus_motion_reset(&focus_motion);
 		}
+		if ((pressed & SCE_CTRL_TRIANGLE) && count > 0 &&
+		    source->protocol == VT_NETWORK_JELLYFIN &&
+		    entries[selected].is_video) {
+			VtNetworkEntry *entry = &entries[selected];
+			if (!metadata_valid || strcmp(metadata_path, entry->path)) {
+				metadata_valid = load_jellyfin_metadata(
+				    source, credential, entry->path, &metadata_cache) == 0;
+				if (metadata_valid)
+					snprintf(metadata_path, sizeof(metadata_path), "%s", entry->path);
+			}
+			if (metadata_valid &&
+			    show_jellyfin_metadata(source, credential, entry, &metadata_cache))
+				pressed |= SCE_CTRL_CROSS;
+			network_resync_input(&previous, &nav_repeat);
+		}
 		unsigned int nav = ui_nav_repeat_update(
 		    &nav_repeat, pressed, controls.buttons, controls.lx, controls.ly,
 		    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
@@ -1208,12 +1489,24 @@ static int browse_source(const VtNetworkSource *source,
 				network_resync_input(&previous, &nav_repeat);
 				continue;
 			} else if (entry->is_video) {
+				if (source->protocol == VT_NETWORK_JELLYFIN &&
+				    (!metadata_valid || strcmp(metadata_path, entry->path))) {
+					metadata_valid = load_jellyfin_metadata(
+					    source, credential, entry->path, &metadata_cache) == 0;
+					if (metadata_valid)
+						snprintf(metadata_path, sizeof(metadata_path), "%s",
+						         entry->path);
+				}
 				if (selection) {
 					memset(selection, 0, sizeof(*selection));
 					selection->source = *source;
 					selection->credential = *credential;
 					snprintf(selection->path, sizeof(selection->path), "%s", entry->path);
 					snprintf(selection->title, sizeof(selection->title), "%s", entry->name);
+					if (metadata_valid && !strcmp(metadata_path, entry->path)) {
+						selection->jellyfin_metadata = metadata_cache;
+						selection->has_jellyfin_metadata = 1;
+					}
 				}
 				vt_video_thumbnail_suspend();
 				free(entries);

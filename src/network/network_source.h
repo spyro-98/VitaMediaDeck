@@ -17,6 +17,7 @@
 #define VT_NETWORK_USER_ID_MAX 64
 #define VT_NETWORK_FINGERPRINT_MAX 96
 #define VT_NETWORK_TLS_PIN_MAX 64
+#define VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES 16
 
 typedef enum {
 	VT_NETWORK_WEBDAV = 1,
@@ -54,10 +55,52 @@ typedef struct {
 	char name[256];
 	char path[VT_NETWORK_PATH_MAX];
 	uint64_t size;
+	uint64_t runtime_ms;
+	int production_year;
+	float community_rating;
 	int is_directory;
 	int is_video;
 	int is_audio;
 } VtNetworkEntry;
+
+typedef struct {
+	int stream_index;
+	int is_default;
+	int is_forced;
+	char language[16];
+	char title[96];
+	char codec[16];
+} VtJellyfinSubtitleTrack;
+
+/* Rich provider data is loaded only for the focused item. Keeping it outside
+ * VtNetworkEntry avoids multiplying synopsis and cast storage by every item in
+ * a large library page. */
+typedef struct {
+	char title[256];
+	char original_title[256];
+	char tagline[256];
+	char overview[1536];
+	char genres[256];
+	char studios[192];
+	char directors[192];
+	char cast[384];
+	char official_rating[32];
+	char series_name[160];
+	char media_source_id[VT_NETWORK_USER_ID_MAX];
+	char audio_summary[256];
+	char subtitle_summary[256];
+	uint64_t runtime_ms;
+	int production_year;
+	float community_rating;
+	float critic_rating;
+	int audio_track_count;
+	int subtitle_track_count;
+	int favorite;
+	int played;
+	VtJellyfinSubtitleTrack external_subtitles[
+		VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES];
+	int external_subtitle_count;
+} VtJellyfinMetadata;
 
 typedef struct {
 	/* Sequence is odd while a cursor publishes a new cache snapshot. */
@@ -76,6 +119,9 @@ typedef struct {
 	VtNetworkCredential credential;
 	char path[VT_NETWORK_PATH_MAX];
 	VtNetworkBufferTelemetry buffer;
+	char jellyfin_media_source_id[VT_NETWORK_USER_ID_MAX];
+	int jellyfin_subtitle_index;
+	int jellyfin_subtitle_stream;
 } VtNetworkStreamFactory;
 
 enum {
@@ -137,6 +183,17 @@ int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	                               const VtNetworkSource *source,
 	                               const VtNetworkCredential *credential,
 	                               const char *path);
+
+int vt_network_jellyfin_metadata(const VtNetworkSource *source,
+	                              const VtNetworkCredential *credential,
+	                              const char *path, VtJellyfinMetadata *metadata,
+	                              char *detail, size_t detail_size,
+	                              volatile int *cancel_flag);
+
+int vt_network_jellyfin_subtitle_stream_factory_init(
+	VtNetworkStreamFactory *factory, const VtNetworkSource *source,
+	const VtNetworkCredential *credential, const char *item_path,
+	const char *media_source_id, int subtitle_stream_index);
 
 /* Returns provider artwork in an allocated buffer. The caller owns `data`.
  * File-oriented providers return VT_NETWORK_UNSUPPORTED_MEDIA. */
