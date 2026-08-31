@@ -16,6 +16,17 @@ typedef struct VtDecoderStreamHandle {
 	void (*abort)(void *opaque);
 } VtDecoderStreamHandle;
 
+/* Optional transport telemetry for a bounded seekable cache. The range is an
+ * exclusive byte interval in the source file; it deliberately describes what
+ * is resident now rather than implying that the entire prefix was downloaded. */
+typedef struct VtDecoderBufferStatus {
+	uint64_t source_size;
+	uint64_t range_start;
+	uint64_t range_end;
+	uint32_t resident_bytes;
+	uint32_t capacity_bytes;
+} VtDecoderBufferStatus;
+
 typedef struct VtDecoderStreamFactory {
 	void *opaque;
 	int (*open)(void *opaque, VtDecoderStreamHandle *out);
@@ -24,6 +35,8 @@ typedef struct VtDecoderStreamFactory {
 	 * callback so local and remote opens can be interrupted cooperatively. */
 	int (*open_cancelable)(void *opaque, VtDecoderStreamHandle *out,
 	                       volatile int *cancel_flag);
+	/* Optional lock-free snapshot of the transport's current bounded cache. */
+	int (*buffer_status)(void *opaque, VtDecoderBufferStatus *out);
 	/* Optional non-owning native path for local libavformat consumers. Remote
 	 * factories leave this NULL and retain the isolated custom-AVIO route. */
 	const char *local_path;

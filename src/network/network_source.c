@@ -400,13 +400,38 @@ static int network_factory_open_cancelable(void *opaque,
 		case VT_NETWORK_JELLYFIN:
 			return vt_jellyfin_open_stream(&factory->source,
 			                               &factory->credential, factory->path, out,
-			                               cancel_flag);
+			                               cancel_flag, &factory->buffer);
 		default: return -1;
 	}
 }
 
 static int network_factory_open(void *opaque, VtDecoderStreamHandle *out) {
 	return network_factory_open_cancelable(opaque, out, NULL);
+}
+
+static int network_factory_buffer_status(void *opaque,
+	                                     VtDecoderBufferStatus *out) {
+	VtNetworkStreamFactory *factory = opaque;
+	if (!factory || !out || factory->source.protocol != VT_NETWORK_JELLYFIN)
+		return -1;
+	for (int attempt = 0; attempt < 4; attempt++) {
+		uint32_t before = factory->buffer.sequence;
+		__sync_synchronize();
+		if (before & 1U) continue;
+		VtDecoderBufferStatus snapshot = {
+			.source_size = factory->buffer.source_size,
+			.range_start = factory->buffer.range_start,
+			.range_end = factory->buffer.range_end,
+			.resident_bytes = factory->buffer.resident_bytes,
+			.capacity_bytes = factory->buffer.capacity_bytes
+		};
+		__sync_synchronize();
+		if (before == factory->buffer.sequence) {
+			*out = snapshot;
+			return snapshot.source_size > 0 ? 0 : -1;
+		}
+	}
+	return -1;
 }
 
 int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
@@ -421,6 +446,8 @@ int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	factory->factory.opaque = factory;
 	factory->factory.open = network_factory_open;
 	factory->factory.open_cancelable = network_factory_open_cancelable;
+	if (source->protocol == VT_NETWORK_JELLYFIN)
+		factory->factory.buffer_status = network_factory_buffer_status;
 	return 0;
 }
 
