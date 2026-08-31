@@ -24,6 +24,8 @@ int ui_runtime_is_ready(void);
 #define UI_FONT_SMALL   16
 #define UI_FONT_BODY    20
 #define UI_FONT_DISPLAY 28
+#define UI_FONT_SUBTITLE_LARGE 32
+#define UI_FONT_SUBTITLE_EXTRA_LARGE 40
 
 /* Resources shared for the whole session, owned by ui_runtime. */
 vita2d_font *ui_runtime_font(unsigned int size);
