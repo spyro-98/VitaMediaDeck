@@ -71,8 +71,8 @@ legacy VitaSDK OpenSSL libcurl is intentionally not a release dependency.
 
 The script clones pinned FFmpeg and wiliwili revisions into a temporary
 directory, verifies the Vita patch checksum, enables the required H.264/AAC and
-MOV/MP4/Matroska pieces, builds with Cortex-A9/NEON `-O3` and LTO, verifies the
-`h264_vita` registration symbol, and installs below
+MOV/MP4/Matroska/SRT pieces, builds with Cortex-A9/NEON `-O3` and LTO, verifies
+the `h264_vita` registration symbol, and installs below
 `build/deps/ffmpeg-vita-hw`.
 
 Optional custom prefixes:

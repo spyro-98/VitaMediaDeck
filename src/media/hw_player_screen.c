@@ -425,8 +425,10 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			                  dragging ? fade_color(VT_THEME_BLUE_LIGHT, hud_opacity)
 			                           : text,
 			                  UI_FONT_SMALL, current);
-			int width = ui_font_text_width(small, UI_FONT_SMALL, duration);
-			ui_font_draw_text(small, TIMELINE_X + TIMELINE_W - width, 499,
+			int duration_width =
+			    ui_font_text_width(small, UI_FONT_SMALL, duration);
+			ui_font_draw_text(small,
+			                  TIMELINE_X + TIMELINE_W - duration_width, 499,
 			                  text, UI_FONT_SMALL, duration);
 			if (has_buffer) {
 				char reserve[64];
@@ -436,9 +438,9 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 				         (double)buffer.capacity_bytes / (1024.0 * 1024.0));
 				int reserve_width =
 				    ui_font_text_width(small, UI_FONT_SMALL, reserve);
-				ui_font_draw_text(small,
-				                  TIMELINE_X + (TIMELINE_W - reserve_width) / 2,
-				                  499,
+				int reserve_x = TIMELINE_X + TIMELINE_W - duration_width -
+				                reserve_width - 20;
+				ui_font_draw_text(small, reserve_x, 499,
 				                  fade_color(VT_THEME_SIGNAL_LIGHT, hud_opacity),
 				                  UI_FONT_SMALL, reserve);
 			}
@@ -814,6 +816,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	open.player = player;
 	open.config.stream = source->stream;
 	open.config.external_subtitle_count = source->external_subtitle_count;
+	open.config.external_subtitles_replace_embedded =
+	    source->external_subtitles_replace_embedded;
 	if (open.config.external_subtitle_count < 0)
 		open.config.external_subtitle_count = 0;
 	if (open.config.external_subtitle_count > VT_DECODER_MAX_SUBTITLE_TRACKS)
