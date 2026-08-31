@@ -288,17 +288,21 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			                 vt_network_protocol_name(source->protocol), 208);
 			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_FIELD_USERNAME),
 			                 source->username, 232);
-			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_SECURITY),
-			                 source->protocol == VT_NETWORK_SFTP
+			const char *security = source->protocol == VT_NETWORK_SFTP
 			                     ? vt_i18n_str(source->host_key_sha256[0]
 			                           ? VT_STR_NETWORK_HOST_KEY_PINNED
 			                           : VT_STR_NETWORK_HOST_KEY_UNVERIFIED)
-				                 : (source->protocol == VT_NETWORK_WEBDAV ||
-				                    source->protocol == VT_NETWORK_JELLYFIN)
+			                     : source->protocol == VT_NETWORK_JELLYFIN &&
+			                       !vt_network_jellyfin_uses_https(source)
+			                           ? vt_i18n_str(VT_STR_NETWORK_HTTP_UNENCRYPTED)
+			                     : (source->protocol == VT_NETWORK_WEBDAV ||
+			                        source->protocol == VT_NETWORK_JELLYFIN)
 			                           ? vt_i18n_str(source->tls_public_key_sha256[0]
 			                                 ? VT_STR_NETWORK_TLS_PINNED
 			                                 : VT_STR_NETWORK_TLS_CA_VERIFIED)
-			                     : vt_i18n_str(VT_STR_NETWORK_AUTH_SESSION), 256);
+			                           : vt_i18n_str(VT_STR_NETWORK_AUTH_SESSION);
+			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_SECURITY),
+			                 security, 256);
 		}
 		ui_action_button(642, 314, 272, 42, VT_THEME_BLUE_BRIGHT,
 		                 "Cross", vt_i18n_str(VT_STR_NETWORK_BROWSE), 0);
@@ -763,7 +767,7 @@ static void editor_change_protocol(VtNetworkSource *draft,
 	if (draft->protocol == VT_NETWORK_WEBDAV) draft->port = 443;
 	else if (draft->protocol == VT_NETWORK_SFTP) draft->port = 22;
 	else if (draft->protocol == VT_NETWORK_SMB) draft->port = 445;
-	else draft->port = 8920;
+	else draft->port = 8096;
 }
 
 static void editor_edit_field(VtNetworkSource *draft,
@@ -874,7 +878,9 @@ static int source_editor(VtNetworkSource *source,
 			          ? VT_STR_NETWORK_SFTP_SECURITY
 			    : draft.protocol == VT_NETWORK_SMB
 			          ? VT_STR_NETWORK_SMB_SECURITY
-			          : VT_STR_NETWORK_JELLYFIN_SECURITY);
+			    : vt_network_jellyfin_uses_https(&draft)
+			          ? VT_STR_NETWORK_JELLYFIN_SECURITY
+			          : VT_STR_NETWORK_JELLYFIN_HTTP_SECURITY);
 			draw_wrapped(small, UI_FONT_SMALL, detail, 58, 158, 188, 20, 2,
 			             VT_THEME_TEXT);
 			vita2d_draw_rectangle(58, 194, 188, 1, VT_THEME_BORDER);
@@ -1019,6 +1025,8 @@ static int prepare_https_trust(VtNetworkSource *source,
 	if ((source->protocol != VT_NETWORK_WEBDAV &&
 	     source->protocol != VT_NETWORK_JELLYFIN) ||
 	    source->tls_public_key_sha256[0]) return 0;
+	if (source->protocol == VT_NETWORK_JELLYFIN &&
+	    !vt_network_jellyfin_uses_https(source)) return 0;
 	WebDavPinTask task = { source, credential, { 0 }, { 0 } };
 	int ret = ui_loading_run(vt_i18n_str(VT_STR_NETWORK_CHECKING_TLS),
 	                         https_pin_task, &task, NULL, NULL, NULL);
