@@ -56,11 +56,12 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 | Cross | Browse the selected server; request a password if none is available. |
 | Circle | Return. |
 
-Jellyfin sources accept an HTTPS host, optional base path, username, and
-password. The app signs in when the source opens, keeps the returned access
-token only in memory, browses video libraries, and prefers the server Primary
-image for each grid cell. Playback requests the original compatible file with
-seekable byte ranges; server transcoding is not used.
+Jellyfin sources accept an HTTP or HTTPS host, optional base path, username,
+and password. A bare host on port 8096 uses HTTP; `http://` and `https://`
+select the transport explicitly. The app signs in when the source opens, keeps
+the returned access token only in memory, browses video libraries, and prefers
+the server Primary image for each grid cell. Playback requests the original
+compatible file with seekable byte ranges; server transcoding is not used.
 
 The password can be entered in the add/edit form and is retained while the app
 is running. The System setting can optionally remember it in plaintext at
