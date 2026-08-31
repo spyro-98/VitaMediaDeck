@@ -420,6 +420,8 @@ static int run_remote_video_fullscreen(
 	if (!selection) return -1;
 	vt_video_thumbnail_prepare_playback();
 	VtNetworkStreamFactory remote;
+	VtNetworkStreamFactory subtitle_factories[VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES];
+	memset(subtitle_factories, 0, sizeof(subtitle_factories));
 	int ret = vt_network_stream_factory_init(&remote, &selection->source,
 	                                         &selection->credential,
 	                                         selection->path);
@@ -437,10 +439,41 @@ static int run_remote_video_fullscreen(
 		.start_audio_track = start_audio_track,
 		.start_subtitle_track = start_subtitle_track
 	};
+	if (selection->has_jellyfin_metadata &&
+	    selection->jellyfin_metadata.media_source_id[0]) {
+		int count = selection->jellyfin_metadata.external_subtitle_count;
+		if (count > VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES)
+			count = VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES;
+		for (int i = 0; i < count; i++) {
+			const VtJellyfinSubtitleTrack *track =
+			    &selection->jellyfin_metadata.external_subtitles[i];
+			if (vt_network_jellyfin_subtitle_stream_factory_init(
+			        &subtitle_factories[source.external_subtitle_count],
+			        &selection->source, &selection->credential, selection->path,
+			        selection->jellyfin_metadata.media_source_id,
+			        track->stream_index) < 0)
+				continue;
+			VtDecoderExternalSubtitle *external =
+			    &source.external_subtitles[source.external_subtitle_count++];
+			external->stream =
+			    subtitle_factories[source.external_subtitle_count - 1].factory;
+			external->info.stream_index = 0;
+			external->info.is_default = track->is_default;
+			snprintf(external->info.language, sizeof(external->info.language),
+			         "%s", track->language);
+			snprintf(external->info.title, sizeof(external->info.title), "%s",
+			         track->title);
+			snprintf(external->info.codec, sizeof(external->info.codec), "%s",
+			         track->codec[0] ? track->codec : "subrip");
+		}
+	}
 	ret = vt_hw_player_screen_run(&source, last_position_ms,
 	                              last_duration_ms, last_audio_track,
 	                              last_subtitle_track);
 	memset(&remote.credential, 0, sizeof(remote.credential));
+	for (int i = 0; i < source.external_subtitle_count; i++)
+		memset(&subtitle_factories[i].credential, 0,
+		       sizeof(subtitle_factories[i].credential));
 	return ret;
 }
 
