@@ -60,10 +60,22 @@ typedef struct {
 } VtNetworkEntry;
 
 typedef struct {
+	/* Sequence is odd while a cursor publishes a new cache snapshot. */
+	volatile uint32_t sequence;
+	volatile uint32_t writer_lock;
+	uint64_t source_size;
+	uint64_t range_start;
+	uint64_t range_end;
+	uint32_t resident_bytes;
+	uint32_t capacity_bytes;
+} VtNetworkBufferTelemetry;
+
+typedef struct {
 	VtDecoderStreamFactory factory;
 	VtNetworkSource source;
 	VtNetworkCredential credential;
 	char path[VT_NETWORK_PATH_MAX];
+	VtNetworkBufferTelemetry buffer;
 } VtNetworkStreamFactory;
 
 enum {

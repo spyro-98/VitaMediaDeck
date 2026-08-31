@@ -72,7 +72,8 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 - Live video mini-player, persistent music mini-player, full-screen music
   player, artwork, metadata, shuffle, repeat, and seeking.
 - Player telemetry for backend, resolution, frame rate, and video bitrate,
-  including a calculated fallback when the container omits bitrate metadata.
+  including a calculated fallback when the container omits bitrate metadata,
+  plus a colored timeline trace for the currently resident Jellyfin byte range.
 - VitaTube-style controls: press Start to minimize, hold Start for OLED ECO
   mode, and hold Select for 900 ms to lock or unlock player input.
 
@@ -207,6 +208,9 @@ SMB test-server instructions are in
 - Jellyfin currently uses direct play of files compatible with the Vita decoder.
   Jellyfin transcoding, HLS, live TV, music libraries, and server discovery are
   not exposed yet.
+- Jellyfin direct play uses a fixed 1 MiB read-ahead cache for each active media
+  cursor. The cache is overwritten as playback advances or seeks, so RAM use is
+  bounded and does not increase with the duration or size of the movie.
 - Bitmap subtitles such as PGS and VobSub may be preserved by the Transcoder but
   are not rendered by the current app.
 - Separate video, audio, subtitle, and thumbnail cursors can duplicate reads on
