@@ -1,0 +1,104 @@
+---
+title: Playback
+description: The hardware-first H.264 pipeline, indexed seeking, track switching, and resume.
+icon: Film
+---
+
+VitaMediaDeck targets seekable H.264 video in MP4/M4V/MOV or Matroska
+containers, with optional mono/stereo AAC and embedded UTF-8 text subtitles.
+Local audio detection includes MP3, M4A, AAC, and WAV. Exact compatibility
+still depends on the selected decoder and the source media.
+
+## Decoder pipeline
+
+1. A local file or authenticated protocol backend returns independent, seekable
+   byte cursors.
+2. FFmpeg custom AVIO demuxes H.264 video and AAC audio from the same
+   container.
+3. `h264_vita` submits access units to the Vita hardware decoder.
+4. A software H.264 context is used only if the hardware path cannot open.
+5. AAC is decoded through the Vita audio decoder and feeds the audio master
+   clock.
+6. Video frames enter a bounded ready queue with their source PTS.
+7. The presenter reorders by PTS, drops frames that are already obsolete, and
+   hands NV12 surfaces to GXM/vita2d.
+8. Render completion is signaled before a surface is recycled.
+9. Stop/seek is cooperative; every worker is joined before input handles,
+   decoders, audio ports, or surfaces are destroyed.
+
+### Hardware acceleration
+
+Hardware-decoded NV12 surfaces stay in CDRAM and are sampled directly for the
+960×544 display — no per-frame CPU RGBA conversion or resize runs on the normal
+hardware path. The PowerVR GPU renders geometry and presentation; the complete
+public `h264_vita` decoder backend handles decode. FFmpeg software H.264
+remains an automatic fallback.
+
+### Decoder policy
+
+The **Playback** settings tab selects:
+
+- **Auto** — `h264_vita` preferred with FFmpeg software fallback. Default,
+  and permits hardware-to-software fallback.
+- **HW H.264** — hardware only.
+- **SW FFmpeg** — software only.
+
+The player displays an `HW DEC` or `SW DEC` badge, resolution, frame rate, and
+stream-reported video bitrate in both the HUD and the right information panel.
+
+## Indexed cue seeking
+
+The decoder consumes the backward keyframe chosen by FFmpeg, suppresses only
+the decoded preroll pictures, retains compatible frame pools, and reuses both
+demux cursors. It releases playback after one decoded frame or a bounded gate —
+seeks do not wait for a multi-frame startup cushion. This applies equally to
+startup, live seek, saved-position resume, and AAC track replacement.
+
+## Track switching
+
+- **Audio**: runtime switching across up to 16 AAC tracks. Changes seek the
+  existing audio cursor by its stable stream index; track metadata is
+  snapshotted from the already-open video demux rather than a separate probing
+  cursor.
+- **Subtitles**: embedded SubRip, ASS/SSA, WebVTT, MOV text (MP4 timed text),
+  plain-text, and MicroDVD cues, up to 16 tracks. See [Subtitles](subtitles).
+
+## Playback history
+
+Each local or remote video remembers its last useful playback position, keyed
+by a stable, non-secret per-media ID. If the player opens from that position,
+the R1 panel adds **Start from beginning**, which seeks to `00:00`, removes the
+saved resume point, and closes the panel. Local paths and non-secret remote
+endpoint/path fields produce stable, distinct IDs; credentials are excluded.
+
+## Stream factory contract
+
+The reusable player consumes a `VitaHwStreamFactory`. Every `open` call returns
+a new handle containing:
+
+- a blocking `read` operation;
+- `SEEK_SET`, `SEEK_CUR`, and `SEEK_END` support;
+- exact source size;
+- an idempotent close operation;
+- independent cursor state.
+
+Multiple handles may exist concurrently for the same file because video, the
+selected audio stream, an explicitly requested subtitle stream, and asynchronous
+cover extraction demux independently. A backend must return a fresh cursor for
+every `open` and must not share mutable offsets between handles.
+
+## Mini-player hand-off
+
+Short Start minimizes supported into the shared mini-player, which renders the
+live video surface. Position and the selected audio/subtitle tracks are
+preserved when fullscreen is restored. The compact player reopens through the
+same HW/SW decoder stack as fullscreen playback — it does not route video
+through the legacy audio player. Selecting the same active video in the grid
+restores it instead of restarting it.
+
+## Known limitations
+
+- Some recognized containers or codecs may still be rejected when they do not
+  meet the active Vita decoder contract.
+- Bitmap subtitles such as PGS and VobSub may be preserved by the Transcoder
+  but are not rendered by the app.

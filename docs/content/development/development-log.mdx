@@ -1,0 +1,80 @@
+---
+title: Development log
+description: Current status and completed work in the current development branch.
+icon: ListChecks
+---
+
+VitaMediaDeck is being developed as a local and authenticated-network media
+player. The application starts in Local Media and exposes only Local Media,
+Network Sources, Settings, and About from the shared sidebar.
+
+## Completed in the current development branch
+
+- Removed online catalogue, search, channel, subscription, favorite, download,
+  extraction, and conversion code from the application target.
+- Replaced the main application dispatcher with local and remote media flows.
+- Preserved the paged local library, local audio player, artwork, metadata,
+  resume history, and file actions.
+- Added a binary source database that never stores passwords.
+- Added WebDAV browsing with HTTPS certificate validation, XML `PROPFIND`
+  parsing, and verified byte-range reads.
+- Added SFTP browsing/read/seek through libssh2 with explicit SHA-256 host-key
+  confirmation.
+- Added authenticated SMB2/SMB3 browsing/read/positioned-I/O through libsmb2.
+- Added one protocol-neutral stream factory shared by local files and all
+  remote transports.
+- Added metadata discovery and in-player switching for multiple AAC audio and
+  embedded text-subtitle tracks over that same local/remote factory contract.
+- Added a bounded subtitle demux worker and Unicode-aware renderer that honors
+  subtitle font, foreground/background colors, size, outline, width,
+  minimum/maximum line count, and position preferences.
+- Added exact-size Inter Medium/SemiBold subtitle faces, native Vita
+  Japanese/Chinese/Korean PGF fallback, and a per-script Settings preview.
+- Rebuilt every shared UI surface around the original Signal / Shell design:
+  OLED-black planes, spectral acquisition geometry, scene identity blocks,
+  full-height navigation and player drawers, album-aware signal fields, and a
+  Reduce motion-safe ambient layer.
+- Restored the VitaTube player contract across music, video, and the compact
+  player: short Start minimization, Start-hold OLED ECO mode, and immediate
+  Select input lock. Local video resumes at the background position with the
+  previous audio/subtitle selections.
+- Rebalanced the palette around spectral cyan focus, teal machine telemetry,
+  silver-white particles, and deterministic memory-scan sweeps. Oxidized amber
+  remains only in warning semantics and sparse reflected telemetry.
+- Replaced the cartoon-like particle-play icon with a fractured obsidian-glass
+  memory shell whose central playback aperture stays legible in the indexed
+  128×128 LiveArea export.
+- Replaced that material-heavy shell with a sharper memory aperture matching
+  the final UI: three optical signal membranes, fine cyan particle reassembly,
+  sparse HUD arcs, pitch-black OLED negative space, and one restrained amber
+  telemetry trace. The literal Play button is no longer the dominant symbol.
+- Added progressive cover previews to local and authenticated-remote video
+  cells: sidecar artwork remains first, then embedded cover art, then a bounded
+  representative-frame fallback with a checked RGB565 disk cache.
+- Moved embedded-cover decoding ahead of stream analysis so indexed Matroska
+  and MP4 artwork cannot consume the thumbnail deadline while probing the main
+  movie. H.264 frame fallback now probes only when codec parameters are missing.
+- Verified a real converted movie whose syntactically valid embedded JPEG was
+  entirely black. Thumbnail cache v3 now rejects almost-black and near-uniform
+  embedded/cached pictures, seeks farther into long videos, uses fast bounded
+  H.264 frame decoding, and records origin plus elapsed time. Selected-cell
+  requests preempt stale viewport work; failed sidecars are not decoded every
+  render frame.
+
+## Current development status
+
+- Build and VPK packaging succeed locally with a pinned, license-complete
+  dependency set and no OpenSSL symbols.
+- Hardware H.264, track switching, subtitles, cover previews, resume history,
+  and the shared mini-player have been validated on a physical Vita.
+- Remote WebDAV, SFTP, and SMB validation continues on hardware and against
+  different server configurations.
+
+## Remaining work
+
+- Broad hardware validation of remote transports and cancellation paths.
+- Remote audio browsing.
+- A future shared packet dispatcher with bounded per-consumer queues to
+  eliminate duplicated steady-state payload on interleaved remote media.
+- Multi-language catalogue coverage beyond English, Italian, and the generated
+  Spanish, French, German, Portuguese, and Russian translation catalogs.

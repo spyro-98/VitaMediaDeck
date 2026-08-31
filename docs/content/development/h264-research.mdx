@@ -1,0 +1,97 @@
+---
+title: H.264 acceleration design
+description: The h264_vita hardware pipeline, why the GPU is not the decoder, and the rejected approaches.
+icon: Cpu
+---
+
+## Outcome
+
+VitaMediaDeck uses the complete public `h264_vita` backend carried by
+wiliwili's FFmpeg Vita patch. It is built from pinned, hash-verified source and
+linked against public VitaSDK decoder interfaces. FFmpeg software H.264 remains
+a fallback.
+
+The working backend is exposed to the application through the reusable
+`vita_hw_player` module rather than protocol-specific player functions.
+
+## Why the graphics GPU is not the H.264 decoder
+
+The PowerVR SGX543MP4+ efficiently renders geometry, textures, and shaders, but
+VitaSDK does not expose it as a general CUDA/OpenCL-style compute device. A
+complete H.264 decoder also needs serial parsing, entropy decoding, reference
+management, motion compensation, deblocking, reordering, and error recovery.
+
+GXM is therefore used where it is strongest: presentation. Hardware-decoded
+NV12 surfaces stay in CDRAM and are scaled while sampled for the 960×544
+display. No per-frame CPU RGBA conversion or 1280×720-to-960×544 resize is
+performed on the normal hardware path.
+
+## Current pipeline
+
+1. A local file or authenticated protocol backend returns two independent,
+   seekable byte cursors.
+2. FFmpeg custom AVIO demuxes H.264 video and AAC audio from the same
+   container.
+3. `h264_vita` submits access units to the Vita hardware decoder.
+4. A software H.264 context is used only if the hardware path cannot open.
+5. AAC is decoded through the Vita audio decoder and feeds the audio master
+   clock.
+6. Video frames enter a bounded ready queue with their source PTS.
+7. The presenter reorders by PTS, drops frames that are already obsolete, and
+   hands NV12 surfaces to GXM/vita2d.
+8. Render completion is signaled before a surface is recycled.
+9. Stop/seek is cooperative; every worker is joined before input handles,
+   decoders, audio ports, or surfaces are destroyed.
+
+## Public module boundary
+
+`VitaHwStreamFactory.open` is the input endpoint. It returns a handle with
+`read`, `seek`, `close`, and exact `size`. The player intentionally knows
+nothing about URLs, credentials, or server protocols.
+
+Presentation endpoints:
+
+- `vita_hw_player_present` for full-screen drawing;
+- `vita_hw_player_present_rect` for an application-owned rectangle;
+- `vita_hw_player_render_complete` after GPU rendering completes;
+- `vita_hw_player_get_status` for clocks, queue depth, decoder type, and frame
+  counters.
+
+## Performance principles
+
+- Build the media path with Cortex-A9/NEON `-O3` optimizations.
+- Avoid full-frame clear/copy operations when a decoder surface can be sampled
+  directly.
+- Keep a bounded frame cushion without using queue depth to hide incorrect
+  timestamps.
+- Preserve rational source timing; do not synthesize integer frame periods for
+  non-monotonic B-frame PTS.
+- Use the audio clock as the synchronization authority.
+- Distinguish decode starvation from unavoidable display cadence such as a
+  50 fps source on a 60 Hz panel.
+- Keep diagnostics opt-in because text rendering and persistent writes can
+  disturb the workload being measured.
+
+## Rejected production approaches
+
+- A CPU-only decoder followed by GPU scaling: useful as a fallback but not a
+  universal 720p60 path.
+- A custom shader H.264 implementation: extremely large scope and no suitable
+  general compute contract.
+- Isolated calls to undocumented decoder internals: unstable ownership and not
+  an acceptable redistributable interface.
+- Elevated application authority: it does not replace a complete, supported
+  decoder lifecycle.
+
+## Validation checklist
+
+- 480p, 720p30, 720p50, and 720p60 on physical hardware.
+- High-reference/B-frame and high-complexity encodes.
+- Repeated open, seek, stop, and reopen cycles.
+- Cancellation while local or network input is blocked.
+- Correct color, aspect ratio, vertical video dimensions, PTS order, and audio
+  synchronization.
+- Hardware-to-software fallback with no stale surfaces or threads.
+
+Technical sources and hardware notes are maintained in the repository under
+`mds/research/PSVITA_HARDWARE_GPU_RESOURCES.md`.

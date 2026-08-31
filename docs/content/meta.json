@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "index",
+    "getting-started",
+    "---Features---",
+    "media-sources",
+    "playback",
+    "subtitles",
+    "controls",
+    "ui-design",
+    "project-family",
+    "privacy-security",
+    "---Project---",
+    "contributing",
+    "development",
+    "reference"
+  ]
+}

@@ -1,0 +1,58 @@
+---
+title: Subtitles
+description: Embedded subtitle formats, multilingual rendering, style controls, and activation.
+icon: Captions
+---
+
+VitaMediaDeck renders embedded text subtitles across the same local/remote
+stream factory as video and audio.
+
+## Supported formats
+
+SubRip (`.srt`), ASS/SSA, WebVTT, MOV text (MP4 timed text), plain text, and
+MicroDVD cues — up to 16 tracks, runtime selectable including an explicit
+**Off** choice.
+
+## Rendering
+
+- UTF-8 subtitle layout wraps at codepoint boundaries, including text without
+  spaces.
+- Cues are limited to one through four lines and never split a multibyte
+  character when truncating with an ellipsis.
+- Western and Cyrillic runs use exact-size Inter Medium or SemiBold; Japanese,
+  Chinese, and Korean runs use their native PS Vita system PGFs. The fully
+  native system-font option remains available for all runs.
+
+## Style controls
+
+The **Settings > Subtitles** tab controls:
+
+- font;
+- foreground and background colors;
+- small/medium/large text size;
+- 60/75/88/96 percent maximum width;
+- one-to-four minimum and maximum lines;
+- four vertical positions.
+
+A live preview renders Western, Cyrillic, Japanese, Chinese, and Korean samples.
+Inter is rasterized from independent exact-size instances; Japanese, Chinese,
+and Korean glyphs come from the matching native system PGFs. Subtitle settings
+persist through a checksummed settings record with V1/V2/V3 migration.
+
+## Activation
+
+Subtitle activation never opens a full-screen loading scene. The first cursor
+open and all later seeks run as serial requests on one persistent worker while
+the R panel stays responsive and shows **Changing...** or a retryable failure.
+
+- The old cue disappears immediately, and read-ahead stops at a small cue limit
+  or short future-time horizon.
+- A request that does not complete within five seconds becomes a retryable
+  failure instead of trapping the UI in **Changing...**.
+- Selecting the same failed or pending track and pressing Cross restarts the
+  request.
+- Circle and the L1 navigation remain available throughout the operation.
+
+> [!NOTE]
+> Bitmap subtitles such as PGS and VobSub may be preserved by the Transcoder
+> but are not rendered by the current app.

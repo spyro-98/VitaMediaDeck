@@ -1,0 +1,58 @@
+---
+title: Privacy and security
+description: The explicit-authentication, read-only, and ephemeral-secret security model.
+icon: ShieldCheck
+---
+
+The security model is built on explicit authentication, ephemeral secrets, and
+read-only remote access.
+
+## Principles
+
+1. **The user chooses the source.** VitaMediaDeck browses only local storage and
+   explicitly configured servers.
+2. **Authentication is explicit.** Remote sources require a username and a
+   password. SFTP additionally requires host-key confirmation.
+3. **Passwords are ephemeral by default.** Secrets never enter `sources.bin`,
+   logs, or media history. An explicit opt-in stores them unencrypted in the
+   separately advertised `network/passwords.txt` file.
+4. **Protocol and decoder ownership remain separate.** A transport produces
+   independent seekable byte cursors; the player owns demux, decode, timing,
+   rendering, and teardown.
+5. **Hardware acceleration is preferred, not assumed.** The complete public
+   H.264 hardware backend is used when compatible, with software H.264 kept as
+   a fallback.
+6. **No media acquisition or export.** VitaMediaDeck neither downloads, extracts,
+   converts, uploads, nor copies remote media.
+7. **No private platform APIs.** Production code uses redistributable source
+   and public VitaSDK interfaces.
+
+## Remote access
+
+- WebDAV rejects clear-text HTTP and validates TLS certificates or an explicitly
+  confirmed SPKI pin.
+- SFTP requires an explicitly confirmed server fingerprint, and the saved
+  fingerprint must match every later session.
+- SMB guest access is disabled and message signing is required.
+- Remote sources are read-only: the app does not upload, rename, or delete files.
+
+## Credentials
+
+- Remote passwords remain session-only by default. An explicit Settings opt-in
+  stores them unencrypted at `ux0:data/VitaMediaDeck/network/passwords.txt` and
+  displays a warning; the file is removed when the option is disabled.
+- Passwords are never logged and are serialized only after the explicit
+  plaintext-storage opt-in.
+- Local paths and non-secret remote endpoint/path fields produce stable,
+  distinct history IDs. Credentials are excluded.
+
+## Release security gates
+
+- No saved passwords or credentials in VPK resources, logs, fixtures, or Git
+  history for the release commit.
+- WebDAV rejects plain HTTP and invalid TLS peers.
+- SFTP rejects unknown or changed host keys until explicit confirmation.
+- SMB does not fall back to guest access.
+- Remote operations are read-only.
+- Network failures cannot strand decoder threads or keep secrets alive after a
+  session closes.

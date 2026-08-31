@@ -1,0 +1,97 @@
+---
+title: VitaMediaDeck
+description: A native local and authenticated-network media player for PlayStation Vita.
+icon: CirclePlay
+---
+
+> [!IMPORTANT]
+> **Public beta** — VitaMediaDeck is available publicly but remains in active
+> development. Validate playback and network sources on your own PlayStation
+> Vita before relying on it day to day.
+
+VitaMediaDeck plays video and music stored on the Vita or on authenticated
+WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding, synchronization,
+and rendering run directly on the console; no companion service is required.
+
+![Hardware H.264 playback and the Spectral Reassembly player UI on a PlayStation Vita](/screenshots/hardware-decoder-spectral-ui.jpeg)
+
+Hardware H.264 playback on a physical PlayStation Vita.
+
+## Highlights
+
+- **Local libraries** — video and music on `ux0:` and `uma0:`, with paged
+  indexing, folder browsing, and persistent grid/list views.
+- **Authenticated remote browsing** — WebDAV over HTTPS, SFTP with a confirmed
+  SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
+- **Hardware-first playback** — H.264 decoding with an automatic CPU/FFmpeg
+  fallback.
+- **Indexed cue seeking** — startup, live seek, saved-position resume, and AAC
+  track replacement without multi-stream linear-seek fallbacks.
+- **Multi-track media** — runtime switching between AAC audio tracks and
+  embedded SubRip, ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
+- **Configurable multilingual subtitles** — font profiles for Western, Cyrillic,
+  Japanese, Chinese, and Korean text, plus full style and position controls.
+- **Grid covers** — sidecar or embedded artwork with bounded representative
+  H.264 frame extraction and persistent caching.
+- **Resume history** — per-video, local and remote, with explicit restart.
+- **Mini-player and background playback** — live video mini-player, music
+  mini-player, OLED ECO mode, and input lock.
+- **Player telemetry** — backend, resolution, frame rate, and video bitrate.
+
+## Project family
+
+The playback stack is split into reusable repositories. The decoder packages
+are included in the application build; the Transcoder is an optional desktop
+tool and is not part of the VPK.
+
+| Repository | Purpose |
+| --- | --- |
+| [VitaMediaDeck](https://github.com/spyro-98/VitaMediaDeck) | PS Vita application, media library, network browsing, subtitles, covers, mini-player, and playback orchestration |
+| [vita-hw-decoder](https://github.com/spyro-98/vita-hw-decoder) | Hardware-only H.264/AAC backend using `h264_vita`, SceVideodec, and direct NV12/P2 presentation |
+| [vita-sw-decoder](https://github.com/spyro-98/vita-sw-decoder) | API-compatible CPU/FFmpeg H.264 fallback with the same stream and lifecycle contract |
+| [VitaMediaDeck-Transcoder](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional macOS, Windows, and Linux tool for producing Vita-oriented H.264/AAC Matroska files with multiple tracks and embedded covers |
+| [vita-https](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, certificate/SPKI verification, and seekable Range transport used by WebDAV |
+
+## Media sources
+
+| Source | Access contract | Current scope |
+| --- | --- | --- |
+| Local storage | Vita filesystem | Video and audio |
+| WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
+| SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
+| SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
+
+The player targets seekable H.264 video in MP4/M4V/MOV or Matroska containers,
+with optional mono/stereo AAC and embedded UTF-8 text subtitles. Local audio
+detection includes MP3, M4A, AAC, and WAV.
+
+> [!NOTE]
+> VitaMediaDeck does not discover, download, extract, convert, or copy media
+> from online catalogues. It only plays media already owned and provided by the
+> user.
+
+## Get started
+
+- [Install and build](getting-started) — requirements, dependency scripts, and
+  the release build.
+- [Controls](controls) — the complete context-sensitive input mapping.
+- [Media sources](media-sources) — local storage and remote protocol contracts.
+- [Playback](playback) — decoding, seeking, tracks, and resume.
+- [Project family](project-family) — the reusable decoder and HTTPS packages.
+
+## Privacy and security
+
+- Remote passwords remain session-only by default. An explicit Settings opt-in
+  stores them unencrypted and displays a warning.
+- WebDAV rejects clear-text HTTP and validates TLS certificates or an explicitly
+  confirmed SPKI pin.
+- SFTP requires an explicitly confirmed server fingerprint.
+- SMB guest access is disabled and message signing is required.
+- Remote sources are read-only: the app does not upload, rename, or delete
+  files.
+
+## License
+
+VitaMediaDeck is licensed under **GPL-3.0-only**. It is an independent homebrew
+project; PlayStation, PS Vita, Sony, and their related marks belong to their
+respective owners.

@@ -1,0 +1,160 @@
+---
+title: Getting started
+description: Requirements, dependency builds, and the release-build workflow.
+icon: Rocket
+---
+
+This guide covers the host environment, the pinned dependency builds, and the
+release build and validation workflow.
+
+> [!NOTE]
+> Building requires a Linux or macOS **toolchain host** with VitaSDK. The plugin
+> does not cross-compile from Windows.
+
+## Requirements
+
+- **VitaSDK** and the normal Vita system stubs.
+- Vita ports of `libvita2d`, `freetype`, `libpng`, `libjpeg-turbo`, `zlib`,
+  `bzip2`, `mpg123`, `mbedtls`, `libxml2`, `zstd`, and `libsmb2`.
+- CMake, Git, Patch, and standard archive/build tools (Make or Ninja, curl,
+  tar).
+- Sibling checkouts of `vita-hw-decoder`, `vita-sw-decoder`, and `vita-https`,
+  unless their paths are supplied through the matching CMake cache variables.
+
+Install VitaSDK following the current instructions at
+[vitasdk.org](https://vitasdk.org/) and make the target compiler available:
+
+```sh
+export VITASDK=/absolute/path/to/vitasdk
+export PATH="$VITASDK/bin:$PATH"
+```
+
+Verify the toolchain:
+
+```sh
+test -x "$VITASDK/bin/arm-vita-eabi-gcc"
+test -f "$VITASDK/share/vita.toolchain.cmake"
+test -f "$VITASDK/share/vita.cmake"
+arm-vita-eabi-gcc --version
+```
+
+## Vita port libraries
+
+Install Vita-targeted packages through `vdpm`; do **not** link host libraries
+from Homebrew or the Linux distribution:
+
+```text
+libvita2d freetype libpng libjpeg-turbo zlib bzip2 mpg123
+mbedtls libxml2 zstd libsmb2
+```
+
+The exact archive order in `CMakeLists.txt` is authoritative.
+
+## Build the pinned dependencies
+
+The order below matters — libssh2 must be built before the HTTPS stack that
+uses it, and the FFmpeg hardware backend before the application:
+
+```sh
+./tools/build-libssh2-vita.sh
+../vita-https/tools/build-curl-mbedtls.sh
+./tools/build-ffmpeg-vita-hw.sh
+./tools/prepare-release-licenses.sh
+```
+
+- `tools/build-libssh2-vita.sh` builds libssh2 1.11.1 statically with the Vita
+  toolchain, Mbed TLS, and zlib, installing into `build/deps/libssh2-vita`.
+- `vita-https/tools/build-curl-mbedtls.sh` creates a dedicated libcurl 8.21.0
+  archive using Mbed TLS 3.6.5. The legacy VitaSDK OpenSSL libcurl is
+  intentionally **not** a release dependency.
+- `tools/build-ffmpeg-vita-hw.sh` clones pinned FFmpeg and wiliwili revisions,
+  verifies the Vita patch checksum, enables the required H.264/AAC and
+  MOV/MP4/Matroska pieces, builds with Cortex-A9/NEON `-O3` and LTO, and
+  installs into `build/deps/ffmpeg-vita-hw`.
+
+### Custom prefixes
+
+```sh
+export VITAMEDIADECK_H264_VITA_ROOT=/absolute/ffmpeg-prefix
+./tools/build-ffmpeg-vita-hw.sh
+
+cmake -S . -B build \
+  -DVITAMEDIADECK_H264_VITA_ROOT="$VITAMEDIADECK_H264_VITA_ROOT" \
+  -DVITAMEDIADECK_LIBSSH2_ROOT=/absolute/libssh2-prefix \
+  -DVITAMEDIADECK_HTTPS_CURL_ROOT=/absolute/curl-mbedtls-prefix
+```
+
+## Build VitaMediaDeck
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+unzip -t build/VitaMediaDeck.vpk
+shasum -a 256 build/VitaMediaDeck.vpk
+```
+
+Expected outputs include `build/vitamediadeck`, `build/vitamediadeck.self`, and
+`build/VitaMediaDeck.vpk`.
+
+## Validate the release
+
+```sh
+tools/release-audit.sh --vpk build/VitaMediaDeck.vpk
+tools/package-corresponding-source.sh
+```
+
+- `release-audit.sh` verifies licenses, Mbed TLS (no OpenSSL symbols),
+  demuxers, and the VPK manifest.
+- `package-corresponding-source.sh` assembles the GPL corresponding-source
+  tarball.
+
+## Packaging profile
+
+The hardware-decoder configuration creates a normal unsafe homebrew SELF with
+ASLR disabled, as required by the working public backend. It does not request a
+custom shell authority or a physical-contiguous-memory budget. The VPK includes
+the application assets, font, runtime module, and applicable license texts.
+
+## Troubleshooting
+
+### Missing dependency archive
+
+Check that the file exists below `$VITASDK/arm-vita-eabi/lib` and is an ARM Vita
+archive. Run the corresponding `vdpm` package or pinned builder again.
+
+### Missing `libssh2.a`
+
+Run `tools/build-libssh2-vita.sh`, or pass the matching prefix with
+`-DVITAMEDIADECK_LIBSSH2_ROOT=...`.
+
+### Missing `h264_vita`
+
+Run `tools/build-ffmpeg-vita-hw.sh`. Do not substitute a generic FFmpeg archive
+that lacks the patched decoder.
+
+### Static link errors
+
+Archive ordering matters. Inspect undefined symbols with `arm-vita-eabi-nm`
+and preserve the order in the root CMake file.
+
+### A successful build fails on device
+
+Treat CMake, `nm`, and `unzip -t` as local validation only. Network TLS, server
+authentication, shell background-audio policy, decoder surfaces, and teardown
+must be tested on physical hardware.
+
+## Install and run
+
+Install `VitaMediaDeck.vpk` on a homebrew-enabled Vita (for example via
+VitaShell). No companion service is needed.
+
+For testing remote sources, `tools/local_streaming/` provides read-only Python
+WebDAV-HTTPS, SFTP, and SMB test servers. See its README (in Italian) for
+instructions.
+
+## Sources
+
+- [vitasdk.org](https://vitasdk.org/)
+- [vita-toolchain](https://github.com/vitasdk/vita-toolchain)
+- [VitaSDK packages](https://github.com/vitasdk/packages)
+- [CMake documentation](https://cmake.org/documentation/)
