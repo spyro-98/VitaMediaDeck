@@ -87,6 +87,7 @@ require_file "$ffmpeg_root/lib/libavformat.a"
 "$nm_tool" -g --defined-only "$ffmpeg_root/lib/libavformat.a" > "$nm_output"
 grep -q 'ff_mov_demuxer' "$nm_output" || fail "release FFmpeg misses MOV/MP4 demuxing"
 grep -q 'ff_matroska_demuxer' "$nm_output" || fail "release FFmpeg misses Matroska demuxing"
+grep -q 'ff_srt_demuxer' "$nm_output" || fail "release FFmpeg misses SRT demuxing"
 
 for license in libsmb2-NOTICE.txt libsmb2-LGPL-2.1.txt libxml2-MIT.txt mpg123-COPYING.txt \
   FLAC-COPYING.Xiph.txt libogg-COPYING.txt \

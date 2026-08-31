@@ -108,8 +108,9 @@ foreach(license_file IN LISTS VITAMEDIADECK_REQUIRED_RELEASE_LICENSES)
   endif()
 endforeach()
 
-## The pinned builder enables the MOV/MP4 and Matroska demuxers and the complete
-## hardware decoder backend. Provenance is documented by the build script.
+## The pinned builder enables MOV/MP4, Matroska and standalone SRT demuxers plus
+## the complete hardware decoder backend. Provenance is documented by the build
+## script.
 set(VITAMEDIADECK_FFMPEG_ROOT "${VITAMEDIADECK_H264_VITA_ROOT}")
 
 set(VITAMEDIADECK_AVFORMAT_ARCHIVE "${VITAMEDIADECK_FFMPEG_ROOT}/lib/libavformat.a")
