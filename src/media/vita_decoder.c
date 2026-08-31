@@ -318,7 +318,9 @@ static void snapshot_hardware_tracks(VtDecoderPlayer *player,
 		copy_hw_track(&player->audio_tracks[i], &info);
 	}
 	player->subtitle_track_count =
-	    vita_hw_decoder_subtitle_track_count(player->hardware);
+	    player->config.external_subtitles_replace_embedded &&
+	            player->config.external_subtitle_count > 0
+	        ? 0 : vita_hw_decoder_subtitle_track_count(player->hardware);
 	if (player->subtitle_track_count < 0) player->subtitle_track_count = 0;
 	if (player->subtitle_track_count > VT_DECODER_MAX_SUBTITLE_TRACKS)
 		player->subtitle_track_count = VT_DECODER_MAX_SUBTITLE_TRACKS;
@@ -364,7 +366,9 @@ static void snapshot_software_tracks(VtDecoderPlayer *player,
 		copy_sw_track(&player->audio_tracks[i], &info);
 	}
 	player->subtitle_track_count =
-	    vita_sw_decoder_subtitle_track_count(player->software);
+	    player->config.external_subtitles_replace_embedded &&
+	            player->config.external_subtitle_count > 0
+	        ? 0 : vita_sw_decoder_subtitle_track_count(player->software);
 	if (player->subtitle_track_count < 0) player->subtitle_track_count = 0;
 	if (player->subtitle_track_count > VT_DECODER_MAX_SUBTITLE_TRACKS)
 		player->subtitle_track_count = VT_DECODER_MAX_SUBTITLE_TRACKS;

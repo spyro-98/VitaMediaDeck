@@ -80,6 +80,9 @@ typedef struct VtDecoderPlayerConfig {
 	VtDecoderExternalSubtitle external_subtitles[
 		VT_DECODER_MAX_SUBTITLE_TRACKS];
 	int external_subtitle_count;
+	/* Providers may expose embedded text tracks through a smaller, normalized
+	 * side stream. Prefer those tracks instead of reopening the full media. */
+	int external_subtitles_replace_embedded;
 	/* NONE means automatic hardware-first selection with software fallback. */
 	VtDecoderBackend preferred_backend;
 	/* Audio uses a zero-based playable AAC ordinal. Subtitle zero means off;

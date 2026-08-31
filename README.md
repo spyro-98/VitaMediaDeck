@@ -65,9 +65,10 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   AAC track replacement without multi-stream linear-seek fallbacks.
 - Runtime switching between multiple AAC audio tracks and embedded SubRip,
   ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
-- Jellyfin external text subtitles are discovered from provider metadata,
-  fetched on demand as a bounded SRT response, and joined to embedded tracks in
-  the same live subtitle selector.
+- Jellyfin text subtitles, including server-extracted embedded tracks, are
+  discovered from provider metadata and fetched on demand as bounded SRT
+  responses. This avoids reopening and probing the complete remote movie for
+  subtitle changes.
 - Configurable multilingual subtitles with font profiles for Western, Cyrillic,
   Japanese, Chinese, and Korean text; foreground, background, border, size,
   width, row-count, and position controls; and a full-width Settings preview.

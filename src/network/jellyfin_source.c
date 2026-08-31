@@ -1,5 +1,7 @@
 #include "network/network_internal.h"
 
+#include "common/text_log.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -466,8 +468,14 @@ static void parse_media_streams(json_t *streams, VtJellyfinMetadata *metadata) {
 		metadata->subtitle_track_count++;
 		append_metadata_value(metadata->subtitle_summary,
 		                      sizeof(metadata->subtitle_summary), summary);
-		if (!json_is_true(json_object_get(stream, "IsExternal")) ||
-		    !jellyfin_text_subtitle_codec(codec) ||
+		const char *delivery = json_string_value(
+		    json_object_get(stream, "DeliveryMethod"));
+		int server_text_stream =
+		    json_is_true(json_object_get(stream, "IsExternal")) ||
+		    json_is_true(json_object_get(stream, "IsTextSubtitleStream")) ||
+		    json_is_true(json_object_get(stream, "SupportsExternalStream")) ||
+		    (delivery && !strcasecmp(delivery, "External"));
+		if (!server_text_stream || !jellyfin_text_subtitle_codec(codec) ||
 		    metadata->external_subtitle_count >=
 		        VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES)
 			continue;
@@ -480,7 +488,7 @@ static void parse_media_streams(json_t *streams, VtJellyfinMetadata *metadata) {
 		track->is_default = json_is_true(json_object_get(stream, "IsDefault"));
 		track->is_forced = json_is_true(json_object_get(stream, "IsForced"));
 		if (language) snprintf(track->language, sizeof(track->language), "%s", language);
-		if (summary) snprintf(track->title, sizeof(track->title), "%s [EXT]", summary);
+		if (summary) snprintf(track->title, sizeof(track->title), "%s [JF]", summary);
 		if (codec) snprintf(track->codec, sizeof(track->codec), "%s", codec);
 	}
 }
@@ -1066,6 +1074,9 @@ int vt_jellyfin_open_subtitle_stream(
 		result = VT_NETWORK_AUTH_FAILED;
 	else if (result < 0) result = transport_result(result);
 	else if (transport.status_code != 200 || response.size == 0) result = -1;
+	log_printf("jellyfin subtitle: index=%d status=%ld bytes=%u ret=%d\n",
+	           subtitle_stream_index, transport.status_code,
+	           (unsigned int)response.size, result);
 	if (result < 0) {
 		free(response.data);
 		return result;
