@@ -815,7 +815,10 @@ static int jellyfin_prefetch_worker(SceSize args, void *argp) {
 			stream->worker_cancel = 0;
 			jellyfin_publish_slots_locked(stream);
 		}
-		if ((stream->cancel && *stream->cancel) || stream->worker_stop) {
+		/* The decoder raises its cancel flag briefly while joining demux threads
+		 * for an in-place seek. That flag is reusable and must never terminate the
+		 * long-lived prefetch worker; only close owns worker_stop. */
+		if (stream->worker_stop) {
 			jellyfin_cache_unlock(stream);
 			break;
 		}
@@ -873,8 +876,9 @@ static int jellyfin_prefetch_worker(SceSize args, void *argp) {
 
 static void jellyfin_request_window_locked(JellyfinStream *stream,
 	                                       uint64_t start) {
+	uint64_t window_start = start - start % JELLYFIN_CACHE_CHUNK;
 	stream->generation++;
-	stream->requested_start = start;
+	stream->requested_start = window_start;
 	stream->reset_pending = 1;
 	stream->worker_error = 0;
 	stream->worker_retries = 0;
@@ -900,7 +904,8 @@ static JellyfinCacheSlot *jellyfin_ready_slot_locked(
 
 static int jellyfin_position_pending_locked(JellyfinStream *stream,
 	                                        uint64_t position) {
-	if (stream->reset_pending && position == stream->requested_start) return 1;
+	if (stream->reset_pending && position >= stream->requested_start &&
+	    position < stream->requested_start + JELLYFIN_CACHE_CHUNK) return 1;
 	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++) {
 		JellyfinCacheSlot *slot = &stream->slots[i];
 		if (slot->state == JELLYFIN_SLOT_FILLING &&
@@ -967,11 +972,19 @@ static int64_t jellyfin_stream_seek(void *opaque, int64_t offset, int origin) {
 	if (next < 0 || (uint64_t)next > stream->size) return -1;
 	jellyfin_cache_lock(stream);
 	stream->position = (uint64_t)next;
+	int requested_window = 0;
 	if (stream->position < stream->size &&
 	    !jellyfin_ready_slot_locked(stream, stream->position) &&
-	    !jellyfin_position_pending_locked(stream, stream->position))
+	    !jellyfin_position_pending_locked(stream, stream->position)) {
 		jellyfin_request_window_locked(stream, stream->position);
+		requested_window = 1;
+	}
+	uint64_t window_start = stream->requested_start;
 	jellyfin_cache_unlock(stream);
+	if (requested_window)
+		log_printf("jellyfin direct seek: byte=%llu range=%llu generation=%u\n",
+		           (unsigned long long)stream->position,
+		           (unsigned long long)window_start, stream->generation);
 	return next;
 }
 
