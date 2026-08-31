@@ -1,4 +1,5 @@
 #include "ui/network_sources_screen.h"
+#include "ui/qr_scanner.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,11 +7,15 @@
 #include <strings.h>
 
 #include <psp2/ctrl.h>
+#include <psp2/io/dirent.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
 #include "media/video_thumbnail.h"
+#include "network/download_manager.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/components.h"
@@ -37,6 +42,7 @@
 #define BROWSER_GRID_CARD_H 154
 #define BROWSER_GRID_GAP_X 12
 #define BROWSER_GRID_GAP_Y 10
+#define DESTINATION_MAX_FOLDERS 96
 
 static int network_viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
@@ -202,17 +208,24 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 	ui_scene_identity(SOURCE_LIST_X, 68, 604, "NET/03",
 	                  vt_i18n_str(VT_STR_NETWORK_SERVERS_TITLE),
 	                  vt_i18n_str(VT_STR_NETWORK_PRIVACY));
-	ui_action_button(720, 70, 194, 43, VT_THEME_BLUE_BRIGHT,
-		                 "Square", vt_i18n_str(VT_STR_NETWORK_ADD_SOURCE), 0);
+	/* Download tools are intentionally a separate control panel. They are not
+	 * saved media servers and must not be mistaken for one in the pager. */
+	ui_panel(642, 126, 272, 112, VT_THEME_SURFACE_RAISED, VT_THEME_SIGNAL_BRIGHT, 0);
+	if (small) ui_font_draw_text(small, 666, 151, VT_THEME_SIGNAL_LIGHT,
+	                              UI_FONT_SMALL, "DOWNLOAD TOOLS");
+	ui_action_button(654, 160, 248, 34, VT_THEME_SURFACE, "Start",
+	                 vt_i18n_str(VT_STR_NETWORK_DIRECT_URL), 0);
+	ui_action_button(654, 198, 248, 34, VT_THEME_SURFACE, "R",
+	                 vt_i18n_str(VT_STR_NETWORK_SCAN_QR), 0);
 	if (!count) {
 		ui_panel(SOURCE_LIST_X, SOURCE_LIST_Y, SOURCE_LIST_W, 220,
 		         VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
 		if (body) ui_font_draw_text(body, SOURCE_LIST_X + 30, 210,
 		                             VT_THEME_TEXT, UI_FONT_BODY,
-			                             vt_i18n_str(VT_STR_NETWORK_EMPTY_TITLE));
+		                             vt_i18n_str(VT_STR_NETWORK_EMPTY_TITLE));
 		if (small) ui_font_draw_text(small, SOURCE_LIST_X + 30, 244,
 		                              VT_THEME_TEXT, UI_FONT_SMALL,
-			                              vt_i18n_str(VT_STR_NETWORK_EMPTY_DETAIL));
+		                              vt_i18n_str(VT_STR_NETWORK_EMPTY_DETAIL));
 	} else {
 		int viewport_bottom = network_viewport_bottom();
 		if (page_has_focus)
@@ -240,8 +253,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			}
 			if (small) {
 				char endpoint[320];
-				snprintf(endpoint, sizeof(endpoint), "%s:%u",
-				         sources[i].host, sources[i].port);
+				snprintf(endpoint, sizeof(endpoint), "%s:%u", sources[i].host, sources[i].port);
 				const char *protocol = vt_network_protocol_name(sources[i].protocol);
 				int width = ui_font_text_width(small, UI_FONT_SMALL, protocol);
 				char fitted_endpoint[192];
@@ -255,24 +267,24 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		}
 		vita2d_disable_clipping();
 		const VtNetworkSource *source = &sources[selected];
-		ui_panel(642, SOURCE_LIST_Y, 272, 174, VT_THEME_SURFACE_RAISED,
+		ui_panel(642, 250, 272, 158, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_BLUE_LIGHT, 0);
-		vita2d_draw_rectangle(654, SOURCE_LIST_Y + 18, 2, 138,
+		vita2d_draw_rectangle(654, 268, 2, 122,
 		                      VT_THEME_SIGNAL_DIM);
 		for (int node = 0; node < 4; node++)
-			vita2d_draw_rectangle(651, SOURCE_LIST_Y + 29 + node * 28, 8, 8,
+			vita2d_draw_rectangle(651, 279 + node * 25, 8, 8,
 			                      node == 0 ? VT_THEME_SIGNAL_LIGHT
 			                                : VT_THEME_SIGNAL_DIM);
 		if (small) {
-			ui_font_draw_text(small, 666, 154, VT_THEME_BLUE_LIGHT, UI_FONT_SMALL,
+			ui_font_draw_text(small, 666, 276, VT_THEME_BLUE_LIGHT, UI_FONT_SMALL,
 			                  vt_i18n_str(VT_STR_NETWORK_CONNECTION));
 			char endpoint[320];
 			snprintf(endpoint, sizeof(endpoint), "%s:%u", source->host, source->port);
-			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_ENDPOINT), endpoint, 184);
+			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_ENDPOINT), endpoint, 304);
 			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_FIELD_PROTOCOL),
-			                 vt_network_protocol_name(source->protocol), 208);
+			                 vt_network_protocol_name(source->protocol), 328);
 			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_FIELD_USERNAME),
-			                 source->username, 232);
+			                 source->username, 352);
 			draw_summary_row(small, vt_i18n_str(VT_STR_NETWORK_SECURITY),
 			                 source->protocol == VT_NETWORK_SFTP
 			                     ? vt_i18n_str(source->host_key_sha256[0]
@@ -282,14 +294,12 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			                           ? vt_i18n_str(source->tls_public_key_sha256[0]
 			                                 ? VT_STR_NETWORK_TLS_PINNED
 			                                 : VT_STR_NETWORK_TLS_CA_VERIFIED)
-			                     : vt_i18n_str(VT_STR_NETWORK_AUTH_SESSION), 256);
+			                     : vt_i18n_str(VT_STR_NETWORK_AUTH_SESSION), 376);
 		}
-		ui_action_button(642, 314, 272, 42, VT_THEME_BLUE_BRIGHT,
+		ui_action_button(642, 420, 272, 38, VT_THEME_BLUE_BRIGHT,
 		                 "Cross", vt_i18n_str(VT_STR_NETWORK_BROWSE), 0);
-		ui_action_button(642, 366, 272, 42, VT_THEME_SURFACE_RAISED,
+		ui_action_button(642, 466, 272, 38, VT_THEME_SURFACE_RAISED,
 		                 "Triangle", vt_i18n_str(VT_STR_NETWORK_EDIT), 0);
-		ui_action_button(642, 418, 272, 42, VT_THEME_SURFACE,
-		                 "Select", vt_i18n_str(VT_STR_NETWORK_REMOVE), 0);
 	}
 	/* Persistent playback stays below every modal layer. */
 	ui_mini_player_draw();
@@ -394,8 +404,9 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		const char *view_hint = grid_mode
 		                        ? vt_i18n_str(VT_STR_NETWORK_VIEW_GRID)
 		                        : vt_i18n_str(VT_STR_NETWORK_VIEW_LIST);
-		char hint[64];
-		snprintf(hint, sizeof(hint), "R1  %s", view_hint);
+		char hint[96];
+		snprintf(hint, sizeof(hint), "R1  %s   Triangle  %s", view_hint,
+		         vt_i18n_str(VT_STR_NETWORK_DOWNLOAD));
 		int hint_width = ui_font_text_width(small, UI_FONT_SMALL, hint);
 		vita2d_draw_rectangle(LIST_X + LIST_W - hint_width - 28, 73,
 		                      hint_width + 20, 24, VT_THEME_SURFACE_RAISED);
@@ -614,6 +625,182 @@ static int confirm_trust_value(const char *title, const char *value) {
 static void secure_zero(void *memory, size_t size) {
 	volatile unsigned char *bytes = (volatile unsigned char *)memory;
 	while (size--) *bytes++ = 0;
+}
+
+static int destination_join(const char *directory, const char *name,
+	                        char *out, size_t out_size) {
+	size_t length = strlen(directory);
+	const char *separator = length && directory[length - 1] == ':' ? "" : "/";
+	int written = snprintf(out, out_size, "%s%s%s", directory, separator, name);
+	return written > 0 && written < (int)out_size ? 0 : -1;
+}
+
+static void destination_parent(char *path) {
+	char *colon, *slash;
+	if (!path || !path[0]) return;
+	colon = strchr(path, ':');
+	slash = strrchr(path, '/');
+	if (slash && (!colon || slash > colon)) *slash = '\0';
+	else if (colon && colon[1]) colon[1] = '\0';
+}
+
+static int destination_read_folders(const char *path,
+	                                char names[][128], int capacity) {
+	SceUID directory = sceIoDopen(path);
+	if (directory < 0) return directory;
+	int count = 0;
+	while (count < capacity) {
+		SceIoDirent entry;
+		memset(&entry, 0, sizeof(entry));
+		int result = sceIoDread(directory, &entry);
+		if (result <= 0) break;
+		if (entry.d_name[0] == '.' || !SCE_S_ISDIR(entry.d_stat.st_mode)) continue;
+		snprintf(names[count++], 128, "%s", entry.d_name);
+	}
+	sceIoDclose(directory);
+	return count;
+}
+
+static void draw_destination_picker(const char *path, char names[][128],
+	                                int count, int selected, int top) {
+	vita2d_start_drawing();
+	vita2d_clear_screen();
+	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_LIGHT);
+	ui_brand_draw_header(vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE));
+	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
+	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+	ui_scene_identity(66, 68, 720, "LOCAL/DEST",
+	                  vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE),
+	                  vt_i18n_str(VT_STR_NETWORK_DESTINATION_DETAIL));
+	ui_panel(66, 112, 828, 38, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
+	if (small) ui_font_draw_text(small, 84, 137, VT_THEME_TEXT_MUTED,
+	                              UI_FONT_SMALL, path);
+	if (!count) {
+		ui_panel(66, 164, 828, 190, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
+		if (body) ui_font_draw_text(body, 94, 238, VT_THEME_TEXT, UI_FONT_BODY,
+		                             vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
+	} else {
+		for (int i = top; i < count && i < top + 5; i++) {
+			int y = 164 + (i - top) * 60;
+			ui_panel(66, y, 828, 54, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
+			if (i == selected)
+				vita2d_draw_rectangle(66, y, 4, 54, VT_THEME_SIGNAL_BRIGHT);
+			if (body) ui_font_draw_text(body, 92, y + 34, VT_THEME_TEXT,
+			                             UI_FONT_BODY, names[i]);
+		}
+	}
+	ui_action_button(66, 468, 250, 42, VT_THEME_BLUE_BRIGHT, "Start",
+	                 vt_i18n_str(VT_STR_NETWORK_USE_THIS_FOLDER), 0);
+	ui_action_button(350, 468, 250, 42, VT_THEME_SURFACE_RAISED, "Triangle",
+	                 vt_i18n_str(VT_STR_NETWORK_NEW_FOLDER), 0);
+	ui_action_button(634, 468, 260, 42, VT_THEME_SURFACE, "Circle",
+	                 !strcmp(path, "ux0:") ? vt_i18n_str(VT_STR_NETWORK_CANCEL) : "Up", 0);
+	vita2d_end_drawing();
+	vita2d_wait_rendering_done();
+	vita2d_swap_buffers();
+}
+
+static int destination_name_valid(const char *name) {
+	return name && name[0] && !strchr(name, '/') && !strchr(name, ':') &&
+	       strcmp(name, ".") && strcmp(name, "..");
+}
+
+static int choose_download_destination(char *out, size_t out_size) {
+	char path[VT_NETWORK_PATH_MAX];
+	char names[DESTINATION_MAX_FOLDERS][128];
+	SceCtrlData previous;
+	UiNavRepeat nav_repeat;
+	int selected = 0, top = 0;
+	snprintf(path, sizeof(path), "ux0:download/VitaMediaDeck");
+	sceIoMkdir("ux0:download", 0777);
+	sceIoMkdir(path, 0777);
+	memset(&previous, 0, sizeof(previous));
+	sceCtrlPeekBufferPositive(0, &previous, 1);
+	ui_nav_repeat_reset(&nav_repeat);
+	for (;;) {
+		int count = destination_read_folders(path, names, DESTINATION_MAX_FOLDERS);
+		if (count < 0) {
+			ui_message_show(vt_i18n_str(VT_STR_NETWORK_FOLDER_CREATE_FAILED), path, 2600);
+			return 0;
+		}
+		if (selected >= count) selected = count > 0 ? count - 1 : 0;
+		if (top > selected) top = selected;
+		if (selected >= top + 5) top = selected - 4;
+		draw_destination_picker(path, names, count, selected, top);
+		SceCtrlData controls;
+		sceCtrlPeekBufferPositive(0, &controls, 1);
+		unsigned pressed = controls.buttons & ~previous.buttons;
+		previous = controls;
+		unsigned nav = ui_nav_repeat_update(&nav_repeat, pressed, controls.buttons,
+		                                    controls.lx, controls.ly,
+		                                    SCE_CTRL_UP | SCE_CTRL_DOWN);
+		if ((nav & SCE_CTRL_UP) && selected > 0) selected--;
+		if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
+		if (pressed & SCE_CTRL_START) {
+			snprintf(out, out_size, "%s", path);
+			return 1;
+		}
+		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
+			char next[VT_NETWORK_PATH_MAX];
+			if (destination_join(path, names[selected], next, sizeof(next)) == 0) {
+				snprintf(path, sizeof(path), "%s", next);
+				selected = top = 0;
+			}
+		}
+		if (pressed & SCE_CTRL_TRIANGLE) {
+			char name[128] = "";
+			if (ui_text_input(vt_i18n_str(VT_STR_NETWORK_FOLDER_NAME_PROMPT), "",
+			                  name, sizeof(name)) > 0 && destination_name_valid(name)) {
+				char next[VT_NETWORK_PATH_MAX];
+				if (destination_join(path, name, next, sizeof(next)) < 0 ||
+				    sceIoMkdir(next, 0777) < 0)
+					ui_message_show(vt_i18n_str(VT_STR_NETWORK_FOLDER_CREATE_FAILED),
+					                name, 2600);
+			}
+			ui_touch_reset();
+			sceCtrlPeekBufferPositive(0, &previous, 1);
+			ui_nav_repeat_reset(&nav_repeat);
+		}
+		if (pressed & SCE_CTRL_CIRCLE) {
+			if (!strcmp(path, "ux0:")) return 0;
+			destination_parent(path);
+			selected = top = 0;
+		}
+		sceKernelDelayThread(16 * 1000);
+	}
+}
+
+static void run_download(VtDownloadJob *job) {
+	char destination[VT_NETWORK_PATH_MAX];
+	if (!choose_download_destination(destination, sizeof(destination))) return;
+	vt_download_job_set_destination(job, destination);
+	int result = ui_loading_run_download(vt_i18n_str(VT_STR_NETWORK_DOWNLOADING),
+	                                     vt_download_run, job, &job->paused,
+	                                     &job->cancel, &job->progress_current,
+	                                     &job->progress_total);
+	if (result == 0)
+		ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_COMPLETE),
+		                job->destination, 2600);
+	else if (job->cancel)
+		ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORTED),
+		                job->destination, 2400);
+	else
+		ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_FAILED),
+		                job->detail[0] ? job->detail :
+		                vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 3000);
+	secure_zero(&job->credential, sizeof(job->credential));
+}
+
+static void download_direct_url(const char *initial) {
+	char url[2048];
+	if (initial && initial[0]) snprintf(url, sizeof(url), "%s", initial);
+	else url[0] = '\0';
+	if (ui_text_input(vt_i18n_str(VT_STR_NETWORK_URL_PROMPT), url,
+	                  url, sizeof(url)) <= 0) return;
+	VtDownloadJob job;
+	vt_download_job_init_url(&job, url);
+	secure_zero(url, sizeof(url));
+	run_download(&job);
 }
 
 static int finish_network_screen(VtNetworkCredential *credentials, int result) {
@@ -1142,6 +1329,15 @@ static int browse_source(const VtNetworkSource *source,
 				return UI_NETWORK_ACTION_PLAY;
 			}
 		}
+		if ((pressed & SCE_CTRL_TRIANGLE) && count > 0 &&
+		    !entries[selected].is_directory) {
+			VtDownloadJob job;
+			vt_download_job_init_network(&job, source, credential,
+			                             entries[selected].path);
+			run_download(&job);
+			network_resync_input(&previous, &nav_repeat);
+			continue;
+		}
 		if (pressed & SCE_CTRL_CIRCLE) {
 			char *slash = strrchr(path, '/');
 			if (!path[0]) {
@@ -1268,10 +1464,14 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 		                      sidebar.animation <= 0.01f;
 		if (page_owns_input) {
 			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
-			    ui_touch_hit_rect(touch.x, touch.y, 720, 70, 194, 43))
-				pressed |= SCE_CTRL_SQUARE;
+			    ui_touch_hit_rect(touch.x, touch.y, 654, 160, 248, 34))
+				pressed |= SCE_CTRL_START;
+			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x, touch.y, 654, 198, 248, 34))
+				pressed |= SCE_CTRL_RTRIGGER;
 			if ((touch_flags & UI_TOUCH_EVENT_UP) &&
-			    !(touch_flags & UI_TOUCH_EVENT_TAP) && count > 0 &&
+			    !(touch_flags & UI_TOUCH_EVENT_TAP) &&
+			    count > 0 &&
 			    touch.down_x >= SOURCE_LIST_X &&
 			    touch.down_x < SOURCE_LIST_X + SOURCE_LIST_W &&
 			    touch.down_y >= SOURCE_LIST_Y) {
@@ -1292,12 +1492,10 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 					pressed |= SCE_CTRL_CROSS;
 					break;
 				}
-				if (ui_touch_hit_rect(touch.x, touch.y, 642, 314, 272, 42))
+				if (ui_touch_hit_rect(touch.x, touch.y, 642, 420, 272, 38))
 					pressed |= SCE_CTRL_CROSS;
-				if (ui_touch_hit_rect(touch.x, touch.y, 642, 366, 272, 42))
+				if (ui_touch_hit_rect(touch.x, touch.y, 642, 466, 272, 38))
 					pressed |= SCE_CTRL_TRIANGLE;
-				if (ui_touch_hit_rect(touch.x, touch.y, 642, 418, 272, 42))
-					pressed |= SCE_CTRL_SELECT;
 			}
 			unsigned int nav = ui_nav_repeat_update(
 			    &nav_repeat, pressed, controls.buttons, controls.lx, controls.ly,
@@ -1311,6 +1509,22 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				ui_focus_motion_tick(&focus_motion, SOURCE_LIST_X,
 				                     SOURCE_LIST_Y + (selected - top) * SOURCE_ROW_H,
 				                     SOURCE_LIST_W, SOURCE_ROW_H - 8);
+			if (pressed & SCE_CTRL_START) {
+				download_direct_url(NULL);
+				network_resync_input(&previous, &nav_repeat);
+				continue;
+			}
+			if (pressed & SCE_CTRL_RTRIGGER) {
+				char url[2048];
+				int scan_result = ui_qr_scan_https_url(url, sizeof(url));
+				if (scan_result > 0) download_direct_url(url);
+				else if (scan_result < 0)
+						ui_message_show(vt_i18n_str(VT_STR_NETWORK_QR_CAMERA_FAILED),
+						                ui_qr_scan_last_error(), 3200);
+				secure_zero(url, sizeof(url));
+				network_resync_input(&previous, &nav_repeat);
+				continue;
+			}
 			if ((pressed & SCE_CTRL_SQUARE) && count < VT_NETWORK_MAX_SOURCES) {
 				VtNetworkSource source;
 				VtNetworkCredential credential;
@@ -1324,7 +1538,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 					if (save_result < 0) {
 						count--;
 						secure_zero(&credentials[count], sizeof(credentials[count]));
-						selected = count > 0 ? count - 1 : 0;
+					selected = count > 0 ? count - 1 : 0;
 						show_save_error(save_result);
 					} else persist_remembered_credentials(credentials, count);
 				}
@@ -1334,17 +1548,18 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				ui_nav_repeat_reset(&nav_repeat);
 			}
 			if ((pressed & SCE_CTRL_TRIANGLE) && count > 0) {
-				VtNetworkSource original = sources[selected];
-				VtNetworkCredential original_credential = credentials[selected];
-				int edited = source_editor(&sources[selected], &credentials[selected], 0);
+				int source_index = selected;
+				VtNetworkSource original = sources[source_index];
+				VtNetworkCredential original_credential = credentials[source_index];
+				int edited = source_editor(&sources[source_index], &credentials[source_index], 0);
 				if (edited) {
 					int save_result = vt_network_sources_save(sources, count);
 					if (save_result < 0) {
-						sources[selected] = original;
-						credentials[selected] = original_credential;
+					sources[source_index] = original;
+					credentials[source_index] = original_credential;
 						show_save_error(save_result);
 					} else persist_remembered_credentials(credentials, count);
-				} else credentials[selected] = original_credential;
+				} else credentials[source_index] = original_credential;
 				secure_zero(&original_credential, sizeof(original_credential));
 				ui_touch_reset();
 				sceCtrlPeekBufferPositive(0, &previous, 1);
@@ -1354,7 +1569,8 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				remove_confirm = 1;
 			}
 			if ((pressed & SCE_CTRL_CROSS) && count > 0) {
-				int trust = prepare_sftp_trust(&sources[selected]);
+				int source_index = selected;
+				int trust = prepare_sftp_trust(&sources[source_index]);
 				if (trust > 0) {
 					int save_result = vt_network_sources_save(sources, count);
 					if (save_result < 0) show_save_error(save_result);
@@ -1362,7 +1578,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				}
 				network_resync_input(&previous, &nav_repeat);
 				if (trust < 0) continue;
-				VtNetworkCredential *credential = &credentials[selected];
+				VtNetworkCredential *credential = &credentials[source_index];
 				if (!credential->password[0]) {
 					int password_result = ui_text_input_secure(
 					    vt_i18n_str(VT_STR_NETWORK_PASSWORD_PROMPT), "",
@@ -1373,17 +1589,17 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 						continue;
 					}
 				}
-				int browse_result = browse_source(&sources[selected], credential,
+				int browse_result = browse_source(&sources[source_index], credential,
 				                                  selection);
 				if (browse_result == VT_NETWORK_TLS_TRUST_REQUIRED &&
-				    sources[selected].protocol == VT_NETWORK_WEBDAV &&
-				    !sources[selected].tls_public_key_sha256[0]) {
-					int tls_trust = prepare_webdav_trust(&sources[selected], credential);
+				    sources[source_index].protocol == VT_NETWORK_WEBDAV &&
+				    !sources[source_index].tls_public_key_sha256[0]) {
+					int tls_trust = prepare_webdav_trust(&sources[source_index], credential);
 					if (tls_trust > 0) {
 						int save_result = vt_network_sources_save(sources, count);
 						if (save_result < 0) show_save_error(save_result);
 						else persist_remembered_credentials(credentials, count);
-						browse_result = browse_source(&sources[selected], credential,
+						browse_result = browse_source(&sources[source_index], credential,
 						                              selection);
 					}
 				}

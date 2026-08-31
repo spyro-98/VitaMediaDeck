@@ -55,6 +55,11 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   folder browsing, and persistent grid/list views.
 - Authenticated remote video browsing through WebDAV over HTTPS, SFTP with a
   confirmed SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
+- Download any selected file from those authenticated servers, or paste/scan
+  an HTTP(S) resource URL from the web or local network. Choose any local
+  destination folder (and create one when needed); the transfer view provides
+  live progress plus Pause/Resume and Abort. Interrupted downloads remain
+  `.part` files and are never presented as complete media.
 - Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
 - Indexed H.264 cue seeking for startup, live seek, saved-position resume, and
   AAC track replacement without multi-stream linear-seek fallbacks.
@@ -102,14 +107,16 @@ stream validation, and both command-line and interactive terminal interfaces.
 | WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
 | SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
 | SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
+| Direct URL | HTTP(S); HTTPS certificate verification, or explicit unencrypted HTTP | Download to a chosen local folder |
 
 The player targets seekable H.264 video in MP4/M4V/MOV or Matroska containers,
 with optional mono/stereo AAC and embedded UTF-8 text subtitles. Local audio
 detection includes MP3, M4A, AAC, and WAV. Exact compatibility still depends on
 the selected decoder and the source media.
 
-VitaMediaDeck does not discover, download, extract, convert, or copy media from
-online catalogues. It only plays media already owned and provided by the user.
+VitaMediaDeck does not discover, extract, convert, or copy media from online
+catalogues. It downloads only resource URLs or authenticated server files
+explicitly selected by the user.
 
 ## Controls
 
@@ -123,9 +130,11 @@ online catalogues. It only plays media already owned and provided by the user.
 | Right stick | — | Volume | Volume |
 | Touch timeline | — | Seek | Seek |
 
-Network Sources uses Square to add, Triangle to edit, and Select to remove a
-saved server. See [CONTROLS.md](mds/CONTROLS.md) for the complete
-context-sensitive mapping.
+Network Sources keeps saved WebDAV, SFTP, and SMB servers in the source pager.
+A separate Download Tools panel provides Direct URL and Scan QR. Square adds a
+server; Triangle edits a saved server (or downloads a selected remote file).
+Every download opens a destination picker before the transfer screen. See
+[CONTROLS.md](mds/CONTROLS.md) for the complete context-sensitive mapping.
 
 ## Building
 
@@ -168,6 +177,9 @@ SMB test-server instructions are in
   confirmed SPKI pin.
 - SFTP requires an explicitly confirmed server fingerprint.
 - SMB guest access is disabled and message signing is required.
+- Direct downloads and QR links accept HTTP(S). HTTPS uses mandatory public CA
+  verification and cannot redirect down to HTTP; plain HTTP is explicitly
+  selected by its URL scheme and sends data without encryption.
 - Remote sources are read-only: the app does not upload, rename, or delete files.
 
 ## Known limitations

@@ -59,6 +59,16 @@ int ui_loading_run_with_query(const char *query,
                               const volatile long *progress_current,
                               const volatile long *progress_total);
 
+/* Download-specific loading view. START toggles pause/resume; CIRCLE aborts.
+ * The worker is responsible for observing pause_flag cooperatively. */
+int ui_loading_run_download(const char *message,
+                            UiLoadingTaskFn task,
+                            void *ctx,
+                            volatile int *pause_flag,
+                            volatile int *cancel_flag,
+                            const volatile long *progress_current,
+                            const volatile long *progress_total);
+
 /* Full-screen version dedicated to video. No panel or dialog: title top
  * left, quality bottom right, centered acquisition mark, and signal progress on the
  * timeline. */

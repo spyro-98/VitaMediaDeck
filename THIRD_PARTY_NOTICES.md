@@ -44,6 +44,9 @@ source archives and build provenance beside their generated libraries.
 - **bzip2**, bzip2 license: https://sourceware.org/bzip2/
 - **PThread-Embedded**, its upstream open-source terms:
   https://github.com/vitasdk/pthread-embedded
+- **quirc**, ISC license, used to decode QR links acquired with the Vita rear
+  camera. Its license text is packaged as `licenses/quirc-ISC.txt`:
+  https://github.com/dlbeer/quirc
 
 This software is based in part on the work of the Independent JPEG Group.
 
