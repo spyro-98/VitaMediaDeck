@@ -8,6 +8,8 @@ typedef struct {
 	VtNetworkCredential credential;
 	char path[VT_NETWORK_PATH_MAX];
 	char title[256];
+	VtJellyfinMetadata jellyfin_metadata;
+	int has_jellyfin_metadata;
 } UiNetworkSelection;
 
 #define UI_NETWORK_ACTION_BACK 0

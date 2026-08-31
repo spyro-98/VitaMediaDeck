@@ -7,6 +7,9 @@
 
 typedef struct {
 	VtDecoderStreamFactory stream;
+	VtDecoderExternalSubtitle external_subtitles[
+		VT_DECODER_MAX_SUBTITLE_TRACKS];
+	int external_subtitle_count;
 	const char *title;
 	const char *location;
 	const char *history_id;

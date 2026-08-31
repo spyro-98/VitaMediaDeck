@@ -398,6 +398,11 @@ static int network_factory_open_cancelable(void *opaque,
 			                          &factory->credential, factory->path, out,
 			                          cancel_flag);
 		case VT_NETWORK_JELLYFIN:
+			if (factory->jellyfin_subtitle_stream)
+				return vt_jellyfin_open_subtitle_stream(
+				    &factory->source, &factory->credential, factory->path,
+				    factory->jellyfin_media_source_id,
+				    factory->jellyfin_subtitle_index, out, cancel_flag);
 			return vt_jellyfin_open_stream(&factory->source,
 			                               &factory->credential, factory->path, out,
 			                               cancel_flag, &factory->buffer);
@@ -448,6 +453,28 @@ int vt_network_stream_factory_init(VtNetworkStreamFactory *factory,
 	factory->factory.open_cancelable = network_factory_open_cancelable;
 	if (source->protocol == VT_NETWORK_JELLYFIN)
 		factory->factory.buffer_status = network_factory_buffer_status;
+	return 0;
+}
+
+int vt_network_jellyfin_subtitle_stream_factory_init(
+	VtNetworkStreamFactory *factory, const VtNetworkSource *source,
+	const VtNetworkCredential *credential, const char *item_path,
+	const char *media_source_id, int subtitle_stream_index) {
+	if (!factory || !source || source->protocol != VT_NETWORK_JELLYFIN ||
+	    !credential || !item_path || !media_source_id || !media_source_id[0] ||
+	    subtitle_stream_index < 0 ||
+	    strlen(media_source_id) >= sizeof(factory->jellyfin_media_source_id))
+		return -1;
+	int ret = vt_network_stream_factory_init(factory, source, credential,
+	                                         item_path);
+	if (ret < 0) return ret;
+	snprintf(factory->jellyfin_media_source_id,
+	         sizeof(factory->jellyfin_media_source_id), "%s", media_source_id);
+	factory->jellyfin_subtitle_index = subtitle_stream_index;
+	factory->jellyfin_subtitle_stream = 1;
+	/* Subtitle delivery is a bounded in-memory text response, not a media-range
+	 * cache, so the video timeline must keep reporting the video factory. */
+	factory->factory.buffer_status = NULL;
 	return 0;
 }
 

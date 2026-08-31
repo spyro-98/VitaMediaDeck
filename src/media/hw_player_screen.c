@@ -807,6 +807,14 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	memset(&open, 0, sizeof(open));
 	open.player = player;
 	open.config.stream = source->stream;
+	open.config.external_subtitle_count = source->external_subtitle_count;
+	if (open.config.external_subtitle_count < 0)
+		open.config.external_subtitle_count = 0;
+	if (open.config.external_subtitle_count > VT_DECODER_MAX_SUBTITLE_TRACKS)
+		open.config.external_subtitle_count = VT_DECODER_MAX_SUBTITLE_TRACKS;
+	memcpy(open.config.external_subtitles, source->external_subtitles,
+	       (size_t)open.config.external_subtitle_count *
+	           sizeof(open.config.external_subtitles[0]));
 	int decoder_preference = vt_preferences_video_decoder();
 	open.config.preferred_backend =
 	    decoder_preference == VT_VIDEO_DECODER_HW_H264

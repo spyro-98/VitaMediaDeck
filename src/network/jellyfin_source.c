@@ -5,12 +5,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include <jansson.h>
 #include <vita_https.h>
 
 #define JELLYFIN_RESPONSE_MAX (2U * 1024U * 1024U)
 #define JELLYFIN_RANGE_CACHE (1024U * 1024U)
+#define JELLYFIN_SUBTITLE_MAX (2U * 1024U * 1024U)
 #define JELLYFIN_CLIENT_VERSION "1.1"
 #define JELLYFIN_DEVICE_ID "VMDK00001"
 
@@ -33,6 +35,12 @@ typedef struct {
 	unsigned char *cache;
 	VtNetworkBufferTelemetry *telemetry;
 } JellyfinStream;
+
+typedef struct {
+	unsigned char *data;
+	size_t size;
+	size_t position;
+} JellyfinSubtitleStream;
 
 static void jellyfin_publish_cache(JellyfinStream *stream, uint64_t start,
 	                               size_t resident) {
@@ -321,6 +329,210 @@ static uint64_t item_size(json_t *item) {
 	     ? (uint64_t)json_integer_value(size) : 0;
 }
 
+static void copy_json_text(json_t *object, const char *key,
+	                       char *out, size_t out_size) {
+	if (!out || !out_size) return;
+	out[0] = '\0';
+	const char *value = object
+	                  ? json_string_value(json_object_get(object, key)) : NULL;
+	if (value) snprintf(out, out_size, "%s", value);
+}
+
+static void append_metadata_value(char *out, size_t out_size,
+	                              const char *value) {
+	if (!out || !out_size || !value || !value[0]) return;
+	size_t used = strlen(out);
+	if (used >= out_size - 1) return;
+	snprintf(out + used, out_size - used, "%s%s", used ? "  /  " : "", value);
+}
+
+static void join_name_array(json_t *array, char *out, size_t out_size) {
+	if (!out || !out_size) return;
+	out[0] = '\0';
+	if (!json_is_array(array)) return;
+	size_t index;
+	json_t *value;
+	json_array_foreach(array, index, value) {
+		const char *name = json_is_string(value) ? json_string_value(value)
+		                 : json_is_object(value)
+		                     ? json_string_value(json_object_get(value, "Name"))
+		                     : NULL;
+		append_metadata_value(out, out_size, name);
+	}
+}
+
+static int jellyfin_text_subtitle_codec(const char *codec) {
+	if (!codec) return 0;
+	return !strcasecmp(codec, "srt") || !strcasecmp(codec, "subrip") ||
+	       !strcasecmp(codec, "ass") || !strcasecmp(codec, "ssa") ||
+	       !strcasecmp(codec, "webvtt") || !strcasecmp(codec, "vtt") ||
+	       !strcasecmp(codec, "mov_text") || !strcasecmp(codec, "text") ||
+	       !strcasecmp(codec, "microdvd");
+}
+
+static void parse_people(json_t *people, VtJellyfinMetadata *metadata) {
+	if (!json_is_array(people) || !metadata) return;
+	size_t index;
+	json_t *person;
+	json_array_foreach(people, index, person) {
+		if (!json_is_object(person)) continue;
+		const char *name = json_string_value(json_object_get(person, "Name"));
+		const char *type = json_string_value(json_object_get(person, "Type"));
+		if (!name || !type) continue;
+		if (!strcmp(type, "Director"))
+			append_metadata_value(metadata->directors,
+			                      sizeof(metadata->directors), name);
+		else if (!strcmp(type, "Actor"))
+			append_metadata_value(metadata->cast, sizeof(metadata->cast), name);
+	}
+}
+
+static void parse_media_streams(json_t *streams, VtJellyfinMetadata *metadata) {
+	if (!json_is_array(streams) || !metadata) return;
+	size_t array_index;
+	json_t *stream;
+	json_array_foreach(streams, array_index, stream) {
+		if (!json_is_object(stream)) continue;
+		const char *type = json_string_value(json_object_get(stream, "Type"));
+		const char *codec = json_string_value(json_object_get(stream, "Codec"));
+		const char *language = json_string_value(json_object_get(stream, "Language"));
+		const char *display = json_string_value(
+		    json_object_get(stream, "DisplayTitle"));
+		const char *title = json_string_value(json_object_get(stream, "Title"));
+		const char *summary = display && display[0] ? display
+		                      : title && title[0] ? title
+		                      : language && language[0] ? language : codec;
+		if (type && !strcmp(type, "Audio")) {
+			metadata->audio_track_count++;
+			append_metadata_value(metadata->audio_summary,
+			                      sizeof(metadata->audio_summary), summary);
+			continue;
+		}
+		if (!type || strcmp(type, "Subtitle")) continue;
+		metadata->subtitle_track_count++;
+		append_metadata_value(metadata->subtitle_summary,
+		                      sizeof(metadata->subtitle_summary), summary);
+		if (!json_is_true(json_object_get(stream, "IsExternal")) ||
+		    !jellyfin_text_subtitle_codec(codec) ||
+		    metadata->external_subtitle_count >=
+		        VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES)
+			continue;
+		json_t *index = json_object_get(stream, "Index");
+		if (!json_is_integer(index) || json_integer_value(index) < 0) continue;
+		VtJellyfinSubtitleTrack *track =
+		    &metadata->external_subtitles[metadata->external_subtitle_count++];
+		memset(track, 0, sizeof(*track));
+		track->stream_index = (int)json_integer_value(index);
+		track->is_default = json_is_true(json_object_get(stream, "IsDefault"));
+		track->is_forced = json_is_true(json_object_get(stream, "IsForced"));
+		if (language) snprintf(track->language, sizeof(track->language), "%s", language);
+		if (summary) snprintf(track->title, sizeof(track->title), "%s [EXT]", summary);
+		if (codec) snprintf(track->codec, sizeof(track->codec), "%s", codec);
+	}
+}
+
+int vt_network_jellyfin_metadata(const VtNetworkSource *source,
+	                              const VtNetworkCredential *credential,
+	                              const char *path, VtJellyfinMetadata *metadata,
+	                              char *detail, size_t detail_size,
+	                              volatile int *cancel_flag) {
+	if (!source || !credential || !path || !metadata ||
+	    source->protocol != VT_NETWORK_JELLYFIN ||
+	    !credential->access_token[0] || !credential->user_id[0])
+		return VT_NETWORK_AUTH_FAILED;
+	memset(metadata, 0, sizeof(*metadata));
+	if (detail && detail_size) detail[0] = '\0';
+	char item_id[VT_NETWORK_USER_ID_MAX];
+	if (item_id_from_path(path, item_id) < 0 || !item_id[0]) return -1;
+	char endpoint[192];
+	int endpoint_size = snprintf(endpoint, sizeof(endpoint), "Users/%s/Items/%s",
+	                             credential->user_id, item_id);
+	if (endpoint_size < 0 || (size_t)endpoint_size >= sizeof(endpoint)) return -1;
+	const char *fields =
+	    "fields=Overview,Genres,Studios,People,MediaSources,MediaStreams,"
+	    "OriginalTitle,Taglines,DateCreated,ProviderIds";
+	char url[2048];
+	if (jellyfin_url(source, endpoint, fields, url, sizeof(url)) < 0) return -1;
+	char authorization[512];
+	if (authorization_header(credential->access_token, authorization,
+	                         sizeof(authorization)) < 0) return -1;
+	JellyfinBuffer response = { .limit = JELLYFIN_RESPONSE_MAX };
+	long status = 0;
+	int ret = request_json(source, url, "GET", authorization, NULL, &response,
+	                       &status, cancel_flag);
+	if (ret < 0) {
+		if (detail && detail_size)
+			snprintf(detail, detail_size, "%s",
+			         ret == VT_NETWORK_AUTH_FAILED ? "Jellyfin session expired"
+			                                       : "Unable to read item metadata");
+		free(response.data);
+		return ret;
+	}
+	json_error_t error;
+	json_t *item = response.data
+	             ? json_loadb((const char *)response.data, response.size, 0, &error)
+	             : NULL;
+	free(response.data);
+	if (!json_is_object(item)) {
+		if (detail && detail_size)
+			snprintf(detail, detail_size, "Invalid Jellyfin metadata response");
+		if (item) json_decref(item);
+		return -1;
+	}
+	copy_json_text(item, "Name", metadata->title, sizeof(metadata->title));
+	copy_json_text(item, "OriginalTitle", metadata->original_title,
+	               sizeof(metadata->original_title));
+	copy_json_text(item, "Tagline", metadata->tagline, sizeof(metadata->tagline));
+	if (!metadata->tagline[0]) {
+		json_t *taglines = json_object_get(item, "Taglines");
+		const char *first = json_is_array(taglines) && json_array_size(taglines)
+		                  ? json_string_value(json_array_get(taglines, 0)) : NULL;
+		if (first) snprintf(metadata->tagline, sizeof(metadata->tagline), "%s", first);
+	}
+	copy_json_text(item, "Overview", metadata->overview,
+	               sizeof(metadata->overview));
+	copy_json_text(item, "OfficialRating", metadata->official_rating,
+	               sizeof(metadata->official_rating));
+	copy_json_text(item, "SeriesName", metadata->series_name,
+	               sizeof(metadata->series_name));
+	join_name_array(json_object_get(item, "Genres"), metadata->genres,
+	                sizeof(metadata->genres));
+	join_name_array(json_object_get(item, "Studios"), metadata->studios,
+	                sizeof(metadata->studios));
+	parse_people(json_object_get(item, "People"), metadata);
+	json_t *runtime = json_object_get(item, "RunTimeTicks");
+	if (json_is_integer(runtime) && json_integer_value(runtime) > 0)
+		metadata->runtime_ms = (uint64_t)json_integer_value(runtime) / 10000ULL;
+	json_t *year = json_object_get(item, "ProductionYear");
+	if (json_is_integer(year)) metadata->production_year = (int)json_integer_value(year);
+	json_t *community = json_object_get(item, "CommunityRating");
+	if (json_is_number(community))
+		metadata->community_rating = (float)json_number_value(community);
+	json_t *critic = json_object_get(item, "CriticRating");
+	if (json_is_number(critic)) metadata->critic_rating = (float)json_number_value(critic);
+	json_t *user_data = json_object_get(item, "UserData");
+	if (json_is_object(user_data)) {
+		metadata->favorite = json_is_true(json_object_get(user_data, "IsFavorite"));
+		metadata->played = json_is_true(json_object_get(user_data, "Played"));
+	}
+	json_t *sources = json_object_get(item, "MediaSources");
+	json_t *media_source = json_is_array(sources) && json_array_size(sources)
+	                     ? json_array_get(sources, 0) : NULL;
+	const char *media_source_id = media_source
+	    ? json_string_value(json_object_get(media_source, "Id")) : NULL;
+	if (safe_header_value(media_source_id) &&
+	    strlen(media_source_id) < sizeof(metadata->media_source_id))
+		snprintf(metadata->media_source_id, sizeof(metadata->media_source_id),
+		         "%s", media_source_id);
+	json_t *streams = json_object_get(item, "MediaStreams");
+	if (!json_is_array(streams) && media_source)
+		streams = json_object_get(media_source, "MediaStreams");
+	parse_media_streams(streams, metadata);
+	json_decref(item);
+	(void)status;
+	return 0;
+}
+
 int vt_jellyfin_list(const VtNetworkSource *source,
 	                 const VtNetworkCredential *credential,
 	                 const char *path, VtNetworkEntry *entries, int capacity,
@@ -389,6 +601,15 @@ int vt_jellyfin_list(const VtNetworkSource *source,
 			snprintf(entry->path, sizeof(entry->path), "%s/%s", path, id);
 		else snprintf(entry->path, sizeof(entry->path), "%s", id);
 		entry->size = video ? item_size(item) : 0;
+		json_t *runtime = json_object_get(item, "RunTimeTicks");
+		if (json_is_integer(runtime) && json_integer_value(runtime) > 0)
+			entry->runtime_ms = (uint64_t)json_integer_value(runtime) / 10000ULL;
+		json_t *year = json_object_get(item, "ProductionYear");
+		if (json_is_integer(year))
+			entry->production_year = (int)json_integer_value(year);
+		json_t *rating = json_object_get(item, "CommunityRating");
+		if (json_is_number(rating))
+			entry->community_rating = (float)json_number_value(rating);
 		entry->is_directory = folder;
 		entry->is_video = video;
 		count++;
@@ -566,6 +787,101 @@ static void jellyfin_stream_close(void *opaque) {
 	secure_zero(stream->access_token, sizeof(stream->access_token));
 	free(stream->cache);
 	free(stream);
+}
+
+static int jellyfin_subtitle_read(void *opaque, void *output, size_t size) {
+	JellyfinSubtitleStream *stream = opaque;
+	if (!stream || !output) return -1;
+	if (stream->position >= stream->size) return 0;
+	size_t available = stream->size - stream->position;
+	if (size > available) size = available;
+	memcpy(output, stream->data + stream->position, size);
+	stream->position += size;
+	return (int)size;
+}
+
+static int64_t jellyfin_subtitle_seek(void *opaque, int64_t offset, int origin) {
+	JellyfinSubtitleStream *stream = opaque;
+	if (!stream) return -1;
+	int64_t base = origin == SEEK_SET ? 0
+	             : origin == SEEK_CUR ? (int64_t)stream->position
+	             : origin == SEEK_END ? (int64_t)stream->size : -1;
+	if (base < 0 || offset < -base) return -1;
+	int64_t next = base + offset;
+	if (next < 0 || (uint64_t)next > stream->size) return -1;
+	stream->position = (size_t)next;
+	return next;
+}
+
+static void jellyfin_subtitle_close(void *opaque) {
+	JellyfinSubtitleStream *stream = opaque;
+	if (!stream) return;
+	free(stream->data);
+	free(stream);
+}
+
+int vt_jellyfin_open_subtitle_stream(
+	const VtNetworkSource *source, const VtNetworkCredential *credential,
+	const char *path, const char *media_source_id, int subtitle_stream_index,
+	VtDecoderStreamHandle *out, volatile int *cancel_flag) {
+	if (!source || !credential || !path || !media_source_id ||
+	    !media_source_id[0] || subtitle_stream_index < 0 || !out ||
+	    !credential->access_token[0])
+		return VT_NETWORK_AUTH_FAILED;
+	char item_id[VT_NETWORK_USER_ID_MAX];
+	if (item_id_from_path(path, item_id) < 0 || !item_id[0] ||
+	    !safe_header_value(media_source_id)) return -1;
+	char endpoint[320];
+	int endpoint_size = snprintf(
+	    endpoint, sizeof(endpoint), "Videos/%s/%s/Subtitles/%d/0/Stream.srt",
+	    item_id, media_source_id, subtitle_stream_index);
+	if (endpoint_size < 0 || (size_t)endpoint_size >= sizeof(endpoint)) return -1;
+	char url[2048];
+	if (jellyfin_url(source, endpoint, "copyTimestamps=true", url,
+	                 sizeof(url)) < 0) return -1;
+	char authorization[512];
+	if (authorization_header(credential->access_token, authorization,
+	                         sizeof(authorization)) < 0) return -1;
+	VitaHttpsClientConfig config;
+	jellyfin_client_config(source, &config);
+	config.request_timeout_ms = 12000;
+	VitaHttpsClient *client = vita_https_client_create(&config);
+	if (!client) return -1;
+	const char *headers[] = { authorization, "Accept: text/plain", NULL };
+	JellyfinBuffer response = { .limit = JELLYFIN_SUBTITLE_MAX };
+	VitaHttpsRequest request = {
+		.method = "GET",
+		.url = url,
+		.headers = headers,
+		.write = buffer_write,
+		.write_opaque = &response,
+		.cancel_flag = cancel_flag
+	};
+	VitaHttpsResponse transport = {0};
+	int result = vita_https_perform(client, &request, &transport);
+	vita_https_client_destroy(client);
+	if (transport.status_code == 401 || transport.status_code == 403)
+		result = VT_NETWORK_AUTH_FAILED;
+	else if (result < 0) result = transport_result(result);
+	else if (transport.status_code != 200 || response.size == 0) result = -1;
+	if (result < 0) {
+		free(response.data);
+		return result;
+	}
+	JellyfinSubtitleStream *stream = calloc(1, sizeof(*stream));
+	if (!stream) {
+		free(response.data);
+		return -1;
+	}
+	stream->data = response.data;
+	stream->size = response.size;
+	memset(out, 0, sizeof(*out));
+	out->opaque = stream;
+	out->read = jellyfin_subtitle_read;
+	out->seek = jellyfin_subtitle_seek;
+	out->close = jellyfin_subtitle_close;
+	out->size = (int64_t)stream->size;
+	return 0;
 }
 
 int vt_jellyfin_open_stream(const VtNetworkSource *source,
