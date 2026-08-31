@@ -68,10 +68,18 @@ typedef struct VtDecoderTrackInfo {
 	char codec[16];
 } VtDecoderTrackInfo;
 
+typedef struct VtDecoderExternalSubtitle {
+	VtDecoderStreamFactory stream;
+	VtDecoderTrackInfo info;
+} VtDecoderExternalSubtitle;
+
 typedef struct VtDecoderPlayer VtDecoderPlayer;
 
 typedef struct VtDecoderPlayerConfig {
 	VtDecoderStreamFactory stream;
+	VtDecoderExternalSubtitle external_subtitles[
+		VT_DECODER_MAX_SUBTITLE_TRACKS];
+	int external_subtitle_count;
 	/* NONE means automatic hardware-first selection with software fallback. */
 	VtDecoderBackend preferred_backend;
 	/* Audio uses a zero-based playable AAC ordinal. Subtitle zero means off;

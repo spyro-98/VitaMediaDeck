@@ -31,6 +31,9 @@ int vt_jellyfin_list(const VtNetworkSource *, const VtNetworkCredential *,
 int vt_jellyfin_open_stream(const VtNetworkSource *, const VtNetworkCredential *,
 	                        const char *, VtDecoderStreamHandle *, volatile int *,
 	                        VtNetworkBufferTelemetry *);
+int vt_jellyfin_open_subtitle_stream(
+	const VtNetworkSource *, const VtNetworkCredential *, const char *,
+	const char *, int, VtDecoderStreamHandle *, volatile int *);
 int vt_jellyfin_probe_public_key(const VtNetworkSource *, char *, size_t,
 	                             char *, size_t);
 int vt_jellyfin_fetch_primary_image(const VtNetworkSource *,

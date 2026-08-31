@@ -54,7 +54,10 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 - Local video and music libraries on `ux0:` and `uma0:`, with paged indexing,
   folder browsing, and persistent grid/list views.
 - Native Jellyfin library browsing with memory-only access tokens, server
-  posters, and seekable direct play over HTTPS or explicitly selected LAN HTTP.
+  posters, rich item records, and seekable direct play over HTTPS or explicitly
+  selected LAN HTTP. Detail records include synopsis, original/series title,
+  year, runtime, ratings, genres, studios, directors, cast, watched/favorite
+  state, and audio/subtitle summaries.
 - Authenticated remote video browsing through WebDAV over HTTPS, SFTP with a
   confirmed SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
 - Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
@@ -62,6 +65,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   AAC track replacement without multi-stream linear-seek fallbacks.
 - Runtime switching between multiple AAC audio tracks and embedded SubRip,
   ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
+- Jellyfin external text subtitles are discovered from provider metadata,
+  fetched on demand as a bounded SRT response, and joined to embedded tracks in
+  the same live subtitle selector.
 - Configurable multilingual subtitles with font profiles for Western, Cyrillic,
   Japanese, Chinese, and Korean text; foreground, background, border, size,
   width, row-count, and position controls; and a full-width Settings preview.
@@ -149,8 +155,9 @@ online catalogues. It only plays media already owned and provided by the user.
 | Touch timeline | — | Seek | Seek |
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
-saved server. See [CONTROLS.md](mds/CONTROLS.md) for the complete
-context-sensitive mapping.
+saved server. Inside a Jellyfin library, Triangle opens the spectral metadata
+record for the selected video and Cross starts playback. See
+[CONTROLS.md](mds/CONTROLS.md) for the complete context-sensitive mapping.
 
 ## Building
 

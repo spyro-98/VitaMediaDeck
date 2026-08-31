@@ -44,6 +44,7 @@ struct VtDecoderPlayer {
 	VitaSwDecoderPlayer *software;
 	VtDecoderTrackInfo audio_tracks[VT_DECODER_MAX_AUDIO_TRACKS];
 	VtDecoderTrackInfo subtitle_tracks[VT_DECODER_MAX_SUBTITLE_TRACKS];
+	VtDecoderStreamFactory subtitle_sources[VT_DECODER_MAX_SUBTITLE_TRACKS];
 	int audio_track_count;
 	int subtitle_track_count;
 	int active_audio_track;
@@ -245,11 +246,31 @@ static void open_selected_subtitles(VtDecoderPlayer *player,
 		return;
 	}
 	int index = player->active_subtitle_track - 1;
-	if (vt_subtitle_reader_open(player->subtitles, &player->source,
+	if (vt_subtitle_reader_open(player->subtitles, &player->subtitle_sources[index],
 	                            player->subtitle_tracks[index].stream_index,
 	                            position_ms,
 	                            player->config.cancel_flag) < 0)
 		player->active_subtitle_track = 0;
+}
+
+static void append_external_subtitles(VtDecoderPlayer *player) {
+	if (!player) return;
+	int requested = player->config.external_subtitle_count;
+	if (requested < 0) requested = 0;
+	if (requested > VT_DECODER_MAX_SUBTITLE_TRACKS)
+		requested = VT_DECODER_MAX_SUBTITLE_TRACKS;
+	for (int i = 0; i < requested &&
+	                    player->subtitle_track_count < VT_DECODER_MAX_SUBTITLE_TRACKS;
+	     i++) {
+		const VtDecoderExternalSubtitle *external =
+		    &player->config.external_subtitles[i];
+		if ((!external->stream.open && !external->stream.open_cancelable) ||
+		    external->info.stream_index < 0)
+			continue;
+		int index = player->subtitle_track_count++;
+		player->subtitle_tracks[index] = external->info;
+		player->subtitle_sources[index] = external->stream;
+	}
 }
 
 static void copy_hw_track(VtDecoderTrackInfo *out,
@@ -282,6 +303,7 @@ static void snapshot_hardware_tracks(VtDecoderPlayer *player,
 	if (!player || !player->hardware) return;
 	memset(player->audio_tracks, 0, sizeof(player->audio_tracks));
 	memset(player->subtitle_tracks, 0, sizeof(player->subtitle_tracks));
+	memset(player->subtitle_sources, 0, sizeof(player->subtitle_sources));
 	player->audio_track_count =
 	    vita_hw_decoder_audio_track_count(player->hardware);
 	if (player->audio_track_count < 0) player->audio_track_count = 0;
@@ -307,7 +329,9 @@ static void snapshot_hardware_tracks(VtDecoderPlayer *player,
 			break;
 		}
 		copy_hw_track(&player->subtitle_tracks[i], &info);
+		player->subtitle_sources[i] = player->source;
 	}
+	append_external_subtitles(player);
 	player->active_audio_track =
 	    requested_audio >= 0 && requested_audio < player->audio_track_count
 	        ? requested_audio : 0;
@@ -325,6 +349,7 @@ static void snapshot_software_tracks(VtDecoderPlayer *player,
 	if (!player || !player->software) return;
 	memset(player->audio_tracks, 0, sizeof(player->audio_tracks));
 	memset(player->subtitle_tracks, 0, sizeof(player->subtitle_tracks));
+	memset(player->subtitle_sources, 0, sizeof(player->subtitle_sources));
 	player->audio_track_count =
 	    vita_sw_decoder_audio_track_count(player->software);
 	if (player->audio_track_count < 0) player->audio_track_count = 0;
@@ -350,7 +375,9 @@ static void snapshot_software_tracks(VtDecoderPlayer *player,
 			break;
 		}
 		copy_sw_track(&player->subtitle_tracks[i], &info);
+		player->subtitle_sources[i] = player->source;
 	}
+	append_external_subtitles(player);
 	player->active_audio_track =
 	    requested_audio >= 0 && requested_audio < player->audio_track_count
 	        ? requested_audio : 0;
@@ -369,6 +396,7 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	player->config = *config;
 	memset(player->audio_tracks, 0, sizeof(player->audio_tracks));
 	memset(player->subtitle_tracks, 0, sizeof(player->subtitle_tracks));
+	memset(player->subtitle_sources, 0, sizeof(player->subtitle_sources));
 	player->audio_track_count = 0;
 	player->subtitle_track_count = 0;
 	player->active_audio_track = config->audio_track;
@@ -628,7 +656,7 @@ int vt_decoder_select_subtitle_track(VtDecoderPlayer *player,
 	}
 	int index = subtitle_track - 1;
 	int result = vt_subtitle_reader_open(
-	    player->subtitles, &player->source,
+	    player->subtitles, &player->subtitle_sources[index],
 	    player->subtitle_tracks[index].stream_index, position_ms,
 	    NULL);
 	/* Keep the user's requested track selected even if worker creation fails.

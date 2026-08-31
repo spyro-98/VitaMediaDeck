@@ -82,6 +82,7 @@ on the bounded thumbnail worker.
 | Up/Down | Move through folders and files. |
 | Left/Right | Move between items while grid view is active. |
 | Cross | Open a folder or play a compatible video. |
+| Triangle | Open the selected Jellyfin video's metadata record. |
 | R1 | Switch the shared filesystem view between grid and list. |
 | Circle | Move to the parent folder; leave at the root. |
 
@@ -102,11 +103,13 @@ on the bounded thumbnail worker.
 | Touch video | Show or hide the player HUD. |
 | Touch/drag timeline | Seek to a position. |
 
-The R1 playback panel also selects the active AAC audio track and embedded text
-subtitle track. Left/Right changes the pending choice and Cross applies it; the
-subtitle selector includes an explicit Off choice. Track changes retain the
-current playback position and apply equally to local and authenticated remote
-videos. Subtitle activation never opens a full-screen loading scene: the first
+The R1 playback panel also selects the active AAC audio track and text subtitle
+track. Jellyfin external SRT/ASS/SSA/WebVTT sidecars are fetched through the
+authenticated provider API and appear after the embedded tracks. Left/Right
+changes the pending choice and Cross applies it; the subtitle selector includes
+an explicit Off choice. Track changes retain the current playback position and
+apply equally to local and authenticated remote videos. Subtitle activation
+never opens a full-screen loading scene: the first
 cursor open and all later seeks run as serial requests on one persistent worker,
 while the R panel remains responsive and shows **Changing...** or a retryable
 failure. The old cue disappears immediately, and read-ahead stops at a small cue
