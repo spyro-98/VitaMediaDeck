@@ -490,6 +490,8 @@ static int run_remote_video_fullscreen(
 			snprintf(external->info.codec, sizeof(external->info.codec), "%s",
 			         track->codec[0] ? track->codec : "subrip");
 		}
+		if (source.external_subtitle_count > 0)
+			source.external_subtitles_replace_embedded = 1;
 	}
 	ret = vt_hw_player_screen_run(&source, last_position_ms,
 	                              last_duration_ms, last_audio_track,
