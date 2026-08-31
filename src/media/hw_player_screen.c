@@ -386,6 +386,28 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 		if (progress > 1.0f) progress = 1.0f;
 		vita2d_draw_rectangle(TIMELINE_X, TIMELINE_Y, TIMELINE_W, 6,
 		                      fade_color(VT_THEME_BORDER, hud_opacity));
+		VtDecoderBufferStatus buffer = {0};
+		if (source->stream.buffer_status &&
+		    source->stream.buffer_status(source->stream.opaque, &buffer) == 0 &&
+		    buffer.source_size > 0 && buffer.range_end > buffer.range_start) {
+			float buffer_start = (float)((double)buffer.range_start /
+			                                    (double)buffer.source_size);
+			float buffer_end = (float)((double)buffer.range_end /
+			                                  (double)buffer.source_size);
+			if (buffer_start < 0.0f) buffer_start = 0.0f;
+			if (buffer_end > 1.0f) buffer_end = 1.0f;
+			if (buffer_end > buffer_start) {
+				float buffer_width = TIMELINE_W * (buffer_end - buffer_start);
+				/* A bounded network window is intentionally small relative to a
+				 * feature film; preserve a visible diagnostic trace on the Vita. */
+				if (buffer_width < 3.0f) buffer_width = 3.0f;
+				if (TIMELINE_W * buffer_start + buffer_width > TIMELINE_W)
+					buffer_width = TIMELINE_W * (1.0f - buffer_start);
+				vita2d_draw_rectangle(TIMELINE_X + TIMELINE_W * buffer_start,
+				                      TIMELINE_Y, buffer_width,
+				                      6, fade_color(VT_THEME_SIGNAL_LIGHT, hud_opacity));
+			}
+		}
 		vita2d_draw_rectangle(TIMELINE_X, TIMELINE_Y, TIMELINE_W * progress, 6,
 		                      fade_color(VT_THEME_BLUE_BRIGHT, hud_opacity));
 		vita2d_draw_fill_circle(TIMELINE_X + TIMELINE_W * progress,
