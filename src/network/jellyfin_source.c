@@ -8,11 +8,17 @@
 #include <strings.h>
 
 #include <jansson.h>
+#include <psp2/kernel/threadmgr.h>
 #include <vita_https.h>
 
 #define JELLYFIN_RESPONSE_MAX (2U * 1024U * 1024U)
-#define JELLYFIN_RANGE_CACHE (1024U * 1024U)
+#define JELLYFIN_CACHE_CHUNK (1024U * 1024U)
+#define JELLYFIN_CACHE_SLOTS 8
+#define JELLYFIN_RANGE_CACHE (JELLYFIN_CACHE_CHUNK * JELLYFIN_CACHE_SLOTS)
 #define JELLYFIN_SUBTITLE_MAX (2U * 1024U * 1024U)
+#define JELLYFIN_PREFETCH_THREAD_CREATE_PRIORITY  0x10000100
+#define JELLYFIN_PREFETCH_THREAD_RUNTIME_PRIORITY 0xB0
+#define JELLYFIN_PREFETCH_THREAD_STACK            0x20000
 #define JELLYFIN_CLIENT_VERSION "1.1"
 #define JELLYFIN_DEVICE_ID "VMDK00001"
 
@@ -24,15 +30,39 @@ typedef struct {
 } JellyfinBuffer;
 
 typedef struct {
+	unsigned char *data;
+	uint64_t start;
+	size_t size;
+	unsigned int generation;
+	int state;
+} JellyfinCacheSlot;
+
+enum {
+	JELLYFIN_SLOT_EMPTY = 0,
+	JELLYFIN_SLOT_FILLING,
+	JELLYFIN_SLOT_READY
+};
+
+typedef struct {
 	VitaHttpsClient *client;
 	char url[2048];
 	char access_token[VT_NETWORK_TOKEN_MAX];
 	volatile int *cancel;
 	uint64_t size;
 	uint64_t position;
-	uint64_t cache_start;
-	size_t cache_size;
 	unsigned char *cache;
+	JellyfinCacheSlot slots[JELLYFIN_CACHE_SLOTS];
+	volatile int cache_lock;
+	volatile int worker_stop;
+	volatile int worker_cancel;
+	volatile int worker_done;
+	SceUID worker_thid;
+	unsigned int generation;
+	uint64_t requested_start;
+	uint64_t next_fetch;
+	int reset_pending;
+	int worker_error;
+	int worker_retries;
 	VtNetworkBufferTelemetry *telemetry;
 } JellyfinStream;
 
@@ -43,7 +73,7 @@ typedef struct {
 } JellyfinSubtitleStream;
 
 static void jellyfin_publish_cache(JellyfinStream *stream, uint64_t start,
-	                               size_t resident) {
+	                               uint64_t end, size_t resident) {
 	if (!stream || !stream->telemetry) return;
 	VtNetworkBufferTelemetry *telemetry = stream->telemetry;
 	while (__sync_lock_test_and_set(&telemetry->writer_lock, 1U)) { }
@@ -51,12 +81,36 @@ static void jellyfin_publish_cache(JellyfinStream *stream, uint64_t start,
 	__sync_synchronize();
 	telemetry->source_size = stream->size;
 	telemetry->range_start = start;
-	telemetry->range_end = start + resident;
+	telemetry->range_end = end;
 	telemetry->resident_bytes = (uint32_t)resident;
 	telemetry->capacity_bytes = JELLYFIN_RANGE_CACHE;
 	__sync_synchronize();
 	__sync_add_and_fetch(&telemetry->sequence, 1U);
 	__sync_lock_release(&telemetry->writer_lock);
+}
+
+static void jellyfin_cache_lock(JellyfinStream *stream) {
+	while (__sync_lock_test_and_set(&stream->cache_lock, 1))
+		sceKernelDelayThread(100);
+}
+
+static void jellyfin_cache_unlock(JellyfinStream *stream) {
+	__sync_lock_release(&stream->cache_lock);
+}
+
+static void jellyfin_publish_slots_locked(JellyfinStream *stream) {
+	uint64_t start = stream->size;
+	uint64_t end = 0;
+	size_t resident = 0;
+	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++) {
+		JellyfinCacheSlot *slot = &stream->slots[i];
+		if (slot->state != JELLYFIN_SLOT_READY || !slot->size) continue;
+		if (slot->start < start) start = slot->start;
+		if (slot->start + slot->size > end) end = slot->start + slot->size;
+		resident += slot->size;
+	}
+	if (!resident) start = end = stream->requested_start;
+	jellyfin_publish_cache(stream, start, end, resident);
 }
 
 static void secure_zero(void *memory, size_t size) {
@@ -692,11 +746,13 @@ int vt_jellyfin_fetch_primary_image(const VtNetworkSource *source,
 	return 0;
 }
 
-static int jellyfin_stream_fetch(JellyfinStream *stream, uint64_t start) {
-	if (!stream || start >= stream->size) return 0;
+static int jellyfin_stream_fetch_slot(JellyfinStream *stream,
+	                                  JellyfinCacheSlot *slot,
+	                                  uint64_t start) {
+	if (!stream || !slot || start >= stream->size) return 0;
 	uint64_t remaining = stream->size - start;
-	uint64_t wanted = remaining < JELLYFIN_RANGE_CACHE
-	                ? remaining : JELLYFIN_RANGE_CACHE;
+	uint64_t wanted = remaining < JELLYFIN_CACHE_CHUNK
+	                ? remaining : JELLYFIN_CACHE_CHUNK;
 	uint64_t end = start + wanted - 1;
 	char authorization[512];
 	char range[96];
@@ -706,9 +762,9 @@ static int jellyfin_stream_fetch(JellyfinStream *stream, uint64_t start) {
 	         (unsigned long long)start, (unsigned long long)end);
 	const char *headers[] = { authorization, range, NULL };
 	JellyfinBuffer output = {
-		.data = stream->cache,
-		.capacity = JELLYFIN_RANGE_CACHE,
-		.limit = JELLYFIN_RANGE_CACHE
+		.data = slot->data,
+		.capacity = JELLYFIN_CACHE_CHUNK,
+		.limit = JELLYFIN_CACHE_CHUNK
 	};
 	VitaHttpsRequest request = {
 		.method = "GET",
@@ -716,11 +772,9 @@ static int jellyfin_stream_fetch(JellyfinStream *stream, uint64_t start) {
 		.headers = headers,
 		.write = fixed_write,
 		.write_opaque = &output,
-		.cancel_flag = stream->cancel
+		.cancel_flag = &stream->worker_cancel
 	};
 	VitaHttpsResponse response = { 0 };
-	stream->cache_size = 0;
-	jellyfin_publish_cache(stream, start, 0);
 	int result = vita_https_perform(stream->client, &request, &response);
 	if (response.status_code == 401 || response.status_code == 403)
 		return VT_NETWORK_AUTH_FAILED;
@@ -729,9 +783,123 @@ static int jellyfin_stream_fetch(JellyfinStream *stream, uint64_t start) {
 	    response.content_length != (int64_t)wanted)
 		return result < 0 ? transport_result(result)
 		                  : VT_NETWORK_RANGE_UNSUPPORTED;
-	stream->cache_start = start;
-	stream->cache_size = output.size;
-	jellyfin_publish_cache(stream, stream->cache_start, stream->cache_size);
+	slot->start = start;
+	slot->size = output.size;
+	return 0;
+}
+
+static int jellyfin_prefetch_worker(SceSize args, void *argp) {
+	(void)args;
+	JellyfinStream *stream = *(JellyfinStream **)argp;
+	sceKernelChangeThreadPriority(sceKernelGetThreadId(),
+	                              JELLYFIN_PREFETCH_THREAD_RUNTIME_PRIORITY);
+	while (!stream->worker_stop) {
+		jellyfin_cache_lock(stream);
+		if (stream->reset_pending) {
+			for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++) {
+				stream->slots[i].state = JELLYFIN_SLOT_EMPTY;
+				stream->slots[i].size = 0;
+			}
+			stream->next_fetch = stream->requested_start;
+			stream->worker_error = 0;
+			stream->worker_retries = 0;
+			stream->reset_pending = 0;
+			stream->worker_cancel = 0;
+			jellyfin_publish_slots_locked(stream);
+		}
+		if ((stream->cancel && *stream->cancel) || stream->worker_stop) {
+			jellyfin_cache_unlock(stream);
+			break;
+		}
+		JellyfinCacheSlot *slot = NULL;
+		for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++)
+			if (stream->slots[i].state == JELLYFIN_SLOT_EMPTY) {
+				slot = &stream->slots[i];
+				break;
+			}
+		if (stream->worker_error || !slot ||
+		    stream->next_fetch >= stream->size) {
+			jellyfin_cache_unlock(stream);
+			sceKernelDelayThread(1000);
+			continue;
+		}
+		uint64_t start = stream->next_fetch;
+		unsigned int generation = stream->generation;
+		uint64_t remaining = stream->size - start;
+		uint64_t planned = remaining < JELLYFIN_CACHE_CHUNK
+		                 ? remaining : JELLYFIN_CACHE_CHUNK;
+		stream->next_fetch += planned;
+		slot->state = JELLYFIN_SLOT_FILLING;
+		slot->start = start;
+		slot->size = 0;
+		slot->generation = generation;
+		stream->worker_cancel = 0;
+		jellyfin_cache_unlock(stream);
+
+		int result = jellyfin_stream_fetch_slot(stream, slot, start);
+		jellyfin_cache_lock(stream);
+		if (stream->worker_stop || generation != stream->generation) {
+			slot->state = JELLYFIN_SLOT_EMPTY;
+			slot->size = 0;
+		} else if (result < 0) {
+			slot->state = JELLYFIN_SLOT_EMPTY;
+			slot->size = 0;
+			if (!stream->worker_cancel) {
+				stream->next_fetch = start;
+				if (stream->worker_retries < 2)
+					stream->worker_retries++;
+				else stream->worker_error = result;
+			}
+		} else {
+			slot->state = JELLYFIN_SLOT_READY;
+			stream->worker_error = 0;
+			stream->worker_retries = 0;
+		}
+		stream->worker_cancel = 0;
+		jellyfin_publish_slots_locked(stream);
+		jellyfin_cache_unlock(stream);
+	}
+	stream->worker_done = 1;
+	return sceKernelExitThread(0);
+}
+
+static void jellyfin_request_window_locked(JellyfinStream *stream,
+	                                       uint64_t start) {
+	stream->generation++;
+	stream->requested_start = start;
+	stream->reset_pending = 1;
+	stream->worker_error = 0;
+	stream->worker_retries = 0;
+	stream->worker_cancel = 1;
+	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++)
+		if (stream->slots[i].state == JELLYFIN_SLOT_READY) {
+			stream->slots[i].state = JELLYFIN_SLOT_EMPTY;
+			stream->slots[i].size = 0;
+		}
+	jellyfin_publish_slots_locked(stream);
+}
+
+static JellyfinCacheSlot *jellyfin_ready_slot_locked(
+	JellyfinStream *stream, uint64_t position) {
+	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++) {
+		JellyfinCacheSlot *slot = &stream->slots[i];
+		if (slot->state == JELLYFIN_SLOT_READY &&
+		    position >= slot->start && position < slot->start + slot->size)
+			return slot;
+	}
+	return NULL;
+}
+
+static int jellyfin_position_pending_locked(JellyfinStream *stream,
+	                                        uint64_t position) {
+	if (stream->reset_pending && position == stream->requested_start) return 1;
+	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++) {
+		JellyfinCacheSlot *slot = &stream->slots[i];
+		if (slot->state == JELLYFIN_SLOT_FILLING &&
+		    position >= slot->start &&
+		    position < slot->start + JELLYFIN_CACHE_CHUNK)
+			return 1;
+	}
 	return 0;
 }
 
@@ -741,18 +909,41 @@ static int jellyfin_stream_read(void *opaque, void *output, size_t size) {
 	if (stream->position >= stream->size) return 0;
 	size_t total = 0;
 	while (total < size && stream->position < stream->size) {
-		if (stream->position < stream->cache_start ||
-		    stream->position >= stream->cache_start + stream->cache_size) {
-			int ret = jellyfin_stream_fetch(stream, stream->position);
-			if (ret < 0) return total ? (int)total : ret;
+		if ((stream->cancel && *stream->cancel) || stream->worker_stop)
+			return total ? (int)total : VT_NETWORK_ERROR;
+		jellyfin_cache_lock(stream);
+		JellyfinCacheSlot *slot =
+		    jellyfin_ready_slot_locked(stream, stream->position);
+		if (!slot) {
+			int error = stream->worker_error;
+			if (!error &&
+			    !jellyfin_position_pending_locked(stream, stream->position))
+				jellyfin_request_window_locked(stream, stream->position);
+			jellyfin_cache_unlock(stream);
+			if (error) return total ? (int)total : error;
+			sceKernelDelayThread(500);
+			continue;
 		}
-		size_t offset = (size_t)(stream->position - stream->cache_start);
-		size_t available = stream->cache_size - offset;
+		size_t offset = (size_t)(stream->position - slot->start);
+		size_t available = slot->size - offset;
 		size_t wanted = size - total;
 		if (wanted > available) wanted = available;
-		memcpy((unsigned char *)output + total, stream->cache + offset, wanted);
+		memcpy((unsigned char *)output + total, slot->data + offset, wanted);
 		stream->position += wanted;
 		total += wanted;
+		/* Retain the current and immediately preceding chunk for small backward
+		 * demux seeks. Older slots are recycled into future read-ahead. */
+		for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++) {
+			JellyfinCacheSlot *candidate = &stream->slots[i];
+			if (candidate->state == JELLYFIN_SLOT_READY &&
+			    candidate->start + candidate->size + JELLYFIN_CACHE_CHUNK <=
+			        stream->position) {
+				candidate->state = JELLYFIN_SLOT_EMPTY;
+				candidate->size = 0;
+			}
+		}
+		jellyfin_publish_slots_locked(stream);
+		jellyfin_cache_unlock(stream);
 	}
 	return (int)total;
 }
@@ -766,23 +957,34 @@ static int64_t jellyfin_stream_seek(void *opaque, int64_t offset, int origin) {
 	if (base < 0 || offset < -base) return -1;
 	int64_t next = base + offset;
 	if (next < 0 || (uint64_t)next > stream->size) return -1;
+	jellyfin_cache_lock(stream);
 	stream->position = (uint64_t)next;
-	if (stream->position < stream->cache_start ||
-	    stream->position >= stream->cache_start + stream->cache_size)
-		jellyfin_publish_cache(stream, stream->position, 0);
+	if (stream->position < stream->size &&
+	    !jellyfin_ready_slot_locked(stream, stream->position) &&
+	    !jellyfin_position_pending_locked(stream, stream->position))
+		jellyfin_request_window_locked(stream, stream->position);
+	jellyfin_cache_unlock(stream);
 	return next;
 }
 
 static void jellyfin_stream_abort(void *opaque) {
 	JellyfinStream *stream = opaque;
-	if (!stream || !stream->cancel) return;
-	*stream->cancel = 1;
+	if (!stream) return;
+	if (stream->cancel) *stream->cancel = 1;
+	stream->worker_cancel = 1;
 	__sync_synchronize();
 }
 
 static void jellyfin_stream_close(void *opaque) {
 	JellyfinStream *stream = opaque;
 	if (!stream) return;
+	stream->worker_stop = 1;
+	stream->worker_cancel = 1;
+	__sync_synchronize();
+	if (stream->worker_thid >= 0) {
+		sceKernelWaitThreadEnd(stream->worker_thid, NULL, NULL);
+		sceKernelDeleteThread(stream->worker_thid);
+	}
 	vita_https_client_destroy(stream->client);
 	secure_zero(stream->access_token, sizeof(stream->access_token));
 	free(stream->cache);
@@ -899,6 +1101,7 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 	if (endpoint_size < 0 || (size_t)endpoint_size >= sizeof(endpoint)) return -1;
 	JellyfinStream *stream = calloc(1, sizeof(*stream));
 	if (!stream) return -1;
+	stream->worker_thid = -1;
 	stream->cancel = cancel_flag;
 	stream->telemetry = telemetry;
 	stream->cache = malloc(JELLYFIN_RANGE_CACHE);
@@ -907,11 +1110,13 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 		jellyfin_stream_close(stream);
 		return -1;
 	}
+	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++)
+		stream->slots[i].data = stream->cache + i * JELLYFIN_CACHE_CHUNK;
 	snprintf(stream->access_token, sizeof(stream->access_token), "%s",
 	         credential->access_token);
 	VitaHttpsClientConfig config;
 	jellyfin_client_config(source, &config);
-	config.request_timeout_ms = 8000;
+	config.request_timeout_ms = 12000;
 	stream->client = vita_https_client_create(&config);
 	if (!stream->client) {
 		jellyfin_stream_close(stream);
@@ -941,8 +1146,23 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 		return result;
 	}
 	stream->size = (uint64_t)response.content_length;
-	result = jellyfin_stream_fetch(stream, 0);
+	stream->generation = 1;
+	stream->requested_start = 0;
+	stream->reset_pending = 1;
+	jellyfin_publish_cache(stream, 0, 0, 0);
+	stream->worker_thid = sceKernelCreateThread(
+	    "VitaMediaDeckJellyfinPrefetch", jellyfin_prefetch_worker,
+	    JELLYFIN_PREFETCH_THREAD_CREATE_PRIORITY,
+	    JELLYFIN_PREFETCH_THREAD_STACK, 0, 0, NULL);
+	if (stream->worker_thid < 0) {
+		jellyfin_stream_close(stream);
+		return -1;
+	}
+	JellyfinStream *self = stream;
+	result = sceKernelStartThread(stream->worker_thid, sizeof(self), &self);
 	if (result < 0) {
+		sceKernelDeleteThread(stream->worker_thid);
+		stream->worker_thid = -1;
 		jellyfin_stream_close(stream);
 		return result;
 	}

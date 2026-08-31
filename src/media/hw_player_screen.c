@@ -387,8 +387,10 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 		vita2d_draw_rectangle(TIMELINE_X, TIMELINE_Y, TIMELINE_W, 6,
 		                      fade_color(VT_THEME_BORDER, hud_opacity));
 		VtDecoderBufferStatus buffer = {0};
-		if (source->stream.buffer_status &&
+		int has_buffer = source->stream.buffer_status &&
 		    source->stream.buffer_status(source->stream.opaque, &buffer) == 0 &&
+		    buffer.capacity_bytes > 0;
+		if (has_buffer &&
 		    buffer.source_size > 0 && buffer.range_end > buffer.range_start) {
 			float buffer_start = (float)((double)buffer.range_start /
 			                                    (double)buffer.source_size);
@@ -426,6 +428,20 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			int width = ui_font_text_width(small, UI_FONT_SMALL, duration);
 			ui_font_draw_text(small, TIMELINE_X + TIMELINE_W - width, 499,
 			                  text, UI_FONT_SMALL, duration);
+			if (has_buffer) {
+				char reserve[64];
+				snprintf(reserve, sizeof(reserve),
+				         vt_i18n_str(VT_STR_PLAYER_BUFFER_RESERVE),
+				         (double)buffer.resident_bytes / (1024.0 * 1024.0),
+				         (double)buffer.capacity_bytes / (1024.0 * 1024.0));
+				int reserve_width =
+				    ui_font_text_width(small, UI_FONT_SMALL, reserve);
+				ui_font_draw_text(small,
+				                  TIMELINE_X + (TIMELINE_W - reserve_width) / 2,
+				                  499,
+				                  fade_color(VT_THEME_SIGNAL_LIGHT, hud_opacity),
+				                  UI_FONT_SMALL, reserve);
+			}
 		}
 	}
 	if (volume_opacity > 0.01f) {
