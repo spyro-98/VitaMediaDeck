@@ -62,7 +62,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   confirmed SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
 - Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
 - Indexed H.264 cue seeking for startup, live seek, saved-position resume, and
-  AAC track replacement without multi-stream linear-seek fallbacks.
+  AAC track replacement without multi-stream linear-seek fallbacks. Jellyfin
+  maps each cue hop to a directly aligned HTTP Range window and keeps its
+  prefetch worker alive across the decoder's temporary seek cancellation.
 - Runtime switching between multiple AAC audio tracks and embedded SubRip,
   ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
 - Jellyfin text subtitles, including server-extracted embedded tracks, are
@@ -70,8 +72,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   responses. This avoids reopening and probing the complete remote movie for
   subtitle changes.
 - Configurable multilingual subtitles with font profiles for Western, Cyrillic,
-  Japanese, Chinese, and Korean text; foreground, background, border, size,
-  width, row-count, and position controls; and a full-width Settings preview.
+  Japanese, Chinese, and Korean text; foreground, background, border, four
+  sharp size tiers, width, row-count, and true top/bottom position controls;
+  and a full-width Settings preview.
 - Grid covers from sidecar or embedded artwork, with bounded representative
   H.264 frame extraction and persistent caching when artwork is unavailable.
 - Per-video resume history for local and remote media, plus explicit restart
@@ -220,13 +223,12 @@ SMB test-server instructions are in
 - Jellyfin direct play uses a background 8 MiB sliding read-ahead ring for each
   active media cursor. It continues filling while playback is paused, performs
   direct range jumps after seeks, and never grows with the duration or size of
-  the movie. Selecting an embedded subtitle can open a separate, equally
-  bounded media cursor; external text subtitles use a separate 2 MiB response
-  cap.
+  the movie. Jellyfin text subtitles use a separate 2 MiB response cap rather
+  than opening another cursor on the complete movie.
 - Bitmap subtitles such as PGS and VobSub may be preserved by the Transcoder but
   are not rendered by the current app.
-- Separate video, audio, subtitle, and thumbnail cursors can duplicate reads on
-  remote interleaved media.
+- Separate video, audio, and thumbnail cursors can duplicate reads on remote
+  interleaved media.
 - Some recognised containers or codecs may still be rejected when they do not
   meet the active Vita decoder contract.
 
