@@ -119,6 +119,10 @@ typedef struct {
 	VtNetworkCredential credential;
 	char path[VT_NETWORK_PATH_MAX];
 	VtNetworkBufferTelemetry buffer;
+	/* Exactly one live media cursor owns HUD telemetry. The decoder opens the
+	 * video cursor first; keeping audio read-ahead out of this snapshot prevents
+	 * the timeline trace from alternating between independent byte ranges. */
+	volatile uintptr_t buffer_owner;
 	char jellyfin_media_source_id[VT_NETWORK_USER_ID_MAX];
 	int jellyfin_subtitle_index;
 	int jellyfin_subtitle_stream;

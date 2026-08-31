@@ -66,6 +66,7 @@ typedef struct {
 	int worker_error;
 	int worker_retries;
 	VtNetworkBufferTelemetry *telemetry;
+	volatile uintptr_t *telemetry_owner;
 } JellyfinStream;
 
 typedef struct {
@@ -1007,6 +1008,9 @@ static void jellyfin_stream_close(void *opaque) {
 		sceKernelDeleteThread(stream->worker_thid);
 	}
 	vita_https_client_destroy(stream->client);
+	if (stream->telemetry_owner)
+		__sync_bool_compare_and_swap(stream->telemetry_owner,
+		                             (uintptr_t)stream, (uintptr_t)0);
 	secure_zero(stream->access_token, sizeof(stream->access_token));
 	free(stream->cache);
 	free(stream);
@@ -1114,7 +1118,8 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 	                        const VtNetworkCredential *credential,
 	                        const char *path, VtDecoderStreamHandle *out,
 	                        volatile int *cancel_flag,
-	                        VtNetworkBufferTelemetry *telemetry) {
+	                        VtNetworkBufferTelemetry *telemetry,
+	                        volatile uintptr_t *telemetry_owner) {
 	if (!source || !credential || !path || !out ||
 	    !credential->access_token[0]) return VT_NETWORK_AUTH_FAILED;
 	char item_id[VT_NETWORK_USER_ID_MAX];
@@ -1127,7 +1132,12 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 	if (!stream) return -1;
 	stream->worker_thid = -1;
 	stream->cancel = cancel_flag;
-	stream->telemetry = telemetry;
+	if (telemetry && telemetry_owner &&
+	    __sync_bool_compare_and_swap(telemetry_owner, (uintptr_t)0,
+	                                 (uintptr_t)stream)) {
+		stream->telemetry = telemetry;
+		stream->telemetry_owner = telemetry_owner;
+	}
 	stream->cache = malloc(JELLYFIN_RANGE_CACHE);
 	if (!stream->cache || jellyfin_url(source, endpoint, "static=true",
 	                                  stream->url, sizeof(stream->url)) < 0) {
