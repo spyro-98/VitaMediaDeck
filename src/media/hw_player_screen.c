@@ -529,7 +529,9 @@ static unsigned subtitle_font_size(void) {
 	return vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_SMALL
 	     ? UI_FONT_SMALL
 	     : vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_LARGE
-	     ? UI_FONT_DISPLAY : UI_FONT_BODY;
+	     ? UI_FONT_SUBTITLE_LARGE
+	     : vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_EXTRA_LARGE
+	     ? UI_FONT_SUBTITLE_EXTRA_LARGE : UI_FONT_BODY;
 }
 
 static size_t subtitle_utf8_bytes(const char *text) {
@@ -637,10 +639,18 @@ static void draw_subtitle_text(const char *text) {
 	int line_height = (int)size + 7;
 	int anchor;
 	switch (vt_preferences_subtitle_position()) {
-		case VT_SUBTITLE_POSITION_LOW: anchor = 420; break;
-		case VT_SUBTITLE_POSITION_CENTER: anchor = 342; break;
-		case VT_SUBTITLE_POSITION_HIGH: anchor = 264; break;
-		default: anchor = 478; break;
+		case VT_SUBTITLE_POSITION_LOW:
+			anchor = SCREEN_HEIGHT - 92;
+			break;
+		case VT_SUBTITLE_POSITION_CENTER:
+			anchor = SCREEN_HEIGHT / 2 + (count - 1) * line_height / 2;
+			break;
+		case VT_SUBTITLE_POSITION_TOP:
+			anchor = 28 + (count - 1) * line_height;
+			break;
+		default:
+			anchor = SCREEN_HEIGHT - 22;
+			break;
 	}
 	int y = anchor - (count - 1) * line_height;
 	int outline = vt_preferences_subtitle_outline_thickness();
