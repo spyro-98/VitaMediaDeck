@@ -405,7 +405,8 @@ static int network_factory_open_cancelable(void *opaque,
 				    factory->jellyfin_subtitle_index, out, cancel_flag);
 			return vt_jellyfin_open_stream(&factory->source,
 			                               &factory->credential, factory->path, out,
-			                               cancel_flag, &factory->buffer);
+			                               cancel_flag, &factory->buffer,
+			                               &factory->buffer_owner);
 		default: return -1;
 	}
 }
