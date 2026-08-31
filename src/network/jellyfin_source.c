@@ -76,13 +76,23 @@ static int append_url_path(char *url, size_t size, const char *path) {
 	return written < 0 || (size_t)written >= size - used ? -1 : 0;
 }
 
+int vt_network_jellyfin_uses_https(const VtNetworkSource *source) {
+	if (!source || source->protocol != VT_NETWORK_JELLYFIN) return 0;
+	if (!strncmp(source->host, "https://", 8)) return 1;
+	if (!strncmp(source->host, "http://", 7)) return 0;
+	return source->port != 8096;
+}
+
 static int jellyfin_base_url(const VtNetworkSource *source,
 	                         char *out, size_t out_size) {
 	if (!source || !out || !out_size) return -1;
 	const char *host = source->host;
-	if (!host || !host[0] || !strncmp(host, "http://", 7)) return -1;
-	int has_scheme = !strncmp(host, "https://", 8);
-	const char *authority = has_scheme ? host + 8 : host;
+	if (!host || !host[0]) return -1;
+	int https = vt_network_jellyfin_uses_https(source);
+	int scheme_length = !strncmp(host, "https://", 8) ? 8
+	                  : !strncmp(host, "http://", 7) ? 7 : 0;
+	if (!scheme_length && strstr(host, "://")) return -1;
+	const char *authority = host + scheme_length;
 	if (!authority[0] || strchr(authority, '?') || strchr(authority, '#')) return -1;
 	const char *base_path = strchr(authority, '/');
 	size_t authority_length = base_path
@@ -94,10 +104,12 @@ static int jellyfin_base_url(const VtNetworkSource *source,
 		explicit_port = closing && closing + 1 < authority + authority_length &&
 		                closing[1] == ':';
 	} else explicit_port = memchr(authority, ':', authority_length) != NULL;
-	int written = snprintf(out, out_size, "https://%.*s",
+	int written = snprintf(out, out_size, "%s://%.*s",
+	                       https ? "https" : "http",
 	                       (int)authority_length, authority);
 	if (written < 0 || (size_t)written >= out_size) return -1;
-	if (!explicit_port && source->port && source->port != 443) {
+	uint16_t default_port = https ? 443 : 80;
+	if (!explicit_port && source->port && source->port != default_port) {
 		size_t used = strlen(out);
 		written = snprintf(out + used, out_size - used, ":%u", source->port);
 		if (written < 0 || (size_t)written >= out_size - used) return -1;
@@ -148,7 +160,8 @@ static void jellyfin_client_config(const VtNetworkSource *source,
 	config->request_timeout_ms = 12000;
 	config->low_speed_bytes_per_second = 1024;
 	config->low_speed_seconds = 6;
-	if (source->tls_public_key_sha256[0]) {
+	config->allow_http = !vt_network_jellyfin_uses_https(source);
+	if (!config->allow_http && source->tls_public_key_sha256[0]) {
 		config->pinned_public_key = source->tls_public_key_sha256;
 		config->allow_untrusted_ca_with_pin = 1;
 	}
@@ -205,7 +218,8 @@ int vt_jellyfin_authenticate(const VtNetworkSource *source,
 	if (jellyfin_url(source, "Users/AuthenticateByName", NULL,
 	                 url, sizeof(url)) < 0) {
 		if (detail && detail_size)
-			snprintf(detail, detail_size, "Jellyfin requires a valid HTTPS endpoint");
+			snprintf(detail, detail_size,
+			         "Jellyfin requires a valid HTTP or HTTPS endpoint");
 		return -1;
 	}
 	char authorization[512];
@@ -370,6 +384,7 @@ int vt_jellyfin_probe_public_key(const VtNetworkSource *source,
 	                             char *pin, size_t pin_size,
 	                             char *detail, size_t detail_size) {
 	if (!source || !pin || !pin_size) return -1;
+	if (!vt_network_jellyfin_uses_https(source)) return -1;
 	char url[2048];
 	if (jellyfin_url(source, "System/Info/Public", NULL, url, sizeof(url)) < 0)
 		return -1;
