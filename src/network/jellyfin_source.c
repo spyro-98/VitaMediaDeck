@@ -10,7 +10,7 @@
 #include <vita_https.h>
 
 #define JELLYFIN_RESPONSE_MAX (2U * 1024U * 1024U)
-#define JELLYFIN_RANGE_CACHE (512U * 1024U)
+#define JELLYFIN_RANGE_CACHE (1024U * 1024U)
 #define JELLYFIN_CLIENT_VERSION "1.1"
 #define JELLYFIN_DEVICE_ID "VMDK00001"
 
@@ -31,7 +31,25 @@ typedef struct {
 	uint64_t cache_start;
 	size_t cache_size;
 	unsigned char *cache;
+	VtNetworkBufferTelemetry *telemetry;
 } JellyfinStream;
+
+static void jellyfin_publish_cache(JellyfinStream *stream, uint64_t start,
+	                               size_t resident) {
+	if (!stream || !stream->telemetry) return;
+	VtNetworkBufferTelemetry *telemetry = stream->telemetry;
+	while (__sync_lock_test_and_set(&telemetry->writer_lock, 1U)) { }
+	__sync_add_and_fetch(&telemetry->sequence, 1U);
+	__sync_synchronize();
+	telemetry->source_size = stream->size;
+	telemetry->range_start = start;
+	telemetry->range_end = start + resident;
+	telemetry->resident_bytes = (uint32_t)resident;
+	telemetry->capacity_bytes = JELLYFIN_RANGE_CACHE;
+	__sync_synchronize();
+	__sync_add_and_fetch(&telemetry->sequence, 1U);
+	__sync_lock_release(&telemetry->writer_lock);
+}
 
 static void secure_zero(void *memory, size_t size) {
 	volatile unsigned char *bytes = memory;
@@ -481,6 +499,7 @@ static int jellyfin_stream_fetch(JellyfinStream *stream, uint64_t start) {
 	};
 	VitaHttpsResponse response = { 0 };
 	stream->cache_size = 0;
+	jellyfin_publish_cache(stream, start, 0);
 	int result = vita_https_perform(stream->client, &request, &response);
 	if (response.status_code == 401 || response.status_code == 403)
 		return VT_NETWORK_AUTH_FAILED;
@@ -491,6 +510,7 @@ static int jellyfin_stream_fetch(JellyfinStream *stream, uint64_t start) {
 		                  : VT_NETWORK_RANGE_UNSUPPORTED;
 	stream->cache_start = start;
 	stream->cache_size = output.size;
+	jellyfin_publish_cache(stream, stream->cache_start, stream->cache_size);
 	return 0;
 }
 
@@ -526,6 +546,9 @@ static int64_t jellyfin_stream_seek(void *opaque, int64_t offset, int origin) {
 	int64_t next = base + offset;
 	if (next < 0 || (uint64_t)next > stream->size) return -1;
 	stream->position = (uint64_t)next;
+	if (stream->position < stream->cache_start ||
+	    stream->position >= stream->cache_start + stream->cache_size)
+		jellyfin_publish_cache(stream, stream->position, 0);
 	return next;
 }
 
@@ -548,7 +571,8 @@ static void jellyfin_stream_close(void *opaque) {
 int vt_jellyfin_open_stream(const VtNetworkSource *source,
 	                        const VtNetworkCredential *credential,
 	                        const char *path, VtDecoderStreamHandle *out,
-	                        volatile int *cancel_flag) {
+	                        volatile int *cancel_flag,
+	                        VtNetworkBufferTelemetry *telemetry) {
 	if (!source || !credential || !path || !out ||
 	    !credential->access_token[0]) return VT_NETWORK_AUTH_FAILED;
 	char item_id[VT_NETWORK_USER_ID_MAX];
@@ -560,6 +584,7 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 	JellyfinStream *stream = calloc(1, sizeof(*stream));
 	if (!stream) return -1;
 	stream->cancel = cancel_flag;
+	stream->telemetry = telemetry;
 	stream->cache = malloc(JELLYFIN_RANGE_CACHE);
 	if (!stream->cache || jellyfin_url(source, endpoint, "static=true",
 	                                  stream->url, sizeof(stream->url)) < 0) {
