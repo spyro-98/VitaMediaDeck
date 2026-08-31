@@ -23,6 +23,9 @@ Sources, Settings, and About from the shared sidebar.
   and authenticated seekable direct play over verified HTTPS. Provider tokens
   remain memory-only; server transcoding and remote audio are intentionally not
   part of this first provider integration.
+- Added explicit Jellyfin LAN HTTP for standard port 8096 servers. Bare hosts
+  select HTTP on 8096 and HTTPS otherwise; explicit schemes override the port,
+  and the source UI warns when credentials and media are unencrypted.
 - Added one protocol-neutral stream factory shared by local files and all
   remote transports.
 - Added metadata discovery and in-player switching for multiple AAC audio and

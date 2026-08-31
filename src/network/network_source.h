@@ -133,6 +133,10 @@ int vt_network_fetch_artwork(const VtNetworkSource *source,
 	                         const char *path, unsigned char **data,
 	                         size_t *size, volatile int *cancel_flag);
 
+/* Explicit schemes take precedence. For a bare Jellyfin host, port 8096 is
+ * plain HTTP and every other port is HTTPS. */
+int vt_network_jellyfin_uses_https(const VtNetworkSource *source);
+
 int vt_network_is_supported_media(const char *name, int *is_audio);
 const char *vt_network_protocol_name(VtNetworkProtocol protocol);
 

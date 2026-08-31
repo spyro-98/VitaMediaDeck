@@ -80,12 +80,15 @@ offsets between handles.
 
 ### Jellyfin
 
-- HTTPS only, with public-CA validation or an explicitly confirmed SPKI pin.
+- Verified HTTPS with public-CA validation or an explicitly confirmed SPKI pin,
+  plus explicit unencrypted HTTP for LAN servers using the standard 8096 port.
 - Username/password authentication through the Jellyfin API.
 - Access token and user identifier retained only for the running session.
 - Video-library browsing and Primary-image cover retrieval.
 - Original-file direct play with authenticated byte ranges; no HLS or server
   transcoding in the current provider.
+- HTTP mode is visibly marked unencrypted because credentials, tokens,
+  metadata, and media travel in clear text.
 
 ### WebDAV
 

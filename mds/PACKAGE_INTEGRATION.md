@@ -52,13 +52,16 @@ static linker cannot accidentally satisfy one backend with the other.
 This keeps fallback policy in the application while each decoder package stays
 deterministic and reusable.
 
-## HTTPS ownership
+## HTTP(S) ownership
 
 VitaMediaDeck calls `vita_https_init()` before network-source initialization and
 `vita_https_shutdown()` at application teardown. Jellyfin authentication,
 library browsing, and poster retrieval use `vita_https_perform()`. Jellyfin
 direct play uses authenticated `HEAD` and bounded Range requests. Its access
 token stays in the session credential structure and is never serialized.
+`vita-https` remains HTTPS-only by default, but Jellyfin explicitly enables its
+HTTP mode for `http://` and bare port-8096 sources. HTTPS requests cannot
+redirect down to HTTP.
 WebDAV listing uses `vita_https_perform()`. WebDAV playback uses
 `vita_https_open_range_stream()`, which verifies an actual one-byte `206`
 response and returns a cached seekable cursor. VitaMediaDeck does not initialize

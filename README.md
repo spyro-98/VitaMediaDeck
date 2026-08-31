@@ -54,7 +54,7 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 - Local video and music libraries on `ux0:` and `uma0:`, with paged indexing,
   folder browsing, and persistent grid/list views.
 - Native Jellyfin library browsing with memory-only access tokens, server
-  posters, and seekable direct play over verified HTTPS.
+  posters, and seekable direct play over HTTPS or explicitly selected LAN HTTP.
 - Authenticated remote video browsing through WebDAV over HTTPS, SFTP with a
   confirmed SHA-256 host fingerprint, and signed SMB2/SMB3 sessions.
 - Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
@@ -101,7 +101,7 @@ stream validation, and both command-line and interactive terminal interfaces.
 | Source | Access contract | Current scope |
 | --- | --- | --- |
 | Local storage | Vita filesystem | Video and audio |
-| Jellyfin | Verified HTTPS API, username/password session, memory-only access token, byte ranges | Video libraries, server posters, direct play |
+| Jellyfin | HTTPS on port 8920, or explicitly selected unencrypted LAN HTTP on port 8096; memory-only access token and byte ranges | Video libraries, server posters, direct play |
 | WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
 | SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
 | SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
@@ -190,9 +190,10 @@ SMB test-server instructions are in
 - Remote passwords remain session-only by default. An explicit Settings opt-in
   stores them unencrypted at
   `ux0:data/VitaMediaDeck/network/passwords.txt` and displays a warning.
-- Jellyfin and WebDAV reject clear-text HTTP and validate TLS certificates or
-  an explicitly confirmed SPKI pin. Jellyfin access tokens remain in memory
-  and are reacquired after each application launch.
+- WebDAV rejects clear-text HTTP. Jellyfin supports verified HTTPS and explicit
+  LAN HTTP for standard port 8096 servers; HTTP sends the username, password,
+  token, metadata, and media without encryption. Jellyfin access tokens remain
+  in memory and are reacquired after each application launch.
 - SFTP requires an explicitly confirmed server fingerprint.
 - SMB guest access is disabled and message signing is required.
 - Remote sources are read-only: the app does not upload, rename, or delete files.
