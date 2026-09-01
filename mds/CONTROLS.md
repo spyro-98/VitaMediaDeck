@@ -22,12 +22,15 @@ temporarily switch it to a list; Video and Music remember their own view.
 Video cells prefer recognized local artwork, then an embedded cover, and finally
 an asynchronously extracted representative frame. Blank embedded artwork is
 ignored, and the selected cell is generated ahead of surrounding previews.
+Images from the `picture`, `photo`, and `download` folders on `ux0:` and `uma0:`
+appear in a dedicated Images tab; downloaded video and audio in the default
+download folders are indexed too.
 
 | Input | Behavior |
 | --- | --- |
-| Left/Right | Change All, Video, or Music filter. |
+| Left/Right | Change Library, Video, Audio, or Images filter. |
 | Up/Down | Move through visible items. |
-| Cross | Play the selected file. |
+| Cross | Play the selected video/audio file or open an image. |
 | Square | Open file actions. |
 | Circle | Return. |
 
@@ -40,9 +43,23 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 | Input | Local folder browser behavior |
 | --- | --- |
 | D-pad / left stick | Move between folders and files. |
-| Cross | Open a folder or play a compatible media file. |
+| Cross | Open a folder, play compatible video/audio, or view an image. |
 | R1 | Switch the shared filesystem view between grid and list. |
 | Circle | Move to the parent folder; return to Library at the device root. |
+
+### Image viewer
+
+| Input | Behavior |
+| --- | --- |
+| One-finger drag | Pan the image. |
+| Two-finger pinch | Zoom around the gesture midpoint. |
+| Two-finger twist | Rotate continuously. |
+| D-pad / left stick | Pan. |
+| Right stick vertically / horizontally | Zoom / rotate continuously. |
+| Triangle / Square | Zoom in / out. |
+| L1 / R1 | Rotate 90 degrees counter-clockwise / clockwise. |
+| Cross | Reset fit, pan, and rotation. |
+| Circle | Close the image. |
 
 ## Network Sources
 
@@ -95,7 +112,7 @@ on the bounded thumbnail worker.
 | Cross | Open the selected destination folder. |
 | Start | Use the current destination folder. |
 | Triangle | Create a folder in the current destination. |
-| Circle | Go up one folder; cancel at `ux0:`. |
+| Circle | Go up one folder; cancel at `ux0:`. The initial folder is `ux0:download`. |
 | Start during transfer | Pause or resume. |
 | Circle during transfer | Abort and remove the partial file. |
 

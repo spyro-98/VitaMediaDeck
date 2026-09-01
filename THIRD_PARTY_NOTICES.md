@@ -53,6 +53,11 @@ source archives and build provenance beside their generated libraries.
 - **quirc**, ISC license, used to decode QR links acquired with the Vita rear
   camera. Its license text is packaged as `licenses/quirc-ISC.txt`:
   https://github.com/dlbeer/quirc
+- **stb_image**, public domain or MIT, pinned at commit
+  `2c980bb59875b0d32144a71867fbdebb2f77cd20` for size-guarded BMP, TGA, GIF,
+  PSD, HDR, PIC, and PNM decoding: https://github.com/nothings/stb
+- **libwebp 1.6.0**, BSD 3-Clause, used for scaled WebP decoding:
+  https://chromium.googlesource.com/webm/libwebp
 
 This software is based in part on the work of the Independent JPEG Group.
 
