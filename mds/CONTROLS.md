@@ -46,14 +46,16 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 
 ## Network Sources
 
-### Saved sources
+### Saved sources and Download Tools
 
 | Input | Behavior |
 | --- | --- |
 | Square | Add a source. |
-| Triangle | Edit the selected source. |
-| Select | Remove the selected source definition. |
-| Cross | Browse the selected server; request a password if none is available. |
+| Triangle | Edit the selected saved source. |
+| Select | Remove the selected saved source definition. |
+| Start | Open Direct URL in the separate Download Tools panel. |
+| R | Open Scan QR in the separate Download Tools panel. |
+| Cross | Browse the selected saved server; request a password if needed. |
 | Circle | Return. |
 
 Jellyfin sources accept an HTTP or HTTPS host, optional base path, username,
@@ -82,9 +84,20 @@ on the bounded thumbnail worker.
 | Up/Down | Move through folders and files. |
 | Left/Right | Move between items while grid view is active. |
 | Cross | Open a folder or play a compatible video. |
-| Triangle | Open the selected Jellyfin video's metadata record. |
+| Triangle | Open Jellyfin video metadata, or download a selected WebDAV, SFTP, or SMB file. |
 | R1 | Switch the shared filesystem view between grid and list. |
 | Circle | Move to the parent folder; leave at the root. |
+
+### Download destination and transfer
+
+| Input | Behavior |
+| --- | --- |
+| Cross | Open the selected destination folder. |
+| Start | Use the current destination folder. |
+| Triangle | Create a folder in the current destination. |
+| Circle | Go up one folder; cancel at `ux0:`. |
+| Start during transfer | Pause or resume. |
+| Circle during transfer | Abort and remove the partial file. |
 
 ## Video player
 

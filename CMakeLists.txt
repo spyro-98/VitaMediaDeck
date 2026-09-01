@@ -90,6 +90,19 @@ set_target_properties(vitamediadeck_jansson PROPERTIES
   IMPORTED_LOCATION "${VITAMEDIADECK_JANSSON_ARCHIVE}"
   INTERFACE_INCLUDE_DIRECTORIES "${VITAMEDIADECK_JANSSON_ROOT}/include")
 
+set(VITAMEDIADECK_QUIRC_ARCHIVE
+  "${CMAKE_CURRENT_SOURCE_DIR}/build/deps/quirc-vita/lib/libquirc.a"
+  CACHE FILEPATH "quirc archive built by tools/build-quirc-vita.sh")
+if(NOT EXISTS "${VITAMEDIADECK_QUIRC_ARCHIVE}")
+  message(FATAL_ERROR
+    "Missing ${VITAMEDIADECK_QUIRC_ARCHIVE}; run tools/build-quirc-vita.sh. "
+    "The generic VitaSDK archive has a 254-region limit that is insufficient "
+    "for the 480x480 camera scanner.")
+endif()
+add_library(vitamediadeck_quirc STATIC IMPORTED GLOBAL)
+set_target_properties(vitamediadeck_quirc PROPERTIES
+  IMPORTED_LOCATION "${VITAMEDIADECK_QUIRC_ARCHIVE}")
+
 set(VITAMEDIADECK_RELEASE_LICENSE_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/build/release-licenses"
   CACHE PATH "License bundle produced by tools/prepare-release-licenses.sh")
@@ -164,6 +177,9 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
 endif()
 
+option(VITAMEDIADECK_ENABLE_LTO
+  "Enable link-time optimization for production Vita builds" ON)
+
 ## Load VitaSDK's packaging macros after project(). The verified module name is
 ## vita.cmake, not VitaSDK.cmake.
 include("${VITASDK}/share/vita.cmake" REQUIRED)
@@ -177,7 +193,7 @@ set(VITA_APP_NAME "VitaMediaDeck")
 set(VITA_TITLEID  "VMDK00001")
 
 # LiveArea version; vita_create_vpk requires the ##.## format.
-set(VITA_VERSION  "01.01")
+set(VITA_VERSION  "01.16")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -224,6 +240,7 @@ add_executable(${PROJECT_NAME}
   src/network/sftp_source.c
   src/network/smb_source.c
   src/network/jellyfin_source.c
+  src/network/download_manager.c
   src/media/background_playback.c
   src/media/audio_volume.c
   src/media/avplayer_init.c
@@ -255,6 +272,7 @@ add_executable(${PROJECT_NAME}
   src/ui/log_viewer.c
   src/ui/text_reader.c
   src/ui/network_sources_screen.c
+  src/ui/qr_scanner.c
 )
 
 # The software H.264 path is CPU-bound on the three user cores of the Vita.
@@ -263,12 +281,14 @@ add_executable(${PROJECT_NAME}
 # distinct standard optimization level and is already selected by Release.
 target_compile_options(${PROJECT_NAME} PRIVATE
   -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
-  -flto=4 -fuse-linker-plugin
   -ffunction-sections -fdata-sections)
 target_link_options(${PROJECT_NAME} PRIVATE
   -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
-  -flto=4 -fuse-linker-plugin
   -Wl,--gc-sections)
+if(VITAMEDIADECK_ENABLE_LTO)
+  target_compile_options(${PROJECT_NAME} PRIVATE -flto=4 -fuse-linker-plugin)
+  target_link_options(${PROJECT_NAME} PRIVATE -flto=4 -fuse-linker-plugin)
+endif()
 
 ## SceLibKernel_stub, SceKernelThreadMgr_stub, and SceProcessmgr_stub are among
 ## the common stubs linked by the toolchain and are not listed explicitly.
@@ -331,10 +351,12 @@ target_link_libraries(${PROJECT_NAME}
   SceCommonDialog_stub # sceCommonDialogUpdate, required internally by vita2d.o
   SceIme_stub         # sceImeOpen/Update/Close (src/ui/text_input.c)
   SceTouch_stub       # front panel: grids, selectors and player
+  SceCamera_stub      # rear-camera QR link acquisition
   SceAudio_stub       # sceAudioOut* used by the audio-drain thread
   SceDisplay_stub     # repeated for vita2d's later one-pass references
   m                   # sinf/cosf used by vita2d
   pthread             # FFmpeg and libcurl worker support
+  vitamediadeck_quirc # QR recognition for camera-acquired resource URLs
 )
 
 ## --- Vita packaging -------------------------------------------------------
@@ -377,6 +399,7 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/PROVENANCE.txt" licenses/release-provenance.txt
   FILE licenses/ReAvPlayer-MIT.txt licenses/ReAvPlayer-MIT.txt
   FILE licenses/REAVPLAYER_PROVENANCE.md licenses/REAVPLAYER_PROVENANCE.md
+  FILE licenses/quirc-ISC.txt licenses/quirc-ISC.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libsmb2-NOTICE.txt" licenses/libsmb2-NOTICE.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libsmb2-LGPL-2.1.txt" licenses/libsmb2-LGPL-2.1.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libxml2-MIT.txt" licenses/libxml2-MIT.txt
