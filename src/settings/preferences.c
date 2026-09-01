@@ -112,6 +112,9 @@ _Static_assert(sizeof(VtPreferencesDiskV3) == 40,
 #define VT_SUBTITLE_BACKGROUND_HIGH_BIT (1u << 9)
 #define VT_SUBTITLE_TEXT_HIGH_BIT       (1u << 10)
 #define VT_SUBTITLE_BORDER_HIGH_BIT     (1u << 11)
+/* The V3 extension word also carries non-subtitle flags once the original
+ * playback word is full. Zero preserves folder-first navigation on upgrades. */
+#define VT_BROWSER_FLAG_FLATTEN_FOLDERS  (1u << 12)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -121,6 +124,7 @@ static uint32_t g_playback_flags = 0;
 static uint32_t g_subtitle_flags = 0;
 
 static int set_playback_flag(uint32_t bit, int enabled);
+static int persist_subtitle_pair(uint32_t playback, uint32_t subtitle);
 
 static int valid_quality(int height) {
 	return height == VT_DEFAULT_QUALITY_360 ||
@@ -434,6 +438,19 @@ int vt_preferences_file_browser_grid(void) {
 
 int vt_preferences_set_file_browser_grid(int enabled) {
 	return set_playback_flag(VT_FILE_BROWSER_FLAG_LIST, !enabled);
+}
+
+int vt_preferences_folder_navigation_flattened(void) {
+	if (!g_loaded) vt_preferences_init();
+	return (g_subtitle_flags & VT_BROWSER_FLAG_FLATTEN_FOLDERS) != 0;
+}
+
+int vt_preferences_set_folder_navigation_flattened(int enabled) {
+	if (!g_loaded) vt_preferences_init();
+	uint32_t next = enabled
+	              ? g_subtitle_flags | VT_BROWSER_FLAG_FLATTEN_FOLDERS
+	              : g_subtitle_flags & ~VT_BROWSER_FLAG_FLATTEN_FOLDERS;
+	return persist_subtitle_pair(g_playback_flags, next);
 }
 
 int vt_preferences_local_video_grid(void) {

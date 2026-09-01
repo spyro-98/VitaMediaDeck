@@ -213,4 +213,8 @@ int vt_network_jellyfin_uses_https(const VtNetworkSource *source);
 int vt_network_is_supported_media(const char *name, int *is_audio);
 const char *vt_network_protocol_name(VtNetworkProtocol protocol);
 
+/* Stable remote-media key shared by playback history and browser cells. */
+void vt_network_media_history_id(const VtNetworkSource *source,
+	                             const char *path, char out[16]);
+
 #endif

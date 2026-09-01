@@ -34,8 +34,20 @@ int ui_runtime_init(void) {
 	return 0;
 }
 
+void ui_runtime_load_boot_assets(void) {
+	if (!g_runtime_ready) return;
+	if (!g_font_small)
+		g_font_small = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/icon0.png");
+	if (!g_font_small)
+		log_printf("ui boot asset warning: Inter font unavailable");
+	if (!g_logo)
+		log_printf("ui boot asset warning: brand logo unavailable, using vector fallback");
+}
+
 void ui_runtime_load_assets(void) {
 	if (!g_runtime_ready) return;
+	ui_runtime_load_boot_assets();
 	/* Keep the system PGFs available for complete Japanese/Chinese/Korean
 	 * coverage and for codepoints absent from the packaged face. */
 	if (!ui_font_fallback_ready()) {
@@ -47,7 +59,6 @@ void ui_runtime_load_assets(void) {
 	/* libvita2d's atlas key does not include pixel size. Every subtitle tier
 	 * needs its own face instance, otherwise the first cached bitmap is rescaled
 	 * by the GPU and the larger captions become soft. */
-	if (!g_font_small) g_font_small = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_font_body) g_font_body = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_font_display) g_font_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_subtitle_medium_display)
@@ -64,8 +75,6 @@ void ui_runtime_load_assets(void) {
 		g_subtitle_semibold_xlarge = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_font_small || !g_font_body || !g_font_display)
 		log_printf("ui asset warning: one or more Inter font instances unavailable");
-	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/icon0.png");
-	if (!g_logo) log_printf("ui asset warning: brand logo unavailable, using vector fallback");
 }
 
 void ui_runtime_term(void) {

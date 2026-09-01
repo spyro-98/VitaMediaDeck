@@ -34,8 +34,9 @@
 #define STICK_CENTER 128
 #define STICK_DEADZONE 42
 #define RIGHT_PANEL_WIDTH 320.0f
-#define RIGHT_PANEL_ROW_Y 82.0f
-#define RIGHT_PANEL_ROW_STEP 68.0f
+#define RIGHT_PANEL_ROW_Y 72.0f
+#define RIGHT_PANEL_ROW_STEP 58.0f
+#define RIGHT_PANEL_ROW_HEIGHT 50.0f
 #define PLAYER_BACK_X 400.0f
 #define PLAYER_PLAY_X 480.0f
 #define PLAYER_FORWARD_X 560.0f
@@ -104,6 +105,40 @@ static int run_seek(VtDecoderPlayer *player, UiPlayerLoadingInfo *loading,
 	if (cancel) *cancel = 0;
 	fence_decoder_frame(player);
 	return ui_player_loading_run(loading, seek_task, &task, cancel, NULL, NULL);
+}
+
+/* AUTO is a global policy; this is a session-only diagnostic choice. Reopen
+ * the reusable stream factory at the current timeline position and roll back
+ * to the active backend if the requested decoder cannot open the media. */
+static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
+	                          UiPlayerLoadingInfo *loading, volatile int *cancel,
+	                          VtDecoderBackend target, uint64_t position_ms,
+	                          int audio_track, int subtitle_track) {
+	if (!player_io || !*player_io || !open || !loading) return -1;
+	VtDecoderBackend previous_preference = open->config.preferred_backend;
+	fence_decoder_frame(*player_io);
+	vt_decoder_destroy(*player_io);
+	*player_io = vt_decoder_create();
+	if (!*player_io) return -1;
+	open->player = *player_io;
+	open->config.preferred_backend = target;
+	open->config.start_position_ms = position_ms;
+	open->config.audio_track = audio_track;
+	open->config.subtitle_track = subtitle_track;
+	loading->cancel_ctx = *player_io;
+	if (cancel) *cancel = 0;
+	int ret = ui_player_loading_run(loading, open_task, open, cancel, NULL, NULL);
+	if (ret >= 0) return 0;
+
+	vt_decoder_destroy(*player_io);
+	*player_io = vt_decoder_create();
+	if (!*player_io) return ret;
+	open->player = *player_io;
+	open->config.preferred_backend = previous_preference;
+	loading->cancel_ctx = *player_io;
+	if (cancel) *cancel = 0;
+	return ui_player_loading_run(loading, open_task, open, cancel, NULL, NULL) >= 0
+	     ? 1 : ret;
 }
 
 static int run_track_change(VtDecoderPlayer *player,
@@ -696,6 +731,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	                                  const VtDecoderPlayer *player,
 	                                  const VtDecoderPlayerStatus *status,
 	                                  int resume_available,
+	                                  int decoder_switch_visible,
 	                                  int pending_audio_track,
 	                                  int pending_subtitle_track) {
 	if (animation <= 0.01f || !status) return;
@@ -718,12 +754,11 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		                  VT_THEME_TEXT,
 		                  UI_FONT_SMALL, "R1");
 	}
-	const char *labels[5] = {
+	const char *labels[6] = {
 		vt_i18n_str(VT_STR_PLAYER_FILL_SCREEN),
 		vt_i18n_str(VT_STR_PLAYER_LOOP),
 		vt_i18n_str(VT_STR_PLAYER_AUDIO_TRACK),
-		vt_i18n_str(VT_STR_PLAYER_SUBTITLE_TRACK),
-		vt_i18n_str(VT_STR_PLAYER_RESTART_FROM_BEGINNING)
+		vt_i18n_str(VT_STR_PLAYER_SUBTITLE_TRACK), NULL, NULL
 	};
 	char audio_value[128], subtitle_value[128];
 	format_track_value(player, 0, pending_audio_track, audio_value);
@@ -739,34 +774,44 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	         subtitle_state == VT_DECODER_SUBTITLE_FAILED)
 		snprintf(subtitle_value, sizeof(subtitle_value), "%s",
 		         vt_i18n_str(VT_STR_PLAYER_SUBTITLE_FAILED));
-	const char *values[5] = {
+	const char *values[6] = {
 		vt_i18n_str(vt_preferences_fill_screen() ? VT_STR_PLAYER_ON
 		                                             : VT_STR_PLAYER_OFF),
 		vt_i18n_str(vt_preferences_loop_enabled() ? VT_STR_PLAYER_ON
 		                                             : VT_STR_PLAYER_OFF),
-		audio_value, subtitle_value, "00:00"
+		audio_value, subtitle_value, NULL, NULL
 	};
-	int row_count = resume_available ? 5 : 4;
+	int row_count = 4;
+	if (decoder_switch_visible) {
+		labels[row_count] = vt_i18n_str(VT_STR_PLAYER_DECODER);
+		values[row_count++] = vt_i18n_str(status->hardware_accelerated
+		    ? VT_STR_PLAYER_DECODER_HARDWARE : VT_STR_PLAYER_DECODER_SOFTWARE);
+	}
+	if (resume_available) {
+		labels[row_count] = vt_i18n_str(VT_STR_PLAYER_RESTART_FROM_BEGINNING);
+		values[row_count++] = "00:00";
+	}
 	for (int i = 0; i < row_count; i++) {
 		float y = RIGHT_PANEL_ROW_Y + i * RIGHT_PANEL_ROW_STEP;
-		ui_panel(x + 18, y, width - 36, 56, VT_THEME_SURFACE,
+		ui_panel(x + 18, y, width - 36, RIGHT_PANEL_ROW_HEIGHT, VT_THEME_SURFACE,
 		         VT_THEME_BORDER_DIM, 0);
 	}
 	float focus_y = RIGHT_PANEL_ROW_Y + focus_position * RIGHT_PANEL_ROW_STEP;
-	vita2d_draw_rectangle(x + 14, focus_y - 4, width - 28, 64,
+	vita2d_draw_rectangle(x + 14, focus_y - 4, width - 28,
+	                      RIGHT_PANEL_ROW_HEIGHT + 8,
 	                      VT_THEME_HALO_A(76));
-	ui_panel(x + 18, focus_y, width - 36, 56,
+	ui_panel(x + 18, focus_y, width - 36, RIGHT_PANEL_ROW_HEIGHT,
 	         VT_THEME_SURFACE_FOCUS, VT_THEME_SIGNAL_LIGHT, 0);
 	for (int i = 0; i < row_count; i++) {
 		float y = RIGHT_PANEL_ROW_Y + i * RIGHT_PANEL_ROW_STEP;
 		if (small) {
-			ui_font_draw_text(small, (int)x + 38, (int)y + 35,
+			ui_font_draw_text(small, (int)x + 38, (int)y + 32,
 			                  i == cursor ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
 			                  UI_FONT_SMALL, labels[i]);
 			const char *value = values[i];
 			int value_w = ui_font_text_width(small, UI_FONT_SMALL, value);
 			if (value_w > 118) {
-				static char fitted_values[5][96];
+				static char fitted_values[6][96];
 				ui_font_fit_text(small, UI_FONT_SMALL, value, fitted_values[i],
 				                 sizeof(fitted_values[i]), 118);
 				value = fitted_values[i];
@@ -776,7 +821,8 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 			    (i < 2 && !strcmp(value, vt_i18n_str(VT_STR_PLAYER_OFF))) ||
 			    (i == 3 && pending_subtitle_track == 0)
 			        ? VT_THEME_TEXT_MUTED
-			        : i == 4 ? VT_THEME_COLD_LIGHT : VT_THEME_BLUE_LIGHT;
+			        : (resume_available && i == row_count - 1)
+			              ? VT_THEME_COLD_LIGHT : VT_THEME_BLUE_LIGHT;
 			if (i == 3 && subtitle_request_visible &&
 			    subtitle_state == VT_DECODER_SUBTITLE_PENDING)
 				value_color = VT_THEME_SPECTRAL_LIGHT;
@@ -784,22 +830,30 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 			         subtitle_state == VT_DECODER_SUBTITLE_FAILED)
 				value_color = VT_THEME_DANGER;
 			ui_font_draw_text(small, (int)x + (int)width - value_w - 34,
-			                  (int)y + 35,
+			                  (int)y + 32,
 			                  value_color,
 			                  UI_FONT_SMALL, value);
 		}
 	}
-	int divider_y = resume_available ? 426 : 372;
+	int divider_y = (int)(RIGHT_PANEL_ROW_Y + row_count * RIGHT_PANEL_ROW_STEP + 2);
 	vita2d_draw_rectangle(x + 18, divider_y, width - 36, 1, VT_THEME_BORDER);
 	if (small) {
-		char bitrate[32], decoder[128];
+		char bitrate[32], decoder[96], bitrate_line[64];
 		format_video_bitrate(status->video_bitrate_bps, bitrate);
 		snprintf(decoder, sizeof(decoder), vt_i18n_str(VT_STR_PLAYER_DECODER_INFO),
 		         status->hardware_accelerated ? "HW" : "SW",
-		         status->height, status->fps, bitrate);
-		ui_font_draw_text(small, (int)x + 28,
-		                  resume_available ? 462 : 410, VT_THEME_TEXT,
-		                  UI_FONT_SMALL, decoder);
+		         status->height, status->fps);
+		snprintf(bitrate_line, sizeof(bitrate_line),
+		         vt_i18n_str(VT_STR_PLAYER_BITRATE_INFO), bitrate);
+		char fitted_decoder[96], fitted_bitrate[64];
+		ui_font_fit_text(small, UI_FONT_SMALL, decoder, fitted_decoder,
+		                 sizeof(fitted_decoder), (int)width - 56);
+		ui_font_fit_text(small, UI_FONT_SMALL, bitrate_line, fitted_bitrate,
+		                 sizeof(fitted_bitrate), (int)width - 56);
+		ui_font_draw_text(small, (int)x + 28, divider_y + 32, VT_THEME_TEXT,
+		                  UI_FONT_SMALL, fitted_decoder);
+		ui_font_draw_text(small, (int)x + 28, divider_y + 56,
+		                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, fitted_bitrate);
 		ui_font_draw_text(small, (int)x + 28, 518, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_PLAYER_PANEL_HINT));
 	}
@@ -836,6 +890,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	       (size_t)open.config.external_subtitle_count *
 	           sizeof(open.config.external_subtitles[0]));
 	int decoder_preference = vt_preferences_video_decoder();
+	VtDecoderBackend session_backend_override = VT_DECODER_BACKEND_NONE;
 	open.config.preferred_backend =
 	    decoder_preference == VT_VIDEO_DECODER_HW_H264
 	        ? VT_DECODER_BACKEND_HARDWARE
@@ -984,6 +1039,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		vt_decoder_get_status(player, &status);
 		if (status.error) {
 			if (decoder_preference == VT_VIDEO_DECODER_AUTO &&
+			    session_backend_override == VT_DECODER_BACKEND_NONE &&
 			    vt_decoder_backend(player) == VT_DECODER_BACKEND_HARDWARE) {
 				SeekTask task = { player, status.position_ms };
 				cancel = 0;
@@ -1046,11 +1102,13 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				break;
 			}
 		} else if (right_open) {
+			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
+			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
 			unsigned right_navigation = ui_nav_repeat_update(
 			    &right_nav_repeat, pressed, controls.buttons, controls.lx,
 			    controls.ly, SCE_CTRL_UP | SCE_CTRL_DOWN);
 			if ((right_navigation & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
-			int right_row_count = resume_available ? 5 : 4;
+			int right_row_count = restart_row + (resume_available ? 1 : 0);
 			if ((right_navigation & SCE_CTRL_DOWN) &&
 			    right_cursor + 1 < right_row_count) right_cursor++;
 			if (right_cursor == 2 &&
@@ -1075,7 +1133,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (right_cursor == 1)
 					vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
-				else if (right_cursor < 4) {
+				else if (right_cursor == 2 || right_cursor == 3) {
 					int selected_track = right_cursor == 3
 					                   ? pending_subtitle_track : pending_audio_track;
 					ret = run_track_change(player, &loading, &cancel,
@@ -1097,7 +1155,28 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 					    &left_seek_repeat_at);
 					hud_deadline = now + 3500000ULL;
 					continue;
-				} else {
+				} else if (right_cursor == decoder_row) {
+					VtDecoderBackend target = vt_decoder_backend(player) ==
+					                              VT_DECODER_BACKEND_HARDWARE
+					                          ? VT_DECODER_BACKEND_SOFTWARE
+					                          : VT_DECODER_BACKEND_HARDWARE;
+					loading.status = vt_i18n_str(VT_STR_PLAYER_CHANGE_DECODER);
+					int change_ret = run_backend_change(
+					    &player, &open, &loading, &cancel, target,
+					    status.position_ms, pending_audio_track,
+					    pending_subtitle_track);
+					loading.status = opening_status;
+					if (change_ret < 0) { ret = change_ret; break; }
+					if (change_ret == 0) session_backend_override = target;
+					pending_audio_track = vt_decoder_active_audio_track(player);
+					pending_subtitle_track = vt_decoder_active_subtitle_track(player);
+					vt_decoder_set_paused(player, paused);
+					now = resync_after_blocking_action(
+					    &controls, &previous, &left_seek_direction,
+					    &left_seek_repeat_at);
+					hud_deadline = now + 3500000ULL;
+					continue;
+				} else if (resume_available && right_cursor == restart_row) {
 					ret = run_seek(player, &loading, &cancel, 0);
 					loading.status = opening_status;
 					if (ret < 0) break;
@@ -1208,18 +1287,21 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			int handled = 0;
 			int track_change_failed = 0;
 			int track_change_completed = 0;
-			int right_row_count = resume_available ? 5 : 4;
+			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
+			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
+			int right_row_count = restart_row + (resume_available ? 1 : 0);
 			for (int i = 0; i < right_row_count; i++) {
 				if (!ui_touch_hit_rect(touch.x, touch.y, panel_x + 18,
 				                       (int)(RIGHT_PANEL_ROW_Y + i * RIGHT_PANEL_ROW_STEP),
-				                       (int)RIGHT_PANEL_WIDTH - 36, 56)) continue;
+				                       (int)RIGHT_PANEL_WIDTH - 36,
+				                       (int)RIGHT_PANEL_ROW_HEIGHT)) continue;
 				right_cursor = i;
 				handled = 1;
 				if (i == 0)
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (i == 1)
 					vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
-				else if (i < 4) {
+				else if (i == 2 || i == 3) {
 					int count = i == 3
 					          ? vt_decoder_subtitle_track_count(player) + 1
 					          : vt_decoder_audio_track_count(player);
@@ -1239,7 +1321,26 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 					}
 					track_change_failed = ret < 0;
 					track_change_completed = ret >= 0;
-				} else {
+				} else if (i == decoder_row) {
+					VtDecoderBackend target = vt_decoder_backend(player) ==
+					                              VT_DECODER_BACKEND_HARDWARE
+					                          ? VT_DECODER_BACKEND_SOFTWARE
+					                          : VT_DECODER_BACKEND_HARDWARE;
+					loading.status = vt_i18n_str(VT_STR_PLAYER_CHANGE_DECODER);
+					int change_ret = run_backend_change(
+					    &player, &open, &loading, &cancel, target,
+					    status.position_ms, pending_audio_track,
+					    pending_subtitle_track);
+					loading.status = opening_status;
+					track_change_failed = change_ret < 0;
+					track_change_completed = change_ret >= 0;
+					if (change_ret == 0) session_backend_override = target;
+					if (change_ret >= 0) {
+						pending_audio_track = vt_decoder_active_audio_track(player);
+						pending_subtitle_track = vt_decoder_active_subtitle_track(player);
+						vt_decoder_set_paused(player, paused);
+					}
+				} else if (resume_available && i == restart_row) {
 					ret = run_seek(player, &loading, &cancel, 0);
 					loading.status = opening_status;
 					track_change_failed = ret < 0;
@@ -1411,7 +1512,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				ui_sections_sidebar_draw(&sidebar);
 			draw_player_right_sidebar(right_animation, right_focus_position,
 			                          right_cursor, player, &status,
-			                          resume_available, pending_audio_track,
+			                          resume_available,
+			                          decoder_preference == VT_VIDEO_DECODER_AUTO,
+			                          pending_audio_track,
 			                          pending_subtitle_track);
 		}
 		vita2d_end_drawing();

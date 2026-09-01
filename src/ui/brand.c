@@ -1,5 +1,6 @@
 #include "ui/brand.h"
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -57,7 +58,6 @@
 #define SEARCH_CLEAR_X (SEARCH_BOX_X + SEARCH_BOX_W - SEARCH_CLEAR_SIZE - 8)
 #define SEARCH_CLEAR_Y (SEARCH_BOX_Y + (SEARCH_BOX_H - SEARCH_CLEAR_SIZE) / 2)
 #define HEADER_NAME_MAX_W (SEARCH_BOX_X - HEADER_NAME_X - 12)
-#define HEADER_LOADING_RESERVE_W 46
 
 #define COLOR_BG      VT_THEME_BG
 #define COLOR_TEXT    VT_THEME_TEXT
@@ -288,13 +288,12 @@ static int draw_clock(const header_status *st, float opacity) {
 	return x;
 }
 
-static void draw_wifi(const header_status *st, int clock_left, float opacity) {
-	if (!st->wifi_valid) return;  /* silent degradation: nothing drawn */
-
+static int draw_wifi(const header_status *st, int clock_left, float opacity) {
 	int x = clock_left - STATUS_GAP - WIFI_W;
 	/* Never let a wide clock push the bars into the search field. */
 	const int min_x = CLOCK_RIGHT - CLOCK_MAX_W - STATUS_GAP - WIFI_W;
 	if (x < min_x) x = min_x;
+	if (!st->wifi_valid) return x;  /* reserve its stable group position */
 
 	unsigned int on_color = COLOR_BLUE;
 	if (!st->wifi_strength_known) {
@@ -310,6 +309,26 @@ static void draw_wifi(const header_status *st, int clock_left, float opacity) {
 		vita2d_draw_rectangle(bx, (float)WIFI_BOTTOM_Y - h, WIFI_BAR_W, h,
 		                      i < st->wifi_bars ? on_color : dim_color);
 	}
+	return x;
+}
+
+static void draw_status_loading(int status_left, float opacity) {
+	if (!g_brand_loading || opacity <= 0.0f) return;
+	const float center_x = (float)(status_left - STATUS_GAP - 10);
+	const float center_y = (float)UI_BRAND_HEADER_HEIGHT * 0.5f;
+	uint64_t phase = vt_preferences_reduce_motion() ? 0ULL
+	               : sceKernelGetProcessTimeWide() / 90000ULL;
+	for (int dot = 0; dot < 8; dot++) {
+		float angle = (float)dot * 0.7853982f;
+		int age = (dot - (int)(phase % 8ULL) + 8) % 8;
+		unsigned color = age == 0 ? VT_THEME_SPECTRAL_LIGHT
+		               : age <= 2 ? VT_THEME_SIGNAL_BRIGHT
+		                          : VT_THEME_BORDER;
+		float radius = age == 0 ? 2.7f : 1.7f;
+		vita2d_draw_fill_circle(center_x + cosf(angle) * 7.0f,
+		                        center_y + sinf(angle) * 7.0f, radius,
+		                        status_color_alpha(color, opacity));
+	}
 }
 
 void ui_brand_draw_status_indicators_alpha(float opacity) {
@@ -317,7 +336,8 @@ void ui_brand_draw_status_indicators_alpha(float opacity) {
 	if (opacity > 1.0f) opacity = 1.0f;
 	const header_status *st = status_get();
 	draw_battery(st, opacity);
-	draw_wifi(st, draw_clock(st, opacity), opacity);
+	int wifi_left = draw_wifi(st, draw_clock(st, opacity), opacity);
+	draw_status_loading(wifi_left, opacity);
 }
 
 void ui_brand_draw_status_indicators(void) {
@@ -486,10 +506,9 @@ static void draw_header(const char *query, int editing,
 		vita2d_font *display = ui_runtime_font(UI_FONT_DISPLAY);
 		vita2d_font *title_font = display ? display : font;
 		unsigned title_size = display ? UI_FONT_DISPLAY : UI_FONT_BODY;
-		int reserved_width = g_brand_loading ? HEADER_LOADING_RESERVE_W : 0;
-		while (title_size > UI_FONT_SMALL &&
-		       ui_font_text_width(title_font, title_size, HEADER_WORDMARK) +
-		           reserved_width > HEADER_NAME_MAX_W) {
+			while (title_size > UI_FONT_SMALL &&
+			       ui_font_text_width(title_font, title_size, HEADER_WORDMARK) >
+			           HEADER_NAME_MAX_W) {
 			title_size--;
 		}
 		float title_baseline =
@@ -498,24 +517,7 @@ static void draw_header(const char *query, int editing,
 		                       title_baseline,
 		                       COLOR_TEXT, title_size,
 		                       HEADER_WORDMARK);
-		if (g_brand_loading) {
-			int title_w = ui_font_text_width(title_font, title_size, HEADER_WORDMARK);
-			float start_x = (float)(HEADER_NAME_X + title_w + 12);
-			int reduce_motion = vt_preferences_reduce_motion();
-			uint64_t phase = reduce_motion ? 0 :
-			                 sceKernelGetProcessTimeWide() / 140000ULL;
-			for (int i = 0; i < 4; i++) {
-				int step = reduce_motion ? (i == 0 ? 0 : 2) :
-				           (int)((phase + (uint64_t)i) % 4ULL);
-				float radius = step == 0 ? 3.8f : step == 1 ? 3.1f : 2.4f;
-				unsigned color = step == 0 ? VT_THEME_SPECTRAL_LIGHT
-				               : step == 1 ? VT_THEME_SIGNAL_BRIGHT
-				                           : step == 2 ? VT_THEME_COLD
-				                                       : VT_THEME_BORDER;
-				vita2d_draw_fill_circle(start_x + i * 10.0f, 27.0f, radius, color);
-			}
 		}
-	}
 
 	/* Right corner: Wi-Fi, clock, battery (battery outermost). Values come
 	 * from a 2s cache, so this costs nothing per frame. */

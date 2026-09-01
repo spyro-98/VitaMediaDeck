@@ -19,6 +19,29 @@ VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
 or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
+## What's new in 1.2.0
+
+Release 1.2.0 expands the previous 1.1.8 public build from a local/network video
+player into a broader media library and download client:
+
+- Download managers for HTTPS/HTTP, QR links, WebDAV, SFTP, and SMB, with a
+  destination picker, folder creation, progress, pause/resume, and abort.
+- A rear-camera QR scanner with a larger live preview and Vita-specific frame
+  conversion and recognition diagnostics.
+- Local image albums and a bounded large-image viewer supporting JPEG, PNG,
+  WebP, BMP, TGA, GIF, PSD, HDR, PIC, and PNM-family files, with touch and
+  hardware zoom, pan, and rotation controls.
+- Folder-first local and network browsing, an optional flattened collection,
+  cached thumbnails/directories, faster startup and Back navigation, manual
+  remote refresh, and restored navigation after playback.
+- Persistent watched-progress rails on video covers, sorting and filtering,
+  correctly scaled byte-size labels, and richer video/music telemetry.
+- Runtime HW/SW decoder selection when the global preference is `AUTO`, plus
+  synchronized seek/resume, subtitle timing, and an eight-grain PCM queue that
+  prevents cumulative AudioOut starvation during long playback.
+- UI fixes for network/download layouts, destination dialogs, player bitrate,
+  music HUD toggling, startup placeholders, and the top-bar loading indicator.
+
 The **Spectral Reassembly** interface combines pitch-black OLED fields,
 spectral-cyan controls, cold blue/teal atmosphere, restrained amber telemetry,
 particle clouds, and scan traces. Its visual and multilingual typography
@@ -51,9 +74,13 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 
 ## Highlights
 
-- Local video, music, and image libraries on `ux0:` and `uma0:`, grouped by
-  storage folder instead of flattened into one list. Their grid/list views use
-  bounded asynchronous image thumbnails with a persistent cache.
+- Local video, music, and image libraries on `ux0:` and `uma0:`. The right
+  drawer can switch persistently between storage-folder navigation and one
+  flattened, paged collection. Grid/list views use bounded asynchronous image
+  thumbnails with a persistent cache and viewport-aware scheduling: the
+  selected cell and visible rows take priority over one speculative next row.
+  Video covers include a persistent watched percentage rail for local files and
+  remote server items.
 - A bounded full-screen image viewer with drag/pinch/twist gestures, L1/R1 zoom,
   inverted left-stick/D-pad panning, right-stick rotation, and byte-scaled file
   size telemetry.
@@ -69,7 +96,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   destination folder (and create one when needed); the transfer view provides
   live progress plus Pause/Resume and Abort. Interrupted downloads remain
   `.part` files and are never presented as complete media.
-- Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback.
+- Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback. When
+  the global decoder preference is `AUTO`, the player right drawer can switch
+  the current session between HW and SW at the same playback position.
 - Indexed H.264 cue seeking for startup, live seek, saved-position resume, and
   AAC track replacement without multi-stream linear-seek fallbacks. Jellyfin
   maps each cue hop to a directly aligned HTTP Range window and keeps its
@@ -77,6 +106,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   decoder validates both the first video frame and first audio packet before it
   commits a live seek, reopening directly at the target if either cursor did
   not actually land there.
+- A bounded eight-grain PCM queue separates AAC demux/decode from the
+  higher-priority AudioOut feeder, absorbing short transport and decode stalls
+  that would otherwise accumulate into audible gaps during long playback.
 - Runtime switching between multiple AAC audio tracks and embedded SubRip,
   ASS/SSA, WebVTT, MOV text, plain-text, or MicroDVD subtitles.
 - Jellyfin text subtitles, including server-extracted embedded tracks, are
@@ -92,9 +124,14 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 - Per-video resume history for local and remote media, plus explicit restart
   from the beginning.
 - Folder navigation is restored after a network video closes, including opaque
-  Jellyfin item paths and regular WebDAV, SFTP, and SMB directory trees.
+  Jellyfin item paths and regular WebDAV, SFTP, and SMB directory trees. A
+  bounded, memory-only ten-minute directory cache makes Back and playback return
+  immediate without persisting credentials; Square explicitly refreshes the
+  current remote folder.
 - Live video mini-player, persistent music mini-player, full-screen music
-  player, artwork, metadata, shuffle, repeat, and seeking.
+  player, artwork, metadata, shuffle, repeat, and seeking. The music HUD and
+  options drawer report the active decoder's codec, bitrate, sample rate,
+  channel count, and source bit depth when the backend exposes it.
 - Player telemetry for backend, resolution, frame rate, and video bitrate,
   including a calculated fallback when the container omits bitrate metadata,
   plus a colored timeline trace and numeric reserve for the video cursor's
@@ -191,9 +228,10 @@ explicitly selected by the user.
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
 saved server. Inside a Jellyfin library, Triangle opens the spectral metadata
-record for the selected video and Cross starts playback. WebDAV, SFTP, and SMB
-files use Triangle to download. A separate Download Tools panel provides Direct
-URL and Scan QR; every download opens a destination picker before transfer. See
+record for the selected video, Cross starts playback, and Square refreshes the
+current folder. WebDAV, SFTP, and SMB files use Triangle to download and Square
+to refresh their containing folder. A separate Download Tools panel provides
+Direct URL and Scan QR; every download opens a destination picker before transfer. See
 [CONTROLS.md](mds/CONTROLS.md) for the complete context-sensitive mapping.
 
 ## Building

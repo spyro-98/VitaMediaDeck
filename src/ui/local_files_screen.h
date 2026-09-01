@@ -7,6 +7,9 @@
  * action and item type as the indexed Library so the application playback
  * path remains shared. */
 int ui_local_files_screen(VtLocalMediaItem *selected_out);
+/* Drops RAM directory snapshots after filesystem mutations performed outside
+ * the direct browser. Normal navigation also validates directory timestamps. */
+void ui_local_files_cache_invalidate(void);
 
 /* Opens a real media root selected from the Library. Directories remain
  * visible for hierarchical navigation; regular files are limited to filter

@@ -46,6 +46,7 @@ VT_STR(NETWORK_EMPTY_FOLDER, "Questa cartella non contiene media riproducibili",
 VT_STR(NETWORK_EMPTY_FOLDER_DETAIL, "Apri un'altra cartella o torna indietro.", "Open another folder or go back.")
 VT_STR(NETWORK_FOLDER, "Cartella", "Folder")
 VT_STR(NETWORK_VIEW_GRID, "Griglia", "Grid")
+VT_STR(NETWORK_REFRESH, "Aggiorna", "Refresh")
 VT_STR(NETWORK_VIEW_LIST, "Lista", "List")
 VT_STR(NETWORK_INFO, "Dettagli", "Details")
 VT_STR(NETWORK_PLAY, "Riproduci", "Play")

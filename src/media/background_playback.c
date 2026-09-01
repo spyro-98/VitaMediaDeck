@@ -12,6 +12,7 @@
 #include <psp2/avplayer.h>
 #include <psp2/gxm.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <vita2d.h>
@@ -117,24 +118,41 @@ static void set_state(VtBackgroundPlaybackState state, int error) {
 	snapshot_unlock();
 }
 
-static int path_is_mp3(const char *path) {
-	if (!path) return 0;
-	size_t length = strlen(path);
-	return length >= 4 && path[length - 4] == '.' &&
-	       (path[length - 3] == 'm' || path[length - 3] == 'M') &&
-	       (path[length - 2] == 'p' || path[length - 2] == 'P') &&
-	       path[length - 1] == '3';
+static void publish_audio_metadata(BackgroundPlaybackJob *job,
+	                               const char *codec,
+	                               uint32_t bitrate_kbps,
+	                               uint32_t sample_rate,
+	                               uint16_t channels,
+	                               uint16_t bits_per_sample) {
+	if (!job) return;
+	snapshot_lock();
+	if (codec && codec[0])
+		copy_text(job->snapshot.audio_codec,
+		          sizeof(job->snapshot.audio_codec), codec);
+	if (bitrate_kbps) job->snapshot.audio_bitrate_kbps = bitrate_kbps;
+	if (sample_rate) job->snapshot.audio_sample_rate = sample_rate;
+	if (channels) job->snapshot.audio_channels = channels;
+	if (bits_per_sample)
+		job->snapshot.audio_bits_per_sample = bits_per_sample;
+	snapshot_unlock();
 }
 
-static int path_is_flac(const char *path) {
-	if (!path) return 0;
-	size_t length = strlen(path);
-	return length >= 5 && path[length - 5] == '.' &&
-	       (path[length - 4] == 'f' || path[length - 4] == 'F') &&
-	       (path[length - 3] == 'l' || path[length - 3] == 'L') &&
-	       (path[length - 2] == 'a' || path[length - 2] == 'A') &&
-	       (path[length - 1] == 'c' || path[length - 1] == 'C');
+static int path_suffix_ci(const char *path, const char *suffix) {
+	if (!path || !suffix) return 0;
+	size_t path_length = strlen(path), suffix_length = strlen(suffix);
+	if (path_length < suffix_length) return 0;
+	path += path_length - suffix_length;
+	for (size_t i = 0; i < suffix_length; i++) {
+		char left = path[i], right = suffix[i];
+		if (left >= 'A' && left <= 'Z') left += 'a' - 'A';
+		if (right >= 'A' && right <= 'Z') right += 'a' - 'A';
+		if (left != right) return 0;
+	}
+	return 1;
 }
+
+static int path_is_mp3(const char *path) { return path_suffix_ci(path, ".mp3"); }
+static int path_is_flac(const char *path) { return path_suffix_ci(path, ".flac"); }
 
 static void set_port_volume(int port, int percent, int *applied) {
 	if (port < 0 || !applied || *applied == percent) return;
@@ -194,6 +212,21 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	int channels = 0, encoding = 0;
 	if (mpg123_getformat(decoder, &rate, &channels, &encoding) != MPG123_OK ||
 	    rate <= 0 || channels != 2 || !(encoding & MPG123_ENC_SIGNED_16)) goto done;
+	struct mpg123_frameinfo2 frame_info;
+	memset(&frame_info, 0, sizeof(frame_info));
+	uint32_t bitrate_kbps = 0;
+	uint16_t source_channels = (uint16_t)channels;
+	const char *mpeg_codec = "MP3";
+	if (mpg123_info(decoder, &frame_info) == MPG123_OK) {
+		int reported = frame_info.abr_rate > 0 ? frame_info.abr_rate
+		                                         : frame_info.bitrate;
+		if (reported > 0) bitrate_kbps = (uint32_t)reported;
+		source_channels = frame_info.mode == MPG123_M_MONO ? 1 : 2;
+		if (frame_info.layer == 1) mpeg_codec = "MP1";
+		else if (frame_info.layer == 2) mpeg_codec = "MP2";
+	}
+	publish_audio_metadata(job, mpeg_codec, bitrate_kbps, (uint32_t)rate,
+	                       source_channels, 0);
 	off_t length = mpg123_length(decoder);
 	if (length < 0 && mpg123_scan(decoder) == MPG123_OK) length = mpg123_length(decoder);
 	if (length > 0 && !job->snapshot.duration_ms) {
@@ -510,6 +543,17 @@ static int play_flac(BackgroundPlaybackJob *job) {
 		ret = -2;
 		goto done;
 	}
+	uint32_t flac_bitrate_kbps = 0;
+	if (context.file_size && context.total_samples && context.sample_rate) {
+		uint64_t duration_ms = context.total_samples * 1000ULL /
+		                       context.sample_rate;
+		if (duration_ms && context.file_size <= UINT64_MAX / 8ULL)
+			flac_bitrate_kbps = (uint32_t)((context.file_size * 8ULL) /
+			                                duration_ms);
+	}
+	publish_audio_metadata(job, "FLAC", flac_bitrate_kbps,
+	                       context.sample_rate, (uint16_t)context.channels,
+	                       (uint16_t)context.bits_per_sample);
 	if (context.total_samples && !job->snapshot.duration_ms) {
 		snapshot_lock();
 		job->snapshot.duration_ms = context.total_samples * 1000ULL /
@@ -677,6 +721,7 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 	uint32_t boost_capacity = 0;
 	uint64_t last_snapshot = 0;
 	uint64_t last_power_tick = 0;
+	int audio_metadata_published = 0;
 	while (!job->cancel) {
 		if (observed_seek != job->seek_serial) {
 			player_lock(job);
@@ -707,6 +752,12 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 		player_unlock(job);
 		if (!paused && !active) break;
 		if (have_audio) {
+			if (!audio_metadata_published) {
+				publish_audio_metadata(
+				    job, NULL, 0, frame.details.audio.sampleRate,
+				    frame.details.audio.channelCount, 0);
+				audio_metadata_published = 1;
+			}
 			int requested_volume = vt_audio_volume_percent();
 			set_port_volume(port, requested_volume, &applied_volume);
 			sceAudioOutSetConfig(port, (SceSize)-1,
@@ -967,6 +1018,26 @@ static int prepare_local(const char *media_path, const char *media_id,
 	copy_text(job->snapshot.thumbnail_url, sizeof(job->snapshot.thumbnail_url),
 	          artwork_path);
 	job->snapshot.duration_ms = duration_ms;
+	SceIoStat media_stat;
+	memset(&media_stat, 0, sizeof(media_stat));
+	if (duration_ms && sceIoGetstat(media_path, &media_stat) >= 0 &&
+	    media_stat.st_size > 0 &&
+	    (uint64_t)media_stat.st_size <= UINT64_MAX / 8ULL)
+		job->snapshot.audio_bitrate_kbps =
+			(uint32_t)(((uint64_t)media_stat.st_size * 8ULL) / duration_ms);
+	if (job->mp3_source)
+		copy_text(job->snapshot.audio_codec,
+		          sizeof(job->snapshot.audio_codec), "MP3");
+	else if (job->flac_source)
+		copy_text(job->snapshot.audio_codec,
+		          sizeof(job->snapshot.audio_codec), "FLAC");
+	else if (path_suffix_ci(media_path, ".m4a") ||
+	         path_suffix_ci(media_path, ".aac"))
+		copy_text(job->snapshot.audio_codec,
+		          sizeof(job->snapshot.audio_codec), "AAC");
+	else if (path_suffix_ci(media_path, ".wav"))
+		copy_text(job->snapshot.audio_codec,
+		          sizeof(job->snapshot.audio_codec), "PCM");
 	job->snapshot.is_video = decoder_source != 0;
 	job->snapshot.state = VT_BACKGROUND_PREPARING;
 	job->thid = sceKernelCreateThread("VitaMediaDeckLocalAudio", background_thread,

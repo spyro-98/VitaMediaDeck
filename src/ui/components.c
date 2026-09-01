@@ -2,10 +2,12 @@
 
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <psp2/kernel/processmgr.h>
 
 #include "settings/preferences.h"
+#include "history/playback_history.h"
 #include "ui/brand.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
@@ -237,5 +239,32 @@ void ui_action_button(float x, float y, float width, float height,
 		ui_font_draw_text(small, (int)(left + (available - label_width) * .5f),
 		                  (int)(y + height * .5f + 7), foreground,
 		                  UI_FONT_SMALL, fitted);
+	}
+}
+
+void ui_watched_progress(const char *history_id, float x, float y, float width) {
+	uint64_t position_ms = 0, duration_ms = 0;
+	if (!history_id || width < 24.0f ||
+	    !vt_playback_history_progress(history_id, &position_ms, &duration_ms) ||
+	    !duration_ms) return;
+	if (position_ms > duration_ms) position_ms = duration_ms;
+	float fraction = (float)((double)position_ms / (double)duration_ms);
+	unsigned int percent = (unsigned int)((position_ms * 100ULL +
+	                                      duration_ms / 2ULL) / duration_ms);
+	if (percent > 100U) percent = 100U;
+	vita2d_draw_rectangle(x, y, width, 6, RGBA8(0, 0, 0, 224));
+	vita2d_draw_rectangle(x + 1, y + 1, (width - 2) * fraction, 4,
+	                      percent >= 100U ? VT_THEME_SIGNAL_LIGHT
+	                                      : VT_THEME_SPECTRAL);
+	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+	if (small) {
+		char label[8];
+		snprintf(label, sizeof(label), "%u%%", percent);
+		int label_width = ui_font_text_width(small, UI_FONT_SMALL, label);
+		float pill_width = label_width + 10.0f;
+		vita2d_draw_rectangle(x + width - pill_width, y - 19, pill_width, 18,
+		                      RGBA8(0, 0, 0, 210));
+		ui_font_draw_text(small, (int)(x + width - label_width - 5), (int)y - 5,
+		                  VT_THEME_TEXT, UI_FONT_SMALL, label);
 	}
 }

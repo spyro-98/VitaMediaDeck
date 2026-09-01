@@ -60,6 +60,8 @@ enum {
 static int g_shuffle;
 static int g_repeat_one;
 
+static unsigned fade_color(unsigned color, float opacity);
+
 static int ends_with_ci(const char *text, const char *suffix) {
 	if (!text || !suffix) return 0;
 	size_t text_len = strlen(text), suffix_len = strlen(suffix);
@@ -77,22 +79,56 @@ static vita2d_texture *load_artwork_texture(const char *path) {
 	                                  : vita2d_load_JPEG_file(path);
 }
 
-static void draw_music_sidebar_bitrate(float animation,
-	                                   const char *codec_name,
-	                                   uint32_t bitrate_kbps) {
-	if (animation <= 0.01f || bitrate_kbps == 0) return;
-	float ox = -286.0f * (1.0f - animation);
-	vita2d_draw_rectangle(ox + 18.0f, 438.0f, 250.0f, 42.0f,
-	                      VT_THEME_SURFACE);
-	vita2d_draw_rectangle(ox + 18.0f, 438.0f, 3.0f, 42.0f,
-	                      VT_THEME_BLUE_LIGHT);
+static void format_audio_rate(uint32_t sample_rate, char out[24]) {
+	if (!sample_rate) snprintf(out, 24, "-");
+	else if (sample_rate % 1000U == 0)
+		snprintf(out, 24, "%u kHz", sample_rate / 1000U);
+	else snprintf(out, 24, "%u.%u kHz", sample_rate / 1000U,
+	              (sample_rate % 1000U) / 100U);
+}
+
+static void format_audio_details(uint32_t sample_rate, uint16_t channels,
+	                             uint16_t bits_per_sample, char out[72]) {
+	char rate[24];
+	format_audio_rate(sample_rate, rate);
+	if (channels && bits_per_sample)
+		snprintf(out, 72, "%s  |  %u ch  |  %u-bit", rate, channels,
+		         bits_per_sample);
+	else if (channels)
+		snprintf(out, 72, "%s  |  %u ch", rate, channels);
+	else snprintf(out, 72, "%s", rate);
+}
+
+static void draw_music_audio_hud(const char *codec_name,
+	                             uint32_t bitrate_kbps,
+	                             uint32_t sample_rate, float baseline,
+	                             unsigned foreground, float opacity) {
+	if (opacity <= 0.01f) return;
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	if (small)
-		ui_font_draw_textf(small, (int)ox + 34, 465, VT_THEME_TEXT,
-		                   UI_FONT_SMALL,
-		                   vt_i18n_str(VT_STR_MUSIC_PLAYER_BITRATE_FORMAT),
-		                   codec_name && codec_name[0] ? codec_name : "AUDIO",
-		                   bitrate_kbps);
+	if (!small) return;
+	char metadata[112], rate[24];
+	format_audio_rate(sample_rate, rate);
+	const char *codec = codec_name && codec_name[0] ? codec_name : "AUDIO";
+	if (bitrate_kbps && sample_rate)
+		snprintf(metadata, sizeof(metadata), "%s  |  %s  |  %u kbps",
+		         codec, rate, bitrate_kbps);
+	else if (bitrate_kbps)
+		snprintf(metadata, sizeof(metadata),
+		         vt_i18n_str(VT_STR_MUSIC_PLAYER_BITRATE_FORMAT),
+		         codec, bitrate_kbps);
+	else if (sample_rate)
+		snprintf(metadata, sizeof(metadata), "%s  |  %s", codec, rate);
+	else snprintf(metadata, sizeof(metadata), "%s", codec);
+	int text_width = ui_font_text_width(small, UI_FONT_SMALL, metadata);
+	float panel_x = 480.0f - (float)text_width * 0.5f - 12.0f;
+	vita2d_draw_rectangle(panel_x, baseline - 21.0f,
+	                      (float)text_width + 24.0f, 28.0f,
+	                      fade_color(VT_THEME_GLASS_A(210), opacity));
+	vita2d_draw_rectangle(panel_x, baseline - 21.0f, 3.0f, 28.0f,
+	                      fade_color(VT_THEME_SPECTRAL, opacity));
+	ui_font_draw_text(small, (int)(480.0f - text_width * 0.5f),
+	                  (int)baseline, fade_color(foreground, opacity),
+	                  UI_FONT_SMALL, metadata);
 }
 
 static void draw_cover(vita2d_texture *cover, float x, float y, float size,
@@ -541,7 +577,12 @@ static void draw_music_volume(int percent, float opacity,
 }
 
 static void draw_music_right_sidebar(float animation, float focus_position,
-	                                 int cursor, int focused) {
+	                                 int cursor, int focused,
+	                                 const char *codec_name,
+	                                 uint32_t bitrate_kbps,
+	                                 uint32_t sample_rate,
+	                                 uint16_t channels,
+	                                 uint16_t bits_per_sample) {
 	if (animation <= 0.01f) return;
 	const float width = MUSIC_RIGHT_PANEL_W;
 	float x = 960.0f - width * animation;
@@ -576,6 +617,35 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
 		ui_panel(x + 18, y, width - 36, 56, VT_THEME_SURFACE,
 		         VT_THEME_BORDER_DIM, 0);
+	}
+	const char *info_labels[3] = {
+		vt_i18n_str(VT_STR_MUSIC_PLAYER_FORMAT_LABEL),
+		vt_i18n_str(VT_STR_MUSIC_PLAYER_BITRATE_LABEL),
+		vt_i18n_str(VT_STR_MUSIC_PLAYER_DETAILS_LABEL)
+	};
+	char bitrate_value[48], details_value[72];
+	if (bitrate_kbps)
+		snprintf(bitrate_value, sizeof(bitrate_value),
+		         vt_i18n_str(VT_STR_MUSIC_PLAYER_BITRATE_VALUE), bitrate_kbps);
+	else snprintf(bitrate_value, sizeof(bitrate_value), "-");
+	format_audio_details(sample_rate, channels, bits_per_sample, details_value);
+	const char *info_values[3] = {
+		codec_name && codec_name[0] ? codec_name : "AUDIO", bitrate_value,
+		details_value
+	};
+	for (int i = 0; i < 3; i++) {
+		float y = MUSIC_RIGHT_ROW_Y + (i + 2) * MUSIC_RIGHT_ROW_STEP;
+		ui_panel(x + 18, y, width - 36, 56, VT_THEME_SURFACE,
+		         VT_THEME_BORDER_DIM, 0);
+		if (!small) continue;
+		ui_font_draw_text(small, x + 36, y + 23, VT_THEME_TEXT_MUTED,
+		                  UI_FONT_SMALL, info_labels[i]);
+		char fitted[96];
+		ui_font_fit_text(small, UI_FONT_SMALL, info_values[i], fitted,
+		                 sizeof(fitted), (int)width - 72);
+		int value_width = ui_font_text_width(small, UI_FONT_SMALL, fitted);
+		ui_font_draw_text(small, x + width - value_width - 30, y + 46,
+		                  VT_THEME_COLD_LIGHT, UI_FONT_SMALL, fitted);
 	}
 	if (focused) {
 		float focus_y = MUSIC_RIGHT_ROW_Y + focus_position * MUSIC_RIGHT_ROW_STEP;
@@ -728,8 +798,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		    (int)ctrl.ry - MUSIC_STICK_CENTER > MUSIC_STICK_DEADZONE ||
 		    (int)ctrl.ry - MUSIC_STICK_CENTER < -MUSIC_STICK_DEADZONE;
 		if (!energy_saving && !input_lock.locked &&
-		    (ctrl.buttons || touch_flags != UI_TOUCH_EVENT_NONE ||
-		     left_stick_active || right_stick_active)) {
+		    (ctrl.buttons || left_stick_active || right_stick_active)) {
 			hud_visible = 1;
 			hud_deadline_us = input_now + MUSIC_HUD_VISIBLE_US;
 		}
@@ -892,6 +961,10 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				    (uint64_t)(drag_fraction * (float)snapshot.duration_ms));
 				dragging_timeline = 0;
 			}
+		} else if (!panels_open && touch_reveal_only &&
+		           (touch_flags & UI_TOUCH_EVENT_TAP)) {
+			hud_visible = 1;
+			hud_deadline_us = input_now + MUSIC_HUD_VISIBLE_US;
 		} else if (!panels_open && !touch_reveal_only && hud_touch_interactive &&
 		           (touch_flags & UI_TOUCH_EVENT_TAP)) {
 			control_feedback = MUSIC_CONTROL_NONE;
@@ -914,16 +987,21 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				g_repeat_one = !g_repeat_one;
 				control_feedback = MUSIC_CONTROL_REPEAT;
 			}
-			if (control_feedback != MUSIC_CONTROL_NONE)
+			if (control_feedback != MUSIC_CONTROL_NONE) {
 				control_feedback_until_us = input_now + MUSIC_CONTROL_FEEDBACK_US;
+				hud_visible = 1;
+				hud_deadline_us = input_now + MUSIC_HUD_VISIBLE_US;
+			} else {
+				hud_visible = 0;
+				hud_deadline_us = 0;
+			}
 		}
 		if (touch_sequence_flags & UI_TOUCH_EVENT_UP) touch_reveal_only = 0;
 		ui_sections_sidebar_tick(&sidebar);
 		/* Keep preparing, buffering, paused and error feedback explicit. The
 		 * immersive quiet state is only entered during normal playback. */
-		if (snapshot.state != VT_BACKGROUND_PLAYING)
-			hud_visible = 1;
-		else if (!panels_open && !dragging_timeline &&
+		if (snapshot.state == VT_BACKGROUND_PLAYING &&
+		    !panels_open && !dragging_timeline &&
 		         input_now > hud_deadline_us)
 			hud_visible = 0;
 		if (vt_preferences_reduce_motion()) {
@@ -946,6 +1024,11 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		if (vt_preferences_music_keep_display_awake() || energy_saving)
 			vt_display_keep_awake_tick();
 		uint64_t now = sceKernelGetProcessTimeWide();
+		const char *display_codec = snapshot.audio_codec[0]
+		                            ? snapshot.audio_codec : codec_name;
+		uint32_t display_bitrate = snapshot.audio_bitrate_kbps
+		                           ? snapshot.audio_bitrate_kbps
+		                           : average_bitrate_kbps;
 		if (energy_saving) {
 			if (now >= energy_lock_move_us) {
 				energy_lock_position =
@@ -996,6 +1079,9 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			                  UI_FONT_SMALL, shortcuts);
 		}
 		float title_y = cover ? 355.0f : 238.0f;
+		draw_music_audio_hud(display_codec, display_bitrate,
+		                     snapshot.audio_sample_rate,
+		                     title_y - 20.0f, foreground, hud_opacity);
 		/* Metadata itself stays readable in the quiet state. Only the protective
 		 * panel belongs to the HUD and therefore dissolves with the controls. */
 		draw_metadata_scrim(title_y, foreground, hud_opacity);
@@ -1085,10 +1171,11 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			draw_input_lock_at(24, 86, hud_opacity);
 		if (sidebar.animation > 0.01f)
 			ui_sections_sidebar_draw(&sidebar);
-		draw_music_sidebar_bitrate(sidebar.animation, codec_name,
-		                           average_bitrate_kbps);
 		draw_music_right_sidebar(right_animation, right_focus_position,
-		                         right_cursor, right_open);
+		                         right_cursor, right_open, display_codec,
+		                         display_bitrate, snapshot.audio_sample_rate,
+		                         snapshot.audio_channels,
+		                         snapshot.audio_bits_per_sample);
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();

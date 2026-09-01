@@ -13,6 +13,10 @@
  * Individual screens may create and free their own textures, but must
  * never call vita2d_init() or vita2d_fini(). */
 int ui_runtime_init(void);
+/* Loads the logo and one immediately usable font before the first frame. The
+ * remaining font tiers can then initialize behind a complete startup scene
+ * instead of leaving blank top-bar and text placeholders. */
+void ui_runtime_load_boot_assets(void);
 void ui_runtime_load_assets(void);
 void ui_runtime_term(void);
 int ui_runtime_is_ready(void);

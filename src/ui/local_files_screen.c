@@ -18,6 +18,7 @@
 #include "media/image_loader.h"
 #include "media/music_metadata.h"
 #include "media/video_thumbnail.h"
+#include "history/playback_history.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/components.h"
@@ -39,6 +40,7 @@
 #define FILE_CARD_H 154
 #define FILE_GAP_X 12
 #define FILE_GAP_Y 10
+#define FILE_DIRECTORY_CACHE_SLOTS 4
 
 typedef struct {
 	VtLocalMediaItem media;
@@ -48,6 +50,100 @@ typedef struct {
 static char g_last_path[VT_LOCAL_MEDIA_PATH_MAX];
 static char g_browser_root[VT_LOCAL_MEDIA_PATH_MAX];
 static VtLocalMediaType g_type_filter;
+
+typedef struct {
+	int valid;
+	char path[VT_LOCAL_MEDIA_PATH_MAX];
+	VtLocalMediaType filter;
+	uint64_t signature;
+	uint64_t last_used;
+	int count;
+	int selected;
+	int top;
+	LocalFileEntry *entries;
+} LocalDirectoryCache;
+
+static LocalDirectoryCache g_directory_cache[FILE_DIRECTORY_CACHE_SLOTS];
+static uint64_t g_directory_cache_clock;
+
+static uint64_t directory_signature(const char *path) {
+	if (!path || !path[0]) return 0;
+	SceIoStat status;
+	memset(&status, 0, sizeof(status));
+	if (sceIoGetstat(path, &status) < 0) return 0;
+	uint64_t hash = 1469598103934665603ULL;
+	const unsigned char *fields = (const unsigned char *)&status.st_mtime;
+	for (size_t i = 0; i < sizeof(status.st_mtime); i++) {
+		hash ^= fields[i];
+		hash *= 1099511628211ULL;
+	}
+	fields = (const unsigned char *)&status.st_ctime;
+	for (size_t i = 0; i < sizeof(status.st_ctime); i++) {
+		hash ^= fields[i];
+		hash *= 1099511628211ULL;
+	}
+	return hash ? hash : 1;
+}
+
+void ui_local_files_cache_invalidate(void) {
+	for (int i = 0; i < FILE_DIRECTORY_CACHE_SLOTS; i++) {
+		free(g_directory_cache[i].entries);
+		memset(&g_directory_cache[i], 0, sizeof(g_directory_cache[i]));
+	}
+}
+
+static LocalDirectoryCache *directory_cache_find(const char *path,
+	                                              uint64_t signature) {
+	if (!path || !path[0] || !signature) return NULL;
+	for (int i = 0; i < FILE_DIRECTORY_CACHE_SLOTS; i++) {
+		LocalDirectoryCache *slot = &g_directory_cache[i];
+		if (slot->valid && slot->filter == g_type_filter &&
+		    slot->signature == signature && !strcmp(slot->path, path)) {
+			slot->last_used = ++g_directory_cache_clock;
+			return slot;
+		}
+	}
+	return NULL;
+}
+
+static void directory_cache_store(const char *path,
+	                              const LocalFileEntry *entries, int count,
+	                              int selected, int top) {
+	uint64_t signature = directory_signature(path);
+	if (!path || !path[0] || !signature || count < 0 ||
+	    count > FILE_MAX_ENTRIES) return;
+	LocalDirectoryCache *slot = NULL;
+	for (int i = 0; i < FILE_DIRECTORY_CACHE_SLOTS; i++) {
+		if (g_directory_cache[i].valid &&
+		    g_directory_cache[i].filter == g_type_filter &&
+		    !strcmp(g_directory_cache[i].path, path)) {
+			slot = &g_directory_cache[i];
+			break;
+		}
+		if (!g_directory_cache[i].valid) slot = &g_directory_cache[i];
+	}
+	if (!slot) {
+		slot = &g_directory_cache[0];
+		for (int i = 1; i < FILE_DIRECTORY_CACHE_SLOTS; i++)
+			if (g_directory_cache[i].last_used < slot->last_used)
+				slot = &g_directory_cache[i];
+	}
+	LocalFileEntry *copy = count > 0
+	                     ? malloc((size_t)count * sizeof(*copy)) : NULL;
+	if (count > 0 && !copy) return;
+	if (copy) memcpy(copy, entries, (size_t)count * sizeof(*copy));
+	free(slot->entries);
+	memset(slot, 0, sizeof(*slot));
+	slot->entries = copy;
+	slot->valid = 1;
+	slot->filter = g_type_filter;
+	slot->signature = signature;
+	slot->last_used = ++g_directory_cache_clock;
+	slot->count = count;
+	slot->selected = selected >= 0 && selected < count ? selected : 0;
+	slot->top = top >= 0 ? top : 0;
+	snprintf(slot->path, sizeof(slot->path), "%s", path);
+}
 
 static int viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
@@ -82,6 +178,20 @@ static int grid_render_rows(void) {
 	if (rows < 1) rows = 1;
 	if (rows > 3) rows = 3;
 	return rows;
+}
+
+static int thumbnail_viewport_priority(int index, int selected,
+	                                   int visible_first,
+	                                   int visible_limit) {
+	if (index == selected) return 100;
+	if (index >= visible_first && index < visible_limit) {
+		int distance = index > selected ? index - selected : selected - index;
+		int priority = 78 - distance * 4;
+		return priority > 48 ? priority : 48;
+	}
+	/* render_rows() includes one look-ahead row. Keep it below every visible
+	 * cell so rapid scrolling never waits behind speculative work. */
+	return 24;
 }
 
 static int ends_with_ci(const char *name, const char *suffix) {
@@ -255,6 +365,34 @@ static int load_entries(const char *path, LocalFileEntry *entries) {
 	return count;
 }
 
+static int load_entries_cached(const char *path, LocalFileEntry *entries,
+	                           int *selected, int *top) {
+	uint64_t started_us = sceKernelGetProcessTimeWide();
+	uint64_t signature = directory_signature(path);
+	LocalDirectoryCache *cached = directory_cache_find(path, signature);
+	if (cached) {
+		if (cached->count > 0)
+			memcpy(entries, cached->entries,
+			       (size_t)cached->count * sizeof(*entries));
+		if (selected) *selected = cached->selected;
+		if (top) *top = cached->top;
+		log_printf("local folder cache: hit path=%s entries=%d load=%llu ms",
+		           path, cached->count,
+		           (unsigned long long)((sceKernelGetProcessTimeWide() -
+		                                started_us) / 1000ULL));
+		return cached->count;
+	}
+	int count = load_entries(path, entries);
+	if (selected) *selected = 0;
+	if (top) *top = 0;
+	if (count >= 0) directory_cache_store(path, entries, count, 0, 0);
+	log_printf("local folder cache: miss path=%s entries=%d load=%llu ms",
+	           path && path[0] ? path : "<root>", count,
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                started_us) / 1000ULL));
+	return count;
+}
+
 static void parent_path(char *path) {
 	if (!path || !path[0]) return;
 	char *colon = strchr(path, ':');
@@ -370,16 +508,19 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		                   sceKernelGetProcessTimeWide(), FILE_Y, bottom);
 		vita2d_set_clip_rectangle(0, FILE_Y, 960, bottom);
 		vita2d_enable_clipping();
+		int visible_limit = top + list_visible_rows();
 		for (int i = top; i < count && i < top + list_render_rows(); i++) {
 			int y = FILE_Y + (i - top) * FILE_ROW_H;
 			const LocalFileEntry *entry = &entries[i];
 			vita2d_texture *preview = entry->media.artwork_path[0]
 			    ? vt_image_thumbnail_get_priority(entry->media.artwork_path,
-			          entry->media.artwork_size, i == selected ? 100 : 10)
+			          entry->media.artwork_size,
+			          thumbnail_viewport_priority(i, selected, top, visible_limit))
 			    : NULL;
 			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
 				preview = vt_video_thumbnail_get_priority(
-				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
+				    entry->media.path, entry->media.size,
+				    thumbnail_viewport_priority(i, selected, top, visible_limit));
 			ui_panel(FILE_X, y, FILE_W, FILE_ROW_H - 6, VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : entry->media.type == VT_LOCAL_MEDIA_IMAGE ? VT_THEME_SPECTRAL
@@ -418,6 +559,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		vita2d_enable_clipping();
 		int first = top * FILE_GRID_COLS;
 		int limit = (top + grid_render_rows()) * FILE_GRID_COLS;
+		int visible_limit = (top + grid_visible_rows()) * FILE_GRID_COLS;
 		for (int i = first; i < count && i < limit; i++) {
 			int col = i % FILE_GRID_COLS;
 			int row = i / FILE_GRID_COLS - top;
@@ -426,11 +568,13 @@ static void draw_files(const LocalFileEntry *entries, int count,
 			const LocalFileEntry *entry = &entries[i];
 			vita2d_texture *preview = entry->media.artwork_path[0]
 			    ? vt_image_thumbnail_get_priority(entry->media.artwork_path,
-			          entry->media.artwork_size, i == selected ? 100 : 10)
+			          entry->media.artwork_size,
+			          thumbnail_viewport_priority(i, selected, first, visible_limit))
 			    : NULL;
 			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
 				preview = vt_video_thumbnail_get_priority(
-				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
+				    entry->media.path, entry->media.size,
+				    thumbnail_viewport_priority(i, selected, first, visible_limit));
 			ui_panel(x, y, FILE_CARD_W, FILE_CARD_H, VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : entry->media.type == VT_LOCAL_MEDIA_IMAGE ? VT_THEME_SPECTRAL
@@ -444,6 +588,13 @@ static void draw_files(const LocalFileEntry *entries, int count,
 				                      FILE_CARD_W - 12, 2, VT_THEME_COLD);
 			} else {
 				draw_icon(entry, x + 30, y + 2);
+			}
+			if (!entry->is_directory &&
+			    entry->media.type == VT_LOCAL_MEDIA_VIDEO) {
+				char history_id[16];
+				vt_playback_history_local_id(entry->media.path, history_id);
+				ui_watched_progress(history_id, x + 6, y + 96,
+				                    FILE_CARD_W - 12);
 			}
 			if (small) {
 				char title[128];
@@ -482,9 +633,12 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 	}
 	LocalFileEntry *entries = calloc(FILE_MAX_ENTRIES, sizeof(*entries));
 	if (!entries) return UI_LOCAL_MEDIA_ACTION_BACK;
-	int count = load_entries(g_last_path, entries);
-	if (count < 0) { g_last_path[0] = '\0'; count = load_entries(g_last_path, entries); }
 	int selected = 0, top = 0;
+	int count = load_entries_cached(g_last_path, entries, &selected, &top);
+	if (count < 0) {
+		g_last_path[0] = '\0';
+		count = load_entries_cached(g_last_path, entries, &selected, &top);
+	}
 	int grid_mode = vt_preferences_file_browser_grid();
 	UiFocusMotion focus;
 	ui_focus_motion_reset(&focus);
@@ -559,16 +713,17 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 		if ((pressed & SCE_CTRL_CROSS) && count) {
 			LocalFileEntry *entry = &entries[selected];
 			if (entry->is_directory) {
+				directory_cache_store(g_last_path, entries, count, selected, top);
 				snprintf(g_last_path, sizeof(g_last_path), "%s", entry->media.path);
-				count = load_entries(g_last_path, entries);
+				count = load_entries_cached(g_last_path, entries, &selected, &top);
 				if (count < 0) count = 0;
-				selected = top = 0;
 				ui_focus_motion_reset(&focus);
 				ui_nav_repeat_reset(&repeat);
 				vt_video_thumbnail_suspend();
 				vt_video_thumbnail_resume();
 			} else if (entry->media.type) {
 				if (selected_out) *selected_out = entry->media;
+				directory_cache_store(g_last_path, entries, count, selected, top);
 				vt_video_thumbnail_suspend();
 				free(entries);
 				return UI_LOCAL_MEDIA_ACTION_PLAY;
@@ -581,10 +736,10 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 				free(entries);
 				return UI_LOCAL_MEDIA_ACTION_BACK;
 			}
+			directory_cache_store(g_last_path, entries, count, selected, top);
 			parent_path(g_last_path);
-			count = load_entries(g_last_path, entries);
+			count = load_entries_cached(g_last_path, entries, &selected, &top);
 			if (count < 0) count = 0;
-			selected = top = 0;
 			ui_focus_motion_reset(&focus);
 			ui_nav_repeat_reset(&repeat);
 			vt_video_thumbnail_suspend();
