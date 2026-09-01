@@ -24,4 +24,8 @@ void ui_action_button(float x, float y, float width, float height,
 	                  unsigned int fill, const char *key, const char *label,
 	                  int active);
 
+/* Draws a compact watched-position rail and exact percentage over a video
+ * thumbnail. No output is produced when the item has no history. */
+void ui_watched_progress(const char *history_id, float x, float y, float width);
+
 #endif /* VITAMEDIADECK_UI_COMPONENTS_H */

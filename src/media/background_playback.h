@@ -9,6 +9,7 @@
 #define VT_BACKGROUND_CHANNEL_MAX 112
 #define VT_BACKGROUND_MEDIA_ID_MAX 64
 #define VT_BACKGROUND_ARTWORK_MAX 512
+#define VT_BACKGROUND_AUDIO_CODEC_MAX 24
 
 typedef enum {
 	VT_BACKGROUND_IDLE = 0,
@@ -30,6 +31,11 @@ typedef struct {
 	uint64_t duration_ms;
 	uint32_t video_width;
 	uint32_t video_height;
+	uint32_t audio_bitrate_kbps;
+	uint32_t audio_sample_rate;
+	uint16_t audio_channels;
+	uint16_t audio_bits_per_sample;
+	char audio_codec[VT_BACKGROUND_AUDIO_CODEC_MAX];
 	char video_id[VT_BACKGROUND_MEDIA_ID_MAX];
 	char title[VT_BACKGROUND_TITLE_MAX];
 	char channel[VT_BACKGROUND_CHANNEL_MAX];

@@ -1,6 +1,7 @@
 #include "history/playback_history.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <psp2/io/fcntl.h>
@@ -158,6 +159,16 @@ static int find_index(const char *video_id) {
 	return -1;
 }
 
+void vt_playback_history_local_id(const char *path, char out[16]) {
+	uint32_t hash = 2166136261U;
+	for (const unsigned char *cursor = (const unsigned char *)path;
+	     cursor && *cursor; cursor++) {
+		hash ^= *cursor;
+		hash *= 16777619U;
+	}
+	snprintf(out, 16, "media%08x", hash);
+}
+
 uint64_t vt_playback_history_position(const char *video_id,
 	                                  uint64_t duration_ms) {
 	int index = find_index(video_id);
@@ -183,12 +194,24 @@ int vt_playback_history_get(const char *video_id, uint64_t *position_ms,
 	return 1;
 }
 
+int vt_playback_history_progress(const char *video_id, uint64_t *position_ms,
+	                             uint64_t *duration_ms) {
+	int index = find_index(video_id);
+	if (index < 0 || !g_disk.records[index].duration_ms) return 0;
+	if (position_ms) *position_ms = g_disk.records[index].position_ms;
+	if (duration_ms) *duration_ms = g_disk.records[index].duration_ms;
+	return 1;
+}
+
 int vt_playback_history_update(const char *video_id, uint64_t position_ms,
 	                           uint64_t duration_ms) {
 	if (!valid_id(video_id)) return -1;
 	int index = find_index(video_id);
-	int keep = position_ms >= VT_RESUME_MIN_MS &&
-	           (!duration_ms || position_ms + VT_RESUME_END_GUARD_MS < duration_ms);
+	/* Keep a completed marker for cover progress, while position() continues to
+	 * suppress resume near the end. Older databases simply have no such marker. */
+	if (duration_ms && position_ms + VT_RESUME_END_GUARD_MS >= duration_ms)
+		position_ms = duration_ms;
+	int keep = position_ms >= VT_RESUME_MIN_MS;
 	if (!keep) {
 		if (index < 0) return 0;
 		for (int i = index + 1; i < g_count; i++)

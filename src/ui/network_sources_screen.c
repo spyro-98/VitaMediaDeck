@@ -14,6 +14,7 @@
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
+#include "common/text_log.h"
 #include "media/video_thumbnail.h"
 #include "network/download_manager.h"
 #include "settings/preferences.h"
@@ -45,6 +46,8 @@
 #define BROWSER_GRID_GAP_Y 10
 #define DESTINATION_MAX_FOLDERS 96
 #define NETWORK_BROWSER_MAX_DEPTH 24
+#define NETWORK_DIRECTORY_CACHE_SLOTS 6
+#define NETWORK_DIRECTORY_CACHE_TTL_US (10ULL * 60ULL * 1000ULL * 1000ULL)
 
 static void secure_zero(void *memory, size_t size);
 
@@ -63,6 +66,18 @@ typedef struct {
  * and passwords never become part of the persisted source configuration. */
 static NetworkBrowserResume g_browser_resume;
 
+typedef struct {
+	int valid;
+	VtNetworkSource source;
+	char path[VT_NETWORK_PATH_MAX];
+	VtNetworkEntry *entries;
+	int count;
+	uint64_t expires_us;
+	uint64_t last_used_us;
+} NetworkDirectoryCache;
+
+static NetworkDirectoryCache g_directory_cache[NETWORK_DIRECTORY_CACHE_SLOTS];
+
 static void network_browser_resume_clear(void) {
 	secure_zero(&g_browser_resume, sizeof(g_browser_resume));
 }
@@ -73,6 +88,67 @@ static int network_source_matches(const VtNetworkSource *a,
 	       !strcmp(a->name, b->name) && !strcmp(a->host, b->host) &&
 	       !strcmp(a->root_path, b->root_path) && !strcmp(a->share, b->share) &&
 	       !strcmp(a->username, b->username) && !strcmp(a->domain, b->domain);
+}
+
+static void network_directory_cache_clear(void) {
+	for (int i = 0; i < NETWORK_DIRECTORY_CACHE_SLOTS; i++) {
+		free(g_directory_cache[i].entries);
+		memset(&g_directory_cache[i], 0, sizeof(g_directory_cache[i]));
+	}
+}
+
+static NetworkDirectoryCache *network_directory_cache_find(
+	const VtNetworkSource *source, const char *path, uint64_t now) {
+	const char *key_path = path ? path : "";
+	for (int i = 0; i < NETWORK_DIRECTORY_CACHE_SLOTS; i++) {
+		NetworkDirectoryCache *slot = &g_directory_cache[i];
+		if (!slot->valid || !network_source_matches(source, &slot->source) ||
+		    strcmp(key_path, slot->path)) continue;
+		if (now >= slot->expires_us) {
+			free(slot->entries);
+			memset(slot, 0, sizeof(*slot));
+			return NULL;
+		}
+		slot->last_used_us = now;
+		return slot;
+	}
+	return NULL;
+}
+
+static void network_directory_cache_store(const VtNetworkSource *source,
+	                                      const char *path,
+	                                      const VtNetworkEntry *entries,
+	                                      int count, uint64_t now) {
+	if (!source || count < 0 || (count && !entries)) return;
+	NetworkDirectoryCache *slot = NULL;
+	for (int i = 0; i < NETWORK_DIRECTORY_CACHE_SLOTS; i++) {
+		if (g_directory_cache[i].valid &&
+		    network_source_matches(source, &g_directory_cache[i].source) &&
+		    !strcmp(path ? path : "", g_directory_cache[i].path)) {
+			slot = &g_directory_cache[i];
+			break;
+		}
+		if (!slot && !g_directory_cache[i].valid) slot = &g_directory_cache[i];
+	}
+	if (!slot) {
+		slot = &g_directory_cache[0];
+		for (int i = 1; i < NETWORK_DIRECTORY_CACHE_SLOTS; i++)
+			if (g_directory_cache[i].last_used_us < slot->last_used_us)
+				slot = &g_directory_cache[i];
+	}
+	VtNetworkEntry *copy = count
+	                     ? malloc((size_t)count * sizeof(*copy)) : NULL;
+	if (count && !copy) return;
+	if (count) memcpy(copy, entries, (size_t)count * sizeof(*copy));
+	free(slot->entries);
+	memset(slot, 0, sizeof(*slot));
+	slot->valid = 1;
+	slot->source = *source;
+	snprintf(slot->path, sizeof(slot->path), "%s", path ? path : "");
+	slot->entries = copy;
+	slot->count = count;
+	slot->last_used_us = now;
+	slot->expires_us = now + NETWORK_DIRECTORY_CACHE_TTL_US;
 }
 
 static void network_browser_breadcrumb(const NetworkBrowserResume *resume,
@@ -121,6 +197,18 @@ static int browser_grid_render_rows(void) {
 	if (rows < 1) rows = 1;
 	if (rows > 3) rows = 3;
 	return rows;
+}
+
+static int thumbnail_viewport_priority(int index, int selected,
+	                                   int visible_first,
+	                                   int visible_limit) {
+	if (index == selected) return 100;
+	if (index >= visible_first && index < visible_limit) {
+		int distance = index > selected ? index - selected : selected - index;
+		int priority = 78 - distance * 4;
+		return priority > 48 ? priority : 48;
+	}
+	return 24;
 }
 
 static int source_visible_rows(void) {
@@ -715,13 +803,16 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		char hint[160];
 		if (source->protocol == VT_NETWORK_JELLYFIN && selected >= 0 &&
 		    selected < count && entries[selected].is_video)
-			snprintf(hint, sizeof(hint), "Triangle  %s   R1  %s",
-			         vt_i18n_str(VT_STR_NETWORK_INFO), view_hint);
+			snprintf(hint, sizeof(hint), "Triangle %s   Square %s   R1 %s",
+			         vt_i18n_str(VT_STR_NETWORK_INFO),
+			         vt_i18n_str(VT_STR_NETWORK_REFRESH), view_hint);
 		else if (source->protocol != VT_NETWORK_JELLYFIN && selected >= 0 &&
 		         selected < count && !entries[selected].is_directory)
-			snprintf(hint, sizeof(hint), "Triangle  %s   R1  %s",
-			         vt_i18n_str(VT_STR_NETWORK_DOWNLOAD), view_hint);
-		else snprintf(hint, sizeof(hint), "R1  %s", view_hint);
+			snprintf(hint, sizeof(hint), "Triangle %s   Square %s   R1 %s",
+			         vt_i18n_str(VT_STR_NETWORK_DOWNLOAD),
+			         vt_i18n_str(VT_STR_NETWORK_REFRESH), view_hint);
+		else snprintf(hint, sizeof(hint), "Square %s   R1 %s",
+		              vt_i18n_str(VT_STR_NETWORK_REFRESH), view_hint);
 		int hint_width = ui_font_text_width(small, UI_FONT_SMALL, hint);
 		vita2d_draw_rectangle(LIST_X + LIST_W - hint_width - 28, 73,
 		                      hint_width + 20, 24, VT_THEME_SURFACE_RAISED);
@@ -747,13 +838,15 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		                   LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
+		int visible_limit = top + visible_rows();
 		for (int i = top; i < count && i < top + render_rows(); i++) {
 			int y = LIST_Y + (i - top) * ROW_H;
 			const VtNetworkEntry *entry = &entries[i];
 			vita2d_texture *preview = entry->is_video
 			                        ? vt_video_thumbnail_get_remote_priority(
 			                              source, credential, entry->path, entry->size,
-			                              i == selected ? 100 : 10)
+			                              thumbnail_viewport_priority(
+			                                  i, selected, top, visible_limit))
 			                        : NULL;
 			ui_panel(LIST_X, y, LIST_W, ROW_H - 6,
 			         VT_THEME_SURFACE,
@@ -797,6 +890,8 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		vita2d_enable_clipping();
 		int first = top * BROWSER_GRID_COLS;
 		int limit = (top + browser_grid_render_rows()) * BROWSER_GRID_COLS;
+		int visible_limit =
+		    (top + browser_grid_visible_rows()) * BROWSER_GRID_COLS;
 		for (int i = first; i < count && i < limit; i++) {
 			int col = i % BROWSER_GRID_COLS;
 			int row = i / BROWSER_GRID_COLS - top;
@@ -806,7 +901,8 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			vita2d_texture *preview = entry->is_video
 			                        ? vt_video_thumbnail_get_remote_priority(
 			                              source, credential, entry->path, entry->size,
-			                              i == selected ? 100 : 10)
+			                              thumbnail_viewport_priority(
+			                                  i, selected, first, visible_limit))
 			                        : NULL;
 			ui_panel(x, y, BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H,
 			         VT_THEME_SURFACE,
@@ -825,6 +921,12 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 				                      VT_THEME_COLD);
 			} else {
 				draw_browser_icon(entry, x + 30, y + 2);
+			}
+			if (entry->is_video) {
+				char history_id[16];
+				vt_network_media_history_id(source, entry->path, history_id);
+				ui_watched_progress(history_id, x + 6, y + 96,
+				                    BROWSER_GRID_CARD_W - 12);
 			}
 			if (small) {
 				char title[128];
@@ -1125,6 +1227,13 @@ static void show_save_error(int error) {
 	         vt_i18n_str(VT_STR_NETWORK_SAVE_FAILED_DETAIL),
 	         (unsigned)error);
 	ui_message_show(vt_i18n_str(VT_STR_NETWORK_SAVE_FAILED_TITLE), detail, 3200);
+}
+
+static int save_sources_and_invalidate_cache(
+	const VtNetworkSource *sources, int count) {
+	int ret = vt_network_sources_save(sources, count);
+	if (ret == 0) network_directory_cache_clear();
+	return ret;
 }
 
 static void persist_remembered_credentials(
@@ -1481,7 +1590,23 @@ static int source_editor(VtNetworkSource *source,
 static int load_directory(const VtNetworkSource *source,
 	                      const VtNetworkCredential *credential,
 	                      const char *path, VtNetworkEntry *entries,
-	                      int *count) {
+	                      int *count, int force_refresh) {
+	uint64_t started_us = sceKernelGetProcessTimeWide();
+	uint64_t now = started_us;
+	NetworkDirectoryCache *cached = force_refresh ? NULL
+	                               : network_directory_cache_find(source, path, now);
+	if (cached) {
+		if (cached->count)
+			memcpy(entries, cached->entries,
+			       (size_t)cached->count * sizeof(*entries));
+		*count = cached->count;
+		log_printf("network folder cache: hit protocol=%s path=%s entries=%d load=%llu ms",
+		           vt_network_protocol_name(source->protocol),
+		           path && path[0] ? path : "<root>", *count,
+		           (unsigned long long)((sceKernelGetProcessTimeWide() -
+		                                started_us) / 1000ULL));
+		return 0;
+	}
 	ListTask task = { source, credential, path, entries, -1, { 0 } };
 	int ret = ui_loading_run(vt_i18n_str(VT_STR_NETWORK_READING_FOLDER), list_task, &task,
 	                         NULL, NULL, NULL);
@@ -1494,6 +1619,13 @@ static int load_directory(const VtNetworkSource *source,
 	}
 	*count = task.result;
 	qsort(entries, (size_t)*count, sizeof(*entries), network_entry_compare);
+	now = sceKernelGetProcessTimeWide();
+	network_directory_cache_store(source, path, entries, *count, now);
+	log_printf("network folder cache: %s protocol=%s path=%s entries=%d load=%llu ms",
+	           force_refresh ? "refresh" : "miss",
+	           vt_network_protocol_name(source->protocol),
+	           path && path[0] ? path : "<root>", *count,
+	           (unsigned long long)((now - started_us) / 1000ULL));
 	return 0;
 }
 
@@ -1603,7 +1735,7 @@ static int browse_source(const VtNetworkSource *source,
 	NetworkBrowserResume *navigation = &g_browser_resume;
 	const char *path = navigation->paths[navigation->depth];
 	int count = 0;
-	int load_result = load_directory(source, credential, path, entries, &count);
+	int load_result = load_directory(source, credential, path, entries, &count, 0);
 	if (load_result < 0) {
 		free(entries);
 		if (restore_navigation) network_browser_resume_clear();
@@ -1677,6 +1809,31 @@ static int browse_source(const VtNetworkSource *source,
 			top = 0;
 			ui_focus_motion_reset(&focus_motion);
 		}
+		if (pressed & SCE_CTRL_SQUARE) {
+			char selected_path[VT_NETWORK_PATH_MAX] = "";
+			if (count > 0)
+				snprintf(selected_path, sizeof(selected_path), "%s",
+				         entries[selected].path);
+			if (load_directory(source, credential,
+			                   navigation->paths[navigation->depth], entries,
+			                   &count, 1) == 0) {
+				selected = 0;
+				for (int i = 0; selected_path[0] && i < count; i++)
+					if (!strcmp(entries[i].path, selected_path)) {
+						selected = i;
+						break;
+					}
+				if (grid_mode) top = selected / BROWSER_GRID_COLS;
+				else top = selected;
+				metadata_valid = 0;
+				metadata_path[0] = '\0';
+				vt_video_thumbnail_suspend();
+				vt_video_thumbnail_resume();
+				ui_focus_motion_reset(&focus_motion);
+			}
+			network_resync_input(&previous, &nav_repeat);
+			continue;
+		}
 		if ((pressed & SCE_CTRL_TRIANGLE) && count > 0 &&
 		    source->protocol == VT_NETWORK_JELLYFIN &&
 		    entries[selected].is_video) {
@@ -1739,7 +1896,7 @@ static int browse_source(const VtNetworkSource *source,
 				char folder_name[sizeof(entry->name)];
 				snprintf(next_path, sizeof(next_path), "%s", entry->path);
 				snprintf(folder_name, sizeof(folder_name), "%s", entry->name);
-				if (load_directory(source, credential, next_path, entries, &count) == 0) {
+				if (load_directory(source, credential, next_path, entries, &count, 0) == 0) {
 					navigation->depth++;
 					snprintf(navigation->paths[navigation->depth],
 					         sizeof(navigation->paths[navigation->depth]), "%s", next_path);
@@ -1802,7 +1959,7 @@ static int browse_source(const VtNetworkSource *source,
 			}
 			int parent_depth = navigation->depth - 1;
 			if (load_directory(source, credential,
-			                   navigation->paths[parent_depth], entries, &count) == 0) {
+			                   navigation->paths[parent_depth], entries, &count, 0) == 0) {
 				navigation->depth = parent_depth;
 				selected = navigation->selected[parent_depth];
 				top = navigation->top[parent_depth];
@@ -1888,7 +2045,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				}
 				secure_zero(&credentials[count - 1], sizeof(credentials[count - 1]));
 				count--;
-				int save_result = vt_network_sources_save(sources, count);
+				int save_result = save_sources_and_invalidate_cache(sources, count);
 				if (save_result < 0) {
 					for (int i = count; i > removed_index; i--) {
 						sources[i] = sources[i - 1];
@@ -2016,7 +2173,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 					credentials[count] = credential;
 					count++;
 					selected = count - 1;
-					int save_result = vt_network_sources_save(sources, count);
+					int save_result = save_sources_and_invalidate_cache(sources, count);
 					if (save_result < 0) {
 						count--;
 						secure_zero(&credentials[count], sizeof(credentials[count]));
@@ -2035,7 +2192,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				VtNetworkCredential original_credential = credentials[source_index];
 				int edited = source_editor(&sources[source_index], &credentials[source_index], 0);
 				if (edited) {
-					int save_result = vt_network_sources_save(sources, count);
+					int save_result = save_sources_and_invalidate_cache(sources, count);
 					if (save_result < 0) {
 					sources[source_index] = original;
 					credentials[source_index] = original_credential;
@@ -2054,7 +2211,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				int source_index = selected;
 				int trust = prepare_sftp_trust(&sources[source_index]);
 				if (trust > 0) {
-					int save_result = vt_network_sources_save(sources, count);
+					int save_result = save_sources_and_invalidate_cache(sources, count);
 					if (save_result < 0) show_save_error(save_result);
 					else persist_remembered_credentials(credentials, count);
 				}
@@ -2079,7 +2236,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				    !sources[source_index].tls_public_key_sha256[0]) {
 					int tls_trust = prepare_https_trust(&sources[source_index], credential);
 					if (tls_trust > 0) {
-						int save_result = vt_network_sources_save(sources, count);
+						int save_result = save_sources_and_invalidate_cache(sources, count);
 						if (save_result < 0) show_save_error(save_result);
 						else persist_remembered_credentials(credentials, count);
 						provider_result = prepare_provider_session(
@@ -2099,7 +2256,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				    !sources[source_index].tls_public_key_sha256[0]) {
 					int tls_trust = prepare_https_trust(&sources[source_index], credential);
 					if (tls_trust > 0) {
-						int save_result = vt_network_sources_save(sources, count);
+						int save_result = save_sources_and_invalidate_cache(sources, count);
 						if (save_result < 0) show_save_error(save_result);
 						else persist_remembered_credentials(credentials, count);
 						browse_result = browse_source(&sources[source_index], credential,

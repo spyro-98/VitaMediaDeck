@@ -524,3 +524,38 @@ const char *vt_network_protocol_name(VtNetworkProtocol protocol) {
 		default: return "?";
 	}
 }
+
+static uint64_t history_hash_text(uint64_t hash, const char *text) {
+	for (const unsigned char *cursor = (const unsigned char *)text;
+	     cursor && *cursor; cursor++) {
+		hash ^= *cursor;
+		hash *= 1099511628211ULL;
+	}
+	hash ^= 0xffU;
+	return hash * 1099511628211ULL;
+}
+
+static uint64_t history_hash_u64(uint64_t hash, uint64_t value) {
+	for (unsigned int shift = 0; shift < 64; shift += 8) {
+		hash ^= (unsigned char)(value >> shift);
+		hash *= 1099511628211ULL;
+	}
+	return hash;
+}
+
+void vt_network_media_history_id(const VtNetworkSource *source,
+	                             const char *path, char out[16]) {
+	uint64_t hash = 14695981039346656037ULL;
+	if (source) {
+		hash = history_hash_u64(hash, source->protocol);
+		hash = history_hash_text(hash, source->host);
+		hash = history_hash_u64(hash, source->port);
+		hash = history_hash_text(hash, source->username);
+		hash = history_hash_text(hash, source->domain);
+		hash = history_hash_text(hash, source->root_path);
+		hash = history_hash_text(hash, source->share);
+		hash = history_hash_text(hash, path);
+	}
+	snprintf(out, 16, "r%014llx",
+	         (unsigned long long)(hash & 0x00ffffffffffffffULL));
+}

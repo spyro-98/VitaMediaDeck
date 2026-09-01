@@ -33,6 +33,7 @@
 #include <vita_https.h>
 
 static int g_network_ready;
+static uint64_t g_startup_started_us;
 
 typedef struct {
 	int valid;
@@ -66,13 +67,7 @@ static void clear_minimized_remote_video(void) {
 }
 
 static void media_id(const char *path, char out[16]) {
-	uint32_t hash = 2166136261U;
-	for (const unsigned char *cursor = (const unsigned char *)path;
-	     cursor && *cursor; cursor++) {
-		hash ^= *cursor;
-		hash *= 16777619U;
-	}
-	snprintf(out, 16, "media%08x", hash);
+	vt_playback_history_local_id(path, out);
 }
 
 static int path_suffix_ci(const char *path, const char *suffix) {
@@ -98,38 +93,9 @@ static const char *audio_codec_name(const char *path) {
 	return "AUDIO";
 }
 
-static uint64_t history_hash_text(uint64_t hash, const char *text) {
-	for (const unsigned char *cursor = (const unsigned char *)text;
-	     cursor && *cursor; cursor++) {
-		hash ^= *cursor;
-		hash *= 1099511628211ULL;
-	}
-	hash ^= 0xffU;
-	return hash * 1099511628211ULL;
-}
-
-static uint64_t history_hash_u64(uint64_t hash, uint64_t value) {
-	for (unsigned int shift = 0; shift < 64; shift += 8) {
-		hash ^= (unsigned char)(value >> shift);
-		hash *= 1099511628211ULL;
-	}
-	return hash;
-}
-
 static void remote_media_id(const UiNetworkSelection *selection, char out[16]) {
-	uint64_t hash = 14695981039346656037ULL;
-	if (selection) {
-		hash = history_hash_u64(hash, selection->source.protocol);
-		hash = history_hash_text(hash, selection->source.host);
-		hash = history_hash_u64(hash, selection->source.port);
-		hash = history_hash_text(hash, selection->source.username);
-		hash = history_hash_text(hash, selection->source.domain);
-		hash = history_hash_text(hash, selection->source.root_path);
-		hash = history_hash_text(hash, selection->source.share);
-		hash = history_hash_text(hash, selection->path);
-	}
-	snprintf(out, 16, "r%014llx",
-	         (unsigned long long)(hash & 0x00ffffffffffffffULL));
+	vt_network_media_history_id(selection ? &selection->source : NULL,
+	                            selection ? selection->path : NULL, out);
 }
 
 static int valid_filename(const char *name) {
@@ -186,6 +152,7 @@ static int rename_local_media(VtLocalMediaItem *item) {
 		    sidecar_path(target, suffixes[i], to, sizeof(to)) == 0)
 			sceIoRename(from, to);
 	}
+	ui_local_files_cache_invalidate();
 	return 0;
 }
 
@@ -202,6 +169,7 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 		if (sidecar_path(item->path, suffixes[i], path, sizeof(path)) == 0)
 			sceIoRemove(path);
 	}
+	ui_local_files_cache_invalidate();
 	return 0;
 }
 
@@ -683,10 +651,24 @@ static int browse_network(void) {
 }
 
 static int run_application(void) {
+	uint64_t stage_started_us = sceKernelGetProcessTimeWide();
 	vt_background_playback_init();
 	vt_playback_history_init();
+	log_printf("startup stage: playback/history=%llu ms total=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                stage_started_us) / 1000ULL),
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                g_startup_started_us) / 1000ULL));
+	ui_loading_present(NULL);
+	stage_started_us = sceKernelGetProcessTimeWide();
 	g_network_ready = vita_https_init() >= 0;
 	if (g_network_ready) g_network_ready = vt_network_init() >= 0;
+	log_printf("startup stage: network=%llu ms ready=%d total=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                stage_started_us) / 1000ULL),
+	           g_network_ready,
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                g_startup_started_us) / 1000ULL));
 	if (!vt_preferences_startup_controls_seen()) {
 		ui_settings_show_controls_reference();
 		vt_preferences_set_startup_controls_seen(1);
@@ -725,19 +707,46 @@ int main(int argc, char *argv[]) {
 	(void)argc;
 	(void)argv;
 	log_init();
+	g_startup_started_us = sceKernelGetProcessTimeWide();
+	uint64_t stage_started_us = g_startup_started_us;
 	vt_preferences_init();
 	vt_i18n_init();
+	log_printf("startup stage: preferences/i18n=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                stage_started_us) / 1000ULL));
+	stage_started_us = sceKernelGetProcessTimeWide();
 	if (ui_runtime_init() < 0) {
 		sceKernelExitProcess(0);
 		return 0;
 	}
+	log_printf("startup stage: graphics=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                stage_started_us) / 1000ULL));
+	uint64_t assets_started_us = sceKernelGetProcessTimeWide();
+	ui_runtime_load_boot_assets();
 	ui_loading_present(NULL);
+	log_printf("startup assets: boot-visible=%llu ms total=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                assets_started_us) / 1000ULL),
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                g_startup_started_us) / 1000ULL));
 	ui_runtime_load_assets();
+	log_printf("startup assets: complete=%llu ms total=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                assets_started_us) / 1000ULL),
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                g_startup_started_us) / 1000ULL));
 	ui_touch_init();
+	stage_started_us = sceKernelGetProcessTimeWide();
 	int thumbnail_ret = vt_video_thumbnail_init();
 	if (thumbnail_ret < 0)
 		log_printf("video thumbnail worker unavailable: 0x%08X",
 		           (unsigned)thumbnail_ret);
+	log_printf("startup stage: thumbnail-worker=%llu ms total=%llu ms",
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                stage_started_us) / 1000ULL),
+	           (unsigned long long)((sceKernelGetProcessTimeWide() -
+	                                g_startup_started_us) / 1000ULL));
 	run_application();
 	vt_video_thumbnail_shutdown();
 	vt_background_playback_shutdown();

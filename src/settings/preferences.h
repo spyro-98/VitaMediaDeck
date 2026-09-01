@@ -122,6 +122,12 @@ int vt_preferences_set_language(int language);
 int vt_preferences_file_browser_grid(void);
 int vt_preferences_set_file_browser_grid(int enabled);
 
+/* Folder-first is the default. Flattened mode presents the indexed media below
+ * every configured local root as one paged collection without loading full
+ * images or media payloads into memory. */
+int vt_preferences_folder_navigation_flattened(void);
+int vt_preferences_set_folder_navigation_flattened(int enabled);
+
 /* The controls reference is presented once after upgrading/first install.
  * The bit lives in the existing flags word, so 1.0 settings remain readable. */
 int vt_preferences_startup_controls_seen(void);
