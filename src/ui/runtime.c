@@ -8,8 +8,11 @@ static vita2d_font *g_font_small = NULL;
 static vita2d_font *g_font_body = NULL;
 static vita2d_font *g_font_display = NULL;
 static vita2d_font *g_subtitle_medium_display = NULL;
+static vita2d_font *g_subtitle_medium_xlarge = NULL;
 static vita2d_font *g_subtitle_semibold_small = NULL;
 static vita2d_font *g_subtitle_semibold_body = NULL;
+static vita2d_font *g_subtitle_semibold_display = NULL;
+static vita2d_font *g_subtitle_semibold_xlarge = NULL;
 static vita2d_texture *g_logo = NULL;
 
 int ui_runtime_init(void) {
@@ -41,18 +44,24 @@ void ui_runtime_load_assets(void) {
 		           (unsigned)fallback_ret,
 		           (unsigned)ui_font_fallback_language_mask());
 	}
-	/* libvita2d's atlas key does not include pixel size. These must stay three
-	 * independent instances, otherwise the first cached bitmap is rescaled by
-	 * the GPU and later sizes become soft. */
+	/* libvita2d's atlas key does not include pixel size. Every subtitle tier
+	 * needs its own face instance, otherwise the first cached bitmap is rescaled
+	 * by the GPU and the larger captions become soft. */
 	if (!g_font_small) g_font_small = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_font_body) g_font_body = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_font_display) g_font_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_subtitle_medium_display)
 		g_subtitle_medium_display = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_subtitle_medium_xlarge)
+		g_subtitle_medium_xlarge = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
 	if (!g_subtitle_semibold_small)
 		g_subtitle_semibold_small = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_subtitle_semibold_body)
 		g_subtitle_semibold_body = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	if (!g_subtitle_semibold_display)
+		g_subtitle_semibold_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	if (!g_subtitle_semibold_xlarge)
+		g_subtitle_semibold_xlarge = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_font_small || !g_font_body || !g_font_display)
 		log_printf("ui asset warning: one or more Inter font instances unavailable");
 	if (!g_logo) g_logo = vita2d_load_PNG_file("app0:sce_sys/icon0.png");
@@ -70,14 +79,20 @@ void ui_runtime_term(void) {
 		if (g_font_body) vita2d_free_font(g_font_body);
 		if (g_font_display) vita2d_free_font(g_font_display);
 		if (g_subtitle_medium_display) vita2d_free_font(g_subtitle_medium_display);
+		if (g_subtitle_medium_xlarge) vita2d_free_font(g_subtitle_medium_xlarge);
 		if (g_subtitle_semibold_small) vita2d_free_font(g_subtitle_semibold_small);
 		if (g_subtitle_semibold_body) vita2d_free_font(g_subtitle_semibold_body);
+		if (g_subtitle_semibold_display) vita2d_free_font(g_subtitle_semibold_display);
+		if (g_subtitle_semibold_xlarge) vita2d_free_font(g_subtitle_semibold_xlarge);
 		g_font_small = NULL;
 		g_font_body = NULL;
 		g_font_display = NULL;
 		g_subtitle_medium_display = NULL;
+		g_subtitle_medium_xlarge = NULL;
 		g_subtitle_semibold_small = NULL;
 		g_subtitle_semibold_body = NULL;
+		g_subtitle_semibold_display = NULL;
+		g_subtitle_semibold_xlarge = NULL;
 		ui_font_fallback_term();
 		vita2d_fini();
 		g_runtime_ready = 0;
@@ -117,11 +132,16 @@ vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
 	if (variant == 1) {
 		vita2d_font *semibold = size == UI_FONT_SMALL ? g_subtitle_semibold_small
 		                       : size == UI_FONT_BODY ? g_subtitle_semibold_body
-		                       : size == UI_FONT_DISPLAY ? g_font_display : NULL;
+		                       : size == UI_FONT_SUBTITLE_LARGE
+		                           ? g_subtitle_semibold_display
+		                       : size == UI_FONT_SUBTITLE_EXTRA_LARGE
+		                           ? g_subtitle_semibold_xlarge : NULL;
 		if (semibold) return semibold;
 	}
-	if (size == UI_FONT_DISPLAY && g_subtitle_medium_display)
+	if (size == UI_FONT_SUBTITLE_LARGE && g_subtitle_medium_display)
 		return g_subtitle_medium_display;
+	if (size == UI_FONT_SUBTITLE_EXTRA_LARGE && g_subtitle_medium_xlarge)
+		return g_subtitle_medium_xlarge;
 	return ui_runtime_font(size);
 }
 
