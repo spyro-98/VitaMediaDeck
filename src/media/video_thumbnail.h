@@ -25,6 +25,14 @@ vita2d_texture *vt_video_thumbnail_get(const char *path, uint64_t source_size);
 vita2d_texture *vt_video_thumbnail_get_priority(
 	const char *path, uint64_t source_size, int priority);
 
+/* Local still images and sidecar artwork share the same asynchronous worker,
+ * fixed RGB565 output, disk cache, prioritization, and GPU texture budget.
+ * The full image decoder is never called from a grid render loop. */
+vita2d_texture *vt_image_thumbnail_get(
+	const char *path, uint64_t source_size);
+vita2d_texture *vt_image_thumbnail_get_priority(
+	const char *path, uint64_t source_size, int priority);
+
 /* Remote previews use the same bounded worker and disposable RGB565 cache as
  * local files. Credentials are copied only into transient in-memory requests,
  * never serialized, and are cleared after the request is consumed. */
