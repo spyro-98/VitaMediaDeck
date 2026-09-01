@@ -699,6 +699,7 @@ int vt_preferences_subtitle_size(void) {
 	unsigned int encoded = subtitle_field(VT_SUBTITLE_SIZE_SHIFT);
 	return encoded == 1u ? VT_SUBTITLE_SIZE_SMALL
 	     : encoded == 2u ? VT_SUBTITLE_SIZE_LARGE
+	     : encoded == 3u ? VT_SUBTITLE_SIZE_EXTRA_LARGE
 	                     : VT_SUBTITLE_SIZE_MEDIUM;
 }
 
@@ -707,6 +708,7 @@ int vt_preferences_set_subtitle_size(int size) {
 	if (size == VT_SUBTITLE_SIZE_MEDIUM) encoded = 0;
 	else if (size == VT_SUBTITLE_SIZE_SMALL) encoded = 1;
 	else if (size == VT_SUBTITLE_SIZE_LARGE) encoded = 2;
+	else if (size == VT_SUBTITLE_SIZE_EXTRA_LARGE) encoded = 3;
 	else return -1;
 	return set_subtitle_field(VT_SUBTITLE_SIZE_SHIFT, encoded);
 }
@@ -736,7 +738,7 @@ int vt_preferences_subtitle_position(void) {
 
 int vt_preferences_set_subtitle_position(int position) {
 	if (position < VT_SUBTITLE_POSITION_BOTTOM ||
-	    position > VT_SUBTITLE_POSITION_HIGH) return -1;
+	    position > VT_SUBTITLE_POSITION_TOP) return -1;
 	return set_subtitle_field(VT_SUBTITLE_POSITION_SHIFT,
 	                          (unsigned int)position);
 }

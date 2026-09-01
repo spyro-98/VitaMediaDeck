@@ -150,10 +150,11 @@ static const char *subtitle_size_label(int size) {
 	static const VtStringId labels[] = {
 		VT_STR_SETTINGS_SUBTITLE_SIZE_SMALL,
 		VT_STR_SETTINGS_SUBTITLE_SIZE_MEDIUM,
-		VT_STR_SETTINGS_SUBTITLE_SIZE_LARGE
+		VT_STR_SETTINGS_SUBTITLE_SIZE_LARGE,
+		VT_STR_SETTINGS_SUBTITLE_SIZE_EXTRA_LARGE
 	};
 	return vt_i18n_str(size >= VT_SUBTITLE_SIZE_SMALL &&
-	                   size <= VT_SUBTITLE_SIZE_LARGE
+	                   size <= VT_SUBTITLE_SIZE_EXTRA_LARGE
 	                   ? labels[size] : labels[VT_SUBTITLE_SIZE_MEDIUM]);
 }
 
@@ -162,10 +163,10 @@ static const char *subtitle_position_label(int position) {
 		VT_STR_SETTINGS_SUBTITLE_POSITION_BOTTOM,
 		VT_STR_SETTINGS_SUBTITLE_POSITION_LOW,
 		VT_STR_SETTINGS_SUBTITLE_POSITION_CENTER,
-		VT_STR_SETTINGS_SUBTITLE_POSITION_HIGH
+		VT_STR_SETTINGS_SUBTITLE_POSITION_TOP
 	};
 	return vt_i18n_str(position >= VT_SUBTITLE_POSITION_BOTTOM &&
-	                   position <= VT_SUBTITLE_POSITION_HIGH
+	                   position <= VT_SUBTITLE_POSITION_TOP
 	                   ? labels[position] : labels[0]);
 }
 
@@ -301,8 +302,10 @@ static int apply_row(int tab, int row, int direction) {
 			case 4: {
 				int value = vt_preferences_subtitle_size() +
 				            (direction < 0 ? -1 : 1);
-				if (value < VT_SUBTITLE_SIZE_SMALL) value = VT_SUBTITLE_SIZE_LARGE;
-				if (value > VT_SUBTITLE_SIZE_LARGE) value = VT_SUBTITLE_SIZE_SMALL;
+				if (value < VT_SUBTITLE_SIZE_SMALL)
+					value = VT_SUBTITLE_SIZE_EXTRA_LARGE;
+				if (value > VT_SUBTITLE_SIZE_EXTRA_LARGE)
+					value = VT_SUBTITLE_SIZE_SMALL;
 				return vt_preferences_set_subtitle_size(value);
 			}
 			case 5: {
@@ -330,8 +333,8 @@ static int apply_row(int tab, int row, int direction) {
 				int value = vt_preferences_subtitle_position() +
 				            (direction < 0 ? -1 : 1);
 				if (value < VT_SUBTITLE_POSITION_BOTTOM)
-					value = VT_SUBTITLE_POSITION_HIGH;
-				if (value > VT_SUBTITLE_POSITION_HIGH)
+					value = VT_SUBTITLE_POSITION_TOP;
+				if (value > VT_SUBTITLE_POSITION_TOP)
 					value = VT_SUBTITLE_POSITION_BOTTOM;
 				return vt_preferences_set_subtitle_position(value);
 			}
@@ -433,7 +436,9 @@ static unsigned subtitle_preview_font_size(void) {
 	return vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_SMALL
 	     ? UI_FONT_SMALL
 	     : vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_LARGE
-	     ? UI_FONT_DISPLAY : UI_FONT_BODY;
+	     ? UI_FONT_SUBTITLE_LARGE
+	     : vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_EXTRA_LARGE
+	     ? UI_FONT_SUBTITLE_EXTRA_LARGE : UI_FONT_BODY;
 }
 
 static void draw_subtitle_preview(vita2d_font *label_font) {
@@ -508,10 +513,19 @@ static void draw_subtitle_preview(vita2d_font *label_font) {
 	int line_height = (int)size + 7;
 	int anchor;
 	switch (vt_preferences_subtitle_position()) {
-		case VT_SUBTITLE_POSITION_LOW: anchor = viewport_y + viewport_h - 50; break;
-		case VT_SUBTITLE_POSITION_CENTER: anchor = viewport_y + viewport_h / 2 + 18; break;
-		case VT_SUBTITLE_POSITION_HIGH: anchor = viewport_y + 54; break;
-		default: anchor = viewport_y + viewport_h - 15; break;
+		case VT_SUBTITLE_POSITION_LOW:
+			anchor = viewport_y + viewport_h - 54;
+			break;
+		case VT_SUBTITLE_POSITION_CENTER:
+			anchor = viewport_y + viewport_h / 2 +
+			         (count - 1) * line_height / 2;
+			break;
+		case VT_SUBTITLE_POSITION_TOP:
+			anchor = viewport_y + 18 + (count - 1) * line_height;
+			break;
+		default:
+			anchor = viewport_y + viewport_h - 18;
+			break;
 	}
 	char fitted[4][160];
 	int widths[4] = {0};
