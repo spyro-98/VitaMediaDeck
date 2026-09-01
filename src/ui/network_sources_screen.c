@@ -20,6 +20,7 @@
 #include "ui/brand.h"
 #include "ui/components.h"
 #include "ui/focus_glow.h"
+#include "ui/format.h"
 #include "ui/loading_screen.h"
 #include "ui/mini_player.h"
 #include "ui/runtime.h"
@@ -43,6 +44,49 @@
 #define BROWSER_GRID_GAP_X 12
 #define BROWSER_GRID_GAP_Y 10
 #define DESTINATION_MAX_FOLDERS 96
+#define NETWORK_BROWSER_MAX_DEPTH 24
+
+static void secure_zero(void *memory, size_t size);
+
+typedef struct {
+	int valid;
+	VtNetworkSource source;
+	VtNetworkCredential credential;
+	int depth;
+	char paths[NETWORK_BROWSER_MAX_DEPTH][VT_NETWORK_PATH_MAX];
+	char labels[NETWORK_BROWSER_MAX_DEPTH][256];
+	int selected[NETWORK_BROWSER_MAX_DEPTH];
+	int top[NETWORK_BROWSER_MAX_DEPTH];
+} NetworkBrowserResume;
+
+/* Kept only for the lifetime of the process. In particular, provider tokens
+ * and passwords never become part of the persisted source configuration. */
+static NetworkBrowserResume g_browser_resume;
+
+static void network_browser_resume_clear(void) {
+	secure_zero(&g_browser_resume, sizeof(g_browser_resume));
+}
+
+static int network_source_matches(const VtNetworkSource *a,
+	                              const VtNetworkSource *b) {
+	return a && b && a->protocol == b->protocol && a->port == b->port &&
+	       !strcmp(a->name, b->name) && !strcmp(a->host, b->host) &&
+	       !strcmp(a->root_path, b->root_path) && !strcmp(a->share, b->share) &&
+	       !strcmp(a->username, b->username) && !strcmp(a->domain, b->domain);
+}
+
+static void network_browser_breadcrumb(const NetworkBrowserResume *resume,
+	                                   char *out, size_t out_size) {
+	if (!out || !out_size) return;
+	out[0] = '\0';
+	if (!resume) return;
+	for (int i = 1; i <= resume->depth; i++) {
+		size_t used = strlen(out);
+		if (used + 1 >= out_size) break;
+		snprintf(out + used, out_size - used, "%s%s", used ? " / " : "",
+		         resume->labels[i]);
+	}
+}
 
 static int network_viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
@@ -451,11 +495,7 @@ static void format_browser_entry_detail(const VtNetworkSource *source,
 		else snprintf(out, out_size, "%s", runtime);
 		return;
 	}
-	if (entry->size >= 1024ULL * 1024ULL * 1024ULL)
-		snprintf(out, out_size, "%.2f GB",
-		         (double)entry->size / (1024.0 * 1024.0 * 1024.0));
-	else snprintf(out, out_size, "%.1f MB",
-	              (double)entry->size / (1024.0 * 1024.0));
+	ui_format_file_size(entry->size, out, out_size);
 }
 
 static int draw_metadata_chip(vita2d_font *font, int x, int y,
@@ -1541,23 +1581,39 @@ static int prepare_sftp_trust(VtNetworkSource *source) {
 
 static int browse_source(const VtNetworkSource *source,
 	                     const VtNetworkCredential *credential,
-	                     UiNetworkSelection *selection) {
+	                     UiNetworkSelection *selection,
+	                     int restore_navigation) {
 	VtNetworkEntry *entries = calloc(VT_NETWORK_MAX_ENTRIES, sizeof(*entries));
 	if (!entries) {
 		ui_message_show(vt_i18n_str(VT_STR_NETWORK_MEMORY_TITLE),
 		                vt_i18n_str(VT_STR_NETWORK_MEMORY_DETAIL), 2600);
 		return 0;
 	}
-	char path[VT_NETWORK_PATH_MAX] = "";
-	char display_path[192] = "";
+	if (!restore_navigation || !g_browser_resume.valid ||
+	    !network_source_matches(source, &g_browser_resume.source)) {
+		network_browser_resume_clear();
+		g_browser_resume.source = *source;
+		g_browser_resume.credential = *credential;
+		g_browser_resume.depth = 0;
+	} else {
+		/* Use the freshly loaded non-secret source settings while preserving the
+		 * in-memory provider session that belongs to the interrupted browser. */
+		g_browser_resume.source = *source;
+	}
+	NetworkBrowserResume *navigation = &g_browser_resume;
+	const char *path = navigation->paths[navigation->depth];
 	int count = 0;
 	int load_result = load_directory(source, credential, path, entries, &count);
 	if (load_result < 0) {
 		free(entries);
+		if (restore_navigation) network_browser_resume_clear();
 		return load_result;
 	}
 	vt_video_thumbnail_resume();
-	int selected = 0, top = 0;
+	int selected = navigation->selected[navigation->depth];
+	int top = navigation->top[navigation->depth];
+	if (selected < 0 || selected >= count) selected = count > 0 ? count - 1 : 0;
+	if (top < 0 || top > selected) top = selected;
 	int grid_mode = vt_preferences_file_browser_grid();
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
@@ -1671,15 +1727,26 @@ static int browse_source(const VtNetworkSource *source,
 		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
 			VtNetworkEntry *entry = &entries[selected];
 			if (entry->is_directory) {
+				if (navigation->depth + 1 >= NETWORK_BROWSER_MAX_DEPTH) {
+					ui_message_show(vt_i18n_str(VT_STR_NETWORK_READ_FAILED),
+					                vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 2200);
+					network_resync_input(&previous, &nav_repeat);
+					continue;
+				}
+				navigation->selected[navigation->depth] = selected;
+				navigation->top[navigation->depth] = top;
+				char next_path[VT_NETWORK_PATH_MAX];
 				char folder_name[sizeof(entry->name)];
+				snprintf(next_path, sizeof(next_path), "%s", entry->path);
 				snprintf(folder_name, sizeof(folder_name), "%s", entry->name);
-				snprintf(path, sizeof(path), "%s", entry->path);
-				if (load_directory(source, credential, path, entries, &count) == 0) {
-					if (source->protocol == VT_NETWORK_JELLYFIN) {
-						size_t used = strlen(display_path);
-						snprintf(display_path + used, sizeof(display_path) - used,
-						         "%s%s", used ? " / " : "", folder_name);
-					}
+				if (load_directory(source, credential, next_path, entries, &count) == 0) {
+					navigation->depth++;
+					snprintf(navigation->paths[navigation->depth],
+					         sizeof(navigation->paths[navigation->depth]), "%s", next_path);
+					snprintf(navigation->labels[navigation->depth],
+					         sizeof(navigation->labels[navigation->depth]), "%s", folder_name);
+					navigation->selected[navigation->depth] = 0;
+					navigation->top[navigation->depth] = 0;
 					selected = top = 0;
 					vt_video_thumbnail_suspend();
 					vt_video_thumbnail_resume();
@@ -1706,6 +1773,11 @@ static int browse_source(const VtNetworkSource *source,
 						selection->has_jellyfin_metadata = 1;
 					}
 				}
+				navigation->source = *source;
+				navigation->credential = *credential;
+				navigation->selected[navigation->depth] = selected;
+				navigation->top[navigation->depth] = top;
+				navigation->valid = 1;
 				vt_video_thumbnail_suspend();
 				free(entries);
 				return UI_NETWORK_ACTION_PLAY;
@@ -1722,31 +1794,30 @@ static int browse_source(const VtNetworkSource *source,
 			continue;
 		}
 		if (pressed & SCE_CTRL_CIRCLE) {
-			char *slash = strrchr(path, '/');
-			if (!path[0]) {
+			if (navigation->depth <= 0) {
 				vt_video_thumbnail_suspend();
 				free(entries);
+				network_browser_resume_clear();
 				return 0;
 			}
-			if (slash) *slash = '\0'; else path[0] = '\0';
-			if (source->protocol == VT_NETWORK_JELLYFIN) {
-				char *display_slash = strrchr(display_path, '/');
-				if (display_slash) {
-					while (display_slash > display_path && display_slash[-1] == ' ')
-						display_slash--;
-					*display_slash = '\0';
-				} else display_path[0] = '\0';
-			}
-			if (load_directory(source, credential, path, entries, &count) == 0) {
-				selected = top = 0;
+			int parent_depth = navigation->depth - 1;
+			if (load_directory(source, credential,
+			                   navigation->paths[parent_depth], entries, &count) == 0) {
+				navigation->depth = parent_depth;
+				selected = navigation->selected[parent_depth];
+				top = navigation->top[parent_depth];
+				if (selected < 0 || selected >= count)
+					selected = count > 0 ? count - 1 : 0;
+				if (top < 0 || top > selected) top = selected;
 				vt_video_thumbnail_suspend();
 				vt_video_thumbnail_resume();
 			}
 			network_resync_input(&previous, &nav_repeat);
 			continue;
 		}
-		draw_browser(source,
-		             source->protocol == VT_NETWORK_JELLYFIN ? display_path : path,
+		char display_path[192];
+		network_browser_breadcrumb(navigation, display_path, sizeof(display_path));
+		draw_browser(source, display_path,
 		             credential, entries, count, selected, top, grid_mode,
 		             &focus_motion);
 		sceKernelDelayThread(1000);
@@ -1762,6 +1833,25 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 	if (vt_preferences_remember_network_passwords() &&
 	    vt_network_credentials_load(credentials, VT_NETWORK_MAX_SOURCES) < 0)
 		vt_network_credentials_clear();
+	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+	if (g_browser_resume.valid) {
+		int resume_index = -1;
+		for (int i = 0; i < count; i++) {
+			if (network_source_matches(&sources[i], &g_browser_resume.source)) {
+				resume_index = i;
+				break;
+			}
+		}
+		if (resume_index >= 0) {
+			VtNetworkCredential resume_credential = g_browser_resume.credential;
+			int browse_result = browse_source(&sources[resume_index],
+			                                  &resume_credential, selection, 1);
+			secure_zero(&resume_credential, sizeof(resume_credential));
+			if (browse_result == UI_NETWORK_ACTION_PLAY)
+				return finish_network_screen(credentials,
+				                             UI_NETWORK_ACTION_PLAY);
+		} else network_browser_resume_clear();
+	}
 	int selected = 0, top = 0, remove_confirm = 0;
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
@@ -1769,7 +1859,6 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_NETWORK);
 	SceCtrlData controls, previous;
 	memset(&controls, 0, sizeof(controls));
-	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
@@ -2004,7 +2093,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 					continue;
 				}
 				int browse_result = browse_source(&sources[source_index], credential,
-				                                  selection);
+				                                  selection, 0);
 				if (browse_result == VT_NETWORK_TLS_TRUST_REQUIRED &&
 				    sources[source_index].protocol == VT_NETWORK_WEBDAV &&
 				    !sources[source_index].tls_public_key_sha256[0]) {
@@ -2014,7 +2103,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 						if (save_result < 0) show_save_error(save_result);
 						else persist_remembered_credentials(credentials, count);
 						browse_result = browse_source(&sources[source_index], credential,
-						                              selection);
+						                              selection, 0);
 					}
 				}
 				if (browse_result == VT_NETWORK_AUTH_FAILED)

@@ -26,6 +26,7 @@
 #include <libavutil/pixfmt.h>
 
 #include "common/text_log.h"
+#include "media/image_loader.h"
 #define THUMB_WIDTH                 264
 #define THUMB_HEIGHT                148
 #define THUMB_PIXELS                (THUMB_WIDTH * THUMB_HEIGHT)
@@ -58,6 +59,7 @@ typedef struct ThumbnailRequest {
 	unsigned int generation;
 	int priority;
 	int remote;
+	int still_image;
 	VtNetworkSource source;
 	VtNetworkCredential credential;
 	char path[THUMB_PATH_MAX];
@@ -174,9 +176,11 @@ static uint64_t thumbnail_hash_u64(uint64_t hash, uint64_t value) {
 	return hash;
 }
 
-static uint64_t thumbnail_key(const char *path, uint64_t source_size) {
+static uint64_t thumbnail_key(const char *path, uint64_t source_size,
+	                          int still_image) {
 	uint64_t hash = thumbnail_hash_text(14695981039346656037ULL, path);
-	return thumbnail_hash_u64(hash, source_size);
+	hash = thumbnail_hash_u64(hash, source_size);
+	return thumbnail_hash_u64(hash, still_image ? 1U : 0U);
 }
 
 static uint64_t remote_thumbnail_key(const VtNetworkSource *source,
@@ -564,6 +568,60 @@ static int rgb24_to_rgb565(const unsigned char *data, int stride,
 		}
 	}
 	return 0;
+}
+
+static int rgba_to_rgb565(const unsigned char *data, int stride,
+	                       int source_w, int source_h, uint16_t *pixels) {
+	if (!data || !pixels || source_w <= 0 || source_h <= 0 ||
+	    stride < source_w * 4) return AVERROR(EINVAL);
+	int crop_x = 0, crop_y = 0, crop_w = source_w, crop_h = source_h;
+	if ((int64_t)source_w * THUMB_HEIGHT > (int64_t)source_h * THUMB_WIDTH) {
+		crop_w = (int)((int64_t)source_h * THUMB_WIDTH / THUMB_HEIGHT);
+		crop_x = (source_w - crop_w) / 2;
+	} else {
+		crop_h = (int)((int64_t)source_w * THUMB_HEIGHT / THUMB_WIDTH);
+		crop_y = (source_h - crop_h) / 2;
+	}
+	for (int out_y = 0; out_y < THUMB_HEIGHT; out_y++) {
+		int64_t sy = ((int64_t)crop_y << 16) - 32768 +
+		             (((int64_t)(out_y * 2 + 1) * crop_h) << 15) /
+		             THUMB_HEIGHT;
+		for (int out_x = 0; out_x < THUMB_WIDTH; out_x++) {
+			int64_t sx = ((int64_t)crop_x << 16) - 32768 +
+			             (((int64_t)(out_x * 2 + 1) * crop_w) << 15) /
+			             THUMB_WIDTH;
+			int r = sample_plane(data, stride, source_w, source_h, sx, sy, 4, 0);
+			int g = sample_plane(data, stride, source_w, source_h, sx, sy, 4, 1);
+			int b = sample_plane(data, stride, source_w, source_h, sx, sy, 4, 2);
+			int a = sample_plane(data, stride, source_w, source_h, sx, sy, 4, 3);
+			/* Composite transparency against the media backdrop instead of leaving
+			 * uninitialized RGB under fully transparent pixels. */
+			r = (r * a + 8 * (255 - a)) / 255;
+			g = (g * a + 16 * (255 - a)) / 255;
+			b = (b * a + 24 * (255 - a)) / 255;
+			pixels[out_y * THUMB_WIDTH + out_x] =
+				(uint16_t)(((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3));
+		}
+	}
+	return 0;
+}
+
+static int decode_still_thumbnail(const ThumbnailRequest *request,
+	                              uint16_t *pixels) {
+	if (!request || !pixels || request->remote) return AVERROR(EINVAL);
+	VtDecodedImage decoded;
+	char error[128];
+	int result = vt_image_decode(request->path, 512, &decoded,
+	                             error, sizeof(error));
+	if (result < 0) {
+		log_printf("image thumbnail decode failed: %s: %s\n",
+		           request->path, error);
+		return AVERROR_INVALIDDATA;
+	}
+	result = rgba_to_rgb565(decoded.pixels, (int)decoded.stride,
+	                       (int)decoded.width, (int)decoded.height, pixels);
+	vt_image_decoded_free(&decoded);
+	return result;
 }
 
 /* A syntactically valid cover can still be a fade-to-black frame. On an OLED
@@ -1082,7 +1140,13 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		int result = pixels ? cache_load(&request, pixels) : AVERROR(ENOMEM);
 		int from_cache = result == 0;
 		int origin = THUMB_ORIGIN_NONE;
-		if (result < 0 && pixels && state->enabled && !state->stop) {
+		if (result < 0 && pixels && state->enabled && !state->stop &&
+		    request.still_image) {
+			result = decode_still_thumbnail(&request, pixels);
+			if (result == 0) origin = THUMB_ORIGIN_PROVIDER;
+		}
+		if (result < 0 && pixels && state->enabled && !state->stop &&
+		    !request.still_image) {
 			if (request.remote &&
 			    request.source.protocol == VT_NETWORK_JELLYFIN) {
 				unsigned char *artwork = NULL;
@@ -1106,7 +1170,7 @@ static int thumbnail_worker(SceSize args, void *argp) {
 			}
 		}
 		if (result < 0 && pixels && state->enabled && !state->stop &&
-		    !state->active_cancel) {
+		    !state->active_cancel && !request.still_image) {
 			VtDecoderStreamFactory factory;
 			VtNetworkStreamFactory remote;
 			memset(&factory, 0, sizeof(factory));
@@ -1363,11 +1427,11 @@ void vt_video_thumbnail_pump(void) {
 static vita2d_texture *thumbnail_get(
 	const VtNetworkSource *source,
 	const VtNetworkCredential *credential,
-	const char *path, uint64_t source_size, int priority) {
+	const char *path, uint64_t source_size, int priority, int still_image) {
 	if (!g_thumbnail.initialized || !g_thumbnail.enabled || !path || !path[0] ||
 	    strlen(path) >= THUMB_PATH_MAX) return NULL;
 	uint64_t key = source ? remote_thumbnail_key(source, path, source_size)
-	                      : thumbnail_key(path, source_size);
+	                      : thumbnail_key(path, source_size, still_image);
 	uint64_t now = sceKernelGetProcessTimeWide();
 	for (int i = 0; i < THUMB_TEXTURE_CAPACITY; i++) {
 		ThumbnailTexture *cached = &g_thumbnail.textures[i];
@@ -1456,6 +1520,7 @@ static vita2d_texture *thumbnail_get(
 	request->generation = generation;
 	request->priority = priority;
 	request->remote = source != NULL;
+	request->still_image = still_image;
 	if (source) request->source = *source;
 	if (credential) request->credential = *credential;
 	snprintf(request->path, sizeof(request->path), "%s", path);
@@ -1464,12 +1529,21 @@ static vita2d_texture *thumbnail_get(
 }
 
 vita2d_texture *vt_video_thumbnail_get(const char *path, uint64_t source_size) {
-	return thumbnail_get(NULL, NULL, path, source_size, 0);
+	return thumbnail_get(NULL, NULL, path, source_size, 0, 0);
 }
 
 vita2d_texture *vt_video_thumbnail_get_priority(
 	const char *path, uint64_t source_size, int priority) {
-	return thumbnail_get(NULL, NULL, path, source_size, priority);
+	return thumbnail_get(NULL, NULL, path, source_size, priority, 0);
+}
+
+vita2d_texture *vt_image_thumbnail_get(const char *path, uint64_t source_size) {
+	return thumbnail_get(NULL, NULL, path, source_size, 0, 1);
+}
+
+vita2d_texture *vt_image_thumbnail_get_priority(
+	const char *path, uint64_t source_size, int priority) {
+	return thumbnail_get(NULL, NULL, path, source_size, priority, 1);
 }
 
 vita2d_texture *vt_video_thumbnail_get_remote(
@@ -1477,7 +1551,7 @@ vita2d_texture *vt_video_thumbnail_get_remote(
 	const VtNetworkCredential *credential,
 	const char *path, uint64_t source_size) {
 	if (!source || !credential) return NULL;
-	return thumbnail_get(source, credential, path, source_size, 0);
+	return thumbnail_get(source, credential, path, source_size, 0, 0);
 }
 
 vita2d_texture *vt_video_thumbnail_get_remote_priority(
@@ -1485,7 +1559,7 @@ vita2d_texture *vt_video_thumbnail_get_remote_priority(
 	const VtNetworkCredential *credential,
 	const char *path, uint64_t source_size, int priority) {
 	if (!source || !credential) return NULL;
-	return thumbnail_get(source, credential, path, source_size, priority);
+	return thumbnail_get(source, credential, path, source_size, priority, 0);
 }
 
 void vt_video_thumbnail_shutdown(void) {

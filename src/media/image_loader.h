@@ -2,6 +2,7 @@
 #define VITAMEDIADECK_MEDIA_IMAGE_LOADER_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <vita2d.h>
 
@@ -10,6 +11,7 @@ typedef struct {
 	unsigned int source_height;
 	unsigned int decoded_width;
 	unsigned int decoded_height;
+	uint64_t file_size;
 	int downscaled;
 	char format[12];
 } VtImageInfo;

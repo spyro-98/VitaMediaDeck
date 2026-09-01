@@ -460,14 +460,22 @@ int vt_image_decode(const char *path, unsigned int max_edge,
 	if (!path || !path[0]) { set_error(error, error_size, "No image selected"); return -1; }
 	if (!max_edge) max_edge = IMAGE_DEFAULT_MAX_EDGE;
 	if (max_edge > IMAGE_MAX_EDGE) max_edge = IMAGE_MAX_EDGE;
+	int result;
 	if (ends_with_ci(path, ".jpg") || ends_with_ci(path, ".jpeg") ||
 	    ends_with_ci(path, ".jpe"))
-		return load_jpeg(path, max_edge, decoded, error, error_size);
-	if (ends_with_ci(path, ".png"))
-		return load_png(path, max_edge, decoded, error, error_size);
-	if (ends_with_ci(path, ".webp"))
-		return load_webp(path, max_edge, decoded, error, error_size);
-	return load_fallback(path, max_edge, decoded, error, error_size);
+		result = load_jpeg(path, max_edge, decoded, error, error_size);
+	else if (ends_with_ci(path, ".png"))
+		result = load_png(path, max_edge, decoded, error, error_size);
+	else if (ends_with_ci(path, ".webp"))
+		result = load_webp(path, max_edge, decoded, error, error_size);
+	else result = load_fallback(path, max_edge, decoded, error, error_size);
+	if (result == 0) {
+		SceIoStat stat;
+		memset(&stat, 0, sizeof(stat));
+		if (sceIoGetstat(path, &stat) >= 0 && stat.st_size > 0)
+			decoded->info.file_size = (uint64_t)stat.st_size;
+	}
+	return result;
 }
 
 vita2d_texture *vt_image_load_texture(const char *path,

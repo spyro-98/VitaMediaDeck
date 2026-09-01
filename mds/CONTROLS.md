@@ -17,25 +17,20 @@ sidebar adds **Active player** above Home; selecting it restores the full player
 
 ## Local Media
 
-The combined Library opens as a rich thumbnail grid. The R1 View panel can
-temporarily switch it to a list; Video and Music remember their own view.
-Video cells prefer recognized local artwork, then an embedded cover, and finally
-an asynchronously extracted representative frame. Blank embedded artwork is
-ignored, and the selected cell is generated ahead of surrounding previews.
-Images from the `picture`, `photo`, and `download` folders on `ux0:` and `uma0:`
-appear in a dedicated Images tab; downloaded video and audio in the default
-download folders are indexed too.
+The combined Library opens as a folder grid instead of flattening every indexed
+file. It groups `video`, `movies`, `music`, `picture`, `photo`, and `download`
+separately on `ux0:` and `uma0:`; Cross opens the selected folder without losing
+its hierarchy. The R1 panel switches grid/list layout, filters memory-card versus
+external storage, sorts folders by name or aggregate size, and opens the device
+root. Image covers are decoded on the bounded thumbnail worker and cached as
+fixed-size previews, so scrolling never synchronously loads viewer-sized images.
 
 | Input | Behavior |
 | --- | --- |
 | Left/Right | Change Library, Video, Audio, or Images filter. |
 | Up/Down | Move through visible items. |
-| Cross | Play the selected video/audio file or open an image. |
-| Square | Open file actions. |
+| Cross | Open the selected media folder. |
 | Circle | Return. |
-
-File actions currently include rename and delete. Deleting local media also
-removes recognized artwork/metadata/subtitle sidecars with the same basename.
 
 The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 `uma0:`. It defaults to a four-column grid inspired by Finder's icon view.
@@ -54,10 +49,10 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 | One-finger drag | Pan the image. |
 | Two-finger pinch | Zoom around the gesture midpoint. |
 | Two-finger twist | Rotate continuously. |
-| D-pad / left stick | Pan. |
-| Right stick vertically / horizontally | Zoom / rotate continuously. |
+| D-pad / left stick | Pan in the inverted viewport direction. |
+| Right stick horizontally | Rotate continuously. |
 | Triangle / Square | Zoom in / out. |
-| L1 / R1 | Rotate 90 degrees counter-clockwise / clockwise. |
+| L1 / R1 | Zoom out / in continuously. |
 | Cross | Reset fit, pan, and rotation. |
 | Circle | Close the image. |
 
@@ -95,6 +90,10 @@ show an embedded cover or a representative frame. Missing or blank artwork
 falls through to frame extraction; the selected
 cell can preempt obsolete viewport work. Preview decoding and network reads stay
 on the bounded thumbnail worker.
+
+After remote playback closes, the browser restores the exact folder and focused
+item. A stored folder stack is used instead of deriving parents from path text,
+so this also works with opaque Jellyfin item identifiers.
 
 | Input | Behavior |
 | --- | --- |

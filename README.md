@@ -51,10 +51,12 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 
 ## Highlights
 
-- Local video, music, and image libraries on `ux0:` and `uma0:`, with paged
-  indexing, folder browsing, and grid/list views.
-- A bounded full-screen image viewer with drag/pinch/twist gestures and complete
-  controller alternatives for pan, zoom, rotation, reset, and close.
+- Local video, music, and image libraries on `ux0:` and `uma0:`, grouped by
+  storage folder instead of flattened into one list. Their grid/list views use
+  bounded asynchronous image thumbnails with a persistent cache.
+- A bounded full-screen image viewer with drag/pinch/twist gestures, L1/R1 zoom,
+  inverted left-stick/D-pad panning, right-stick rotation, and byte-scaled file
+  size telemetry.
 - Native Jellyfin library browsing with memory-only access tokens, server
   posters, rich item records, and seekable direct play over HTTPS or explicitly
   selected LAN HTTP. Detail records include synopsis, original/series title,
@@ -89,6 +91,8 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   H.264 frame extraction and persistent caching when artwork is unavailable.
 - Per-video resume history for local and remote media, plus explicit restart
   from the beginning.
+- Folder navigation is restored after a network video closes, including opaque
+  Jellyfin item paths and regular WebDAV, SFTP, and SMB directory trees.
 - Live video mini-player, persistent music mini-player, full-screen music
   player, artwork, metadata, shuffle, repeat, and seeking.
 - Player telemetry for backend, resolution, frame rate, and video bitrate,

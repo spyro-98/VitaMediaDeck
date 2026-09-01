@@ -13,6 +13,7 @@
 #include "media/image_loader.h"
 #include "ui/brand.h"
 #include "ui/components.h"
+#include "ui/format.h"
 #include "ui/runtime.h"
 #include "ui/loading_screen.h"
 #include "ui/theme.h"
@@ -162,15 +163,18 @@ static void draw_viewer(vita2d_texture *texture, const VtImageInfo *info,
 		ui_font_draw_text(body, 28, 31, VT_THEME_TEXT, UI_FONT_BODY, fitted);
 	}
 	if (small && info) {
-		char details[160];
+		char details[192];
+		char file_size[32];
+		ui_format_file_size(info->file_size, file_size, sizeof(file_size));
 		if (info->downscaled)
-			snprintf(details, sizeof(details), "%s  %ux%u  >  %ux%u   %.0f%%",
+			snprintf(details, sizeof(details), "%s  %ux%u  >  %ux%u  %s  %.0f%%",
 			         info->format, info->source_width, info->source_height,
-			         info->decoded_width, info->decoded_height, state->zoom * 100.0f);
-		else
-			snprintf(details, sizeof(details), "%s  %ux%u   %.0f%%",
-			         info->format, info->source_width, info->source_height,
+			         info->decoded_width, info->decoded_height, file_size,
 			         state->zoom * 100.0f);
+		else
+			snprintf(details, sizeof(details), "%s  %ux%u  %s  %.0f%%",
+			         info->format, info->source_width, info->source_height,
+			         file_size, state->zoom * 100.0f);
 		int width = ui_font_text_width(small, UI_FONT_SMALL, details);
 		ui_font_draw_text(small, 932 - width, 29, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, details);
@@ -237,8 +241,10 @@ int ui_image_viewer_show(const char *path, const char *title) {
 			state.zoom = 1.0f;
 			state.pan_x = state.pan_y = state.rotation = 0.0f;
 		}
-		if (pressed & SCE_CTRL_LTRIGGER) state.rotation -= PI_F * .5f;
-		if (pressed & SCE_CTRL_RTRIGGER) state.rotation += PI_F * .5f;
+		if (controls.buttons & SCE_CTRL_LTRIGGER)
+			change_zoom(&state, task.texture, .985f, VIEWPORT_CX, VIEWPORT_CY);
+		if (controls.buttons & SCE_CTRL_RTRIGGER)
+			change_zoom(&state, task.texture, 1.015f, VIEWPORT_CX, VIEWPORT_CY);
 		if (pressed & SCE_CTRL_TRIANGLE)
 			change_zoom(&state, task.texture, 1.25f, VIEWPORT_CX, VIEWPORT_CY);
 		if (pressed & SCE_CTRL_SQUARE)
@@ -247,16 +253,14 @@ int ui_image_viewer_show(const char *path, const char *title) {
 		               ? ((float)controls.lx - 128.0f) / 16.0f : 0.0f;
 		float analog_y = fabsf((float)controls.ly - 128.0f) > 20.0f
 		               ? ((float)controls.ly - 128.0f) / 16.0f : 0.0f;
-		state.pan_x += analog_x;
-		state.pan_y += analog_y;
-		if (controls.buttons & SCE_CTRL_LEFT) state.pan_x -= 7.0f;
-		if (controls.buttons & SCE_CTRL_RIGHT) state.pan_x += 7.0f;
-		if (controls.buttons & SCE_CTRL_UP) state.pan_y -= 7.0f;
-		if (controls.buttons & SCE_CTRL_DOWN) state.pan_y += 7.0f;
-		float right_y = (float)controls.ry - 128.0f;
-		if (fabsf(right_y) > 28.0f)
-			change_zoom(&state, task.texture, 1.0f - right_y / 6400.0f,
-			            VIEWPORT_CX, VIEWPORT_CY);
+		/* Navigation is intentionally inverted: the left controls move the
+		 * viewport across the image, as if dragging the canvas beneath it. */
+		state.pan_x -= analog_x;
+		state.pan_y -= analog_y;
+		if (controls.buttons & SCE_CTRL_LEFT) state.pan_x += 7.0f;
+		if (controls.buttons & SCE_CTRL_RIGHT) state.pan_x -= 7.0f;
+		if (controls.buttons & SCE_CTRL_UP) state.pan_y += 7.0f;
+		if (controls.buttons & SCE_CTRL_DOWN) state.pan_y -= 7.0f;
 		float right_x = (float)controls.rx - 128.0f;
 		if (fabsf(right_x) > 28.0f)
 			state.rotation += right_x / 18000.0f;
