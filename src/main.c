@@ -18,6 +18,7 @@
 #include "settings/preferences.h"
 #include "ui/about_screen.h"
 #include "ui/loading_screen.h"
+#include "ui/image_viewer.h"
 #include "ui/local_files_screen.h"
 #include "ui/local_media_screen.h"
 #include "ui/mini_player.h"
@@ -175,6 +176,7 @@ static int rename_local_media(VtLocalMediaItem *item) {
 	if (sceIoGetstat(target, &collision) >= 0) return -1;
 	int ret = sceIoRename(item->path, target);
 	if (ret < 0) return ret;
+	if (item->type == VT_LOCAL_MEDIA_IMAGE) return 0;
 	static const char *const suffixes[] = {
 		".jpg", ".jpeg", ".png", ".meta", ".srt", ".vtt"
 	};
@@ -191,6 +193,7 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 	if (!item) return -1;
 	int ret = sceIoRemove(item->path);
 	if (ret < 0) return ret;
+	if (item->type == VT_LOCAL_MEDIA_IMAGE) return 0;
 	static const char *const suffixes[] = {
 		".jpg", ".jpeg", ".png", ".meta", ".srt", ".vtt"
 	};
@@ -599,6 +602,8 @@ static int browse_local(void) {
 			if (item.type == VT_LOCAL_MEDIA_AUDIO) {
 				int section = play_local_audio(item);
 				if (section != UI_SECTION_LOCAL_MEDIA) return section;
+			} else if (item.type == VT_LOCAL_MEDIA_IMAGE) {
+				ui_image_viewer_show(item.path, item.name);
 			} else {
 				int section = play_local_video(&item);
 				if (section != UI_SECTION_LOCAL_MEDIA) return section;

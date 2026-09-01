@@ -31,6 +31,13 @@ typedef struct {
 	unsigned long long duration_us;
 } UiTouchEvent;
 
+typedef struct {
+	int count;
+	int x[2];
+	int y[2];
+	unsigned int id[2];
+} UiTouchPoints;
+
 /* Starts sampling on the front panel and reads its calibration.
  * Returns 0 on success, an SceTouch error otherwise. Idempotent. */
 int ui_touch_init(void);
@@ -46,6 +53,11 @@ void ui_touch_reset(void);
 /* Non-blocking poll. Returns the event flags (0 if nothing changed), and,
  * if not NULL, always initializes `event` even when there's no touch. */
 unsigned int ui_touch_poll(UiTouchEvent *event);
+
+/* Snapshot up to two front-panel contacts in vita2d coordinates. This is for
+ * continuous gestures such as image pinch/rotate; ordinary screens should
+ * continue to use ui_touch_poll(). */
+int ui_touch_peek_points(UiTouchPoints *points);
 
 /* Hit-test helper in vita2d coordinates. Left/top edge included,
  * right/bottom edge excluded: adjacent rectangles don't overlap. */

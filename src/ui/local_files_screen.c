@@ -15,6 +15,7 @@
 
 #include "common/text_log.h"
 #include "i18n/i18n.h"
+#include "media/image_loader.h"
 #include "media/music_metadata.h"
 #include "media/video_thumbnail.h"
 #include "settings/preferences.h"
@@ -116,11 +117,16 @@ static VtLocalMediaType local_media_type(const char *name) {
 		if (ends_with_ci(name, videos[i])) return VT_LOCAL_MEDIA_VIDEO;
 	for (unsigned int i = 0; i < sizeof(audio) / sizeof(audio[0]); i++)
 		if (ends_with_ci(name, audio[i])) return VT_LOCAL_MEDIA_AUDIO;
+	if (vt_image_supported_path(name)) return VT_LOCAL_MEDIA_IMAGE;
 	return 0;
 }
 
 static void find_media_artwork(VtLocalMediaItem *media) {
 	if (!media || !media->type) return;
+	if (media->type == VT_LOCAL_MEDIA_IMAGE) {
+		snprintf(media->artwork_path, sizeof(media->artwork_path), "%s", media->path);
+		return;
+	}
 	static const char *const extensions[] = { ".jpg", ".jpeg", ".png" };
 	static const char *const folder_names[] = {
 		"poster", "cover", "folder", "thumb", "landscape"
@@ -188,9 +194,9 @@ static vita2d_texture *artwork_get(const char *path) {
 	}
 	if (g_artwork[slot].texture) vita2d_free_texture(g_artwork[slot].texture);
 	memset(&g_artwork[slot], 0, sizeof(g_artwork[slot]));
-	g_artwork[slot].texture = ends_with_ci(path, ".png")
-	                          ? vita2d_load_PNG_file(path)
-	                          : vita2d_load_JPEG_file(path);
+	char error[128];
+	g_artwork[slot].texture = vt_image_load_texture(path, 512, NULL,
+	                                                error, sizeof(error));
 	snprintf(g_artwork[slot].path, sizeof(g_artwork[slot].path), "%s", path);
 	g_artwork[slot].used_us = now;
 	if (!g_artwork[slot].texture) {
@@ -331,6 +337,12 @@ static void draw_icon(const LocalFileEntry *entry, int x, int y) {
 		for (int line = 0; line < 18; line++)
 			vita2d_draw_rectangle(x + 62, y + 49 + line, 7 + line / 2, 1,
 			                      VT_THEME_TEXT);
+	} else if (entry->media.type == VT_LOCAL_MEDIA_IMAGE) {
+		vita2d_draw_rectangle(x + 30, y + 23, 76, 66, VT_THEME_SURFACE_RAISED);
+		vita2d_draw_fill_circle(x + 84, y + 43, 9, VT_THEME_SPECTRAL);
+		for (int line = 0; line < 28; line++)
+			vita2d_draw_rectangle(x + 36 + line, y + 80 - line / 2,
+			                      38, 1, VT_THEME_BLUE_LIGHT);
 	} else {
 		vita2d_draw_rectangle(x + 34, y + 15, 68, 88, VT_THEME_SURFACE_RAISED);
 		vita2d_draw_rectangle(x + 34, y + 15, 4, 88, VT_THEME_TEXT_FAINT);
@@ -414,6 +426,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
 			ui_panel(FILE_X, y, FILE_W, FILE_ROW_H - 6, VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
+			         : entry->media.type == VT_LOCAL_MEDIA_IMAGE ? VT_THEME_SPECTRAL
 			         : entry->media.type ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER, 0);
 			if (preview) {
 				vita2d_draw_rectangle(FILE_X + 9, y + 6, 70, 40,
@@ -461,6 +474,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
 			ui_panel(x, y, FILE_CARD_W, FILE_CARD_H, VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
+			         : entry->media.type == VT_LOCAL_MEDIA_IMAGE ? VT_THEME_SPECTRAL
 			         : entry->media.type ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER, 0);
 			if (preview) {
 				vita2d_draw_rectangle(x + 6, y + 6, FILE_CARD_W - 12, 96,
