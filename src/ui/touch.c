@@ -170,6 +170,30 @@ unsigned int ui_touch_poll(UiTouchEvent *event) {
 	return local.flags;
 }
 
+int ui_touch_peek_points(UiTouchPoints *points) {
+	UiTouchPoints local;
+	memset(&local, 0, sizeof(local));
+	if (points) *points = local;
+	if (!g_touch.initialized) return 0;
+	SceTouchData data;
+	memset(&data, 0, sizeof(data));
+	if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &data, 1) < 0) return 0;
+	if (g_touch.suppress_until_release) {
+		if (!find_report(&data, 0, 0)) g_touch.suppress_until_release = 0;
+		return 0;
+	}
+	for (unsigned int i = 0;
+	     i < data.reportNum && i < SCE_TOUCH_MAX_REPORT && local.count < 2; i++) {
+		const SceTouchReport *report = &data.report[i];
+		if (report->info & SCE_TOUCH_REPORT_INFO_HIDE_UPPER_LAYER) continue;
+		map_report(report, &local.x[local.count], &local.y[local.count]);
+		local.id[local.count] = report->id;
+		local.count++;
+	}
+	if (points) *points = local;
+	return local.count;
+}
+
 int ui_touch_hit_rect(int x, int y, int rect_x, int rect_y,
 	                  int rect_w, int rect_h) {
 	if (rect_w <= 0 || rect_h <= 0) return 0;

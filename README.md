@@ -51,8 +51,10 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 
 ## Highlights
 
-- Local video and music libraries on `ux0:` and `uma0:`, with paged indexing,
-  folder browsing, and persistent grid/list views.
+- Local video, music, and image libraries on `ux0:` and `uma0:`, with paged
+  indexing, folder browsing, and grid/list views.
+- A bounded full-screen image viewer with drag/pinch/twist gestures and complete
+  controller alternatives for pan, zoom, rotation, reset, and close.
 - Native Jellyfin library browsing with memory-only access tokens, server
   posters, rich item records, and seekable direct play over HTTPS or explicitly
   selected LAN HTTP. Detail records include synopsis, original/series title,
@@ -121,7 +123,7 @@ stream validation, and both command-line and interactive terminal interfaces.
 
 | Source | Access contract | Current scope |
 | --- | --- | --- |
-| Local storage | Vita filesystem | Video and audio |
+| Local storage | Vita filesystem | Video, audio, and images |
 | Jellyfin | HTTPS on port 8920, or explicitly selected unencrypted LAN HTTP on port 8096; memory-only access token and byte ranges | Video libraries, server posters, direct play |
 | WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
 | SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
@@ -154,6 +156,19 @@ player and persistent mini-player. The Vita AudioOut interface accepts signed
 16-bit mono/stereo PCM; high-resolution FLAC above 48 kHz and multichannel FLAC
 are rejected rather than resampled or downmixed implicitly.
 
+### Supported image formats
+
+| Formats | Decoder path | Large-image behavior |
+| --- | --- | --- |
+| JPEG/JPG/JPE | libjpeg scanlines | DCT scaling plus bounded row sampling |
+| PNG | libpng scanlines, including interlaced images | Bounded row sampling without a full source bitmap |
+| WebP | libwebp | Decoder-native scaling into a bounded proxy |
+| BMP/DIB, TGA, GIF, PSD, HDR, PIC, PNM/PPM/PGM | size-guarded stb_image fallback | Safely rejected before decode when the fallback would exceed the Vita memory budget |
+
+The viewer caps its display proxy at 2048 pixels on the longest edge, retains
+the original dimensions in the HUD, and never allocates an unbounded
+full-resolution JPEG or PNG bitmap. GIF is displayed as its first frame.
+
 VitaMediaDeck does not discover, extract, convert, or copy media from online
 catalogues. It downloads only resource URLs or authenticated server files
 explicitly selected by the user.
@@ -182,8 +197,8 @@ URL and Scan QR; every download opens a destination picker before transfer. See
 ### Requirements
 
 - VitaSDK and the normal Vita system stubs.
-- Vita ports of vita2d, FreeType, libjpeg-turbo, libpng, zlib, bzip2, mpg123,
-  libFLAC, libogg, Mbed TLS, libxml2, zstd, and libsmb2, plus the pinned
+- Vita ports of vita2d, FreeType, libjpeg-turbo, libpng, libwebp, zlib, bzip2,
+  mpg123, libFLAC, libogg, Mbed TLS, libxml2, zstd, and libsmb2, plus the pinned
   non-PIC Jansson build.
 - CMake, Git, Patch, and standard archive/build tools.
 - Sibling checkouts of `vita-hw-decoder`, `vita-sw-decoder`, and `vita-https`,
@@ -199,6 +214,8 @@ export PATH="$VITASDK/bin:$PATH"
 ./tools/build-libssh2-vita.sh
 ./tools/build-jansson-vita.sh
 ./tools/build-ffmpeg-vita-hw.sh
+./tools/build-quirc-vita.sh
+./tools/prepare-stb-image.sh
 ./tools/prepare-release-licenses.sh
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

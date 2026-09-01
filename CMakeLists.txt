@@ -103,6 +103,15 @@ add_library(vitamediadeck_quirc STATIC IMPORTED GLOBAL)
 set_target_properties(vitamediadeck_quirc PROPERTIES
   IMPORTED_LOCATION "${VITAMEDIADECK_QUIRC_ARCHIVE}")
 
+set(VITAMEDIADECK_STB_ROOT
+  "${CMAKE_CURRENT_SOURCE_DIR}/build/deps/stb"
+  CACHE PATH "Pinned stb_image prefix produced by tools/prepare-stb-image.sh")
+if(NOT EXISTS "${VITAMEDIADECK_STB_ROOT}/include/stb_image.h" OR
+   NOT EXISTS "${VITAMEDIADECK_STB_ROOT}/LICENSE")
+  message(FATAL_ERROR
+    "Missing pinned stb_image files; run tools/prepare-stb-image.sh before building VitaMediaDeck.")
+endif()
+
 set(VITAMEDIADECK_RELEASE_LICENSE_ROOT
   "${CMAKE_CURRENT_SOURCE_DIR}/build/release-licenses"
   CACHE PATH "License bundle produced by tools/prepare-release-licenses.sh")
@@ -193,7 +202,7 @@ set(VITA_APP_NAME "VitaMediaDeck")
 set(VITA_TITLEID  "VMDK00001")
 
 # LiveArea version; vita_create_vpk requires the ##.## format.
-set(VITA_VERSION  "01.16")
+set(VITA_VERSION  "01.17")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -206,6 +215,7 @@ include_directories(
   $<$<BOOL:${VITAMEDIADECK_ENABLE_H264_VITA}>:${VITAMEDIADECK_H264_VITA_ROOT}/include>
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${VITAMEDIADECK_LIBSSH2_ROOT}/include
+  ${VITAMEDIADECK_STB_ROOT}/include
   ${VITASDK}/arm-vita-eabi/include/libxml2
 )
 
@@ -248,6 +258,7 @@ add_executable(${PROJECT_NAME}
   src/media/vita_decoder.c
   src/media/video_thumbnail.c
   src/media/hw_player_screen.c
+  src/media/image_loader.c
   src/media/music_metadata.c
   src/history/playback_history.c
   src/settings/preferences.c
@@ -262,6 +273,7 @@ add_executable(${PROJECT_NAME}
   src/ui/touch.c
   src/ui/text_input.c
   src/ui/loading_screen.c
+  src/ui/image_viewer.c
   src/ui/mini_player.c
   src/ui/sections_sidebar.c
   src/ui/local_media_screen.c
@@ -327,6 +339,7 @@ target_link_libraries(${PROJECT_NAME}
   bz2                 # FreeType static dependency
   png
   z
+  webpdecoder         # scaled, bounded WebP image decoding
   VitaHwDecoder::VitaHwDecoder
   VitaSwDecoder::VitaSwDecoder
   VitaHttps::VitaHttps
@@ -400,6 +413,8 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   FILE licenses/ReAvPlayer-MIT.txt licenses/ReAvPlayer-MIT.txt
   FILE licenses/REAVPLAYER_PROVENANCE.md licenses/REAVPLAYER_PROVENANCE.md
   FILE licenses/quirc-ISC.txt licenses/quirc-ISC.txt
+  FILE "${VITAMEDIADECK_STB_ROOT}/LICENSE" licenses/stb-LICENSE.txt
+  FILE licenses/libwebp-COPYING.txt licenses/libwebp-COPYING.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libsmb2-NOTICE.txt" licenses/libsmb2-NOTICE.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libsmb2-LGPL-2.1.txt" licenses/libsmb2-LGPL-2.1.txt
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/libxml2-MIT.txt" licenses/libxml2-MIT.txt
