@@ -159,6 +159,30 @@ PackageLicenseDeclared: MIT
 PackageCopyrightText: NOASSERTION
 Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-Jansson
 
+##### Package: stb_image
+
+PackageName: stb_image
+SPDXID: SPDXRef-Package-stb-image
+PackageVersion: 2c980bb59875b0d32144a71867fbdebb2f77cd20
+PackageDownloadLocation: https://github.com/nothings/stb
+FilesAnalyzed: false
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: NOASSERTION
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-stb-image
+
+##### Package: libwebp
+
+PackageName: libwebp
+SPDXID: SPDXRef-Package-libwebp
+PackageVersion: 1.6.0
+PackageDownloadLocation: https://github.com/webmproject/libwebp/archive/refs/tags/v1.6.0.tar.gz
+FilesAnalyzed: false
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: Copyright Google Inc. and contributors
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-libwebp
+
 ##### Package: remaining runtime libraries
 
 PackageName: VitaMediaDeck-runtime-libraries

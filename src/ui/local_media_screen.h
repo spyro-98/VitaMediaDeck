@@ -9,7 +9,8 @@
 
 typedef enum {
 	VT_LOCAL_MEDIA_VIDEO = 1,
-	VT_LOCAL_MEDIA_AUDIO = 2
+	VT_LOCAL_MEDIA_AUDIO = 2,
+	VT_LOCAL_MEDIA_IMAGE = 3
 } VtLocalMediaType;
 
 typedef enum {

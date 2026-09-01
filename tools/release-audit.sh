@@ -47,6 +47,9 @@ fi
 require_file release/DEPENDENCIES.lock
 require_file release/VitaMediaDeck.spdx
 require_file licenses/REAVPLAYER_PROVENANCE.md
+require_file licenses/libwebp-COPYING.txt
+require_file "$repo_root/build/deps/stb/include/stb_image.h"
+require_file "$repo_root/build/deps/stb/LICENSE"
 require_file "$repo_root/build/release-licenses/PROVENANCE.txt"
 printf '%s  %s\n' \
   8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850 \
@@ -106,6 +109,8 @@ if [[ -n "$vpk" ]]; then
   grep -qx 'licenses/certifi-MPL-2.0.txt' <<<"$listing" || fail "VPK misses CA license notice"
   grep -qx 'licenses/VitaMediaDeck.spdx' <<<"$listing" || fail "VPK misses SPDX SBOM"
   grep -qx 'licenses/release-provenance.txt' <<<"$listing" || fail "VPK misses dependency provenance"
+  grep -qx 'licenses/stb-LICENSE.txt' <<<"$listing" || fail "VPK misses stb license"
+  grep -qx 'licenses/libwebp-COPYING.txt' <<<"$listing" || fail "VPK misses libwebp license"
   if grep -qx 'sce_sys/psvitaframe.png' <<<"$listing"; then
     fail "VPK still contains the unlicensed PS Vita frame"
   fi
