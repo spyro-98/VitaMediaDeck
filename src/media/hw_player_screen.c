@@ -948,6 +948,13 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		}
 		if (input_lock.locked) {
 			pressed = 0;
+			controls.buttons &= SCE_CTRL_SELECT;
+			controls.lx = STICK_CENTER;
+			controls.ly = STICK_CENTER;
+			controls.rx = STICK_CENTER;
+			controls.ry = STICK_CENTER;
+			left_seek_direction = 0;
+			left_seek_repeat_at = 0;
 			touch_flags = UI_TOUCH_EVENT_NONE;
 			dragging = 0;
 		}
