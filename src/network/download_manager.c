@@ -11,7 +11,7 @@
 
 #include <vita_https.h>
 
-#define DOWNLOAD_ROOT "ux0:download/VitaMediaDeck"
+#define DOWNLOAD_ROOT "ux0:download"
 #define DOWNLOAD_BUFFER_SIZE (64 * 1024)
 
 static void secure_zero(void *memory, size_t size) {
@@ -55,7 +55,6 @@ static int make_destination(VtDownloadJob *job, const char *value,
 	const char *directory = job->destination_directory[0]
 	                      ? job->destination_directory : DOWNLOAD_ROOT;
 	sceIoMkdir("ux0:download", 0777);
-	if (!job->destination_directory[0]) sceIoMkdir(DOWNLOAD_ROOT, 0777);
 	for (int suffix = 0; suffix < 1000; suffix++) {
 		char candidate[VT_NETWORK_PATH_MAX];
 		if (suffix == 0) snprintf(candidate, sizeof(candidate), "%s/%s", directory, filename);
