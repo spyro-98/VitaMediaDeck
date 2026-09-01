@@ -21,7 +21,7 @@ synchronization, and rendering run directly on the console.
 
 ## What's new in 1.2
 
-Release 1.2 expands the previous 1.1.8 public build from a local/network video
+Release 1.2 expands the previous 1.0.2 public build from a local/network video
 player into a broader media library and download client:
 
 - Download managers for HTTPS/HTTP, QR links, WebDAV, SFTP, and SMB, with a
