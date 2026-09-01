@@ -8,4 +8,10 @@
  * path remains shared. */
 int ui_local_files_screen(VtLocalMediaItem *selected_out);
 
+/* Opens a real media root selected from the Library. Directories remain
+ * visible for hierarchical navigation; regular files are limited to filter
+ * (zero means every supported local media type). */
+int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
+	                           VtLocalMediaItem *selected_out);
+
 #endif
