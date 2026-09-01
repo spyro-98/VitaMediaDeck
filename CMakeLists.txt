@@ -201,8 +201,8 @@ set(VITA_APP_NAME "VitaMediaDeck")
 # TITLEID must contain exactly nine characters.
 set(VITA_TITLEID  "VMDK00001")
 
-# LiveArea version; vita_create_vpk requires the ##.## format.
-set(VITA_VERSION  "01.02")
+# Release version displayed by LiveArea and stored in the VPK metadata.
+set(VITA_VERSION  "1.2")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -391,17 +391,26 @@ target_link_libraries(${PROJECT_NAME}
 ## profile for h264_vita: an unsafe homebrew SELF, no ASLR, and the maximum
 ## heap mode.  It does not request the custom SceShell auth ID or a PHYCONT
 ## budget that made an earlier VitaMediaDeck experiment fail before main().
+# VitaSDK's vita_create_vpk() helper rejects unpadded versions even though
+# vita-mksfoex and the SFO string field accept the release label verbatim.
+# Own APP_VER here so LiveArea reports exactly "1.2", not "01.02" or "01.20".
+string(REGEX REPLACE "(^|[ \t])-s[ \t]+APP_VER=[^ \t]+" " "
+       VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS}")
+string(REGEX REPLACE "(^|[ \t])-d[ \t]+ATTRIBUTE2=[^ \t]+" " "
+       VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS}")
+string(STRIP "${VITA_MKSFOEX_FLAGS}" VITA_MKSFOEX_FLAGS)
 if(VITAMEDIADECK_ENABLE_H264_VITA)
   set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -d ATTRIBUTE2=12")
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE NOASLR)
 else()
   vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 endif()
+set(VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS} -s APP_VER=${VITA_VERSION}"
+    CACHE STRING "vita-mksfoex flags" FORCE)
 
 # Installable homebrew package containing the SELF and application resources.
 set(VITAMEDIADECK_VPK_NAME "VitaMediaDeck.vpk")
 vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.self
-  VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE sce_sys/icon0.png sce_sys/icon0.png
   FILE assets/fonts/Inter-Medium.ttf fonts/Inter-Medium.ttf
