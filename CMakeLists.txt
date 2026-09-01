@@ -393,7 +393,7 @@ target_link_libraries(${PROJECT_NAME}
 ## budget that made an earlier VitaMediaDeck experiment fail before main().
 # VitaSDK's vita_create_vpk() helper rejects unpadded versions even though
 # vita-mksfoex and the SFO string field accept the release label verbatim.
-# Own APP_VER here so LiveArea reports exactly "1.2", not "01.02" or "01.20".
+# Own APP_VER here so LiveArea reports the release label verbatim.
 string(REGEX REPLACE "(^|[ \t])-s[ \t]+APP_VER=[^ \t]+" " "
        VITA_MKSFOEX_FLAGS "${VITA_MKSFOEX_FLAGS}")
 string(REGEX REPLACE "(^|[ \t])-d[ \t]+ATTRIBUTE2=[^ \t]+" " "
