@@ -202,7 +202,7 @@ set(VITA_APP_NAME "VitaMediaDeck")
 set(VITA_TITLEID  "VMDK00001")
 
 # LiveArea version; vita_create_vpk requires the ##.## format.
-set(VITA_VERSION  "01.20")
+set(VITA_VERSION  "01.02")
 
 ## --- Compiler and linker flags --------------------------------------------
 

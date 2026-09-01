@@ -1,7 +1,7 @@
 /* Localizable UI strings for src/ui/about_screen.c. Format:
  * VT_STR(KEY_NAME, "italian text", "english text") */
 VT_STR(ABOUT_TITLE, "Informazioni", "About")
-VT_STR(ABOUT_VERSION, "Versione 1.2.0", "Version 1.2.0")
+VT_STR(ABOUT_VERSION, "Versione 1.2", "Version 1.2")
 VT_STR(ABOUT_DEVELOPER, "Sviluppato da spyro-98 su GitHub", "Developed by spyro-98 on GitHub")
 VT_STR(ABOUT_TAGLINE, "Player multimediale locale e di rete per PlayStation Vita", "Local and network media player for PlayStation Vita")
 VT_STR(ABOUT_SPECS_TITLE, "Specifiche prestazioni", "Performance specs")
