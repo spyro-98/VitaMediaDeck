@@ -26,7 +26,9 @@ typedef struct {
 	VtLocalMediaType type;
 	VtLocalMediaSource source;
 	uint64_t size;
+	uint64_t artwork_size;
 	uint64_t duration_ms;
+	int is_directory;
 } VtLocalMediaItem;
 
 #define UI_LOCAL_MEDIA_ACTION_BACK 0
@@ -34,6 +36,7 @@ typedef struct {
 #define UI_LOCAL_MEDIA_ACTION_RENAME 3
 #define UI_LOCAL_MEDIA_ACTION_DELETE 4
 #define UI_LOCAL_MEDIA_ACTION_BROWSE_FILES 5
+#define UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER 6
 #define UI_LOCAL_MEDIA_ACTION_SECTION_BASE 10
 
 int ui_local_media_screen(VtLocalMediaItem *selected_out);

@@ -572,18 +572,38 @@ static int resume_minimized_remote_video(uint64_t position_ms, void *ctx) {
 
 static int browse_local(void) {
 	int folder_browser = 0;
+	int folder_resume = 0;
+	char folder_root[VT_LOCAL_MEDIA_PATH_MAX] = "";
+	VtLocalMediaType folder_filter = 0;
 	for (;;) {
 		VtLocalMediaItem item;
-		int action = folder_browser ? ui_local_files_screen(&item)
-		                           : ui_local_media_screen(&item);
+		int action = folder_browser
+		    ? ui_local_files_screen_open(folder_resume ? NULL : folder_root,
+		                                 folder_filter, &item)
+		    : ui_local_media_screen(&item);
+		if (folder_browser) folder_resume = 1;
 		if (action >= UI_LOCAL_MEDIA_ACTION_SECTION_BASE)
 			return action - UI_LOCAL_MEDIA_ACTION_SECTION_BASE;
 		if (action == UI_LOCAL_MEDIA_ACTION_BACK) {
-			if (folder_browser) { folder_browser = 0; continue; }
+			if (folder_browser) {
+				folder_browser = folder_resume = 0;
+				folder_root[0] = '\0';
+				continue;
+			}
 			return UI_SECTION_LOCAL_MEDIA;
 		}
 		if (action == UI_LOCAL_MEDIA_ACTION_BROWSE_FILES) {
 			folder_browser = 1;
+			folder_resume = 0;
+			folder_root[0] = '\0';
+			folder_filter = 0;
+			continue;
+		}
+		if (action == UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER) {
+			folder_browser = 1;
+			folder_resume = 0;
+			snprintf(folder_root, sizeof(folder_root), "%s", item.path);
+			folder_filter = item.type;
 			continue;
 		}
 		if (action == UI_LOCAL_MEDIA_ACTION_RENAME) {

@@ -22,6 +22,7 @@
 #include "ui/brand.h"
 #include "ui/components.h"
 #include "ui/focus_glow.h"
+#include "ui/format.h"
 #include "ui/mini_player.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
@@ -44,24 +45,9 @@ typedef struct {
 	int is_directory;
 } LocalFileEntry;
 
-#define FILE_ARTWORK_CACHE 12
-#define FILE_ARTWORK_RETRY_US (30ULL * 1000ULL * 1000ULL)
-typedef struct {
-	char path[VT_LOCAL_MEDIA_PATH_MAX];
-	vita2d_texture *texture;
-	uint64_t used_us;
-	uint64_t retry_after_us;
-} LocalFileArtwork;
-
 static char g_last_path[VT_LOCAL_MEDIA_PATH_MAX];
-static LocalFileArtwork g_artwork[FILE_ARTWORK_CACHE];
-
-static void artwork_clear(void) {
-	for (int i = 0; i < FILE_ARTWORK_CACHE; i++) {
-		if (g_artwork[i].texture) vita2d_free_texture(g_artwork[i].texture);
-		memset(&g_artwork[i], 0, sizeof(g_artwork[i]));
-	}
-}
+static char g_browser_root[VT_LOCAL_MEDIA_PATH_MAX];
+static VtLocalMediaType g_type_filter;
 
 static int viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
@@ -125,6 +111,7 @@ static void find_media_artwork(VtLocalMediaItem *media) {
 	if (!media || !media->type) return;
 	if (media->type == VT_LOCAL_MEDIA_IMAGE) {
 		snprintf(media->artwork_path, sizeof(media->artwork_path), "%s", media->path);
+		media->artwork_size = media->size;
 		return;
 	}
 	static const char *const extensions[] = { ".jpg", ".jpeg", ".png" };
@@ -146,9 +133,11 @@ static void find_media_artwork(VtLocalMediaItem *media) {
 		SceIoStat stat;
 		snprintf(candidate, sizeof(candidate), "%s%s", base, extensions[i]);
 		memset(&stat, 0, sizeof(stat));
-		if (sceIoGetstat(candidate, &stat) >= 0)
+		if (sceIoGetstat(candidate, &stat) >= 0) {
 			snprintf(media->artwork_path, sizeof(media->artwork_path), "%s",
 			         candidate);
+			media->artwork_size = stat.st_size > 0 ? (uint64_t)stat.st_size : 0;
+		}
 	}
 	for (unsigned int name = 0;
 	     name < sizeof(folder_names) / sizeof(folder_names[0]) &&
@@ -163,48 +152,11 @@ static void find_media_artwork(VtLocalMediaItem *media) {
 			if (sceIoGetstat(candidate, &stat) >= 0) {
 				snprintf(media->artwork_path, sizeof(media->artwork_path), "%s",
 				         candidate);
+				media->artwork_size = stat.st_size > 0 ? (uint64_t)stat.st_size : 0;
 				break;
 			}
 		}
 	}
-}
-
-static vita2d_texture *artwork_get(const char *path) {
-	if (!path || !path[0]) return NULL;
-	uint64_t now = sceKernelGetProcessTimeWide();
-	int retry_slot = -1;
-	for (int i = 0; i < FILE_ARTWORK_CACHE; i++) {
-		if (!strcmp(g_artwork[i].path, path)) {
-			if (g_artwork[i].texture) {
-				g_artwork[i].used_us = now;
-				return g_artwork[i].texture;
-			}
-			if (now < g_artwork[i].retry_after_us) return NULL;
-			retry_slot = i;
-			break;
-		}
-	}
-	int slot = retry_slot;
-	if (slot < 0) {
-		slot = 0;
-		for (int i = 0; i < FILE_ARTWORK_CACHE; i++) {
-			if (!g_artwork[i].path[0]) { slot = i; break; }
-			if (g_artwork[i].used_us < g_artwork[slot].used_us) slot = i;
-		}
-	}
-	if (g_artwork[slot].texture) vita2d_free_texture(g_artwork[slot].texture);
-	memset(&g_artwork[slot], 0, sizeof(g_artwork[slot]));
-	char error[128];
-	g_artwork[slot].texture = vt_image_load_texture(path, 512, NULL,
-	                                                error, sizeof(error));
-	snprintf(g_artwork[slot].path, sizeof(g_artwork[slot].path), "%s", path);
-	g_artwork[slot].used_us = now;
-	if (!g_artwork[slot].texture) {
-		g_artwork[slot].retry_after_us = now + FILE_ARTWORK_RETRY_US;
-		log_printf("video sidecar artwork unavailable: %s\n", path);
-		return NULL;
-	}
-	return g_artwork[slot].texture;
 }
 
 static int entry_compare(const void *left, const void *right) {
@@ -257,6 +209,8 @@ static int load_entries(const char *path, LocalFileEntry *entries) {
 		if (source.d_name[0] == '.') continue;
 		int is_directory = SCE_S_ISDIR(source.d_stat.st_mode);
 		VtLocalMediaType type = is_directory ? 0 : local_media_type(source.d_name);
+		if (!is_directory && (!type || (g_type_filter && type != g_type_filter)))
+			continue;
 		LocalFileEntry *entry = &entries[count];
 		memset(entry, 0, sizeof(*entry));
 		if (join_path(path, source.d_name, entry->media.path,
@@ -279,10 +233,16 @@ static int load_entries(const char *path, LocalFileEntry *entries) {
 				if (metadata.album[0])
 					snprintf(entry->media.album, sizeof(entry->media.album), "%s",
 					         metadata.album);
-				if (!entry->media.artwork_path[0] && metadata.artwork_path[0])
+				if (!entry->media.artwork_path[0] && metadata.artwork_path[0]) {
 					snprintf(entry->media.artwork_path,
 					         sizeof(entry->media.artwork_path), "%s",
 					         metadata.artwork_path);
+					SceIoStat artwork_stat;
+					memset(&artwork_stat, 0, sizeof(artwork_stat));
+					if (sceIoGetstat(metadata.artwork_path, &artwork_stat) >= 0 &&
+					    artwork_stat.st_size > 0)
+						entry->media.artwork_size = (uint64_t)artwork_stat.st_size;
+				}
 				if (metadata.duration_ms)
 					entry->media.duration_ms = metadata.duration_ms;
 			}
@@ -308,13 +268,6 @@ static void parent_path(char *path) {
 		return;
 	}
 	path[0] = '\0';
-}
-
-static void format_size(uint64_t size, char out[32]) {
-	if (size >= 1024ULL * 1024ULL * 1024ULL)
-		snprintf(out, 32, "%.2f GB", (double)size /
-		         (1024.0 * 1024.0 * 1024.0));
-	else snprintf(out, 32, "%.1f MB", (double)size / (1024.0 * 1024.0));
 }
 
 static void draw_icon(const LocalFileEntry *entry, int x, int y) {
@@ -420,7 +373,10 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		for (int i = top; i < count && i < top + list_render_rows(); i++) {
 			int y = FILE_Y + (i - top) * FILE_ROW_H;
 			const LocalFileEntry *entry = &entries[i];
-			vita2d_texture *preview = artwork_get(entry->media.artwork_path);
+			vita2d_texture *preview = entry->media.artwork_path[0]
+			    ? vt_image_thumbnail_get_priority(entry->media.artwork_path,
+			          entry->media.artwork_size, i == selected ? 100 : 10)
+			    : NULL;
 			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
 				preview = vt_video_thumbnail_get_priority(
 				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
@@ -447,7 +403,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 				if (entry->is_directory)
 					snprintf(detail, sizeof(detail), "%s",
 					         vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_FOLDER));
-				else format_size(entry->media.size, detail);
+				else ui_format_file_size(entry->media.size, detail, sizeof(detail));
 				int width = ui_font_text_width(small, UI_FONT_SMALL, detail);
 				ui_font_draw_text(small, FILE_X + FILE_W - width - 18, y + 31,
 				                  VT_THEME_TEXT_MUTED, UI_FONT_SMALL, detail);
@@ -468,7 +424,10 @@ static void draw_files(const LocalFileEntry *entries, int count,
 			int x = FILE_X + col * (FILE_CARD_W + FILE_GAP_X);
 			int y = FILE_Y + row * (FILE_CARD_H + FILE_GAP_Y);
 			const LocalFileEntry *entry = &entries[i];
-			vita2d_texture *preview = artwork_get(entry->media.artwork_path);
+			vita2d_texture *preview = entry->media.artwork_path[0]
+			    ? vt_image_thumbnail_get_priority(entry->media.artwork_path,
+			          entry->media.artwork_size, i == selected ? 100 : 10)
+			    : NULL;
 			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
 				preview = vt_video_thumbnail_get_priority(
 				    entry->media.path, entry->media.size, i == selected ? 100 : 10);
@@ -496,7 +455,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 				if (entry->is_directory)
 					snprintf(detail, sizeof(detail), "%s",
 					         vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_FOLDER));
-				else format_size(entry->media.size, detail);
+				else ui_format_file_size(entry->media.size, detail, sizeof(detail));
 				ui_font_draw_text(small, x + 12, y + 148, VT_THEME_TEXT_MUTED,
 				                  UI_FONT_SMALL, detail);
 			}
@@ -509,7 +468,18 @@ static void draw_files(const LocalFileEntry *entries, int count,
 	vita2d_swap_buffers();
 }
 
-int ui_local_files_screen(VtLocalMediaItem *selected_out) {
+int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
+	                           VtLocalMediaItem *selected_out) {
+	if (root) {
+		if (root[0]) {
+			snprintf(g_last_path, sizeof(g_last_path), "%s", root);
+			snprintf(g_browser_root, sizeof(g_browser_root), "%s", root);
+		} else {
+			g_last_path[0] = '\0';
+			g_browser_root[0] = '\0';
+		}
+		g_type_filter = filter;
+	}
 	LocalFileEntry *entries = calloc(FILE_MAX_ENTRIES, sizeof(*entries));
 	if (!entries) return UI_LOCAL_MEDIA_ACTION_BACK;
 	int count = load_entries(g_last_path, entries);
@@ -589,7 +559,6 @@ int ui_local_files_screen(VtLocalMediaItem *selected_out) {
 		if ((pressed & SCE_CTRL_CROSS) && count) {
 			LocalFileEntry *entry = &entries[selected];
 			if (entry->is_directory) {
-				artwork_clear();
 				snprintf(g_last_path, sizeof(g_last_path), "%s", entry->media.path);
 				count = load_entries(g_last_path, entries);
 				if (count < 0) count = 0;
@@ -601,19 +570,17 @@ int ui_local_files_screen(VtLocalMediaItem *selected_out) {
 			} else if (entry->media.type) {
 				if (selected_out) *selected_out = entry->media;
 				vt_video_thumbnail_suspend();
-				artwork_clear();
 				free(entries);
 				return UI_LOCAL_MEDIA_ACTION_PLAY;
 			}
 		}
 		if (pressed & SCE_CTRL_CIRCLE) {
-			if (!g_last_path[0]) {
+			if (!g_last_path[0] ||
+			    (g_browser_root[0] && !strcmp(g_last_path, g_browser_root))) {
 				vt_video_thumbnail_suspend();
-				artwork_clear();
 				free(entries);
 				return UI_LOCAL_MEDIA_ACTION_BACK;
 			}
-			artwork_clear();
 			parent_path(g_last_path);
 			count = load_entries(g_last_path, entries);
 			if (count < 0) count = 0;
@@ -626,4 +593,8 @@ int ui_local_files_screen(VtLocalMediaItem *selected_out) {
 		draw_files(entries, count, selected, top, grid_mode, &focus);
 		sceKernelDelayThread(1000);
 	}
+}
+
+int ui_local_files_screen(VtLocalMediaItem *selected_out) {
+	return ui_local_files_screen_open("", 0, selected_out);
 }
