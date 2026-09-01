@@ -138,7 +138,8 @@ static void draw_acquisition_frame(float center_x, float center_y,
 static void draw_loading_frame(const char *query, const char *message,
 	                           const volatile long *progress_current,
 	                           const volatile long *progress_total,
-	                           int cancellable) {
+	                           int cancellable, int download_controls,
+	                           int paused) {
 	uint64_t now = sceKernelGetProcessTimeWide();
 	vita2d_start_drawing();
 	vita2d_clear_screen();
@@ -169,7 +170,13 @@ static void draw_loading_frame(const char *query, const char *message,
 			draw_centered_text(430, COLOR_MUTED, UI_FONT_BODY, percent);
 		}
 	}
-	if (cancellable) {
+	if (download_controls) {
+		ui_action_button(246, 458, 216, 42, VT_THEME_SURFACE_RAISED, "Start",
+		                 vt_i18n_str(paused ? VT_STR_NETWORK_DOWNLOAD_RESUME
+		                                  : VT_STR_NETWORK_DOWNLOAD_PAUSE), 0);
+		ui_action_button(498, 458, 216, 42, VT_THEME_SURFACE, "Circle",
+		                 vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORT), 0);
+	} else if (cancellable) {
 		draw_centered_text(total > 0 ? 470 : 402, COLOR_MUTED, UI_FONT_SMALL,
 		                   vt_i18n_str(VT_STR_LOADING_CANCEL_HINT));
 	}
@@ -381,14 +388,16 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 
 void ui_loading_present(const char *message) {
 	if (!ui_runtime_is_ready()) return;
-	draw_loading_frame(NULL, message, NULL, NULL, 0);
+	draw_loading_frame(NULL, message, NULL, NULL, 0, 0, 0);
 }
 
 static int loading_run_internal(const char *query, const char *message,
 	                            UiLoadingTaskFn task, void *ctx,
 	                            volatile int *cancel_flag,
 	                            const volatile long *progress_current,
-	                            const volatile long *progress_total) {
+	                            const volatile long *progress_total,
+	                            volatile int *pause_flag,
+	                            int download_controls) {
 	if (!task) return -1;
 
 	if (!ui_runtime_is_ready()) return -1;
@@ -406,14 +415,16 @@ static int loading_run_internal(const char *query, const char *message,
 	                                    0, 0, NULL);
 	if (thid < 0) {
 		draw_loading_frame(query, message, progress_current, progress_total,
-		                   cancel_flag != NULL);
+		                   cancel_flag != NULL, download_controls,
+		                   pause_flag && *pause_flag);
 		return task(ctx);
 	}
 	ret = sceKernelStartThread(thid, sizeof(thread_args), &thread_args);
 	if (ret < 0) {
 		sceKernelDeleteThread(thid);
 		draw_loading_frame(query, message, progress_current, progress_total,
-		                   cancel_flag != NULL);
+		                   cancel_flag != NULL, download_controls,
+		                   pause_flag && *pause_flag);
 		return task(ctx);
 	}
 
@@ -422,18 +433,27 @@ static int loading_run_internal(const char *query, const char *message,
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	while (!state.done) {
 		draw_loading_frame(query, message, progress_current, progress_total,
-		                   cancel_flag != NULL);
+		                   cancel_flag != NULL, download_controls,
+		                   pause_flag && *pause_flag);
 
 		if (cancel_flag) {
 			sceCtrlPeekBufferPositive(0, &ctrl, 1);
 			unsigned int pressed = ctrl.buttons & ~previous.buttons;
 			previous = ctrl;
+			if (download_controls && pause_flag && (pressed & SCE_CTRL_START))
+				*pause_flag = !*pause_flag;
 			if (pressed & SCE_CTRL_CIRCLE) {
 				*cancel_flag = 1;
 			}
 			UiTouchEvent touch;
 			unsigned int touch_flags = ui_touch_poll(&touch);
-			if (touch_is_cancel_hold(touch_flags, &touch)) {
+			if (download_controls && pause_flag &&
+			    (touch_flags & UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x, touch.y, 246, 458, 216, 42))
+				*pause_flag = !*pause_flag;
+			if ((download_controls && (touch_flags & UI_TOUCH_EVENT_TAP) &&
+			     ui_touch_hit_rect(touch.x, touch.y, 498, 458, 216, 42)) ||
+			    touch_is_cancel_hold(touch_flags, &touch)) {
 				*cancel_flag = 1;
 			}
 		}
@@ -455,7 +475,7 @@ int ui_loading_run(const char *message,
 	               const volatile long *progress_current,
 	               const volatile long *progress_total) {
 	return loading_run_internal(NULL, message, task, ctx, cancel_flag,
-	                            progress_current, progress_total);
+	                            progress_current, progress_total, NULL, 0);
 }
 
 int ui_loading_run_with_query(const char *query,
@@ -466,7 +486,17 @@ int ui_loading_run_with_query(const char *query,
 	                          const volatile long *progress_current,
 	                          const volatile long *progress_total) {
 	return loading_run_internal(query, message, task, ctx, cancel_flag,
-	                            progress_current, progress_total);
+	                            progress_current, progress_total, NULL, 0);
+}
+
+int ui_loading_run_download(const char *message,
+	                        UiLoadingTaskFn task, void *ctx,
+	                        volatile int *pause_flag,
+	                        volatile int *cancel_flag,
+	                        const volatile long *progress_current,
+	                        const volatile long *progress_total) {
+	return loading_run_internal(NULL, message, task, ctx, cancel_flag,
+	                            progress_current, progress_total, pause_flag, 1);
 }
 
 void ui_message_show(const char *message, const char *detail, int duration_ms) {
