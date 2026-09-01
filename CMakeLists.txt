@@ -74,10 +74,13 @@ set_target_properties(vitamediadeck_libssh2 PROPERTIES
   INTERFACE_LINK_LIBRARIES "mbedtls;mbedx509;mbedcrypto;z")
 
 set(VITAMEDIADECK_QUIRC_ARCHIVE
-  "${VITASDK}/arm-vita-eabi/lib/libquirc.a"
-  CACHE FILEPATH "quirc archive used for QR recognition")
+  "${CMAKE_CURRENT_SOURCE_DIR}/build/deps/quirc-vita/lib/libquirc.a"
+  CACHE FILEPATH "quirc archive built by tools/build-quirc-vita.sh")
 if(NOT EXISTS "${VITAMEDIADECK_QUIRC_ARCHIVE}")
-  message(FATAL_ERROR "Missing ${VITAMEDIADECK_QUIRC_ARCHIVE}; install quirc or set VITAMEDIADECK_QUIRC_ARCHIVE.")
+  message(FATAL_ERROR
+    "Missing ${VITAMEDIADECK_QUIRC_ARCHIVE}; run tools/build-quirc-vita.sh. "
+    "The generic VitaSDK archive has a 254-region limit that is insufficient "
+    "for the 480x480 camera scanner.")
 endif()
 add_library(vitamediadeck_quirc STATIC IMPORTED GLOBAL)
 set_target_properties(vitamediadeck_quirc PROPERTIES
@@ -171,7 +174,7 @@ set(VITA_APP_NAME "VitaMediaDeck")
 set(VITA_TITLEID  "VMDK00001")
 
 # LiveArea version; vita_create_vpk requires the ##.## format.
-set(VITA_VERSION  "01.09")
+set(VITA_VERSION  "01.16")
 
 ## --- Compiler and linker flags --------------------------------------------
 

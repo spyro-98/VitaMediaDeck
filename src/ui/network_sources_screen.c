@@ -672,16 +672,25 @@ static void draw_destination_picker(const char *path, char names[][128],
 	ui_scene_identity(66, 68, 720, "LOCAL/DEST",
 	                  vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE),
 	                  vt_i18n_str(VT_STR_NETWORK_DESTINATION_DETAIL));
-	ui_panel(66, 112, 828, 38, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
-	if (small) ui_font_draw_text(small, 84, 137, VT_THEME_TEXT_MUTED,
-	                              UI_FONT_SMALL, path);
+	/* Keep destination state in a dedicated breadcrumb band.  The previous
+	 * layout started this text inside the scene description and allowed long
+	 * paths to run through adjacent copy. */
+	ui_panel(66, 124, 828, 54, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
+	if (small) {
+		char fitted[VT_NETWORK_PATH_MAX];
+		ui_font_draw_text(small, 84, 145, VT_THEME_SIGNAL_LIGHT,
+		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_NETWORK_CURRENT_DESTINATION));
+		ui_font_fit_text(small, UI_FONT_SMALL, path, fitted, sizeof(fitted), 602);
+		ui_font_draw_text(small, 274, 163, VT_THEME_TEXT,
+		                  UI_FONT_SMALL, fitted);
+	}
 	if (!count) {
-		ui_panel(66, 164, 828, 190, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
-		if (body) ui_font_draw_text(body, 94, 238, VT_THEME_TEXT, UI_FONT_BODY,
+		ui_panel(66, 190, 828, 220, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
+		if (body) ui_font_draw_text(body, 94, 274, VT_THEME_TEXT, UI_FONT_BODY,
 		                             vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
 	} else {
-		for (int i = top; i < count && i < top + 5; i++) {
-			int y = 164 + (i - top) * 60;
+		for (int i = top; i < count && i < top + 4; i++) {
+			int y = 190 + (i - top) * 56;
 			ui_panel(66, y, 828, 54, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
 			if (i == selected)
 				vita2d_draw_rectangle(66, y, 4, 54, VT_THEME_SIGNAL_BRIGHT);
@@ -711,9 +720,8 @@ static int choose_download_destination(char *out, size_t out_size) {
 	SceCtrlData previous;
 	UiNavRepeat nav_repeat;
 	int selected = 0, top = 0;
-	snprintf(path, sizeof(path), "ux0:download/VitaMediaDeck");
+	snprintf(path, sizeof(path), "ux0:download");
 	sceIoMkdir("ux0:download", 0777);
-	sceIoMkdir(path, 0777);
 	memset(&previous, 0, sizeof(previous));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	ui_nav_repeat_reset(&nav_repeat);
@@ -725,7 +733,7 @@ static int choose_download_destination(char *out, size_t out_size) {
 		}
 		if (selected >= count) selected = count > 0 ? count - 1 : 0;
 		if (top > selected) top = selected;
-		if (selected >= top + 5) top = selected - 4;
+		if (selected >= top + 4) top = selected - 3;
 		draw_destination_picker(path, names, count, selected, top);
 		SceCtrlData controls;
 		sceCtrlPeekBufferPositive(0, &controls, 1);
