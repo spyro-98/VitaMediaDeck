@@ -6,6 +6,10 @@ dist/
 datamirror/
 logmirror/
 
+# Documentation site (Fumapress/Fumadocs) local tooling
+docs/node_modules/
+docs/dist/
+
 # Hardware test artifacts, not source files.
 *.mp4
 *.psp2dmp

@@ -1,0 +1,10 @@
+{
+  "title": "Development",
+  "icon": "CodeXml",
+  "pages": [
+    "development-log",
+    "playback-audit",
+    "h264-research",
+    "package-integration"
+  ]
+}

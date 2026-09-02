@@ -1,0 +1,41 @@
+---
+title: Project family
+description: The reusable decoder and HTTPS packages, and the optional Transcoder tool.
+icon: Boxes
+---
+
+The playback stack is split into reusable repositories. The decoder packages
+are included in the application build; the Transcoder is an optional desktop
+tool and is not part of the VPK.
+
+| Repository | Purpose |
+| --- | --- |
+| [VitaMediaDeck](https://github.com/spyro-98/VitaMediaDeck) | PS Vita application, media library, network browsing, subtitles, covers, mini-player, and playback orchestration |
+| [vita-hw-decoder](https://github.com/spyro-98/vita-hw-decoder) | Hardware-only H.264/AAC backend using `h264_vita`, SceVideodec, and direct NV12/P2 presentation |
+| [vita-sw-decoder](https://github.com/spyro-98/vita-sw-decoder) | API-compatible CPU/FFmpeg H.264 fallback with the same stream and lifecycle contract |
+| [VitaMediaDeck-Transcoder](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional macOS, Windows, and Linux tool for producing Vita-oriented H.264/AAC Matroska files with multiple tracks and embedded covers |
+| [vita-https](https://github.com/spyro-98/vita-https) | Hardened HTTPS lifecycle, certificate/SPKI verification, and seekable Range transport used by WebDAV |
+
+## Package integration
+
+See [Package integration](development/package-integration) for how the four
+repositories build together: `add_subdirectory` wiring, namespaced static
+symbols, runtime decoder selection, and HTTPS ownership.
+
+## The Transcoder
+
+The Transcoder produces Vita-oriented H.264/AAC Matroska files and preserves:
+
+- selected audio and subtitle tracks;
+- chapters;
+- language/title metadata;
+- compatible font attachments;
+- existing artwork.
+
+If no usable cover exists, it extracts and embeds a representative 480×272
+frame. It also provides:
+
+- Vita-oriented quality presets;
+- HDR-to-SDR tone mapping;
+- final stream validation;
+- both command-line and interactive terminal interfaces.

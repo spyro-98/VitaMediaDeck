@@ -1,0 +1,75 @@
+---
+title: Media sources
+description: Local storage and the authenticated WebDAV, SFTP, and SMB remote contracts.
+icon: Server
+---
+
+VitaMediaDeck plays media the user has chosen. The user chooses the source:
+only local storage and explicitly configured servers are ever browsed.
+
+| Source | Access contract | Current scope |
+| --- | --- | --- |
+| Local storage | Vita filesystem | Video and audio |
+| WebDAV | HTTPS, verified certificate or confirmed SPKI pin, and byte ranges | Remote video |
+| SFTP | Username/password and confirmed SHA-256 host fingerprint | Remote video |
+| SMB | Authenticated SMB2/SMB3 with message signing | Remote video |
+
+> [!NOTE]
+> Authentication is explicit. Remote sources require a username and a password;
+> SFTP additionally requires host-key confirmation. Remote sources are read-only:
+> the app does not upload, rename, or delete files.
+
+## Local storage
+
+The Library opens as a rich thumbnail grid over `ux0:` and `uma0:`. The paged
+index stores up to 65,536 records. Folder browsing is available as a direct
+browser for both devices, with a Finder-style icon grid or a list view.
+Local files support rename and delete with explicit UI confirmation; deleting
+also removes recognized artwork/metadata/subtitle sidecars with the same
+basename.
+
+## Remote protocol requirements
+
+### WebDAV
+
+- HTTPS only — clear-text HTTP is rejected.
+- CA chain and hostname validation enabled.
+- Username/password authentication.
+- `PROPFIND` for browsing.
+- Actual `206 Partial Content` response to a byte-range probe.
+
+Playback uses `vita_https_open_range_stream()`, which verifies a real one-byte
+`206` response and returns a cached seekable cursor.
+
+### SFTP
+
+- Password authentication.
+- Server SHA-256 fingerprint shown and explicitly confirmed before first use.
+- Saved fingerprint must match every later session.
+- 64-bit stat, read, and seek support.
+
+### SMB
+
+- Authenticated SMB2/SMB3 share.
+- No guest fallback.
+- Signing/encryption depend on server negotiation and should be required by the
+  server on untrusted networks.
+- Standard SMB port in the current backend.
+
+## Storage files
+
+- `local_media.idx` — bounded on-disk local index, maximum 65,536 records.
+- `network/sources.bin` — maximum 32 non-secret source definitions.
+- `network/passwords.txt` — optional plaintext passwords, disabled by default.
+- `playback_history.bin` — local and remote resume positions.
+- `settings.bin` — application preferences.
+- `session_log.txt` — written only when persistent diagnostics are enabled.
+
+## Known limitations
+
+- Remote transports and cancellation paths still need broader validation on
+  physical Vita hardware and different server configurations.
+- Remote audio browsing is not exposed yet; authenticated network sources are
+  currently video-only.
+- Separate video, audio, subtitle, and thumbnail cursors can duplicate reads on
+  remote interleaved media.
