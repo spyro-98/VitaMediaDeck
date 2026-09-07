@@ -108,7 +108,7 @@ static void feed_test(void) {
     CHECK(!strcmp(q->items[0].artwork_url,"https://example.org/cover.png"));
     const char *bad[]={"broken","<feed/>","<!DOCTYPE rss [<!ENTITY x SYSTEM 'file:///etc/passwd'>]><rss><channel><item><title>&x;</title></item></channel></rss>","<!DOCTYPE rss SYSTEM 'https://example.org/evil'><rss><channel/></rss>"};
     for(unsigned i=0;i<4;i++) CHECK(vt_online_parse_feed(bad[i],strlen(bad[i]),"https://example.org/",q)<0);
-    CHECK(vt_online_parse_feed("",2097153,"https://example.org/",q)<0);
+    CHECK(vt_online_parse_feed("",VT_ONLINE_FEED_LIMIT+1,"https://example.org/",q)<0);
     char large[16000]="<rss><channel>";
     for(int i=0;i<90;i++){ char row[100]; snprintf(row,sizeof(row),"<item><enclosure url='https://example.org/%d.mp3'/></item>",i);strcat(large,row); }
     strcat(large,"</channel></rss>");
@@ -128,6 +128,38 @@ static void feed_test(void) {
     q->kind=VT_ONLINE_FEED; strcpy(q->query,"test");
     CHECK(!vt_online_fetch_query(q) && q->count==1 && q->items[0].kind==VT_ONLINE_FEED);
     fixture=NULL; free(q);
+}
+static void large_feed_test(void) {
+    VtOnlineQuery *q=calloc(1,sizeof(*q)); CHECK(q);
+    size_t padding=2500000;
+    char *body=calloc(1,padding+2048); CHECK(body);
+    strcpy(body,"<rss><channel><!--"); size_t prefix=strlen(body);
+    memset(body+prefix,'x',padding);
+    strcpy(body+prefix+padding,"--><item><title>Episode</title><enclosure url='one.mp3'/></item><author>Late author</author><description>Late description</description><image><url>cover.jpg</url></image></channel></rss>");
+    CHECK(!vt_online_parse_feed(body,strlen(body),"https://example.org/feed",q));
+    CHECK(q->count==1 && !strcmp(q->items[0].author,"Late author"));
+    CHECK(!strcmp(q->items[0].description,"Late description"));
+    CHECK(!strcmp(q->items[0].artwork_url,"https://example.org/cover.jpg"));
+    fixture=body; q->kind=VT_ONLINE_EPISODE; strcpy(q->query,"https://example.org/feed");
+    CHECK(!vt_online_fetch_query(q) && q->count==1);
+    q->kind=VT_ONLINE_SHOW; CHECK(vt_online_fetch_query(q)<0); /* JSON remains capped at 2 MiB. */
+    q->cancel=1;CHECK(vt_online_parse_feed(body,strlen(body),"https://example.org/",q)<0&&q->count==0);
+    q->cancel=0;volatile int parent_cancel=1;q->cancel_parent=&parent_cancel;
+    CHECK(vt_online_parse_feed(body,strlen(body),"https://example.org/",q)<0&&q->count==0);
+    fixture=NULL;free(body);free(q);
+}
+static void real_feed_test(const char *path) {
+    FILE *file=fopen(path,"rb");CHECK(file);CHECK(!fseek(file,0,SEEK_END));
+    long size=ftell(file);CHECK(size>0 && size<=VT_ONLINE_FEED_LIMIT);rewind(file);
+    char *body=malloc((size_t)size+1);CHECK(body);CHECK(fread(body,1,size,file)==(size_t)size);fclose(file);body[size]=0;
+    VtOnlineQuery *q=calloc(1,sizeof(*q));CHECK(q);unsigned total=0;
+    do {CHECK(!vt_online_parse_feed(body,size,"https://example.org/feed",q));
+        CHECK(q->count>0 && q->count<=64);total+=q->count;q->offset+=64;
+    } while(q->has_more);
+    printf("Feed fixture: bytes=%ld episodes=%u\n",size,total);
+    q->offset=0;q->kind=VT_ONLINE_EPISODE;strcpy(q->query,"https://example.org/feed");fixture=body;
+    CHECK(!vt_online_fetch_query(q) && q->count>0);fixture=NULL;
+    free(q);free(body);
 }
 static void saved_test(void) {
     mkdir("ux0:data",0700); mkdir("ux0:data/VitaMediaDeck",0700);
@@ -192,8 +224,9 @@ static void browser_test(void) {
     CHECK(!strcmp(radio.description,"news talk"));free(q);
 }
 int main(int argc,char **argv) {
-    CHECK(argc==2); FILE *f=fopen(argv[1],"rb");CHECK(f);fseek(f,0,SEEK_END);mp3_size=ftell(f);rewind(f);mp3=malloc(mp3_size);CHECK(fread(mp3,1,mp3_size,f)==mp3_size);fclose(f);
-    feed_test(); saved_test(); catalog_test();browser_test();
+    CHECK(argc>=2); FILE *f=fopen(argv[1],"rb");CHECK(f);fseek(f,0,SEEK_END);mp3_size=ftell(f);rewind(f);mp3=malloc(mp3_size);CHECK(fread(mp3,1,mp3_size,f)==mp3_size);fclose(f);
+    feed_test(); large_feed_test(); saved_test(); catalog_test();browser_test();
+    for(int i=2;i<argc;i++)real_feed_test(argv[i]);
     VtDecoderStreamFactory factory;VtDecoderStreamHandle handle;
     vt_http_audio_stream_factory("file:///bad",&factory);CHECK(factory.open(factory.opaque,&handle)<0);
     vt_http_audio_stream_factory("https://example.org/podcast.mp3",&factory);
