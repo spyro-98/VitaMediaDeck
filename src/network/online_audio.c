@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <jansson.h>
 #include <libxml/parser.h>
+#include <libxml/xmlreader.h>
 #include <libxml/uri.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -28,22 +29,30 @@ int vt_online_url_valid(const char *url) {
 	return !auth || (end && auth > end);
 }
 
-typedef struct { char *data; size_t size; int limit_hit; } Response;
+typedef struct { char *data; size_t size, capacity, limit; int limit_hit; } Response;
 static size_t receive(const void *data, size_t size, void *ctx) {
 	Response *r = ctx;
-	if (size > RESPONSE_LIMIT - r->size) { r->limit_hit = 1; return 0; }
+	if (size > r->limit - r->size) { r->limit_hit = 1; return 0; }
+	if (r->size + size + 1 > r->capacity) {
+		size_t capacity = r->capacity ? r->capacity : 65536;
+		while (capacity < r->size + size + 1) capacity *= 2;
+		if (capacity > r->limit + 1) capacity = r->limit + 1;
+		char *next = realloc(r->data, capacity);
+		if (!next) return 0;
+		r->data = next; r->capacity = capacity;
+	}
 	memcpy(r->data + r->size, data, size);
 	r->size += size;
 	r->data[r->size] = 0;
 	return size;
 }
 
-static char *fetch(const char *url, volatile int *cancel, size_t *length) {
+static char *fetch_limited(const char *url, volatile int *cancel, size_t *length, size_t limit) {
 	if (!vt_online_url_valid(url)) {
 		log_printf("online HTTP: rejected URL (length=%u)\n", (unsigned)(url ? strlen(url) : 0));
 		return NULL;
 	}
-	Response result = {.data = malloc(RESPONSE_LIMIT + 1)};
+	Response result = {.data = malloc(1), .capacity = 1, .limit = limit};
 	if (!result.data) return NULL;
 	result.data[0] = 0;
 	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.3.0",
@@ -62,6 +71,10 @@ static char *fetch(const char *url, volatile int *cancel, size_t *length) {
 	if (code < 0 || response.status_code != 200) { free(result.data); return NULL; }
 	*length = result.size;
 	return result.data;
+}
+
+static char *fetch(const char *url, volatile int *cancel, size_t *length) {
+	return fetch_limited(url, cancel, length, RESPONSE_LIMIT);
 }
 
 static void add(VtOnlineQuery *q, const char *title, const char *url,
@@ -89,30 +102,21 @@ static void node_text(xmlNode *node, char *out, size_t cap) {
 		if(!tag)out[n++]=*p<32?' ':(char)*p;
 	}out[n]=0;xmlFree(text);
 }
+static void image_artwork(xmlNode *node, const char *base, char *out, size_t cap) {
+	xmlChar *link = xmlGetProp(node, BAD_CAST "href");
+	if (!link) link = xmlNodeGetContent(child(node, "url"));
+	xmlChar *absolute = link ? xmlBuildURI(link, BAD_CAST base) : NULL;
+	if (absolute && vt_online_url_valid((char *)absolute))
+		snprintf(out, cap, "%s", (char *)absolute);
+	xmlFree(absolute); xmlFree(link);
+}
 static void node_artwork(xmlNode *node, const char *base, char *out, size_t cap) {
 	for(xmlNode *n=node?node->children:NULL;n;n=n->next) {
 		if(xmlStrcmp(n->name,BAD_CAST "image"))continue;
-		xmlChar *link=xmlGetProp(n,BAD_CAST "href");
-		if(!link)link=xmlNodeGetContent(child(n,"url"));
-		xmlChar *absolute=link?xmlBuildURI(link,BAD_CAST base):NULL;
-		if(absolute && vt_online_url_valid((char*)absolute))snprintf(out,cap,"%s",(char*)absolute);
-		xmlFree(absolute);xmlFree(link);if(out[0])return;
+		image_artwork(n, base, out, cap); if(out[0])return;
 	}
 }
-int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlineQuery *q) {
-	if (!data || !q || size > RESPONSE_LIMIT) return -1;
-	q->count = 0;q->has_more=0;
-	xmlDoc *doc = xmlReadMemory(data, (int)size, url, NULL,
-	    XML_PARSE_NONET | XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
-	if (!doc) return -1;
-	/* No DTDs or entity-bearing feeds: never resolve local files or network entities. */
-	if (doc->intSubset || doc->extSubset) { xmlFreeDoc(doc); return -1; }
-	xmlNode *root = xmlDocGetRootElement(doc);
-	xmlNode *channel = root && !xmlStrcmp(root->name, BAD_CAST "rss") ? child(root, "channel") : NULL;
-	if (!channel) { xmlFreeDoc(doc); return -1; }
-	unsigned eligible=0;
-	for (xmlNode *node = channel->children; node; node = node->next) {
-		if (node->type != XML_ELEMENT_NODE || xmlStrcmp(node->name, BAD_CAST "item")) continue;
+static void feed_item(xmlNode *node, const char *url, VtOnlineQuery *q, unsigned *eligible) {
 		xmlNode *enclosure = child(node, "enclosure");
 		xmlChar *link = xmlGetProp(enclosure, BAD_CAST "url");
 		xmlChar *mime = xmlGetProp(enclosure, BAD_CAST "type");
@@ -121,8 +125,8 @@ int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlin
 		xmlChar *absolute = link ? xmlBuildURI(link, BAD_CAST url) : NULL;
 		int before=q->count;
 		if (absolute && vt_online_url_valid((char*)absolute) && (!mime || !xmlStrncmp(mime, BAD_CAST "audio/", 6))) {
-			if(eligible++ >= q->offset) {
-				if(eligible>q->offset+VT_ONLINE_MAX)q->has_more=1;
+			if((*eligible)++ >= q->offset) {
+				if(*eligible>q->offset+VT_ONLINE_MAX)q->has_more=1;
 				else add(q, (char *)title, (char *)absolute, (char *)guid, VT_ONLINE_EPISODE);
 			}
 		}
@@ -130,17 +134,64 @@ int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlin
 			VtOnlineItem *item=&q->items[before];
 			node_text(child(node,"author"),item->author,sizeof(item->author));
 			if(!item->author[0])node_text(child(node,"creator"),item->author,sizeof(item->author));
-			if(!item->author[0])node_text(child(channel,"author"),item->author,sizeof(item->author));
 			node_text(child(node,"description"),item->description,sizeof(item->description));
 			if(!item->description[0])node_text(child(node,"summary"),item->description,sizeof(item->description));
-			if(!item->description[0])node_text(child(channel,"description"),item->description,sizeof(item->description));
 			node_artwork(node,url,item->artwork_url,sizeof(item->artwork_url));
-			if(!item->artwork_url[0])node_artwork(channel,url,item->artwork_url,sizeof(item->artwork_url));
-			snprintf(item->detail,sizeof(item->detail),"%s",item->author);
 		}
 		xmlFree(link); xmlFree(mime); xmlFree(title); xmlFree(guid); xmlFree(absolute);
+}
+
+int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlineQuery *q) {
+	if (!q) return -1;
+	q->count = q->has_more = 0;
+	if (!data || !size || size > VT_ONLINE_FEED_LIMIT || q->offset > 1000000) return -1;
+	xmlTextReader *reader = xmlReaderForMemory(data, (int)size, url, NULL,
+	    XML_PARSE_NONET | XML_PARSE_NOERROR | XML_PARSE_NOWARNING);
+	if (!reader) return -1;
+	/* No DTD loading, entity substitution, preservation or huge-document mode.
+	 * Expand only one direct channel child at a time; Next releases that tree. */
+	xmlTextReaderSetParserProp(reader, XML_PARSER_LOADDTD, 0);
+	xmlTextReaderSetParserProp(reader, XML_PARSER_SUBST_ENTITIES, 0);
+	VtOnlineItem defaults = {0};
+	unsigned eligible = 0;
+	int root_seen = 0, channel_seen = 0, in_channel = 0;
+	int status = xmlTextReaderRead(reader);
+	while (status == 1) {
+		if (q->cancel || (q->cancel_parent && *q->cancel_parent)) { status = -1; break; }
+		int type = xmlTextReaderNodeType(reader), depth = xmlTextReaderDepth(reader);
+		const xmlChar *name = xmlTextReaderConstLocalName(reader);
+		if (type == XML_READER_TYPE_DOCUMENT_TYPE || type == XML_READER_TYPE_ENTITY_REFERENCE) { status = -1; break; }
+		if (type == XML_READER_TYPE_ELEMENT && depth == 0) {
+			if (root_seen || xmlStrcmp(name, BAD_CAST "rss")) { status = -1; break; }
+			root_seen = 1;
+		} else if (type == XML_READER_TYPE_ELEMENT && depth == 1 && !xmlStrcmp(name, BAD_CAST "channel")) {
+			if (!root_seen || channel_seen) { status = -1; break; }
+			channel_seen = in_channel = 1;
+		} else if (type == XML_READER_TYPE_END_ELEMENT && depth == 1) {
+			in_channel = 0;
+		} else if (type == XML_READER_TYPE_ELEMENT && depth == 2 && in_channel) {
+			xmlNode *node = xmlTextReaderExpand(reader);
+			if (!node) { status = -1; break; }
+			if (!xmlStrcmp(node->name, BAD_CAST "item")) feed_item(node, url, q, &eligible);
+			else if (!xmlStrcmp(node->name, BAD_CAST "author")) node_text(node, defaults.author, sizeof(defaults.author));
+			else if (!xmlStrcmp(node->name, BAD_CAST "description")) node_text(node, defaults.description, sizeof(defaults.description));
+			else if (!xmlStrcmp(node->name, BAD_CAST "image")) image_artwork(node, url, defaults.artwork_url, sizeof(defaults.artwork_url));
+			status = xmlTextReaderNext(reader);
+			continue;
+		}
+		status = xmlTextReaderRead(reader);
 	}
-	xmlFreeDoc(doc);
+	xmlFreeTextReader(reader);
+	if (status < 0 || !channel_seen) { q->count = q->has_more = 0; return -1; }
+	/* Feed metadata may legally follow the episodes. Apply fallbacks only after
+	 * parsing, without retaining the complete feed tree. */
+	for (int i = 0; i < q->count; i++) {
+		VtOnlineItem *item = &q->items[i];
+		if (!item->author[0]) snprintf(item->author, sizeof(item->author), "%s", defaults.author);
+		if (!item->description[0]) snprintf(item->description, sizeof(item->description), "%s", defaults.description);
+		if (!item->artwork_url[0]) snprintf(item->artwork_url, sizeof(item->artwork_url), "%s", defaults.artwork_url);
+		snprintf(item->detail, sizeof(item->detail), "%s", item->author);
+	}
 	return 0;
 }
 
@@ -162,7 +213,7 @@ static int fetch_query_raw(void *opaque) {
 	unsigned batch = q->batch_size ? q->batch_size : VT_ONLINE_MAX;
 	if (q->kind == VT_ONLINE_EPISODE) {
 		size_t size = 0;
-		char *data = fetch(q->query, cancel, &size);
+		char *data = fetch_limited(q->query, cancel, &size, VT_ONLINE_FEED_LIMIT);
 		int result = data ? vt_online_parse_feed(data, size, q->query, q) : -1;
 		log_printf("podcast feed: fetched=%d bytes=%u parse_result=%d episodes=%d offset=%u more=%d cancelled=%d\n",
 		    data != NULL, (unsigned)size, result, q->count, q->offset,

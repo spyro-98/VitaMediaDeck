@@ -4,6 +4,14 @@ Compile `test.c` together with `src/media/live_audio.c` `src/network/online_audi
 
 Generate a two-second stereo 44.1 kHz 128 kbps MP3 with FFmpeg's sine source. Run the executable with that MP3 path, **from a new temporary working directory**: the persistence fixture creates and removes its own `ux0:data/VitaMediaDeck/online-audio.json` beneath the current directory. Do not run in a directory containing real app data.
 
+Optional subsequent arguments are local RSS fixtures. Each is exercised through
+all 64-item pages and the production fetch path with a mocked HTTP response.
+The September 7 run passed 6,066 assertions with the saved Nova Lectio feed
+(2,484,364 bytes / 283 episodes) and La Zanzara (47,087 bytes / 30 episodes).
+Synthetic checks cover feeds beyond 2 MiB, late channel metadata, cancellation,
+DTD rejection and the unchanged 2 MiB catalogue response cap. RSS has an 8 MiB
+hard limit; the reader retains one channel-child subtree at a time.
+
 The September 2026 host run passed 5,990 assertions: ICY metadata isolation and transport chunks from 1 to 65,536 bytes, PCM grain accounting, disconnect-on-pause/reconnect, cancellation, three-attempt reconnect, invalid stream handling, URL validation, RSS bounds/duplicate handling/DTD rejection, public-directory JSON mapping, country filtering, escaped queries, 200-match podcast pagination, RSS authors/descriptions/artwork, normalized search, cover cache hits, HTTP cursor lifecycle, saved metadata and corrupt-file preservation. Device scheduling, real HTTP/TLS transfers and visual behavior remain separate checks.
 
 `live_http_smoke.c` is a separate, opt-in network test. Compile it with `src/media/live_audio.c`, the same mock include path, and host curl/mpg123. Pass a public direct MP3 URL. It decodes five seconds with paced simulated audio output, without saving or emitting audio. SomaFM Groove Salad delivered station/song metadata and 44.1 kHz / 128 kbps MP3 (216 PCM grains, 5,015 ms). TLS certificate validation remains enabled in the host curl adapter; that adapter is not a substitute for testing Vita HTTPS on the console.
