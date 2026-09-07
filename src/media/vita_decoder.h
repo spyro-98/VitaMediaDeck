@@ -123,6 +123,9 @@ void vt_decoder_file_stream_factory(const char *path,
 int vt_decoder_prepare_hardware_runtime(void);
 VtDecoderPlayer *vt_decoder_create(void);
 int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config);
+/* Explicit forward-only HLS/MPEG-TS path. No finite-file API/layout changes.
+ * Live sources must provide two identical, cancellation-aware start cursors. */
+int vt_decoder_open_live(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config);
 void vt_decoder_destroy(VtDecoderPlayer *player);
 void vt_decoder_request_stop(VtDecoderPlayer *player);
 /* Call after the UI has fenced GXM and before dispatching seek/fallback/close

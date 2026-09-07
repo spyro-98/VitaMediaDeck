@@ -241,19 +241,17 @@ add_subdirectory("${VITAMEDIADECK_HTTPS_PACKAGE}"
 # has declared its own options; GCC applies the last optimization level.
 target_compile_options(vita_https PRIVATE $<$<CONFIG:Release>:-O3>)
 
-# Compile the opt-in IPTV source groundwork on Vita without connecting it to
-# existing playback or exporting changes through either decoder library.
-option(VITAMEDIADECK_BUILD_IPTV_SOURCE "Compile experimental IPTV source layer" ON)
-if(VITAMEDIADECK_BUILD_IPTV_SOURCE)
-  add_library(vitamediadeck_iptv_source STATIC
-    src/network/iptv_manifest.c src/network/iptv_source.c src/network/iptv_http.c)
-  target_compile_options(vitamediadeck_iptv_source PRIVATE
-    -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
-    -ffunction-sections -fdata-sections $<$<CONFIG:Release>:-O3>)
-  target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps xml2 pthread m)
-endif()
+# IPTV owns connections independently; decoder live entry points are opt-in.
+add_library(vitamediadeck_iptv_source STATIC
+  src/network/iptv_manifest.c src/network/iptv_source.c src/network/iptv_http.c
+  src/network/iptv_session.c)
+target_compile_options(vitamediadeck_iptv_source PRIVATE
+  -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
+  -ffunction-sections -fdata-sections $<$<CONFIG:Release>:-O3>)
+target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps xml2 pthread m)
 
 add_executable(${PROJECT_NAME}
+  src/ui/iptv_screen.c
   src/main.c
   src/common/debugScreen.c
   src/common/text_log.c
@@ -334,6 +332,7 @@ endif()
 ## position before application-specific protocol libraries preserves archive
 ## resolution order on the Vita linker.
 target_link_libraries(${PROJECT_NAME}
+  vitamediadeck_iptv_source
   SceDisplay_stub     # psvDebugScreenPrintf() in src/common/debugScreen.c
   SceCtrl_stub        # controller sampling
   SceNet_stub         # sceNet and the BSD-compatible socket layer

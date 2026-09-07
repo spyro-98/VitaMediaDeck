@@ -1,9 +1,29 @@
 # IPTV branch: compatibility contract
 
-Status: first source-layer implementation. `iptv_manifest`, `iptv_source` and
-`iptv_http` implement the bounded MPEG-TS HLS subset described below. This is not
-yet connected to the player or UI; there is no end-user IPTV playback section
-in the VPK. No HW/SW decoder code, public layout or function signature changed.
+Status: first integrated **experimental playback preview** on `feature/iptv`.
+The IPTV section opens the HLS source through a forward-only session adapter
+and separate opt-in HW/SW live APIs. Native build and host validation pass;
+actual Vita broadcast playback, audio output and long-session timing have not
+been verified. This is not a completed general-purpose IPTV client.
+
+## Using this preview
+
+1. Press **L1 → IPTV** (or tap the app logo and choose IPTV).
+2. Choose **Enter link** / Start, enter an authorized HTTP(S) HLS link, then
+   select **Play stream** with the d-pad/X or touch. **Square / Use test stream**
+   fills the public Mux HLS test URL; it does not play or fetch until Play.
+3. **X / the on-screen pause button** pauses. Resume closes both decoders and
+   the old connection, then opens a fresh live point. **R1 → Reconnect live**
+   does the same immediately. R1 also retains the screen-fit setting.
+4. Tap the video to hide/show the HUD. Existing volume, input lock and eco-mode
+   controls remain available. L1 navigation or Circle exits and stops IPTV.
+
+The link stays only in RAM; URL query tokens are hidden on the page and no URL
+is logged. No supplied channel lists/accounts are bundled. The Mux sample is a
+finite HLS fixture, not proof of a long-lived broadcast. No file is recorded.
+Choose HW/SW in Settings before playback; AUTO may fall back during startup.
+Mid-stream decoder/track changes, subtitles, seeking, loop and IPTV mini-player
+handoff are intentionally unavailable in this first preview.
 
 ## Integrated baseline
 
@@ -11,6 +31,11 @@ in the VPK. No HW/SW decoder code, public layout or function signature changed.
 - vita-hw-decoder master: `2569874`.
 - vita-sw-decoder master: `03dabef`.
 - vita-https master: `c028d30`.
+
+The integrated preview requires matching local `feature/iptv` decoder commits:
+HW `12e3a15617bb596970117936869f10e2e188023e` and
+SW `67500ecdfcbf55f6fa1302b05aea4245bc7e5c09`. Their master branches remain
+unchanged; build all three matching branch checkouts together.
 
 These are local commits; publication is a separate operation. The podcast Home
 failure-navigation fix has host regression coverage. The saved Nova Lectio RSS
@@ -24,16 +49,19 @@ all 283 episodes in host tests. Console playback still needs a retest.
 - Conservative master-variant selection: explicit multiplexed H.264 (Baseline,
   Main or 8-bit High) and AAC-LC codec metadata, resolution and bitrate filters.
   A media playlist has no codec guarantee; packet alignment is validated but
-  actual stream codec probing belongs to the upcoming decoder adapter.
+  actual stream codec probing now runs through the opt-in decoder input.
 - One producer polls/fetches; independent audio/video cursors consume the same
   cached segment bytes without opening extra media connections. Three consecutive
   transport failures terminate retries, while cancellation is a distinct result.
-- Default cache: 12 MiB retained compressed payloads, eight segment slots,
+- Default cache: at most 12 MiB retained compressed payloads, eight segment slots,
   4 MiB maximum incoming segment, plus at most 256 KiB playlist response and
   fixed parser metadata. These budgets exclude TLS and decoded video/audio.
 - Readers get distinct WAIT, END, DISCONTINUITY and LAGGED states. Cache eviction
   never silently advances a lagging cursor. A timeline reset requires explicit
-  coordinated re-anchoring before decoding resumes.
+  coordinated re-anchoring before decoding resumes. The session now pins the
+  first segment until both demuxers have opened, then advances the retention
+  floor with the slowest cursor. Reservation before a fetch prevents repeatedly
+  downloading a segment while backpressured.
 - The production HTTP adapter retains `vita-https` verification/downgrade
   protection and does not log stream URLs or credentials.
 
@@ -43,17 +71,37 @@ oversized playlists/segments. It does not implement adaptive switching, M3U
 channel catalogues, EPG, recording or timeshift. HLS VOD fixtures are useful for
 transport tests but do not prove long-running live playback.
 
-Validation: 3,158 host assertions under ASan/UBSan and separately ThreadSanitizer,
+Source validation: 3,158 host assertions under ASan/UBSan and separately ThreadSanitizer,
 including concurrent readers, malformed/truncated inputs, eviction, discontinuity,
 bounded retry, cancellation and HTTP response limits. A real Mux HLS test fetched
 one master, one media playlist and three segments (3,145,052 bytes); both cursors
 matched those bytes with five total HTTP requests. Native `-O3` compilation
-produces `build/libvitamediadeck_iptv_source.a` without linking it into the current
-player. See [reproduction commands](../tests/iptv/README.md).
+produces `build/libvitamediadeck_iptv_source.a`, now linked into the app.
+Session validation adds 54 assertions under ASan/UBSan and ThreadSanitizer:
+late second-reader startup, blocking WAIT (not EOF), prompt abort, fallback
+reopen, shared discontinuity and backpressure. A generated 12-second HLS fixture
+with a 3,601.378667-second PTS origin passed 4,661 assertions with the pinned
+FFmpeg 6.0 base: 360 decoded video frames, 564 audio frames, the expected initial
+21.333 ms A/V offset, and six segment fetches shared between two demuxers.
+This is host software decode, not SceVideodec/SceAudiodec or speaker/clock proof.
+212 host UI/navigation/layout assertions cover EN/IT text, token redaction,
+error/reconnect routing and all seven section destinations. Host rasterizations
+use the real page/components and Inter font but stub the system header/player;
+they are not console screenshots. See [reproduction commands](../tests/iptv/README.md).
 
-Next: add a narrowly scoped, opt-in live adapter and verify H.264/AAC demux/clock
-behavior on a real Vita. Do not map WAIT to EOF or simulate a seekable full file
-just to satisfy the existing interface. Only then expose the IPTV UI/catalogue.
+## Decoder compatibility
+
+Each decoder has a new `vita_*_decoder_live.h` with versioned, size-checked
+`LiveOptions` and `open_live()`. Existing public headers, struct layouts,
+functions and default seekable-file paths are unchanged. Live inputs require
+`size = -1`, NULL seek and a prompt non-owning abort callback. AVIO is explicitly
+non-seekable; MPEG-TS duration scans and probe recovery seeks are disabled only
+for live inputs. The two demuxers receive one shared PTS origin before decode.
+Codec internals, file seek recovery and track-switch logic were not rewritten.
+Live seek/track-switch calls reject without disrupting the session.
+
+Next: verify H.264/AAC demux/clock behavior on a real Vita using the preview.
+Do not add a complete UI/catalogue before this hardware acceptance gate.
 Evaluate FFmpeg's HLS demuxer for broader format support instead of silently
 expanding this limited transport into an untested full HLS implementation.
 
