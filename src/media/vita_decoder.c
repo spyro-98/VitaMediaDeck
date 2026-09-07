@@ -10,6 +10,8 @@
 #include <libavutil/error.h>
 #include <vita_hw_decoder.h>
 #include <vita_sw_decoder.h>
+#include <vita_hw_decoder_live.h>
+#include <vita_sw_decoder_live.h>
 
 #include "common/text_log.h"
 #include "media/media_tracks.h"
@@ -38,6 +40,7 @@ typedef struct LocalFileCursor {
 
 struct VtDecoderPlayer {
 	VtDecoderBackend backend;
+	int live_input;
 	VtDecoderStreamFactory source;
 	VtDecoderPlayerConfig config;
 	VitaHwDecoderPlayer *hardware;
@@ -396,10 +399,12 @@ static void snapshot_software_tracks(VtDecoderPlayer *player,
 	player->config.subtitle_track = player->active_subtitle_track;
 }
 
-int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config) {
+static int decoder_open_mode(VtDecoderPlayer *player,
+                             const VtDecoderPlayerConfig *config, int live) {
 	if (!player || !config ||
 	    (!config->stream.open && !config->stream.open_cancelable)) return -1;
 	player->source = config->stream;
+	player->live_input = live;
 	player->config = *config;
 	memset(player->audio_tracks, 0, sizeof(player->audio_tracks));
 	memset(player->subtitle_tracks, 0, sizeof(player->subtitle_tracks));
@@ -433,8 +438,10 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 		VitaHwDecoderPlayer *hardware_candidate = vita_hw_decoder_create();
 		publish_hardware_candidate(player, hardware_candidate);
 		stage_started = sceKernelGetProcessTimeWide();
-		result = hardware_candidate
-		       ? vita_hw_decoder_open(hardware_candidate, &hardware) : -1;
+		VitaHwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
+		result = !hardware_candidate ? -1 : live
+		       ? vita_hw_decoder_open_live(hardware_candidate, &hardware, &live_options)
+		       : vita_hw_decoder_open(hardware_candidate, &hardware);
 		log_printf("decoder open: hardware=%llu us ret=%d\n",
 		           (unsigned long long)(sceKernelGetProcessTimeWide() -
 		                                stage_started),
@@ -481,8 +488,10 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	VitaSwDecoderPlayer *software_candidate = vita_sw_decoder_create();
 	publish_software_candidate(player, software_candidate);
 	stage_started = sceKernelGetProcessTimeWide();
-	result = software_candidate
-	       ? vita_sw_decoder_open(software_candidate, &software) : -1;
+	VitaSwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
+	result = !software_candidate ? -1 : live
+	       ? vita_sw_decoder_open_live(software_candidate, &software, &live_options)
+	       : vita_sw_decoder_open(software_candidate, &software);
 	log_printf("decoder open: software=%llu us ret=%d\n",
 	           (unsigned long long)(sceKernelGetProcessTimeWide() -
 	                                stage_started),
@@ -498,9 +507,22 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 	return result;
 }
 
+int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config) {
+	return decoder_open_mode(player, config, 0);
+}
+
+int vt_decoder_open_live(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config) {
+	if (!config || config->start_position_ms || config->audio_track ||
+	    config->subtitle_track || config->external_subtitle_count) return AVERROR(EINVAL);
+	int result = decoder_open_mode(player, config, 1);
+	if (result >= 0) player->subtitle_track_count = 0;
+	return result;
+}
+
 int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 	                                uint64_t position_ms) {
 	if (!player) return -1;
+	if (player->live_input) return AVERROR(ENOSYS);
 	if (player->config.preferred_backend == VT_DECODER_BACKEND_HARDWARE)
 		return -1;
 	if (player->software && player->backend == VT_DECODER_BACKEND_SOFTWARE)

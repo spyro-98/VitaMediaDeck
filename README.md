@@ -35,9 +35,14 @@ save stations/shows. The corresponding Home tabs show favourites only.
 See [online audio and navigation](docs/online-audio-preview.md) for supported
 formats, controls, limits and validation status.
 
-On `feature/iptv`, an isolated HLS source layer is under development. It is not
-yet exposed as IPTV playback in the app and does not change the HW/SW decoder
-interfaces. See the [IPTV scope and validation status](docs/iptv-plan.md).
+On `feature/iptv`, **L1 → IPTV** opens the experimental HLS player. Enter an
+HTTP(S) HLS link, or select **Use test stream**, then **Play stream**. The first
+subset accepts unencrypted MPEG-TS with H.264 and mono/stereo AAC, up to 720p.
+Pause/resume reconnects at the live point; leaving the player stops the stream.
+The existing decoder APIs/layouts remain intact; live playback uses separate
+opt-in entry points. Channel-list import, EPG, encrypted/fMP4 streams and live
+mini-player handoff are not supported yet. This preview needs Vita testing;
+see [IPTV controls, limits and validation](docs/iptv-plan.md).
 
 ## What's new in 1.2
 

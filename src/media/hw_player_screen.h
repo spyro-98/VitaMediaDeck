@@ -29,6 +29,13 @@ typedef struct {
  * through its L1 sidebar without conflating that with decoder errors. */
 #define VT_HW_PLAYER_ACTION_SECTION_BASE 100
 #define VT_HW_PLAYER_ACTION_MINIMIZE 1
+#define VT_HW_PLAYER_ACTION_GO_LIVE 2
+
+struct VtIptvSession;
+/* Live-specific entry point. Resume returns GO_LIVE so the owner closes both
+ * demuxers/source and reconnects at the current live edge, never old pause data. */
+int vt_hw_player_screen_run_live(const VtHwPlayerScreenSource *source,
+                                 struct VtIptvSession *session);
 
 int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms,

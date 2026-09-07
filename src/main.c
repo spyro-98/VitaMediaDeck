@@ -28,6 +28,7 @@
 #include "ui/mini_player.h"
 #include "ui/music_player.h"
 #include "ui/online_audio_screen.h"
+#include "ui/iptv_screen.h"
 #include "ui/network_sources_screen.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
@@ -800,6 +801,13 @@ static int run_application(void) {
 			section = next == UI_SECTION_NONE ? UI_SECTION_LOCAL_MEDIA : next;
 		} else if (section == UI_SECTION_ONLINE_AUDIO) {
 			section = ui_online_audio_screen();
+		} else if (section == UI_SECTION_IPTV) {
+			if (g_network_ready) section = ui_iptv_screen();
+			else {
+				ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
+				                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
+				section = UI_SECTION_LOCAL_MEDIA;
+			}
 		} else if (section == UI_SECTION_GUIDE) {
 			int next = ui_settings_show_controls_reference();
 			section = next == UI_SECTION_NONE ? UI_SECTION_LOCAL_MEDIA : next;

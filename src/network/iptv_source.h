@@ -37,6 +37,11 @@ void vt_iptv_source_cancel(VtIptvSource *source);
 /* Cancel and join the producer/consumers before destroy. */
 void vt_iptv_source_destroy(VtIptvSource *source);
 void vt_iptv_source_status(VtIptvSource *source, VtIptvSourceStatus *out);
+/* Optional consumer backpressure: retain this sequence and newer chunks.
+ * UINT64_MAX restores the original evict-oldest policy. A caller must advance
+ * the floor as ALL consumers pass it. Playlist resets still signal a generation
+ * change; a stalled reader never silently rejoins a different timeline. */
+void vt_iptv_source_protect(VtIptvSource *source, uint64_t sequence);
 /* Copy ONE begin cursor to the A/V consumers to establish the same landing. */
 int vt_iptv_source_begin(VtIptvSource *source, VtIptvCursor *cursor);
 /* Explicitly re-anchor only after coordinated decoder/clock flush. */

@@ -12,6 +12,7 @@
 #include <libavutil/error.h>
 
 #include "history/playback_history.h"
+#include "network/iptv_session.h"
 #include "i18n/i18n.h"
 #include "media/audio_volume.h"
 #include "media/player_input_lock.h"
@@ -48,11 +49,13 @@
 typedef struct {
 	VtDecoderPlayer *player;
 	VtDecoderPlayerConfig config;
+	int live;
 } OpenTask;
 
 static int open_task(void *opaque) {
 	OpenTask *task = opaque;
-	return vt_decoder_open(task->player, &task->config);
+	return task->live ? vt_decoder_open_live(task->player, &task->config)
+	                  : vt_decoder_open(task->player, &task->config);
 }
 
 typedef struct {
@@ -342,7 +345,7 @@ static void format_track_value(const VtDecoderPlayer *player, int subtitles,
 static void draw_hud(const VtHwPlayerScreenSource *source,
 	                 const VtDecoderPlayerStatus *status, int paused,
 	                 int volume, float hud_opacity, float volume_opacity,
-	                 int dragging, float drag_fraction) {
+	                 int dragging, float drag_fraction, int live) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (hud_opacity > 0.01f) {
@@ -366,7 +369,7 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			if (small) {
 				char shortcuts[192];
 				ui_font_fit_text(small, UI_FONT_SMALL,
-				                 vt_i18n_str(source->allow_minimize
+				                 live ? vt_i18n_str(VT_STR_IPTV_PLAYER_HINT) : vt_i18n_str(source->allow_minimize
 				                     ? VT_STR_PLAYER_SHORTCUTS_HINT
 				                     : VT_STR_PLAYER_REMOTE_SHORTCUTS_HINT), shortcuts,
 				                 sizeof(shortcuts), 400);
@@ -394,8 +397,10 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 		         status->height, status->fps, bitrate);
 		if (small) ui_font_draw_text(small, 154, 454, text,
 		                             UI_FONT_SMALL, quality);
-		draw_skip_button(small, PLAYER_BACK_X, "<", hud_opacity);
-		draw_skip_button(small, PLAYER_FORWARD_X, ">", hud_opacity);
+		if (!live) {
+			draw_skip_button(small, PLAYER_BACK_X, "<", hud_opacity);
+			draw_skip_button(small, PLAYER_FORWARD_X, ">", hud_opacity);
+		}
 		vita2d_draw_rectangle(PLAYER_PLAY_X - 32, PLAYER_TRANSPORT_Y - 32, 64, 64,
 		                      fade_color(VT_THEME_HALO_A(92), hud_opacity));
 		vita2d_draw_rectangle(PLAYER_PLAY_X - 28, PLAYER_TRANSPORT_Y - 28, 56, 56,
@@ -417,6 +422,11 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			                  fade_color(VT_THEME_BLUE_LIGHT, hud_opacity),
 			                  UI_FONT_SMALL, paused_text);
 		}
+		if (live) {
+			vita2d_draw_fill_circle(55, 508, 4, fade_color(VT_THEME_SIGNAL_BRIGHT, hud_opacity));
+			if (small) ui_font_draw_text(small, 70, 514, text, UI_FONT_SMALL,
+			    vt_i18n_str(paused ? VT_STR_IPTV_PAUSED_LIVE : VT_STR_IPTV_LIVE));
+		} else {
 		float progress = dragging ? drag_fraction
 		               : status->duration_ms
 		                   ? (float)status->position_ms / (float)status->duration_ms
@@ -485,6 +495,7 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			}
 		}
 	}
+	}
 	if (volume_opacity > 0.01f) {
 		/* Volume never jumps vertically when the rest of the HUD fades. */
 		int x = 812, y = 431;
@@ -524,7 +535,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	                                  int resume_available,
 	                                  int decoder_switch_visible,
 	                                  int pending_audio_track,
-	                                  int pending_subtitle_track) {
+	                                  int pending_subtitle_track, int live) {
 	if (animation <= 0.01f || !status) return;
 	const float width = RIGHT_PANEL_WIDTH;
 	float x = SCREEN_WIDTH - width * animation;
@@ -573,6 +584,11 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		audio_value, subtitle_value, NULL, NULL
 	};
 	int row_count = 4;
+	if (live) {
+		row_count = 2;
+		labels[1] = vt_i18n_str(VT_STR_IPTV_GO_LIVE);
+		values[1] = "";
+	}
 	if (decoder_switch_visible) {
 		labels[row_count] = vt_i18n_str(VT_STR_PLAYER_DECODER);
 		values[row_count++] = vt_i18n_str(status->hardware_accelerated
@@ -650,11 +666,13 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	}
 }
 
-int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
+static int player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms,
 	                        uint64_t *last_duration_ms,
 	                        int *last_audio_track,
-	                        int *last_subtitle_track, int *last_paused) {
+	                        int *last_subtitle_track, int *last_paused,
+	                        VtIptvSession *live_session) {
+	int live = live_session != NULL;
 	if (!source || (!source->stream.open && !source->stream.open_cancelable))
 		return -1;
 	VtPerformanceClockGuard clock_guard;
@@ -669,6 +687,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	OpenTask open;
 	memset(&open, 0, sizeof(open));
 	open.player = player;
+	open.live = live;
 	open.config.stream = source->stream;
 	open.config.external_subtitle_count = source->external_subtitle_count;
 	open.config.external_subtitles_replace_embedded =
@@ -757,6 +776,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	ui_sections_sidebar_init(&sidebar, source->authenticated_remote
 	                                    ? UI_SECTION_NETWORK
 	                                    : UI_SECTION_LOCAL_MEDIA);
+	if (live) ui_sections_sidebar_init(&sidebar, UI_SECTION_IPTV);
 	int right_open = 0;
 	int right_cursor = 0;
 	int pending_audio_track = vt_decoder_active_audio_track(player);
@@ -846,8 +866,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		}
 		VtDecoderPlayerStatus status;
 		vt_decoder_get_status(player, &status);
-		if (status.error) {
-			if (decoder_preference == VT_VIDEO_DECODER_AUTO &&
+		if (live && !paused && vt_iptv_session_event(live_session)) { ret = -1; break; }
+		if (status.error && !(live && paused)) {
+			if (!live && decoder_preference == VT_VIDEO_DECODER_AUTO &&
 			    session_backend_override == VT_DECODER_BACKEND_NONE &&
 			    vt_decoder_backend(player) == VT_DECODER_BACKEND_HARDWARE) {
 				SeekTask task = { player, status.position_ms };
@@ -871,7 +892,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			break;
 		}
 		if (status.eof) {
-			if (!vt_preferences_loop_enabled()) { ret = 0; break; }
+			if (live || !vt_preferences_loop_enabled()) { ret = 0; break; }
 			ret = run_seek(player, &loading, &cancel, 0);
 			if (ret < 0) break;
 			paused = 0;
@@ -921,13 +942,13 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				break;
 			}
 		} else if (right_open) {
-			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
+			int decoder_row = !live && decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
 			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
 			unsigned right_navigation = ui_nav_repeat_update(
 			    &right_nav_repeat, pressed, controls.buttons, controls.lx,
 			    controls.ly, SCE_CTRL_UP | SCE_CTRL_DOWN);
 			if ((right_navigation & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
-			int right_row_count = restart_row + (resume_available ? 1 : 0);
+			int right_row_count = live ? 2 : restart_row + (resume_available ? 1 : 0);
 			if ((right_navigation & SCE_CTRL_DOWN) &&
 			    right_cursor + 1 < right_row_count) right_cursor++;
 			if (right_cursor == 2 &&
@@ -948,6 +969,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				}
 			}
 			if (pressed & SCE_CTRL_CROSS) {
+				if (live && right_cursor == 1) { ret = VT_HW_PLAYER_ACTION_GO_LIVE; break; }
 				if (right_cursor == 0)
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (right_cursor == 1)
@@ -1040,6 +1062,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		}
 		if (!panels_open && (pressed & SCE_CTRL_CIRCLE)) { ret = 0; break; }
 		if (!panels_open && (pressed & SCE_CTRL_CROSS)) {
+			if (live && paused) { ret = VT_HW_PLAYER_ACTION_GO_LIVE; break; }
 			paused = !paused;
 			vt_decoder_set_paused(player, paused);
 			hud_visible = 1;
@@ -1106,9 +1129,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			int handled = 0;
 			int track_change_failed = 0;
 			int track_change_completed = 0;
-			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
+			int decoder_row = !live && decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
 			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
-			int right_row_count = restart_row + (resume_available ? 1 : 0);
+			int right_row_count = live ? 2 : restart_row + (resume_available ? 1 : 0);
 			for (int i = 0; i < right_row_count; i++) {
 				if (!ui_touch_hit_rect(touch.x, touch.y, panel_x + 18,
 				                       (int)(RIGHT_PANEL_ROW_Y + i * RIGHT_PANEL_ROW_STEP),
@@ -1116,6 +1139,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				                       (int)RIGHT_PANEL_ROW_HEIGHT)) continue;
 				right_cursor = i;
 				handled = 1;
+				if (live && i == 1) { ret = VT_HW_PLAYER_ACTION_GO_LIVE; break; }
 				if (i == 0)
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (i == 1)
@@ -1177,7 +1201,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 					}
 				}
 			}
-			if (track_change_failed) break;
+			if (track_change_failed || ret == VT_HW_PLAYER_ACTION_GO_LIVE) break;
 			if (track_change_completed) {
 				now = resync_after_blocking_action(
 				    &controls, &previous, &left_seek_direction,
@@ -1223,6 +1247,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			} else if (ui_touch_hit_rect(touch.x, touch.y,
 			                             (int)PLAYER_PLAY_X - 34,
 			                             (int)PLAYER_TRANSPORT_Y - 34, 68, 68)) {
+				if (live && paused) { ret = VT_HW_PLAYER_ACTION_GO_LIVE; break; }
 				paused = !paused;
 				vt_decoder_set_paused(player, paused);
 				hud_visible = 1;
@@ -1320,7 +1345,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				ui_subtitle_draw(subtitle, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 			if (hud_opacity > 0.01f || volume_opacity > 0.01f)
 				draw_hud(source, &status, paused, vt_audio_volume_percent(),
-				         hud_opacity, volume_opacity, dragging, drag_fraction);
+				         hud_opacity, volume_opacity, dragging, drag_fraction, live);
 			else if (vt_preferences_player_status_always_visible())
 				ui_brand_draw_status_indicators_alpha(1.0f);
 			draw_buffering_overlay(buffering_opacity, now);
@@ -1331,9 +1356,9 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			draw_player_right_sidebar(right_animation, right_focus_position,
 			                          right_cursor, player, &status,
 			                          resume_available,
-			                          decoder_preference == VT_VIDEO_DECODER_AUTO,
+			                          !live && decoder_preference == VT_VIDEO_DECODER_AUTO,
 			                          pending_audio_track,
-			                          pending_subtitle_track);
+			                          pending_subtitle_track, live);
 		}
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
@@ -1353,4 +1378,17 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	vt_performance_end_video(&clock_guard);
 	if (ret < 0 && cancel) ret = 0;
 	return ret;
+}
+
+int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
+    uint64_t *position, uint64_t *duration, int *audio, int *subtitle, int *paused) {
+	return player_screen_run(source, position, duration, audio, subtitle, paused, NULL);
+}
+
+int vt_hw_player_screen_run_live(const VtHwPlayerScreenSource *source,
+                                VtIptvSession *session) {
+	if (!source || !session || source->allow_minimize || source->start_position_ms ||
+	    source->start_audio_track || source->start_subtitle_track || source->start_paused)
+		return -1;
+	return player_screen_run(source, NULL, NULL, NULL, NULL, NULL, session);
 }

@@ -18,6 +18,7 @@ struct VtIptvSource {
     unsigned count, failures;
     size_t bytes;
     uint64_t generation, next_sequence, reload_at, retry_at;
+    uint64_t protected_sequence;
     int initialized, terminal, last_error;
     volatile int cancel;
     char url[VT_IPTV_URL_MAX];
@@ -41,9 +42,15 @@ VtIptvSource *vt_iptv_source_create(const char *url, const VtIptvSourceConfig *c
     s->manifest = calloc(1, sizeof(*s->manifest));
     if (!s->manifest || pthread_mutex_init(&s->mutex, NULL)) { free(s->manifest); free(s); return NULL; }
     s->generation = 1;
+    s->protected_sequence = UINT64_MAX;
     return s;
 }
-void vt_iptv_source_cancel(VtIptvSource *s) { if (s) __sync_lock_test_and_set(&s->cancel, 1); }
+static int cancelled(const VtIptvSource *s) {
+    return __atomic_load_n(&s->cancel, __ATOMIC_ACQUIRE);
+}
+void vt_iptv_source_cancel(VtIptvSource *s) {
+    if (s) __atomic_store_n(&s->cancel, 1, __ATOMIC_RELEASE);
+}
 void vt_iptv_source_destroy(VtIptvSource *s) {
     if (!s) return;
     while (s->count) evict(s);
@@ -51,10 +58,10 @@ void vt_iptv_source_destroy(VtIptvSource *s) {
 }
 static int fetch(VtIptvSource *s, const char *url, size_t limit, unsigned char **data, size_t *size, char *effective) {
     *data = NULL; *size = 0; effective[0] = 0;
-    if (s->cancel) return VT_IPTV_CANCELLED;
+    if (cancelled(s)) return VT_IPTV_CANCELLED;
     int result = s->config.fetch(s->config.fetch_ctx, url, limit, data, size,
         effective, VT_IPTV_URL_MAX, &s->cancel);
-    if (s->cancel) return VT_IPTV_CANCELLED;
+    if (cancelled(s)) return VT_IPTV_CANCELLED;
     if (result) return result;
     if (!*data || !*size || *size > limit) return VT_IPTV_LIMIT;
     char validated[VT_IPTV_URL_MAX];
@@ -79,7 +86,7 @@ static int failure(VtIptvSource *s, int result, uint64_t now) {
 }
 int vt_iptv_source_poll(VtIptvSource *s, uint64_t now) {
     if (!s) return VT_IPTV_INVALID;
-    if (s->cancel) return VT_IPTV_CANCELLED;
+    if (cancelled(s)) return VT_IPTV_CANCELLED;
     pthread_mutex_lock(&s->mutex); int terminal = s->terminal; pthread_mutex_unlock(&s->mutex);
     if (terminal) return terminal;
     if (now < s->retry_at) return VT_IPTV_WAIT;
@@ -121,6 +128,19 @@ int vt_iptv_source_poll(VtIptvSource *s, uint64_t now) {
         if (m->ended) { pthread_mutex_lock(&s->mutex); s->terminal = VT_IPTV_END; pthread_mutex_unlock(&s->mutex); return VT_IPTV_END; }
         return VT_IPTV_WAIT;
     }
+    pthread_mutex_lock(&s->mutex);
+    /* Reserve for the maximum incoming segment BEFORE the HTTP request:
+     * backpressure must not cause repeated fetch/discard of the same segment. */
+    if (s->protected_sequence != UINT64_MAX) {
+        while (s->count && s->chunks[0].sequence < s->protected_sequence &&
+               (s->count == CACHE_SLOTS ||
+                s->config.segment_limit > s->config.buffer_limit - s->bytes))
+            evict(s);
+        int full = s->count == CACHE_SLOTS ||
+                   s->config.segment_limit > s->config.buffer_limit - s->bytes;
+        pthread_mutex_unlock(&s->mutex);
+        if (full) return VT_IPTV_WAIT;
+    } else pthread_mutex_unlock(&s->mutex);
     unsigned char *data = NULL; size_t size = 0; char effective[VT_IPTV_URL_MAX];
     int result = fetch(s, segment->url, s->config.segment_limit, &data, &size, effective);
     if (!result) {
@@ -148,7 +168,13 @@ void vt_iptv_source_status(VtIptvSource *s, VtIptvSourceStatus *out) {
     pthread_mutex_lock(&s->mutex);
     *out = (VtIptvSourceStatus){s->count ? s->chunks[0].sequence : s->next_sequence,
         s->next_sequence, s->generation, s->bytes, s->count, s->failures,
-        s->cancel ? VT_IPTV_CANCELLED : s->terminal, s->last_error};
+        cancelled(s) ? VT_IPTV_CANCELLED : s->terminal, s->last_error};
+    pthread_mutex_unlock(&s->mutex);
+}
+void vt_iptv_source_protect(VtIptvSource *s, uint64_t sequence) {
+    if (!s) return;
+    pthread_mutex_lock(&s->mutex);
+    s->protected_sequence = sequence;
     pthread_mutex_unlock(&s->mutex);
 }
 int vt_iptv_source_reanchor(VtIptvSource *s, uint64_t sequence, VtIptvCursor *cursor) {
@@ -158,19 +184,19 @@ int vt_iptv_source_reanchor(VtIptvSource *s, uint64_t sequence, VtIptvCursor *cu
     for (unsigned i = 0; i < s->count; i++) if (s->chunks[i].sequence == sequence) {
         *cursor = (VtIptvCursor){s->generation, sequence, s->chunks[i].discontinuity, 0}; result = VT_IPTV_OK; break;
     }
-    pthread_mutex_unlock(&s->mutex); return s->cancel ? VT_IPTV_CANCELLED : result;
+    pthread_mutex_unlock(&s->mutex); return cancelled(s) ? VT_IPTV_CANCELLED : result;
 }
 int vt_iptv_source_begin(VtIptvSource *s, VtIptvCursor *cursor) {
     if (!s || !cursor) return VT_IPTV_INVALID;
     pthread_mutex_lock(&s->mutex);
     int result = s->count ? VT_IPTV_OK : s->terminal ? s->terminal : VT_IPTV_WAIT;
     if (s->count) *cursor = (VtIptvCursor){s->generation, s->chunks[0].sequence, s->chunks[0].discontinuity, 0};
-    pthread_mutex_unlock(&s->mutex); return s->cancel ? VT_IPTV_CANCELLED : result;
+    pthread_mutex_unlock(&s->mutex); return cancelled(s) ? VT_IPTV_CANCELLED : result;
 }
 int vt_iptv_source_read(VtIptvSource *s, VtIptvCursor *cursor, void *data, size_t capacity, size_t *bytes) {
     if (bytes) *bytes = 0;
     if (!s || !cursor || !data || !capacity || !bytes) return VT_IPTV_INVALID;
-    if (s->cancel) return VT_IPTV_CANCELLED;
+    if (cancelled(s)) return VT_IPTV_CANCELLED;
     pthread_mutex_lock(&s->mutex);
     int result = s->terminal ? s->terminal : VT_IPTV_WAIT;
     if (cursor->generation != s->generation) result = VT_IPTV_DISCONTINUITY;

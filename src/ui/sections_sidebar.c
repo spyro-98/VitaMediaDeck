@@ -20,8 +20,8 @@
 #define ITEM_X 20
 #define ITEM_Y 104
 #define ITEM_W 274
-#define ITEM_H 44
-#define ITEM_STEP 48
+#define ITEM_H 40
+#define ITEM_STEP 44
 
 #define ANALOG_LOW 64
 #define ANALOG_HIGH 191
@@ -220,11 +220,12 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		vt_i18n_str(VT_STR_SECTIONS_HOME),
 		vt_i18n_str(VT_STR_SECTIONS_NETWORK),
 		vt_i18n_str(VT_STR_SECTIONS_ONLINE_AUDIO),
+		vt_i18n_str(VT_STR_IPTV_TITLE),
 		vt_i18n_str(VT_STR_SECTIONS_SETTINGS),
 		vt_i18n_str(VT_STR_SECTIONS_GUIDE),
 		vt_i18n_str(VT_STR_SECTIONS_ABOUT)
 	};
-	static const char *const indices[] = { "01", "02", "03", "04", "05", "06" };
+	static const char *const indices[] = { "01", "02", "03", "04", "05", "06", "07" };
 	float ox = -(float)SIDEBAR_WIDTH * (1.0f - animation);
 	/* The signal index is modal and full height. The veil follows the same
 	 * interpolation so the page recedes as the rail enters. */
