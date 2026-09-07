@@ -35,6 +35,10 @@ save stations/shows. The corresponding Home tabs show favourites only.
 See [online audio and navigation](docs/online-audio-preview.md) for supported
 formats, controls, limits and validation status.
 
+On `feature/iptv`, an isolated HLS source layer is under development. It is not
+yet exposed as IPTV playback in the app and does not change the HW/SW decoder
+interfaces. See the [IPTV scope and validation status](docs/iptv-plan.md).
+
 ## What's new in 1.2
 
 Release 1.2 expands the previous 1.0.2 public build from a local/network video
