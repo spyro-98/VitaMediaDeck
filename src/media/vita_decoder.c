@@ -250,7 +250,10 @@ static void open_selected_subtitles(VtDecoderPlayer *player,
 	                            player->subtitle_tracks[index].stream_index,
 	                            position_ms,
 	                            player->config.cancel_flag) < 0)
-		player->active_subtitle_track = 0;
+		/* A transient reader failure must not silently erase the user's choice
+		 * during a mini/fullscreen handoff; the track remains available to retry. */
+		log_printf("subtitle: selected track %d could not start\n",
+		           player->active_subtitle_track);
 }
 
 static void append_external_subtitles(VtDecoderPlayer *player) {
@@ -423,6 +426,7 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 			.expected_height = config->expected_height,
 			.expected_fps = config->expected_fps,
 			.start_position_ms = config->start_position_ms,
+		.start_paused = config->start_paused,
 			.volume_percent = config->volume_percent,
 			.cancel_flag = config->cancel_flag
 		};
@@ -470,6 +474,7 @@ int vt_decoder_open(VtDecoderPlayer *player, const VtDecoderPlayerConfig *config
 		.expected_height = config->expected_height,
 		.expected_fps = config->expected_fps,
 		.start_position_ms = config->start_position_ms,
+		.start_paused = config->start_paused,
 		.volume_percent = config->volume_percent,
 		.cancel_flag = config->cancel_flag
 	};
@@ -514,6 +519,7 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 		.expected_height = player->config.expected_height,
 		.expected_fps = player->config.expected_fps,
 		.start_position_ms = position_ms,
+		.start_paused = player->config.start_paused,
 		.volume_percent = player->config.volume_percent,
 		.cancel_flag = player->config.cancel_flag
 	};
@@ -570,6 +576,7 @@ void vt_decoder_prepare_background_restart(VtDecoderPlayer *player) {
 
 void vt_decoder_set_paused(VtDecoderPlayer *player, int paused) {
 	if (!player) return;
+	player->config.start_paused = paused != 0;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE)
 		vita_hw_decoder_set_paused(player->hardware, paused);
 	else if (player->backend == VT_DECODER_BACKEND_SOFTWARE)

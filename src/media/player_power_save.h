@@ -24,14 +24,18 @@ enum {
 
 /* START has two meanings in the player. A short press is emitted only on
  * release, while a 900 ms hold is emitted as soon as the threshold is met.
- * Disabling the detector (input lock) also cancels any partial hold. */
+ * Disabling the detector (input lock) also cancels any partial hold.
+ * Only a standalone START gesture is accepted. PS/system interception or any
+ * other button cancels the entire gesture until all buttons are released.
+ * HEADPHONE is a connection status, not a modifier. */
 static inline int player_power_save_update(PlayerPowerSaveInput *state,
 	                                        unsigned int buttons,
 	                                        uint64_t now_us,
 	                                        int enabled) {
 	if (!state) return PLAYER_POWER_SAVE_EVENT_NONE;
-	if (!enabled) {
-		state->armed = (buttons & SCE_CTRL_START) == 0;
+	buttons &= ~SCE_CTRL_HEADPHONE;
+	if (!enabled || (buttons & ~SCE_CTRL_START)) {
+		state->armed = buttons == 0;
 		state->holding = 0;
 		state->hold_fired = 0;
 		state->hold_started_us = 0;
@@ -41,7 +45,7 @@ static inline int player_power_save_update(PlayerPowerSaveInput *state,
 	 * still be physically held. Require one observed release before accepting
 	 * a new gesture, otherwise that release would immediately minimize again. */
 	if (!state->armed) {
-		if (!(buttons & SCE_CTRL_START)) state->armed = 1;
+		if (buttons == 0) state->armed = 1;
 		return PLAYER_POWER_SAVE_EVENT_NONE;
 	}
 	if (buttons & SCE_CTRL_START) {

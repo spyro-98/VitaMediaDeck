@@ -37,9 +37,13 @@ typedef struct {
 #define UI_LOCAL_MEDIA_ACTION_DELETE 4
 #define UI_LOCAL_MEDIA_ACTION_BROWSE_FILES 5
 #define UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER 6
+#define UI_LOCAL_MEDIA_ACTION_MOVE 7
+#define UI_LOCAL_MEDIA_ACTION_MANAGE 8
 #define UI_LOCAL_MEDIA_ACTION_SECTION_BASE 10
 
 int ui_local_media_screen(VtLocalMediaItem *selected_out);
+/* Call after a successful local mutation, before reopening the catalog. */
+void ui_local_media_cache_invalidate(void);
 
 /* Uses the most recently scanned local catalog to advance the music queue.
  * direction is normally +1; random ignores ordering but never returns the

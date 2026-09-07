@@ -24,8 +24,12 @@
 #include <stb_image.h>
 #pragma GCC diagnostic pop
 
-#define IMAGE_DEFAULT_MAX_EDGE 2048U
-#define IMAGE_MAX_EDGE 2048U
+/* The Vita display is 960x544.  Keeping a 2048px RGBA proxy resident costs
+ * roughly 16 MiB before the GXM texture is allocated, which makes ordinary
+ * camera photos slow to open and can starve the thumbnail worker.  1280px
+ * leaves useful zoom headroom while keeping the decoded image practical. */
+#define IMAGE_DEFAULT_MAX_EDGE 1280U
+#define IMAGE_MAX_EDGE 1536U
 #define IMAGE_PNG_MAX_DIMENSION 100000U
 #define IMAGE_PNG_MAX_ROW_BYTES (8U * 1024U * 1024U)
 #define IMAGE_WEBP_FILE_LIMIT (32U * 1024U * 1024U)
@@ -184,9 +188,18 @@ static int load_jpeg(const char *path, unsigned int max_edge,
 	if (!source_width || !source_height) ERREXIT(&decoder, JERR_EMPTY_IMAGE);
 	unsigned int longest = source_width > source_height ? source_width : source_height;
 	decoder.scale_num = 1;
-	decoder.scale_denom = longest > max_edge * 8U ? 8
-	                    : longest > max_edge * 4U ? 4
-	                    : longest > max_edge * 2U ? 2 : 1;
+	decoder.scale_denom = longest >= max_edge * 8U ? 8
+	                    : longest >= max_edge * 4U ? 4
+	                    : longest >= max_edge * 2U ? 2 : 1;
+	/* Grid thumbnails never expose source pixels directly: prefer libjpeg's
+	 * fastest integer-DCT path and let the GPU scale the final 264x148 texture.
+	 * The full-screen preview keeps the normal quality path; native detail tiles
+	 * are deliberately a separate path from this low-latency preview decoder. */
+	if (max_edge <= 960U) {
+		decoder.dct_method = JDCT_FASTEST;
+		decoder.do_fancy_upsampling = FALSE;
+		decoder.do_block_smoothing = FALSE;
+	}
 	decoder.out_color_space = JCS_RGB;
 	jpeg_start_decompress(&decoder);
 	unsigned int width, height;
@@ -216,6 +229,80 @@ static int load_jpeg(const char *path, unsigned int max_edge,
 			destination[x * 4U + 3U] = 255;
 		}
 	}
+	jpeg_finish_decompress(&decoder);
+	jpeg_destroy_decompress(&decoder);
+	fclose(file);
+	fill_info(&decoded->info, "JPEG", source_width, source_height, width, height);
+	return 0;
+}
+
+static int load_jpeg_native_region(const char *path,
+	                                unsigned int source_x,
+	                                unsigned int source_y,
+	                                unsigned int width,
+	                                unsigned int height,
+	                                VtDecodedImage *decoded,
+	                                char *error, size_t error_size) {
+	FILE *file = fopen(path, "rb");
+	if (!file) { set_error(error, error_size, "Could not open JPEG file"); return -1; }
+	struct jpeg_decompress_struct decoder;
+	ImageJpegError handler;
+	memset(&decoder, 0, sizeof(decoder));
+	memset(&handler, 0, sizeof(handler));
+	decoder.err = jpeg_std_error(&handler.base);
+	handler.base.error_exit = jpeg_fail;
+	if (setjmp(handler.jump)) {
+		jpeg_destroy_decompress(&decoder);
+		fclose(file);
+		vt_image_decoded_free(decoded);
+		set_error(error, error_size,
+		          handler.message[0] ? handler.message : "JPEG detail decode failed");
+		return -1;
+	}
+	jpeg_create_decompress(&decoder);
+	jpeg_stdio_src(&decoder, file);
+	jpeg_read_header(&decoder, TRUE);
+	unsigned int source_width = decoder.image_width;
+	unsigned int source_height = decoder.image_height;
+	if (!source_width || !source_height || source_x >= source_width ||
+	    source_y >= source_height) ERREXIT(&decoder, JERR_BAD_STATE);
+	if (!width || width > source_width - source_x) width = source_width - source_x;
+	if (!height || height > source_height - source_y) height = source_height - source_y;
+	if (!width || !height || width > IMAGE_MAX_EDGE || height > IMAGE_MAX_EDGE) {
+		set_error(error, error_size, "Invalid native detail dimensions");
+		jpeg_destroy_decompress(&decoder);
+		fclose(file);
+		return -1;
+	}
+	decoder.out_color_space = JCS_RGB;
+	jpeg_start_decompress(&decoder);
+	if (decoder.output_width != source_width || decoder.output_height != source_height)
+		ERREXIT(&decoder, JERR_BAD_STATE);
+	if (allocate_decoded(decoded, width, height, error, error_size) < 0)
+		ERREXIT(&decoder, JERR_OUT_OF_MEMORY);
+	JDIMENSION crop_x = source_x;
+	JDIMENSION crop_width = width;
+	jpeg_crop_scanline(&decoder, &crop_x, &crop_width);
+	unsigned int crop_offset = source_x - crop_x;
+	JSAMPARRAY row = (*decoder.mem->alloc_sarray)(
+	    (j_common_ptr)&decoder, JPOOL_IMAGE, crop_width * 3U, 1);
+	if (source_y && jpeg_skip_scanlines(&decoder, source_y) != source_y)
+		ERREXIT(&decoder, JERR_INPUT_EOF);
+	for (unsigned int y = 0; y < height; y++) {
+		if (jpeg_read_scanlines(&decoder, row, 1) != 1)
+			ERREXIT(&decoder, JERR_INPUT_EOF);
+		unsigned char *destination = decoded->pixels + y * decoded->stride;
+		const unsigned char *sample = row[0] + crop_offset * 3U;
+		for (unsigned int x = 0; x < width; x++) {
+			destination[x * 4U + 0U] = sample[x * 3U + 0U];
+			destination[x * 4U + 1U] = sample[x * 3U + 1U];
+			destination[x * 4U + 2U] = sample[x * 3U + 2U];
+			destination[x * 4U + 3U] = 255;
+		}
+	}
+	if (decoder.output_scanline < decoder.output_height)
+		jpeg_skip_scanlines(&decoder,
+		                    decoder.output_height - decoder.output_scanline);
 	jpeg_finish_decompress(&decoder);
 	jpeg_destroy_decompress(&decoder);
 	fclose(file);
@@ -305,6 +392,11 @@ static int load_png(const char *path, unsigned int max_edge,
 			unsigned int destination_y = (unsigned int)((uint64_t)y * height /
 			                                                  source_height);
 			if (destination_y >= height) destination_y = height - 1;
+			unsigned int next_y = y + 1U < source_height
+			                    ? (unsigned int)((uint64_t)(y + 1U) * height /
+			                                     source_height)
+			                    : height;
+			if (pass != passes - 1 || next_y == destination_y) continue;
 			unsigned char *destination = pixels + destination_y * stride;
 			for (unsigned int x = 0; x < width; x++) {
 				unsigned int source_x = (unsigned int)((uint64_t)x * source_width /
@@ -318,6 +410,85 @@ static int load_png(const char *path, unsigned int max_edge,
 	png_destroy_read_struct(&cleanup->png, &cleanup->png_info, NULL);
 	fclose(cleanup->file);
 	free(cleanup);
+	fill_info(&decoded->info, "PNG", source_width, source_height, width, height);
+	return 0;
+}
+
+static int load_png_native_region(const char *path,
+	                               unsigned int source_x, unsigned int source_y,
+	                               unsigned int width, unsigned int height,
+	                               VtDecodedImage *decoded,
+	                               char *error, size_t error_size) {
+	ImagePngCleanup *cleanup = calloc(1, sizeof(*cleanup));
+	if (!cleanup) { set_error(error, error_size, "Not enough memory for PNG"); return -1; }
+	cleanup->decoded = decoded;
+	cleanup->file = fopen(path, "rb");
+	if (!cleanup->file) { free(cleanup); set_error(error, error_size, "Could not open PNG file"); return -1; }
+	unsigned char signature[8];
+	if (fread(signature, 1, sizeof(signature), cleanup->file) != sizeof(signature) ||
+	    png_sig_cmp(signature, 0, sizeof(signature))) {
+		fclose(cleanup->file); free(cleanup);
+		set_error(error, error_size, "Invalid PNG signature"); return -1;
+	}
+	cleanup->png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	cleanup->png_info = cleanup->png ? png_create_info_struct(cleanup->png) : NULL;
+	if (!cleanup->png || !cleanup->png_info) {
+		if (cleanup->png) png_destroy_read_struct(&cleanup->png, NULL, NULL);
+		fclose(cleanup->file); free(cleanup);
+		set_error(error, error_size, "Could not initialize PNG decoder"); return -1;
+	}
+	if (setjmp(png_jmpbuf(cleanup->png))) {
+		vt_image_decoded_free(decoded); free(cleanup->row);
+		png_destroy_read_struct(&cleanup->png, &cleanup->png_info, NULL);
+		fclose(cleanup->file); free(cleanup);
+		set_error(error, error_size, "PNG detail decode failed"); return -1;
+	}
+	png_set_user_limits(cleanup->png, IMAGE_PNG_MAX_DIMENSION,
+	                    IMAGE_PNG_MAX_DIMENSION);
+	png_init_io(cleanup->png, cleanup->file);
+	png_set_sig_bytes(cleanup->png, sizeof(signature));
+	png_read_info(cleanup->png, cleanup->png_info);
+	png_uint_32 source_width = png_get_image_width(cleanup->png, cleanup->png_info);
+	png_uint_32 source_height = png_get_image_height(cleanup->png, cleanup->png_info);
+	int color_type = png_get_color_type(cleanup->png, cleanup->png_info);
+	int bit_depth = png_get_bit_depth(cleanup->png, cleanup->png_info);
+	if (bit_depth == 16) png_set_strip_16(cleanup->png);
+	if (color_type == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(cleanup->png);
+	if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+		png_set_expand_gray_1_2_4_to_8(cleanup->png);
+	if (png_get_valid(cleanup->png, cleanup->png_info, PNG_INFO_tRNS))
+		png_set_tRNS_to_alpha(cleanup->png);
+	if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+		png_set_gray_to_rgb(cleanup->png);
+	if (!(color_type & PNG_COLOR_MASK_ALPHA) &&
+	    !png_get_valid(cleanup->png, cleanup->png_info, PNG_INFO_tRNS))
+		png_set_filler(cleanup->png, 0xff, PNG_FILLER_AFTER);
+	int passes = png_set_interlace_handling(cleanup->png);
+	png_read_update_info(cleanup->png, cleanup->png_info);
+	png_size_t row_bytes = png_get_rowbytes(cleanup->png, cleanup->png_info);
+	if (!source_width || !source_height || source_x >= source_width ||
+	    source_y >= source_height || row_bytes > IMAGE_PNG_MAX_ROW_BYTES)
+		png_error(cleanup->png, "Invalid PNG detail region");
+	if (!width || width > source_width - source_x) width = source_width - source_x;
+	if (!height || height > source_height - source_y) height = source_height - source_y;
+	if (!width || !height || width > IMAGE_MAX_EDGE || height > IMAGE_MAX_EDGE)
+		png_error(cleanup->png, "PNG detail dimensions exceed limits");
+	if (allocate_decoded(decoded, width, height, error, error_size) < 0)
+		png_error(cleanup->png, "detail allocation failed");
+	cleanup->row = calloc(1, row_bytes);
+	if (!cleanup->row) png_error(cleanup->png, "row allocation failed");
+	for (int pass = 0; pass < passes; pass++) {
+		for (png_uint_32 y = 0; y < source_height; y++) {
+			png_read_row(cleanup->png, cleanup->row, NULL);
+			if (pass == passes - 1 && y >= source_y && y < source_y + height)
+				memcpy(decoded->pixels + (y - source_y) * decoded->stride,
+				       cleanup->row + source_x * 4U, width * 4U);
+		}
+	}
+	png_read_end(cleanup->png, NULL);
+	free(cleanup->row);
+	png_destroy_read_struct(&cleanup->png, &cleanup->png_info, NULL);
+	fclose(cleanup->file); free(cleanup);
 	fill_info(&decoded->info, "PNG", source_width, source_height, width, height);
 	return 0;
 }
@@ -392,6 +563,57 @@ static int load_webp(const char *path, unsigned int max_edge,
 	return 0;
 }
 
+static int load_webp_native_region(const char *path,
+	                                unsigned int source_x, unsigned int source_y,
+	                                unsigned int width, unsigned int height,
+	                                VtDecodedImage *decoded,
+	                                char *error, size_t error_size) {
+	size_t size = 0;
+	unsigned char *data = read_bounded_file(path, IMAGE_WEBP_FILE_LIMIT,
+	                                        &size, error, error_size);
+	if (!data) return -1;
+	WebPDecoderConfig config;
+	if (!WebPInitDecoderConfig(&config) ||
+	    WebPGetFeatures(data, size, &config.input) != VP8_STATUS_OK ||
+	    config.input.width <= 0 || config.input.height <= 0) {
+		free(data); set_error(error, error_size, "Invalid WebP image"); return -1;
+	}
+	unsigned int source_width = (unsigned int)config.input.width;
+	unsigned int source_height = (unsigned int)config.input.height;
+	if (source_x >= source_width || source_y >= source_height) {
+		free(data); set_error(error, error_size, "Invalid WebP detail region"); return -1;
+	}
+	/* libwebp crops on even boundaries; align the request without changing the
+	 * visible semantics, as the viewer uses the same aligned origin. */
+	source_x &= ~1U; source_y &= ~1U;
+	if (!width || width > source_width - source_x) width = source_width - source_x;
+	if (!height || height > source_height - source_y) height = source_height - source_y;
+	if (!width || !height || width > IMAGE_MAX_EDGE || height > IMAGE_MAX_EDGE ||
+	    allocate_decoded(decoded, width, height, error, error_size) < 0) {
+		free(data); return -1;
+	}
+	config.options.use_cropping = 1;
+	config.options.crop_left = (int)source_x;
+	config.options.crop_top = (int)source_y;
+	config.options.crop_width = (int)width;
+	config.options.crop_height = (int)height;
+	config.options.use_threads = 0;
+	config.output.colorspace = MODE_RGBA;
+	config.output.is_external_memory = 1;
+	config.output.u.RGBA.rgba = decoded->pixels;
+	config.output.u.RGBA.stride = (int)decoded->stride;
+	config.output.u.RGBA.size = (size_t)decoded->stride * height;
+	VP8StatusCode status = WebPDecode(data, size, &config);
+	WebPFreeDecBuffer(&config.output);
+	free(data);
+	if (status != VP8_STATUS_OK) {
+		vt_image_decoded_free(decoded);
+		set_error(error, error_size, "WebP detail decode failed"); return -1;
+	}
+	fill_info(&decoded->info, "WEBP", source_width, source_height, width, height);
+	return 0;
+}
+
 static int load_fallback(const char *path, unsigned int max_edge,
 	                     VtDecodedImage *output,
 	                     char *error, size_t error_size) {
@@ -451,6 +673,63 @@ static int load_fallback(const char *path, unsigned int max_edge,
 	return 0;
 }
 
+static int load_fallback_native_region(const char *path,
+	                                    unsigned int source_x,
+	                                    unsigned int source_y,
+	                                    unsigned int width,
+	                                    unsigned int height,
+	                                    VtDecodedImage *output,
+	                                    char *error, size_t error_size) {
+	size_t size = 0;
+	unsigned char *data = read_bounded_file(path, IMAGE_FALLBACK_FILE_LIMIT,
+	                                        &size, error, error_size);
+	if (!data) return -1;
+	int source_width = 0, source_height = 0, channels = 0;
+	if (!stbi_info_from_memory(data, (int)size, &source_width, &source_height,
+	                           &channels) || source_width <= 0 || source_height <= 0 ||
+	    source_x >= (unsigned int)source_width || source_y >= (unsigned int)source_height) {
+		free(data); set_error(error, error_size, "Unsupported or invalid image"); return -1;
+	}
+	if ((uint64_t)source_width * (uint64_t)source_height > IMAGE_FALLBACK_PIXEL_LIMIT) {
+		free(data);
+		set_error(error, error_size, "This large format cannot provide native detail safely");
+		return -1;
+	}
+	if (!width || width > (unsigned int)source_width - source_x)
+		width = (unsigned int)source_width - source_x;
+	if (!height || height > (unsigned int)source_height - source_y)
+		height = (unsigned int)source_height - source_y;
+	if (!width || !height || width > IMAGE_MAX_EDGE || height > IMAGE_MAX_EDGE ||
+	    allocate_decoded(output, width, height, error, error_size) < 0) {
+		free(data); return -1;
+	}
+	unsigned char *decoded = stbi_load_from_memory(data, (int)size,
+	                                               &source_width, &source_height,
+	                                               &channels, 4);
+	free(data);
+	if (!decoded) {
+		vt_image_decoded_free(output);
+		set_error(error, error_size, stbi_failure_reason()); return -1;
+	}
+	for (unsigned int y = 0; y < height; y++)
+		memcpy(output->pixels + y * output->stride,
+		       decoded + ((size_t)(source_y + y) * source_width + source_x) * 4U,
+		       width * 4U);
+	stbi_image_free(decoded);
+	const char *dot = strrchr(path, '.');
+	char format[12] = "IMAGE";
+	if (dot && dot[1]) {
+		size_t length = strlen(dot + 1);
+		if (length > sizeof(format) - 1) length = sizeof(format) - 1;
+		for (size_t i = 0; i < length; i++)
+			format[i] = (char)toupper((unsigned char)dot[i + 1]);
+		format[length] = '\0';
+	}
+	fill_info(&output->info, format, (unsigned int)source_width,
+	          (unsigned int)source_height, width, height);
+	return 0;
+}
+
 int vt_image_decode(const char *path, unsigned int max_edge,
 	                VtDecodedImage *decoded,
 	                char *error, size_t error_size) {
@@ -469,6 +748,40 @@ int vt_image_decode(const char *path, unsigned int max_edge,
 	else if (ends_with_ci(path, ".webp"))
 		result = load_webp(path, max_edge, decoded, error, error_size);
 	else result = load_fallback(path, max_edge, decoded, error, error_size);
+	if (result == 0) {
+		SceIoStat stat;
+		memset(&stat, 0, sizeof(stat));
+		if (sceIoGetstat(path, &stat) >= 0 && stat.st_size > 0)
+			decoded->info.file_size = (uint64_t)stat.st_size;
+	}
+	return result;
+}
+
+int vt_image_decode_native_region(const char *path,
+	                              unsigned int source_x,
+	                              unsigned int source_y,
+	                              unsigned int width,
+	                              unsigned int height,
+	                              VtDecodedImage *decoded,
+	                              char *error, size_t error_size) {
+	if (!decoded) { set_error(error, error_size, "No image output buffer"); return -1; }
+	memset(decoded, 0, sizeof(*decoded));
+	if (error && error_size) error[0] = '\0';
+	if (!path || !path[0]) { set_error(error, error_size, "No image selected"); return -1; }
+	int result;
+	if (ends_with_ci(path, ".jpg") || ends_with_ci(path, ".jpeg") ||
+	    ends_with_ci(path, ".jpe"))
+		result = load_jpeg_native_region(path, source_x, source_y, width, height,
+		                                 decoded, error, error_size);
+	else if (ends_with_ci(path, ".png"))
+		result = load_png_native_region(path, source_x, source_y, width, height,
+		                                decoded, error, error_size);
+	else if (ends_with_ci(path, ".webp"))
+		result = load_webp_native_region(path, source_x, source_y, width, height,
+		                                 decoded, error, error_size);
+	else
+		result = load_fallback_native_region(path, source_x, source_y, width, height,
+		                                     decoded, error, error_size);
 	if (result == 0) {
 		SceIoStat stat;
 		memset(&stat, 0, sizeof(stat));

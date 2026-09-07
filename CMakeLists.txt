@@ -19,7 +19,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(vitamediadeck C)
+project(vitamediadeck VERSION 1.3.0 LANGUAGES C)
 
 ## Complete public hardware-decoder backend from wiliwili's FFmpeg-vita
 ## patch.  This is deliberately a whole FFmpeg codec implementation, not the
@@ -201,14 +201,15 @@ set(VITA_APP_NAME "VitaMediaDeck")
 # TITLEID must contain exactly nine characters.
 set(VITA_TITLEID  "VMDK00001")
 
-# Vita package metadata uses the mandatory ##.## form; this represents release
-# 1.2 while the README and in-app About screen display the human-facing label.
-set(VITA_VERSION  "01.02")
+# Vita package metadata uses the mandatory ##.## form. APP_VER 01.03 is the
+# platform representation of the human-facing 1.3.0 release name.
+set(VITA_VERSION  "01.03")
 
 ## --- Compiler and linker flags --------------------------------------------
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -std=gnu11")
 add_link_options("LINKER:-z,noexecstack")
+add_link_options("LINKER:-T,${CMAKE_CURRENT_SOURCE_DIR}/tools/vita-sce-metadata.ld")
 
 ## --- Include paths --------------------------------------------------------
 
@@ -253,6 +254,11 @@ add_executable(${PROJECT_NAME}
   src/network/jellyfin_source.c
   src/network/download_manager.c
   src/media/background_playback.c
+  src/media/live_audio.c
+  src/network/online_audio.c
+  src/network/http_audio_stream.c
+  src/ui/online_audio_screen.c
+  src/ui/home_tabs.c
   src/media/audio_volume.c
   src/media/avplayer_init.c
   src/media/media_tracks.c
@@ -270,6 +276,7 @@ add_executable(${PROJECT_NAME}
   src/ui/format.c
   src/ui/components.c
   src/ui/runtime.c
+  src/ui/subtitle.c
   src/ui/focus_glow.c
   src/ui/brand.c
   src/ui/touch.c
@@ -280,6 +287,8 @@ add_executable(${PROJECT_NAME}
   src/ui/sections_sidebar.c
   src/ui/local_media_screen.c
   src/ui/local_files_screen.c
+  src/ui/folder_picker.c
+  src/ui/local_media_actions.c
   src/ui/music_player.c
   src/ui/settings_screen.c
   src/ui/about_screen.c
@@ -299,6 +308,8 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 target_link_options(${PROJECT_NAME} PRIVATE
   -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
   -Wl,--gc-sections)
+set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/tools/vita-sce-metadata.ld")
 if(VITAMEDIADECK_ENABLE_LTO)
   target_compile_options(${PROJECT_NAME} PRIVATE -flto=4 -fuse-linker-plugin)
   target_link_options(${PROJECT_NAME} PRIVATE -flto=4 -fuse-linker-plugin)

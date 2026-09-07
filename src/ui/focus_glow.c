@@ -81,8 +81,8 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 		vita2d_draw_fill_circle(cx, cy, r, VT_THEME_HALO_A(alpha));
 	}
 
-	static const int spread[3] = { 12, 7, 3 };
-	static const int base_alpha[3] = { 22, 42, 82 };
+	static const int spread[3] = { 14, 8, 3 };
+	static const int base_alpha[3] = { 32, 62, 118 };
 	for (int layer = 0; layer < 3; layer++) {
 		int s = spread[layer];
 		vita2d_draw_rectangle(x - s, y - s, width + s * 2.0f,
@@ -93,12 +93,14 @@ void ui_focus_glow_draw(float x, float y, float width, float height,
 
 	/* Ice-white rails provide the primary selection contrast; oxidized amber
 	 * survives only as a short lower telemetry trace. */
-	unsigned int rail = VT_THEME_SPECTRAL_A((int)(242.0f * pulse));
-	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, width + 8.0f, 3.0f, rail);
-	vita2d_draw_rectangle(x - 4.0f, y + height + 1.0f, width + 8.0f, 3.0f, rail);
-	vita2d_draw_rectangle(x - 4.0f, y - 4.0f, 2.0f, 16.0f, rail);
-	vita2d_draw_rectangle(x + width + 2.0f, y + height - 12.0f,
-	                      2.0f, 16.0f, rail);
+	unsigned int rail = VT_THEME_SPECTRAL_A((int)(255.0f * pulse));
+	vita2d_draw_rectangle(x - 5.0f, y - 5.0f, width + 10.0f, 4.0f, rail);
+	vita2d_draw_rectangle(x - 5.0f, y + height + 1.0f, width + 10.0f, 4.0f, rail);
+	/* A continuous leading rail remains unmistakable even when the focused
+	 * cell itself is bright artwork or a similarly coloured folder tile. */
+	vita2d_draw_rectangle(x - 5.0f, y - 5.0f, 5.0f, height + 10.0f, rail);
+	vita2d_draw_rectangle(x + width + 1.0f, y - 5.0f,
+	                      2.0f, height + 10.0f, VT_THEME_SIGNAL_A(224));
 	vita2d_draw_rectangle(x + width * 0.18f, y + height + 1.0f,
 	                      width * 0.34f, 2.0f,
 	                      VT_THEME_WARM_A((int)(150.0f * pulse)));

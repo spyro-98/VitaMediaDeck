@@ -290,6 +290,11 @@ int ui_log_viewer_screen(void) {
 		}
 		UiTouchEvent touch;
 		unsigned int touch_flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 		int was_open = sidebar.open;
 		int section = ui_sections_sidebar_handle_buttons(
 		    &sidebar, &pressed, ctrl.buttons, ctrl.ly);

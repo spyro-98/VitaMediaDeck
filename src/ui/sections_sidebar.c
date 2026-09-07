@@ -6,8 +6,11 @@
 
 #include "i18n/i18n.h"
 #include "media/background_playback.h"
+#include "network/download_manager.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
+#include "ui/home_tabs.h"
+#include "ui/online_audio_screen.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
 #include "ui/touch.h"
@@ -15,10 +18,10 @@
 #define SCREEN_HEIGHT 544
 #define SIDEBAR_WIDTH 314
 #define ITEM_X 20
-#define ITEM_Y 148
+#define ITEM_Y 104
 #define ITEM_W 274
-#define ITEM_H 48
-#define ITEM_STEP 62
+#define ITEM_H 44
+#define ITEM_STEP 48
 
 #define ANALOG_LOW 64
 #define ANALOG_HIGH 191
@@ -89,7 +92,9 @@ void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active) {
 	sidebar->active = active >= 0 && active < UI_SECTION_COUNT
 	                ? active : UI_SECTION_LOCAL_MEDIA;
 	sidebar->player_available = vt_background_playback_can_resume_fullscreen();
-	sidebar->cursor = sidebar->active + sidebar->player_available;
+	sidebar->download_available = vt_download_background_active();
+	sidebar->cursor = sidebar->active + sidebar->player_available +
+	                  sidebar->download_available;
 	sidebar->animation = 0.0f;
 	sidebar->focus_cursor = (float)sidebar->cursor;
 	sidebar->repeat_button = 0;
@@ -97,23 +102,34 @@ void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active) {
 	sidebar->animation_last_us = 0;
 }
 
-static void sync_player_slot(UiSectionsSidebar *sidebar) {
+static void sync_live_slots(UiSectionsSidebar *sidebar) {
 	if (!sidebar) return;
-	int available = vt_background_playback_can_resume_fullscreen();
-	if (available == sidebar->player_available) return;
-	if (available) sidebar->cursor++;
-	else if (sidebar->cursor > 0) sidebar->cursor--;
-	else sidebar->cursor = sidebar->active;
-	sidebar->player_available = available;
+	int player_available = vt_background_playback_can_resume_fullscreen();
+	int download_available = vt_download_background_active();
+	if (player_available == sidebar->player_available &&
+	    download_available == sidebar->download_available) return;
+	sidebar->player_available = player_available;
+	sidebar->download_available = download_available;
+	/* Availability can change while the drawer is open. Return focus to the
+	 * current page instead of letting it jump to a different live action. */
+	sidebar->cursor = sidebar->active + player_available + download_available;
 	sidebar->focus_cursor = (float)sidebar->cursor;
 }
 
 static int activate(UiSectionsSidebar *sidebar) {
-	int selected = sidebar->player_available && sidebar->cursor == 0
-	             ? UI_SECTION_PLAYER
-	             : sidebar->cursor - sidebar->player_available;
+	int selected;
+	if (sidebar->player_available && sidebar->cursor == 0)
+		selected = UI_SECTION_PLAYER;
+	else if (sidebar->download_available &&
+	         sidebar->cursor == sidebar->player_available)
+		selected = UI_SECTION_DOWNLOAD;
+	else
+		selected = sidebar->cursor - sidebar->player_available -
+		           sidebar->download_available;
 	sidebar->open = 0;
-	return selected == sidebar->active ? UI_SECTION_NONE : selected;
+	if (selected == UI_SECTION_ONLINE_AUDIO) ui_online_audio_set_home(0);
+	if (selected == UI_SECTION_LOCAL_MEDIA) ui_home_tab_set(HOME_LIBRARY);
+	return selected == sidebar->active && selected != UI_SECTION_ONLINE_AUDIO && selected!=UI_SECTION_LOCAL_MEDIA ? UI_SECTION_NONE : selected;
 }
 
 int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
@@ -121,11 +137,12 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 	                                   unsigned int held_buttons,
 	                                   unsigned char analog_y) {
 	if (!sidebar || !pressed) return UI_SECTION_NONE;
-	sync_player_slot(sidebar);
+	sync_live_slots(sidebar);
 	if (*pressed & SCE_CTRL_LTRIGGER) {
 		sidebar->open = !sidebar->open;
 		if (sidebar->open)
-			sidebar->cursor = sidebar->active + sidebar->player_available;
+			sidebar->cursor = sidebar->active + sidebar->player_available +
+			                  sidebar->download_available;
 		sidebar->repeat_button = 0;
 		*pressed &= ~SCE_CTRL_LTRIGGER;
 		return UI_SECTION_NONE;
@@ -138,7 +155,8 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 	sidebar->repeat_button = repeat.direction;
 	sidebar->repeat_next_us = repeat.repeat_next_us;
 	if ((navigated & SCE_CTRL_UP) && sidebar->cursor > 0) sidebar->cursor--;
-	int slot_count = UI_SECTION_COUNT + sidebar->player_available;
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available +
+	                 sidebar->download_available;
 	if ((navigated & SCE_CTRL_DOWN) && sidebar->cursor + 1 < slot_count)
 		sidebar->cursor++;
 	int selected = (*pressed & SCE_CTRL_CROSS) ? activate(sidebar) : UI_SECTION_NONE;
@@ -153,9 +171,10 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
 	                                 unsigned int touch_flags, int x, int y) {
 	if (!sidebar || !sidebar->open || !(touch_flags & UI_TOUCH_EVENT_TAP))
 		return UI_SECTION_NONE;
-	sync_player_slot(sidebar);
+	sync_live_slots(sidebar);
 	int offset_x = (int)(-(float)SIDEBAR_WIDTH * (1.0f - sidebar->animation));
-	int slot_count = UI_SECTION_COUNT + sidebar->player_available;
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available +
+	                 sidebar->download_available;
 	for (int i = 0; i < slot_count; i++) {
 		if (!ui_touch_hit_rect(x, y, offset_x + ITEM_X, ITEM_Y + i * ITEM_STEP,
 		                       ITEM_W, ITEM_H)) continue;
@@ -168,7 +187,7 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
 
 void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	if (!sidebar) return;
-	sync_player_slot(sidebar);
+	sync_live_slots(sidebar);
 	uint64_t now = sceKernelGetProcessTimeWide();
 	uint64_t elapsed = sidebar->animation_last_us &&
 	                   now > sidebar->animation_last_us
@@ -200,10 +219,12 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 	const char *items[] = {
 		vt_i18n_str(VT_STR_SECTIONS_HOME),
 		vt_i18n_str(VT_STR_SECTIONS_NETWORK),
+		vt_i18n_str(VT_STR_SECTIONS_ONLINE_AUDIO),
 		vt_i18n_str(VT_STR_SECTIONS_SETTINGS),
+		vt_i18n_str(VT_STR_SECTIONS_GUIDE),
 		vt_i18n_str(VT_STR_SECTIONS_ABOUT)
 	};
-	static const char *const indices[] = { "01", "02", "03", "04" };
+	static const char *const indices[] = { "01", "02", "03", "04", "05", "06" };
 	float ox = -(float)SIDEBAR_WIDTH * (1.0f - animation);
 	/* The signal index is modal and full height. The veil follows the same
 	 * interpolation so the page recedes as the rail enters. */
@@ -238,10 +259,10 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		                  UI_FONT_SMALL, "VMD // SIGNAL INDEX");
 	}
 	if (!font) return;
-	ui_font_draw_text(font, (int)ox + 28, 108, VT_THEME_TEXT,
+	ui_font_draw_text(font, (int)ox + 28, 80, VT_THEME_TEXT,
 	                      UI_FONT_BODY, vt_i18n_str(VT_STR_SECTIONS_TITLE));
-	vita2d_draw_rectangle(ox + ITEM_X, 124, ITEM_W, 1, VT_THEME_BORDER_DIM);
-	vita2d_draw_rectangle(ox + ITEM_X, 128, 72, 2, VT_THEME_SIGNAL_DIM);
+	vita2d_draw_rectangle(ox + ITEM_X, 94, ITEM_W, 1, VT_THEME_BORDER_DIM);
+	vita2d_draw_rectangle(ox + ITEM_X, 98, 72, 2, VT_THEME_SIGNAL_DIM);
 	int has_focus = focus_cursor >= 0.0f;
 	if (has_focus) {
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
@@ -251,24 +272,33 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		vita2d_draw_rectangle(ox + ITEM_X, ITEM_Y + focus_cursor * ITEM_STEP,
 		                      3, ITEM_H, VT_THEME_SPECTRAL);
 	}
-	int slot_count = UI_SECTION_COUNT + sidebar->player_available;
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available +
+	                 sidebar->download_available;
 	for (int slot = 0; slot < slot_count; slot++) {
 		int player_slot = sidebar->player_available && slot == 0;
-		int section = slot - sidebar->player_available;
+		int download_slot = sidebar->download_available &&
+		                    slot == sidebar->player_available;
+		int section = slot - sidebar->player_available -
+		              sidebar->download_available;
 		const char *label = player_slot ? vt_i18n_str(VT_STR_SECTIONS_PLAYER)
-		                                : items[section];
-		const char *index = player_slot ? "LIVE" : indices[section];
+		                  : download_slot ? vt_i18n_str(VT_STR_SECTIONS_DOWNLOAD)
+		                                  : items[section];
+		const char *index = player_slot ? "LIVE"
+		                  : download_slot ? "DL"
+		                                  : indices[section];
 		unsigned int color = has_focus && slot == cursor ? VT_THEME_TEXT
 		                                      : VT_THEME_TEXT_MUTED;
 		if (small)
-			ui_font_draw_text(small, (int)ox + 34, 179 + slot * ITEM_STEP,
+			ui_font_draw_text(small, (int)ox + 34,
+			                  ITEM_Y + 31 + slot * ITEM_STEP,
 			                  has_focus && slot == cursor ? VT_THEME_SIGNAL_BRIGHT
 			                                                : VT_THEME_TEXT_FAINT,
 			                  UI_FONT_SMALL, index);
-		vita2d_draw_rectangle(ox + 76, 169 + slot * ITEM_STEP, 18, 1,
+		vita2d_draw_rectangle(ox + 76, ITEM_Y + 21 + slot * ITEM_STEP, 18, 1,
 		                      has_focus && slot == cursor ? VT_THEME_SIGNAL_BRIGHT
 		                                                : VT_THEME_BORDER_DIM);
-		ui_font_draw_text(font, (int)ox + 104, 181 + slot * ITEM_STEP, color,
+		ui_font_draw_text(font, (int)ox + 104,
+		                  ITEM_Y + 33 + slot * ITEM_STEP, color,
 		                      UI_FONT_BODY, label);
 	}
 	if (small)

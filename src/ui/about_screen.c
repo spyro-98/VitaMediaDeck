@@ -114,6 +114,11 @@ int ui_about_screen(int player_context) {
 		}
 		UiTouchEvent touch;
 		unsigned int touch_flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 		int sidebar_was_open = sidebar.open;
 		int section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed,
 		                                                 ctrl.buttons, ctrl.ly);
@@ -152,7 +157,7 @@ int ui_about_screen(int player_context) {
 			int log_result = ui_log_viewer_screen();
 			ui_touch_reset();
 			if (log_result >= UI_SECTION_LOCAL_MEDIA &&
-			    log_result <= UI_SECTION_PLAYER) {
+			    log_result < UI_SECTION_ACTION_COUNT) {
 				result = log_result;
 				break;
 			}
@@ -236,7 +241,7 @@ int ui_about_screen(int player_context) {
 
 		/* Performance contract kept visible in-app. The explicit Settings value
 		 * controls the complete video clock policy. */
-		ui_panel(32, y, 896, 174, VT_THEME_SURFACE_RAISED,
+		ui_panel(32, y, 896, 120, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_BLUE_BRIGHT, 0);
 		if (body) {
 			ui_font_draw_text(body, 56, y + 35, COLOR_TEXT,
@@ -245,25 +250,20 @@ int ui_about_screen(int player_context) {
 		}
 		if (small) {
 			draw_legend_line(small, 56, y + 67,
-			                 vt_i18n_str(VT_STR_ABOUT_SPECS_CPU_DEFAULT));
-			draw_legend_line(small, 56, y + 94,
-			                 vt_i18n_str(VT_STR_ABOUT_SPECS_OTHER_DEFAULT));
-			char specs_line[160];
+			                 vt_i18n_str(VT_STR_ABOUT_SPECS_DEFAULT));
+			char specs_line[192];
 			snprintf(specs_line, sizeof(specs_line),
-			         vt_i18n_str(VT_STR_ABOUT_SPECS_PRIORITY),
+			         vt_i18n_str(VT_STR_ABOUT_SPECS_ACTIVE),
 			         clock_source == VT_CLOCK_SOURCE_APP
 			             ? vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_APP)
-			             : vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_PSVSHELL));
-			draw_legend_line(small, 56, y + 121, specs_line);
-			snprintf(specs_line, sizeof(specs_line),
-			         vt_i18n_str(VT_STR_ABOUT_SPECS_CURRENT),
+			             : vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_PSVSHELL),
 			         scePowerGetArmClockFrequency(),
 			         scePowerGetGpuClockFrequency(),
 			         scePowerGetBusClockFrequency(),
 			         scePowerGetGpuXbarClockFrequency());
-			draw_legend_line(small, 56, y + 148, specs_line);
+			draw_legend_line(small, 56, y + 94, specs_line);
 		}
-		y += 188;
+		y += 134;
 		/* Measured from the layout itself, so adding an information line or
 		 * a longer translation keeps scrolling correct with no constant to
 		 * update by hand. */

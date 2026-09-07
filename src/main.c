@@ -14,15 +14,20 @@
 #include "media/background_playback.h"
 #include "media/hw_player_screen.h"
 #include "media/video_thumbnail.h"
+#include "network/download_manager.h"
 #include "network/network_source.h"
 #include "settings/preferences.h"
 #include "ui/about_screen.h"
 #include "ui/loading_screen.h"
+#include "ui/home_tabs.h"
 #include "ui/image_viewer.h"
 #include "ui/local_files_screen.h"
+#include "ui/folder_picker.h"
+#include "ui/local_media_actions.h"
 #include "ui/local_media_screen.h"
 #include "ui/mini_player.h"
 #include "ui/music_player.h"
+#include "ui/online_audio_screen.h"
 #include "ui/network_sources_screen.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
@@ -142,6 +147,7 @@ static int rename_local_media(VtLocalMediaItem *item) {
 	if (sceIoGetstat(target, &collision) >= 0) return -1;
 	int ret = sceIoRename(item->path, target);
 	if (ret < 0) return ret;
+	ui_local_files_cache_invalidate();
 	if (item->type == VT_LOCAL_MEDIA_IMAGE) return 0;
 	static const char *const suffixes[] = {
 		".jpg", ".jpeg", ".png", ".meta", ".srt", ".vtt"
@@ -152,25 +158,64 @@ static int rename_local_media(VtLocalMediaItem *item) {
 		    sidecar_path(target, suffixes[i], to, sizeof(to)) == 0)
 			sceIoRename(from, to);
 	}
-	ui_local_files_cache_invalidate();
 	return 0;
 }
 
 static int delete_local_media(const VtLocalMediaItem *item) {
-	if (!item) return -1;
+	if (!item || item->is_directory) return -1;
+	SceIoStat status;
+	if (sceIoGetstat(item->path, &status) < 0 || !SCE_S_ISREG(status.st_mode))
+		return -1;
 	int ret = sceIoRemove(item->path);
 	if (ret < 0) return ret;
-	if (item->type == VT_LOCAL_MEDIA_IMAGE) return 0;
-	static const char *const suffixes[] = {
-		".jpg", ".jpeg", ".png", ".meta", ".srt", ".vtt"
-	};
-	for (unsigned int i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
-		char path[VT_LOCAL_MEDIA_PATH_MAX];
-		if (sidecar_path(item->path, suffixes[i], path, sizeof(path)) == 0)
-			sceIoRemove(path);
-	}
+	ui_local_files_cache_invalidate();
+	/* A matching basename does not establish ownership of another image or
+	 * subtitle. Delete exactly the file named in the confirmation. */
+	return 0;
+}
+
+static int move_local_media(VtLocalMediaItem *item) {
+	if (!item || item->is_directory) return -1;
+	char directory[VT_LOCAL_MEDIA_PATH_MAX];
+	snprintf(directory, sizeof(directory), "%s", item->path);
+	char *slash = strrchr(directory, '/');
+	char *colon = strchr(directory, ':');
+	if (!colon) return -1;
+	if (slash) *slash = '\0';
+	else colon[1] = '\0';
+	if (!ui_folder_picker(directory, directory, sizeof(directory))) return 1;
+	const char *name = strrchr(item->path, '/');
+	if (!name) name = strchr(item->path, ':');
+	if (!name || !name[1]) return -1;
+	char target[VT_LOCAL_MEDIA_PATH_MAX];
+	int length = snprintf(target, sizeof(target), "%s%s%s", directory,
+	    directory[strlen(directory) - 1] == ':' ? "" : "/", name + 1);
+	if (length <= 0 || length >= (int)sizeof(target)) return -1;
+	if (!strcmp(item->path, target)) return 1;
+	SceIoStat status;
+	if (sceIoGetstat(item->path, &status) < 0 || !SCE_S_ISREG(status.st_mode))
+		return -1;
+	/* Same-mount rename avoids copying gigabytes, partial destination files,
+	 * and deleting the source before a copy has been verified. */
+	const char *source_mount = strchr(item->path, ':');
+	const char *target_mount = strchr(target, ':');
+	if (!source_mount || !target_mount ||
+	    source_mount - item->path != target_mount - target ||
+	    strncmp(item->path, target, (size_t)(source_mount - item->path + 1)))
+		return -1;
+	if (sceIoGetstat(target, &status) >= 0) return -1;
+	int ret = sceIoRename(item->path, target);
+	if (ret < 0) return ret;
 	ui_local_files_cache_invalidate();
 	return 0;
+}
+
+static int local_media_in_use(const VtLocalMediaItem *item) {
+	VtBackgroundPlaybackSnapshot snapshot;
+	char id[16];
+	media_id(item->path, id);
+	return vt_background_playback_snapshot(&snapshot) &&
+	       !strcmp(snapshot.video_id, id);
 }
 
 static int active_media_id_matches(const char *id) {
@@ -201,6 +246,7 @@ static int run_local_audio_session(VtLocalMediaItem item, int prepare_first,
 	for (;;) {
 		vt_background_playback_set_fullscreen_resume(NULL, NULL);
 		if (prepare_first) {
+			vt_video_thumbnail_prepare_playback();
 			clear_minimized_remote_video();
 			char id[16];
 			media_id(item.path, id);
@@ -269,7 +315,7 @@ static int run_local_video_fullscreen(const VtLocalMediaItem *item,
 	                                  uint64_t *last_position_ms,
 	                                  uint64_t *last_duration_ms,
 	                                  int *last_audio_track,
-	                                  int *last_subtitle_track) {
+	                                  int *last_subtitle_track, int *paused) {
 	if (!item) return -1;
 	vt_video_thumbnail_prepare_playback();
 	char id[16];
@@ -285,19 +331,20 @@ static int run_local_video_fullscreen(const VtLocalMediaItem *item,
 		.allow_minimize = 1,
 		.start_position_ms = start_position_ms,
 		.start_audio_track = start_audio_track,
+		.start_paused = paused ? *paused : 0,
 		.start_subtitle_track = start_subtitle_track,
 		.expected_width = 0,
 		.expected_height = 0,
 		.expected_fps = 0
 	};
 	return vt_hw_player_screen_run(&source, last_position_ms, last_duration_ms,
-	                               last_audio_track, last_subtitle_track);
+	                               last_audio_track, last_subtitle_track, paused);
 }
 
 static int minimize_local_video(const VtLocalMediaItem *item,
 	                            uint64_t position_ms,
 	                            int audio_track,
-	                            int subtitle_track) {
+	                            int subtitle_track, int paused) {
 	if (!item) return -1;
 	char id[16];
 	media_id(item->path, id);
@@ -307,13 +354,16 @@ static int minimize_local_video(const VtLocalMediaItem *item,
 	    item->artwork_path[0] ? item->artwork_path : NULL,
 	    item->duration_ms, audio_track);
 	if (ret < 0) return ret;
+	vt_background_playback_configure_video(subtitle_track, NULL);
 	g_minimized_local_video.valid = 1;
 	g_minimized_local_video.item = *item;
 	g_minimized_local_video.audio_track = audio_track;
 	g_minimized_local_video.subtitle_track = subtitle_track;
 	vt_background_playback_set_fullscreen_resume(
 	    resume_minimized_local_video, &g_minimized_local_video);
-	ret = vt_background_playback_activate(position_ms);
+	ret = vt_background_playback_activate_state(position_ms, paused);
+	log_printf("player handoff: local mini position=%llu paused=%d audio=%d subtitle=%d ret=%d\n",
+	           (unsigned long long)position_ms, paused, audio_track, subtitle_track, ret);
 	if (ret < 0) {
 		vt_background_playback_set_fullscreen_resume(NULL, NULL);
 		vt_background_playback_stop();
@@ -328,6 +378,9 @@ static int resume_minimized_local_video(uint64_t position_ms, void *ctx) {
 	VtLocalMediaItem item = session->item;
 	int audio_track = session->audio_track;
 	int subtitle_track = session->subtitle_track;
+	int paused = vt_background_playback_is_paused();
+	log_printf("player handoff: local full position=%llu paused=%d audio=%d subtitle=%d\n",
+	           (unsigned long long)position_ms, paused, audio_track, subtitle_track);
 	vt_background_playback_stop();
 	uint64_t last_position = position_ms;
 	uint64_t last_duration = item.duration_ms;
@@ -335,14 +388,14 @@ static int resume_minimized_local_video(uint64_t position_ms, void *ctx) {
 	int last_subtitle_track = subtitle_track;
 	int ret = run_local_video_fullscreen(
 	    &item, position_ms, audio_track, subtitle_track, &last_position,
-	    &last_duration, &last_audio_track, &last_subtitle_track);
+	    &last_duration, &last_audio_track, &last_subtitle_track, &paused);
 	char id[16];
 	media_id(item.path, id);
 	vt_playback_history_update(id, last_position,
 	                           last_duration ? last_duration : item.duration_ms);
 	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE) {
 		if (minimize_local_video(&item, last_position, last_audio_track,
-		                         last_subtitle_track) < 0) {
+		                         last_subtitle_track, paused) < 0) {
 			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
 			return -1;
@@ -350,9 +403,9 @@ static int resume_minimized_local_video(uint64_t position_ms, void *ctx) {
 		return 0;
 	}
 	if (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
-	    ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_COUNT) {
+	    ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT) {
 		if (minimize_local_video(&item, last_position, last_audio_track,
-		                         last_subtitle_track) < 0) {
+		                         last_subtitle_track, paused) < 0) {
 			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
 			return -1;
@@ -366,6 +419,7 @@ static int resume_minimized_local_video(uint64_t position_ms, void *ctx) {
 
 static int play_local_video(const VtLocalMediaItem *item) {
 	if (active_media_matches(item->path)) return UI_SECTION_PLAYER;
+	vt_video_thumbnail_suspend();
 	clear_minimized_remote_video();
 	char id[16];
 	media_id(item->path, id);
@@ -375,24 +429,25 @@ static int play_local_video(const VtLocalMediaItem *item) {
 	uint64_t last_duration = item->duration_ms;
 	int last_audio_track = 0;
 	int last_subtitle_track = 0;
+	int paused = 0;
 	int ret = run_local_video_fullscreen(item, last_position, 0, 0,
 	                                    &last_position, &last_duration,
 	                                    &last_audio_track,
-	                                    &last_subtitle_track);
+	                                    &last_subtitle_track, &paused);
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	vt_playback_history_update(id, last_position,
 	                           last_duration ? last_duration : item->duration_ms);
 	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE) {
 		if (minimize_local_video(item, last_position, last_audio_track,
-		                         last_subtitle_track) < 0)
+		                         last_subtitle_track, paused) < 0)
 			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
 		return UI_SECTION_LOCAL_MEDIA;
 	}
 	if (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
-	    ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_COUNT) {
+	    ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT) {
 		if (minimize_local_video(item, last_position, last_audio_track,
-		                         last_subtitle_track) < 0)
+		                         last_subtitle_track, paused) < 0)
 			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
 		return ret - VT_HW_PLAYER_ACTION_SECTION_BASE;
@@ -411,7 +466,7 @@ static int run_remote_video_fullscreen(
 	uint64_t *last_position_ms,
 	uint64_t *last_duration_ms,
 	int *last_audio_track,
-	int *last_subtitle_track) {
+	int *last_subtitle_track, int *paused) {
 	if (!selection) return -1;
 	vt_video_thumbnail_prepare_playback();
 	VtNetworkStreamFactory remote;
@@ -432,6 +487,7 @@ static int run_remote_video_fullscreen(
 		.allow_minimize = 1,
 		.start_position_ms = start_position_ms,
 		.start_audio_track = start_audio_track,
+		.start_paused = paused ? *paused : 0,
 		.start_subtitle_track = start_subtitle_track
 	};
 	if (selection->has_jellyfin_metadata &&
@@ -466,7 +522,7 @@ static int run_remote_video_fullscreen(
 	}
 	ret = vt_hw_player_screen_run(&source, last_position_ms,
 	                              last_duration_ms, last_audio_track,
-	                              last_subtitle_track);
+	                              last_subtitle_track, paused);
 	memset(&remote.credential, 0, sizeof(remote.credential));
 	for (int i = 0; i < source.external_subtitle_count; i++)
 		memset(&subtitle_factories[i].credential, 0,
@@ -478,7 +534,7 @@ static int minimize_remote_video(const UiNetworkSelection *selection,
 	                             uint64_t position_ms,
 	                             uint64_t duration_ms,
 	                             int audio_track,
-	                             int subtitle_track) {
+	                             int subtitle_track, int paused) {
 	if (!selection) return -1;
 	char id[16];
 	remote_media_id(selection, id);
@@ -486,13 +542,17 @@ static int minimize_remote_video(const UiNetworkSelection *selection,
 	    &selection->source, &selection->credential, selection->path, id,
 	    selection->title, selection->source.name, duration_ms, audio_track);
 	if (ret < 0) return ret;
+	vt_background_playback_configure_video(subtitle_track,
+	    selection->has_jellyfin_metadata ? &selection->jellyfin_metadata : NULL);
 	g_minimized_remote_video.valid = 1;
 	g_minimized_remote_video.selection = *selection;
 	g_minimized_remote_video.audio_track = audio_track;
 	g_minimized_remote_video.subtitle_track = subtitle_track;
 	vt_background_playback_set_fullscreen_resume(
 	    resume_minimized_remote_video, &g_minimized_remote_video);
-	ret = vt_background_playback_activate(position_ms);
+	ret = vt_background_playback_activate_state(position_ms, paused);
+	log_printf("player handoff: remote mini position=%llu paused=%d audio=%d subtitle=%d ret=%d\n",
+	           (unsigned long long)position_ms, paused, audio_track, subtitle_track, ret);
 	if (ret < 0) {
 		vt_background_playback_set_fullscreen_resume(NULL, NULL);
 		vt_background_playback_stop();
@@ -507,6 +567,9 @@ static int resume_minimized_remote_video(uint64_t position_ms, void *ctx) {
 	UiNetworkSelection selection = session->selection;
 	int audio_track = session->audio_track;
 	int subtitle_track = session->subtitle_track;
+	int paused = vt_background_playback_is_paused();
+	log_printf("player handoff: remote full position=%llu paused=%d audio=%d subtitle=%d\n",
+	           (unsigned long long)position_ms, paused, audio_track, subtitle_track);
 	vt_background_playback_stop();
 	uint64_t last_position = position_ms;
 	uint64_t last_duration = 0;
@@ -515,15 +578,15 @@ static int resume_minimized_remote_video(uint64_t position_ms, void *ctx) {
 	int ret = run_remote_video_fullscreen(
 	    &selection, position_ms, audio_track, subtitle_track,
 	    &last_position, &last_duration, &last_audio_track,
-	    &last_subtitle_track);
+	    &last_subtitle_track, &paused);
 	char id[16];
 	remote_media_id(&selection, id);
 	vt_playback_history_update(id, last_position, last_duration);
 	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE ||
 	    (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
-	     ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_COUNT)) {
+	     ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT)) {
 		if (minimize_remote_video(&selection, last_position, last_duration,
-		                          last_audio_track, last_subtitle_track) < 0) {
+		                          last_audio_track, last_subtitle_track, paused) < 0) {
 			ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 			                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
 			memset(&selection.credential, 0, sizeof(selection.credential));
@@ -539,6 +602,7 @@ static int resume_minimized_remote_video(uint64_t position_ms, void *ctx) {
 }
 
 static int browse_local(void) {
+	if(ui_home_tab_online()){ui_online_audio_set_home(1);return UI_SECTION_ONLINE_AUDIO;}
 	int folder_browser = 0;
 	int folder_resume = 0;
 	char folder_root[VT_LOCAL_MEDIA_PATH_MAX] = "";
@@ -574,14 +638,38 @@ static int browse_local(void) {
 			folder_filter = item.type;
 			continue;
 		}
+		if (action == UI_LOCAL_MEDIA_ACTION_MANAGE) {
+			action = ui_local_media_actions(&item);
+			if (!action) continue;
+		}
+		if ((action == UI_LOCAL_MEDIA_ACTION_RENAME ||
+		     action == UI_LOCAL_MEDIA_ACTION_DELETE ||
+		     action == UI_LOCAL_MEDIA_ACTION_MOVE) && local_media_in_use(&item)) {
+			ui_message_show(vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTION_FAILED),
+			                vt_i18n_str(VT_STR_LOCAL_MEDIA_IN_USE), 2600);
+			continue;
+		}
 		if (action == UI_LOCAL_MEDIA_ACTION_RENAME) {
-			if (rename_local_media(&item) < 0)
+			int result = rename_local_media(&item);
+			if (result == 0) ui_local_media_cache_invalidate();
+			if (result < 0)
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_RENAME_FAILED),
 				                vt_i18n_str(VT_STR_MAIN_RENAME_UNCHANGED), 2400);
 			continue;
 		}
+		if (action == UI_LOCAL_MEDIA_ACTION_MOVE) {
+			int result = move_local_media(&item);
+			if (result == 0) ui_local_media_cache_invalidate();
+			if (result < 0)
+				ui_message_show(vt_i18n_str(VT_STR_LOCAL_MEDIA_MOVE_FAILED),
+				                vt_i18n_str(VT_STR_LOCAL_MEDIA_MOVE_DETAIL), 3000);
+			continue;
+		}
 		if (action == UI_LOCAL_MEDIA_ACTION_DELETE) {
-			if (delete_local_media(&item) < 0)
+			if (!ui_local_media_confirm_delete(&item)) continue;
+			int result = delete_local_media(&item);
+			if (result == 0) ui_local_media_cache_invalidate();
+			if (result < 0)
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_DELETE_FAILED),
 				                vt_i18n_str(VT_STR_MAIN_DELETE_UNCHANGED), 2400);
 			continue;
@@ -591,7 +679,9 @@ static int browse_local(void) {
 				int section = play_local_audio(item);
 				if (section != UI_SECTION_LOCAL_MEDIA) return section;
 			} else if (item.type == VT_LOCAL_MEDIA_IMAGE) {
-				ui_image_viewer_show(item.path, item.name);
+				int image_action = ui_image_viewer_show(item.path, item.name);
+				if (image_action >= UI_IMAGE_VIEWER_SECTION_BASE)
+					return image_action - UI_IMAGE_VIEWER_SECTION_BASE;
 			} else {
 				int section = play_local_video(&item);
 				if (section != UI_SECTION_LOCAL_MEDIA) return section;
@@ -626,16 +716,17 @@ static int browse_network(void) {
 		clear_minimized_remote_video();
 		int last_audio_track = 0;
 		int last_subtitle_track = 0;
+		int paused = 0;
 		int ret = run_remote_video_fullscreen(
 		    &selection, last_position, 0, 0, &last_position,
-		    &last_duration, &last_audio_track, &last_subtitle_track);
+		    &last_duration, &last_audio_track, &last_subtitle_track, &paused);
 		log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 		vt_playback_history_update(id, last_position, last_duration);
 		if (ret == VT_HW_PLAYER_ACTION_MINIMIZE ||
 		    (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
-		     ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_COUNT)) {
+		     ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT)) {
 			if (minimize_remote_video(&selection, last_position, last_duration,
-			                          last_audio_track, last_subtitle_track) < 0)
+			                          last_audio_track, last_subtitle_track, paused) < 0)
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 				                vt_i18n_str(VT_STR_MAIN_VIDEO_MINI_FAILED), 3000);
 			memset(&selection.credential, 0, sizeof(selection.credential));
@@ -669,18 +760,27 @@ static int run_application(void) {
 	           g_network_ready,
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                g_startup_started_us) / 1000ULL));
+	int section = UI_SECTION_LOCAL_MEDIA;
 	if (!vt_preferences_startup_controls_seen()) {
-		ui_settings_show_controls_reference();
+		int controls_section = ui_settings_show_controls_reference();
+		if (controls_section != UI_SECTION_NONE) section = controls_section;
 		vt_preferences_set_startup_controls_seen(1);
 		ui_touch_reset();
 	}
-	int section = UI_SECTION_LOCAL_MEDIA;
 	int return_section = UI_SECTION_LOCAL_MEDIA;
 	for (;;) {
+		if (section == UI_SECTION_DOWNLOAD) {
+			int download_action = ui_loading_monitor_background_download();
+			section = download_action >= UI_LOADING_DOWNLOAD_SECTION_BASE
+			        ? download_action - UI_LOADING_DOWNLOAD_SECTION_BASE
+			        : return_section;
+			continue;
+		}
 		if (section == UI_SECTION_PLAYER) {
 			int action = vt_background_playback_resume_fullscreen();
 			section = action >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
-			          action < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_COUNT
+			          action < VT_HW_PLAYER_ACTION_SECTION_BASE +
+			                   UI_SECTION_ACTION_COUNT
 			        ? action - VT_HW_PLAYER_ACTION_SECTION_BASE : return_section;
 			continue;
 		}
@@ -697,6 +797,11 @@ static int run_application(void) {
 			section = next == UI_SECTION_NONE ? UI_SECTION_LOCAL_MEDIA : next;
 		} else if (section == UI_SECTION_INFO) {
 			int next = ui_about_screen(0);
+			section = next == UI_SECTION_NONE ? UI_SECTION_LOCAL_MEDIA : next;
+		} else if (section == UI_SECTION_ONLINE_AUDIO) {
+			section = ui_online_audio_screen();
+		} else if (section == UI_SECTION_GUIDE) {
+			int next = ui_settings_show_controls_reference();
 			section = next == UI_SECTION_NONE ? UI_SECTION_LOCAL_MEDIA : next;
 		} else section = UI_SECTION_LOCAL_MEDIA;
 	}
@@ -751,6 +856,7 @@ int main(int argc, char *argv[]) {
 	vt_video_thumbnail_shutdown();
 	vt_background_playback_shutdown();
 	ui_mini_player_shutdown();
+	vt_download_background_shutdown();
 	vt_network_shutdown();
 	vita_https_shutdown();
 	ui_touch_term();

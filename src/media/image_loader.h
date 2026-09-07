@@ -32,6 +32,17 @@ int vt_image_decode(const char *path, unsigned int max_edge,
 	                VtDecodedImage *decoded,
 	                char *error, size_t error_size);
 
+/* Decodes one source-resolution image region.  The viewer uses this only
+ * while zoomed in, keeping the full 4K source out of RAM while preserving
+ * original pixels in the portion the user is inspecting. */
+int vt_image_decode_native_region(const char *path,
+	                              unsigned int source_x,
+	                              unsigned int source_y,
+	                              unsigned int width,
+	                              unsigned int height,
+	                              VtDecodedImage *decoded,
+	                              char *error, size_t error_size);
+
 /* Upload must run on the UI/main thread, matching the thumbnail pipeline. */
 vita2d_texture *vt_image_upload(const VtDecodedImage *decoded,
 	                            char *error, size_t error_size);

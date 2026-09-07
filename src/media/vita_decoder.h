@@ -95,6 +95,7 @@ typedef struct VtDecoderPlayerConfig {
 	uint64_t start_position_ms;
 	int volume_percent;
 	volatile int *cancel_flag;
+	int start_paused;
 } VtDecoderPlayerConfig;
 
 typedef struct VtDecoderPlayerStatus {

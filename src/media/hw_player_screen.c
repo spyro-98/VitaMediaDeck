@@ -1,5 +1,6 @@
 #include "media/hw_player_screen.h"
 
+#include "ui/subtitle.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -115,6 +116,9 @@ static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
 	                          VtDecoderBackend target, uint64_t position_ms,
 	                          int audio_track, int subtitle_track) {
 	if (!player_io || !*player_io || !open || !loading) return -1;
+	VtDecoderPlayerStatus previous_status;
+	vt_decoder_get_status(*player_io, &previous_status);
+	open->config.start_paused = previous_status.paused;
 	VtDecoderBackend previous_preference = open->config.preferred_backend;
 	fence_decoder_frame(*player_io);
 	vt_decoder_destroy(*player_io);
@@ -512,219 +516,6 @@ static void draw_buffering_overlay(float opacity, uint64_t now) {
 		                  vt_i18n_str(VT_STR_PLAYER_BUFFERING));
 }
 
-static unsigned subtitle_text_color(void) {
-	switch (vt_preferences_subtitle_text_color()) {
-		case VT_SUBTITLE_TEXT_YELLOW: return RGBA8(255, 232, 96, 255);
-		case VT_SUBTITLE_TEXT_CYAN: return RGBA8(108, 235, 255, 255);
-		case VT_SUBTITLE_TEXT_GREEN: return RGBA8(124, 244, 148, 255);
-		case VT_SUBTITLE_TEXT_ORANGE: return RGBA8(255, 174, 72, 255);
-		case VT_SUBTITLE_TEXT_MAGENTA: return RGBA8(255, 120, 218, 255);
-		case VT_SUBTITLE_TEXT_BLUE: return RGBA8(130, 174, 255, 255);
-		case VT_SUBTITLE_TEXT_GRAY: return RGBA8(196, 204, 212, 255);
-		default: return RGBA8(255, 255, 255, 255);
-	}
-}
-
-static unsigned subtitle_border_color(void) {
-	switch (vt_preferences_subtitle_border_color()) {
-		case VT_SUBTITLE_BORDER_MIDNIGHT: return RGBA8(3, 18, 34, 255);
-		case VT_SUBTITLE_BORDER_WHITE: return RGBA8(255, 255, 255, 255);
-		case VT_SUBTITLE_BORDER_YELLOW: return RGBA8(255, 210, 48, 255);
-		case VT_SUBTITLE_BORDER_CYAN: return RGBA8(28, 218, 235, 255);
-		case VT_SUBTITLE_BORDER_ORANGE: return RGBA8(242, 116, 44, 255);
-		case VT_SUBTITLE_BORDER_BLUE: return RGBA8(46, 112, 232, 255);
-		case VT_SUBTITLE_BORDER_GRAY: return RGBA8(90, 102, 112, 255);
-		default: return RGBA8(0, 0, 0, 255);
-	}
-}
-
-static unsigned subtitle_background_color(void) {
-	switch (vt_preferences_subtitle_background_color()) {
-		case VT_SUBTITLE_BACKGROUND_BLACK: return RGBA8(0, 0, 0, 198);
-		case VT_SUBTITLE_BACKGROUND_MIDNIGHT: return RGBA8(3, 18, 34, 210);
-		case VT_SUBTITLE_BACKGROUND_WHITE: return RGBA8(255, 255, 255, 205);
-		case VT_SUBTITLE_BACKGROUND_NAVY: return RGBA8(3, 26, 52, 214);
-		case VT_SUBTITLE_BACKGROUND_BURGUNDY: return RGBA8(50, 5, 18, 214);
-		case VT_SUBTITLE_BACKGROUND_FOREST: return RGBA8(4, 38, 28, 214);
-		case VT_SUBTITLE_BACKGROUND_SMOKE: return RGBA8(38, 45, 50, 205);
-		default: return 0;
-	}
-}
-
-static int subtitle_max_width(void) {
-	switch (vt_preferences_subtitle_max_width()) {
-		case VT_SUBTITLE_WIDTH_60: return SCREEN_WIDTH * 60 / 100;
-		case VT_SUBTITLE_WIDTH_75: return SCREEN_WIDTH * 75 / 100;
-		case VT_SUBTITLE_WIDTH_96: return SCREEN_WIDTH * 96 / 100;
-		default: return SCREEN_WIDTH * 88 / 100;
-	}
-}
-
-static unsigned subtitle_font_size(void) {
-	return vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_SMALL
-	     ? UI_FONT_SMALL
-	     : vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_LARGE
-	     ? UI_FONT_SUBTITLE_LARGE
-	     : vt_preferences_subtitle_size() == VT_SUBTITLE_SIZE_EXTRA_LARGE
-	     ? UI_FONT_SUBTITLE_EXTRA_LARGE : UI_FONT_BODY;
-}
-
-static size_t subtitle_utf8_bytes(const char *text) {
-	const unsigned char *s = (const unsigned char *)text;
-	if (!s || !s[0]) return 0;
-	if (s[0] < 0x80U) return 1;
-	size_t bytes = s[0] >= 0xC2U && s[0] <= 0xDFU ? 2
-	             : s[0] >= 0xE0U && s[0] <= 0xEFU ? 3
-	             : s[0] >= 0xF0U && s[0] <= 0xF4U ? 4 : 1;
-	for (size_t i = 1; i < bytes; i++)
-		if (!s[i] || (s[i] & 0xC0U) != 0x80U) return 1;
-	return bytes;
-}
-
-static size_t subtitle_trim_last_utf8(char *text, size_t length) {
-	if (!text || !length) return 0;
-	length--;
-	while (length && ((unsigned char)text[length] & 0xC0U) == 0x80U)
-		length--;
-	text[length] = '\0';
-	return length;
-}
-
-static void subtitle_add_ellipsis(vita2d_font *font, unsigned size,
-	                              char line[256], int max_width) {
-	static const char ellipsis[] = "\xE2\x80\xA6";
-	size_t length = strlen(line);
-	char candidate[256];
-	for (;;) {
-		snprintf(candidate, sizeof(candidate), "%s%s", line, ellipsis);
-		if (!line[0] || ui_font_text_width(font, size, candidate) <= max_width)
-			break;
-		length = subtitle_trim_last_utf8(line, length);
-		while (length && line[length - 1] == ' ')
-			line[--length] = '\0';
-	}
-	snprintf(line, 256, "%s", candidate);
-}
-
-static int wrap_subtitle(vita2d_font *font, unsigned size, const char *text,
-	                     int max_width, int max_lines, char lines[4][256]) {
-	if (max_lines < 1) max_lines = 1;
-	if (max_lines > 4) max_lines = 4;
-	const char *cursor = text ? text : "";
-	int count = 0;
-	while (*cursor && count < max_lines) {
-		while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r') cursor++;
-		if (*cursor == '\n') { cursor++; continue; }
-		char *line = lines[count];
-		size_t used = 0;
-		size_t last_break = 0;
-		const char *after_break = NULL;
-		while (*cursor) {
-			if (*cursor == '\r') { cursor++; continue; }
-			if (*cursor == '\n') { cursor++; break; }
-			size_t bytes = subtitle_utf8_bytes(cursor);
-			if (!bytes) break;
-			int is_space = *cursor == ' ' || *cursor == '\t';
-			if (is_space && used == 0) { cursor += bytes; continue; }
-			size_t before = used;
-			if (is_space) {
-				if (used + 1 >= 256) break;
-				line[used++] = ' ';
-				last_break = before;
-				after_break = cursor + bytes;
-			} else {
-				if (used + bytes >= 256) break;
-				memcpy(line + used, cursor, bytes);
-				used += bytes;
-			}
-			line[used] = '\0';
-			if (ui_font_text_width(font, size, line) > max_width && before > 0) {
-				if (after_break && last_break > 0) {
-					used = last_break;
-					cursor = after_break;
-				} else {
-					used = before;
-				}
-				line[used] = '\0';
-				break;
-			}
-			cursor += bytes;
-		}
-		while (used && line[used - 1] == ' ') line[--used] = '\0';
-		if (used) count++;
-	}
-	while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' ||
-	       *cursor == '\n') cursor++;
-	if (*cursor && count > 0) subtitle_add_ellipsis(font, size,
-	                                               lines[count - 1], max_width);
-	return count;
-}
-
-static void draw_subtitle_text(const char *text) {
-	if (!text || !text[0]) return;
-	unsigned size = subtitle_font_size();
-	vita2d_font *font = ui_runtime_subtitle_font(
-	    vt_preferences_subtitle_font(), size);
-	char lines[4][256];
-	memset(lines, 0, sizeof(lines));
-	int max_width = subtitle_max_width();
-	int count = wrap_subtitle(font, size, text, max_width,
-	                          vt_preferences_subtitle_max_rows(), lines);
-	if (!count) return;
-	int line_height = (int)size + 7;
-	int anchor;
-	switch (vt_preferences_subtitle_position()) {
-		case VT_SUBTITLE_POSITION_LOW:
-			anchor = SCREEN_HEIGHT - 92;
-			break;
-		case VT_SUBTITLE_POSITION_CENTER:
-			anchor = SCREEN_HEIGHT / 2 + (count - 1) * line_height / 2;
-			break;
-		case VT_SUBTITLE_POSITION_TOP:
-			anchor = 28 + (count - 1) * line_height;
-			break;
-		default:
-			anchor = SCREEN_HEIGHT - 22;
-			break;
-	}
-	int y = anchor - (count - 1) * line_height;
-	int outline = vt_preferences_subtitle_outline_thickness();
-	unsigned border = subtitle_border_color();
-	unsigned foreground = subtitle_text_color();
-	unsigned background = subtitle_background_color();
-	char fitted[4][256];
-	int widths[4] = {0};
-	int widest = 0;
-	for (int line = 0; line < count; line++) {
-		ui_font_fit_text(font, size, lines[line], fitted[line],
-		                 sizeof(fitted[line]), max_width);
-		widths[line] = ui_font_text_width(font, size, fitted[line]);
-		if (widths[line] > widest) widest = widths[line];
-	}
-	if (background) {
-		int reserved = vt_preferences_subtitle_min_rows();
-		if (reserved < count) reserved = count;
-		int block_top = anchor - reserved * line_height + 7;
-		vita2d_draw_rectangle((SCREEN_WIDTH - widest) / 2 - 12, block_top,
-		                      widest + 24, reserved * line_height + 5,
-		                      background);
-	}
-	for (int line = 0; line < count; line++, y += line_height) {
-		int width = widths[line];
-		int x = (SCREEN_WIDTH - width) / 2;
-		for (int radius = 1; radius <= outline; radius++) {
-			ui_font_draw_text(font, x - radius, y, border, size, fitted[line]);
-			ui_font_draw_text(font, x + radius, y, border, size, fitted[line]);
-			ui_font_draw_text(font, x, y - radius, border, size, fitted[line]);
-			ui_font_draw_text(font, x, y + radius, border, size, fitted[line]);
-			ui_font_draw_text(font, x - radius, y - radius, border, size, fitted[line]);
-			ui_font_draw_text(font, x + radius, y - radius, border, size, fitted[line]);
-			ui_font_draw_text(font, x - radius, y + radius, border, size, fitted[line]);
-			ui_font_draw_text(font, x + radius, y + radius, border, size, fitted[line]);
-		}
-		ui_font_draw_text(font, x, y, foreground, size, fitted[line]);
-	}
-}
 
 static void draw_player_right_sidebar(float animation, float focus_position,
 	                                  int cursor,
@@ -863,7 +654,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms,
 	                        uint64_t *last_duration_ms,
 	                        int *last_audio_track,
-	                        int *last_subtitle_track) {
+	                        int *last_subtitle_track, int *last_paused) {
 	if (!source || (!source->stream.open && !source->stream.open_cancelable))
 		return -1;
 	VtPerformanceClockGuard clock_guard;
@@ -903,6 +694,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	open.config.start_position_ms = source->start_position_ms;
 	open.config.audio_track = source->start_audio_track;
 	open.config.subtitle_track = source->start_subtitle_track;
+	open.config.start_paused = source->start_paused;
 	open.config.volume_percent = vt_audio_volume_percent();
 	open.config.cancel_flag = &cancel;
 	const char *opening_status = source->authenticated_remote
@@ -956,7 +748,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	int energy_saving = 0;
 	int energy_lock_position = 0;
 	uint64_t energy_lock_move_us = 0;
-	int paused = 0;
+	int paused = source->start_paused != 0;
 	int hud_visible = 1;
 	float hud_opacity = 1.0f;
 	int dragging = 0;
@@ -985,11 +777,16 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		uint64_t now = sceKernelGetProcessTimeWide();
 		float delta_seconds = (float)(now - previous_frame_us) / 1000000.0f;
 		previous_frame_us = now;
-		sceCtrlPeekBufferPositive(0, &controls, 1);
+		int input_available = sceCtrlPeekBufferPositive(0, &controls, 1) > 0;
 		unsigned pressed = controls.buttons & ~previous.buttons;
 		previous = controls;
 		UiTouchEvent touch;
 		unsigned touch_flags = ui_touch_poll(&touch);
+		if (!input_lock.locked && hud_visible && !energy_saving &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= vt_preferences_player_swap_shoulders() ? SCE_CTRL_LEFT : SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 		int lock_changed = player_input_lock_update(&input_lock, controls.buttons,
 		                                            now);
 		pressed &= ~SCE_CTRL_SELECT;
@@ -1014,7 +811,8 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			dragging = 0;
 		}
 		int power_event = player_power_save_update(
-		    &power_save_input, controls.buttons, now, !input_lock.locked);
+		    &power_save_input, controls.buttons, now,
+		    input_available && !input_lock.locked);
 		pressed &= ~SCE_CTRL_START;
 		if (power_event == PLAYER_POWER_SAVE_EVENT_TOGGLE) {
 			energy_saving = !energy_saving;
@@ -1022,18 +820,29 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			energy_lock_move_us = now + PLAYER_POWER_SAVE_LOCK_MOVE_US;
 			dragging = 0;
 			sidebar.open = 0;
+			sidebar.animation = 0.0f;
 			right_open = 0;
+			right_animation = 0.0f;
 			ui_touch_reset();
+			touch_flags = UI_TOUCH_EVENT_NONE;
 		}
 		if (power_event == PLAYER_POWER_SAVE_EVENT_SHORT_PRESS &&
 		    source->allow_minimize) {
 			ret = VT_HW_PLAYER_ACTION_MINIMIZE;
 			break;
 		}
-		if (energy_saving) {
-			pressed &= SCE_CTRL_CIRCLE;
+		/* Eco is display-only, not an input lock. Transport/volume remain usable
+		 * in darkness; gestures requiring visible targets bring the UI back. */
+		unsigned panel_buttons = vt_preferences_player_swap_shoulders()
+		    ? SCE_CTRL_LEFT | SCE_CTRL_RIGHT : SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
+		if (energy_saving && !input_lock.locked &&
+		    ((pressed & panel_buttons) || (touch_flags & UI_TOUCH_EVENT_DOWN))) {
+			energy_saving = 0;
+			hud_visible = 1;
+			hud_opacity = 1.0f;
+			hud_deadline = now + 3500000ULL;
+			ui_touch_reset();
 			touch_flags = UI_TOUCH_EVENT_NONE;
-			dragging = 0;
 		}
 		VtDecoderPlayerStatus status;
 		vt_decoder_get_status(player, &status);
@@ -1049,7 +858,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 				                            &cancel, NULL, NULL);
 				loading.status = opening_status;
 				if (ret >= 0) {
-					paused = 0;
+					vt_decoder_set_paused(player, paused);
 					hud_visible = 1;
 					now = resync_after_blocking_action(
 					    &controls, &previous, &left_seek_direction,
@@ -1076,15 +885,25 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 		}
 		int swapped = vt_preferences_player_swap_shoulders();
 		unsigned transport_pressed = pressed;
+		unsigned left_toggle = swapped ? SCE_CTRL_LEFT : SCE_CTRL_LTRIGGER;
+		unsigned right_toggle = swapped ? SCE_CTRL_RIGHT : SCE_CTRL_RTRIGGER;
+		if ((pressed & left_toggle) &&
+		    (right_open || right_animation > 0.01f)) {
+			right_open = 0;
+			right_animation = 0.0f;
+		}
+		if ((pressed & right_toggle) &&
+		    (sidebar.open || sidebar.animation > 0.01f)) {
+			sidebar.open = 0;
+			sidebar.animation = 0.0f;
+		}
 		if (swapped) pressed &= ~(SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER);
 		if (swapped && !sidebar.open && !right_open &&
 		    (pressed & SCE_CTRL_LEFT)) {
 			pressed &= ~SCE_CTRL_LEFT;
 			pressed |= SCE_CTRL_LTRIGGER;
 		}
-		unsigned right_toggle = swapped ? SCE_CTRL_RIGHT : SCE_CTRL_RTRIGGER;
-		if (!sidebar.open && sidebar.animation <= 0.01f &&
-		    (pressed & right_toggle)) {
+		if (pressed & right_toggle) {
 			right_open = !right_open;
 			right_cursor = 0;
 			right_focus_position = 0.0f;
@@ -1491,21 +1310,20 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 			draw_player_power_save_status_at(lock_x, lock_y);
 			if (input_lock.locked)
 				draw_player_input_lock_at(lock_x,
-				    lock_y > 430 ? lock_y - 50 : lock_y + 34, 1.0f);
+				    lock_y > 430 ? lock_y - 50 : lock_y + 34, 0.18f);
 		} else {
+			/* Captions belong to the video layer. Controls, telemetry, buffering
+			 * feedback and drawers must always be composited above them. */
+			char subtitle[512];
+			if (vt_decoder_subtitle_text(player, status.position_ms,
+			                             subtitle, sizeof(subtitle)) > 0)
+				ui_subtitle_draw(subtitle, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 			if (hud_opacity > 0.01f || volume_opacity > 0.01f)
 				draw_hud(source, &status, paused, vt_audio_volume_percent(),
 				         hud_opacity, volume_opacity, dragging, drag_fraction);
 			else if (vt_preferences_player_status_always_visible())
 				ui_brand_draw_status_indicators_alpha(1.0f);
 			draw_buffering_overlay(buffering_opacity, now);
-			/* Subtitles must remain above the HUD's opaque lower telemetry panel.
-			 * Drawing them before draw_hud made a correctly decoded bottom-position
-			 * cue look absent for the entire time the controls were visible. */
-			char subtitle[512];
-			if (vt_decoder_subtitle_text(player, status.position_ms,
-			                             subtitle, sizeof(subtitle)) > 0)
-				draw_subtitle_text(subtitle);
 			if (input_lock.locked && hud_opacity > 0.01f)
 				draw_player_input_lock_at(24, 86, hud_opacity);
 			if (sidebar.animation > 0.01f)
@@ -1525,6 +1343,7 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	}
 	VtDecoderPlayerStatus final_status;
 	vt_decoder_get_status(player, &final_status);
+	if (last_paused) *last_paused = paused;
 	if (last_position_ms) *last_position_ms = final_status.position_ms;
 	if (last_duration_ms) *last_duration_ms = final_status.duration_ms;
 	if (last_audio_track) *last_audio_track = vt_decoder_active_audio_track(player);

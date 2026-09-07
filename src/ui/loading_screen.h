@@ -8,6 +8,8 @@
  * the loading screen. */
 typedef int (*UiLoadingTaskFn)(void *ctx);
 typedef void (*UiLoadingProgressTickFn)(long current, long total);
+typedef void (*UiDownloadProgressReadFn)(void *ctx, uint64_t *current,
+	                                     uint64_t *total);
 typedef void (*UiPlayerLoadingDetailFn)(char *out, size_t out_size,
 	                                    void *ctx, uint64_t now_us);
 typedef void (*UiPlayerLoadingCancelFn)(void *ctx);
@@ -60,14 +62,24 @@ int ui_loading_run_with_query(const char *query,
                               const volatile long *progress_total);
 
 /* Download-specific loading view. START toggles pause/resume; CIRCLE aborts.
+ * It displays byte progress, transfer speed and ETA when the total is known,
+ * and keeps the display/automatic-suspend timers awake until the task ends.
  * The worker is responsible for observing pause_flag cooperatively. */
 int ui_loading_run_download(const char *message,
                             UiLoadingTaskFn task,
                             void *ctx,
                             volatile int *pause_flag,
                             volatile int *cancel_flag,
-                            const volatile long *progress_current,
-                            const volatile long *progress_total);
+                            UiDownloadProgressReadFn progress_read,
+                            void *progress_ctx);
+
+/* Opens the app-level transfer page for the single active download. TRIANGLE
+ * returns to navigation without stopping it; START pauses/resumes and CIRCLE
+ * aborts. L1 opens global section navigation. Returns 1 when detached, 0 after
+ * a terminal result, UI_LOADING_DOWNLOAD_SECTION_BASE + section after global
+ * navigation, and -1 when no transfer exists. */
+#define UI_LOADING_DOWNLOAD_SECTION_BASE 10
+int ui_loading_monitor_background_download(void);
 
 /* Full-screen version dedicated to video. No panel or dialog: title top
  * left, quality bottom right, centered acquisition mark, and signal progress on the
@@ -88,6 +100,8 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 
 /* Short, interruptible full-page error message. */
 void ui_message_show(const char *message, const char *detail, int duration_ms);
+void ui_message_show_success(const char *message, const char *detail,
+	                         int duration_ms);
 
 /* Primitive shared with the grid: VitaMediaDeck orbital indicator. Must be
  * called inside an already-open vita2d scene. */
