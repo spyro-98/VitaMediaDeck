@@ -49,6 +49,7 @@
 #define THUMB_COVER_MAX_PIXELS      (1024U * 1024U)
 #define THUMB_THREAD_CREATE_PRIORITY  0x10000100
 #define THUMB_THREAD_RUNTIME_PRIORITY 0xB0
+#define THUMB_THREAD_CANCEL_PRIORITY  0xD0
 #define THUMB_THREAD_STACK          0x100000
 #define THUMB_CACHE_DIR             "ux0:data/VitaMediaDeck/thumbs"
 
@@ -611,7 +612,10 @@ static int decode_still_thumbnail(const ThumbnailRequest *request,
 	if (!request || !pixels || request->remote) return AVERROR(EINVAL);
 	VtDecodedImage decoded;
 	char error[128];
-	int result = vt_image_decode(request->path, 512, &decoded,
+	/* Decode close to the actual card width.  This lets libjpeg use its native
+	 * 1/8 DCT path for phone photos instead of spending seconds building an
+	 * unnecessary 512px proxy before the final 264x148 crop. */
+	int result = vt_image_decode(request->path, THUMB_WIDTH, &decoded,
 	                             error, sizeof(error));
 	if (result < 0) {
 		log_printf("image thumbnail decode failed: %s: %s\n",
@@ -669,7 +673,7 @@ static void thumbnail_jpeg_error_exit(j_common_ptr common) {
 }
 
 static int decode_jpeg_cover(const unsigned char *data, size_t size,
-	                         uint16_t *pixels) {
+	                         uint16_t *pixels, ThumbnailInterrupt *interrupt) {
 	if (!data || size < 4 || !pixels) return AVERROR(EINVAL);
 	struct jpeg_decompress_struct decoder;
 	ThumbnailJpegError error;
@@ -688,6 +692,8 @@ static int decode_jpeg_cover(const unsigned char *data, size_t size,
 	if (jpeg_read_header(&decoder, TRUE) != JPEG_HEADER_OK)
 		thumbnail_jpeg_error_exit((j_common_ptr)&decoder);
 	decoder.out_color_space = JCS_RGB;
+	decoder.do_fancy_upsampling = FALSE;
+	decoder.dct_method = JDCT_IFAST;
 	static const unsigned int denominators[] = { 8, 4, 2, 1 };
 	for (unsigned int i = 0; i < sizeof(denominators) / sizeof(denominators[0]); i++) {
 		unsigned int denominator = denominators[i];
@@ -714,6 +720,13 @@ static int decode_jpeg_cover(const unsigned char *data, size_t size,
 	if (!error.buffer)
 		thumbnail_jpeg_error_exit((j_common_ptr)&decoder);
 	while (decoder.output_scanline < decoder.output_height) {
+		if (thumbnail_interrupted(interrupt)) {
+			free(error.buffer);
+			error.buffer = NULL;
+			jpeg_abort_decompress(&decoder);
+			jpeg_destroy_decompress(&decoder);
+			return AVERROR_EXIT;
+		}
 		JSAMPROW row = error.buffer + (size_t)decoder.output_scanline * stride;
 		jpeg_read_scanlines(&decoder, &row, 1);
 	}
@@ -728,33 +741,75 @@ static int decode_jpeg_cover(const unsigned char *data, size_t size,
 	return result;
 }
 
+typedef struct {
+	const unsigned char *data;
+	size_t size, offset;
+	unsigned char *pixels;
+	ThumbnailInterrupt *interrupt;
+} ThumbnailPngInput;
+
+static void thumbnail_png_read(png_structp png, png_bytep out, png_size_t size) {
+	ThumbnailPngInput *input = png_get_io_ptr(png);
+	if (thumbnail_interrupted(input->interrupt) || size > input->size - input->offset)
+		png_error(png, "thumbnail cancelled or truncated");
+	memcpy(out, input->data + input->offset, size);
+	input->offset += size;
+}
+
 static int decode_png_cover(const unsigned char *data, size_t size,
-	                        uint16_t *pixels) {
+                            uint16_t *pixels, ThumbnailInterrupt *interrupt) {
 	if (!data || size < 8 || !pixels) return AVERROR(EINVAL);
-	png_image image;
-	memset(&image, 0, sizeof(image));
-	image.version = PNG_IMAGE_VERSION;
-	if (!png_image_begin_read_from_memory(&image, data, size))
-		return AVERROR_INVALIDDATA;
-	if (!image.width || !image.height ||
-	    (uint64_t)image.width * image.height > THUMB_COVER_MAX_PIXELS) {
-		png_image_free(&image);
-		return AVERROR(EINVAL);
-	}
-	image.format = PNG_FORMAT_RGB;
-	size_t bytes = PNG_IMAGE_SIZE(image);
-	unsigned char *buffer = malloc(bytes);
-	if (!buffer) {
-		png_image_free(&image);
+	/* Keep mutable allocations off the setjmp stack. Every row (and compressed
+	 * input read) can yield ownership immediately when playback is requested. */
+	ThumbnailPngInput *input = calloc(1, sizeof(*input));
+	if (!input) return AVERROR(ENOMEM);
+	input->data = data;
+	input->size = size;
+	input->interrupt = interrupt;
+	png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+	png_infop info = png ? png_create_info_struct(png) : NULL;
+	if (!info) {
+		if (png) png_destroy_read_struct(&png, NULL, NULL);
+		free(input);
 		return AVERROR(ENOMEM);
 	}
-	int decoded = png_image_finish_read(&image, NULL, buffer, 0, NULL);
-	int result = decoded
-	           ? rgb24_to_rgb565(buffer, (int)PNG_IMAGE_ROW_STRIDE(image),
-	                             (int)image.width, (int)image.height, pixels)
-	           : AVERROR_INVALIDDATA;
-	free(buffer);
-	png_image_free(&image);
+	if (setjmp(png_jmpbuf(png))) {
+		int cancelled = thumbnail_interrupted(interrupt);
+		free(input->pixels);
+		png_destroy_read_struct(&png, &info, NULL);
+		free(input);
+		return cancelled ? AVERROR_EXIT : AVERROR_INVALIDDATA;
+	}
+	png_set_read_fn(png, input, thumbnail_png_read);
+	png_read_info(png, info);
+	png_uint_32 width = png_get_image_width(png, info);
+	png_uint_32 height = png_get_image_height(png, info);
+	if (!width || !height || (uint64_t)width * height > THUMB_COVER_MAX_PIXELS)
+		png_error(png, "thumbnail dimensions exceed budget");
+	int color = png_get_color_type(png, info);
+	int depth = png_get_bit_depth(png, info);
+	if (depth == 16) png_set_strip_16(png);
+	if (color == PNG_COLOR_TYPE_PALETTE) png_set_palette_to_rgb(png);
+	if (color == PNG_COLOR_TYPE_GRAY && depth < 8) png_set_expand_gray_1_2_4_to_8(png);
+	if (color == PNG_COLOR_TYPE_GRAY || color == PNG_COLOR_TYPE_GRAY_ALPHA)
+		png_set_gray_to_rgb(png);
+	if (color & PNG_COLOR_MASK_ALPHA) png_set_strip_alpha(png);
+	int passes = png_set_interlace_handling(png);
+	png_read_update_info(png, info);
+	size_t stride = png_get_rowbytes(png, info);
+	if (stride != (size_t)width * 3U) png_error(png, "unexpected thumbnail layout");
+	input->pixels = calloc(height, stride);
+	if (!input->pixels) png_error(png, "thumbnail allocation failed");
+	for (int pass = 0; pass < passes; pass++) {
+		for (png_uint_32 row = 0; row < height; row++) {
+			if (thumbnail_interrupted(interrupt)) png_error(png, "thumbnail cancelled");
+			png_read_row(png, input->pixels + row * stride, NULL);
+		}
+	}
+	int result = rgb24_to_rgb565(input->pixels, (int)stride, width, height, pixels);
+	free(input->pixels);
+	png_destroy_read_struct(&png, &info, NULL);
+	free(input);
 	return result;
 }
 
@@ -813,13 +868,13 @@ static int decode_attached_cover(AVFormatContext *format, int stream_index,
 	if (!data || !size) return AVERROR_INVALIDDATA;
 	if (thumbnail_interrupted(interrupt)) return AVERROR_EXIT;
 	if (size >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff)
-		return decode_jpeg_cover(data, size, pixels);
+		return decode_jpeg_cover(data, size, pixels, interrupt);
 	static const unsigned char png_signature[8] = {
 		0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'
 	};
 	if (size >= sizeof(png_signature) &&
 	    memcmp(data, png_signature, sizeof(png_signature)) == 0)
-		return decode_png_cover(data, size, pixels);
+		return decode_png_cover(data, size, pixels, interrupt);
 	return AVERROR_DECODER_NOT_FOUND;
 }
 
@@ -1135,6 +1190,7 @@ static int thumbnail_worker(SceSize args, void *argp) {
 			sceKernelDelayThread(8 * 1000);
 			continue;
 		}
+		ThumbnailInterrupt cover_interrupt = { .generation = request.generation };
 		uint64_t started_us = sceKernelGetProcessTimeWide();
 		uint16_t *pixels = malloc(THUMB_BYTES);
 		int result = pixels ? cache_load(&request, pixels) : AVERROR(ENOMEM);
@@ -1157,10 +1213,10 @@ static int thumbnail_worker(SceSize args, void *argp) {
 				if (result == 0 && artwork) {
 					if (artwork_size >= 3 && artwork[0] == 0xff &&
 					    artwork[1] == 0xd8 && artwork[2] == 0xff)
-						result = decode_jpeg_cover(artwork, artwork_size, pixels);
+						result = decode_jpeg_cover(artwork, artwork_size, pixels, &cover_interrupt);
 					else if (artwork_size >= 8 && artwork[0] == 0x89 &&
 					         !memcmp(artwork + 1, "PNG\r\n\x1a\n", 7))
-						result = decode_png_cover(artwork, artwork_size, pixels);
+						result = decode_png_cover(artwork, artwork_size, pixels, &cover_interrupt);
 					else result = AVERROR_INVALIDDATA;
 					if (result == 0 && thumbnail_information_score(pixels) > 0)
 						origin = THUMB_ORIGIN_PROVIDER;
@@ -1287,6 +1343,7 @@ int vt_video_thumbnail_init(void) {
 
 void vt_video_thumbnail_resume(void) {
 	if (!g_thumbnail.initialized) return;
+	sceKernelChangeThreadPriority(g_thumbnail.thid, THUMB_THREAD_RUNTIME_PRIORITY);
 	thumbnail_lock();
 	g_thumbnail.enabled = 1;
 	/* suspend() increments generation before raising active_cancel. Therefore an
@@ -1323,6 +1380,9 @@ void vt_video_thumbnail_suspend(void) {
 void vt_video_thumbnail_prepare_playback(void) {
 	if (!g_thumbnail.initialized) return;
 	vt_video_thumbnail_suspend();
+	/* An in-flight codec call cannot always stop mid-frame. Let the selected
+	 * media's open/decode threads preempt its remaining CPU work immediately. */
+	sceKernelChangeThreadPriority(g_thumbnail.thid, THUMB_THREAD_CANCEL_PRIORITY);
 	/* All browser scenes fence their last frame before returning, but keep this
 	 * API self-contained because it is also called by mini-player restoration. */
 	vita2d_wait_rendering_done();
@@ -1335,7 +1395,9 @@ void vt_video_thumbnail_prepare_playback(void) {
 		memset(&g_thumbnail.textures[i], 0,
 		       sizeof(g_thumbnail.textures[i]));
 	}
-	uint64_t deadline = sceKernelGetProcessTimeWide() + 250 * 1000ULL;
+	/* Cancellation owns its resources until completion; opening a different
+	 * independent cursor must not wait a quarter-second for an optional cover. */
+	uint64_t deadline = sceKernelGetProcessTimeWide() + 8 * 1000ULL;
 	while (g_thumbnail.worker_busy &&
 	       sceKernelGetProcessTimeWide() < deadline)
 		sceKernelDelayThread(1000);

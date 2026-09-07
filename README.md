@@ -19,6 +19,22 @@ VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
 or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
+## Current development: 1.3.0
+
+The integrated development baseline adds live MP3 radio, public podcast
+discovery/streaming/downloads, favourites-only Radio/Podcast Home tabs,
+regional catalogues, artwork and available radio programme metadata. It also
+includes background-download UI, file/image/player improvements and navigation
+fixes developed after 1.2. This is not a claim that a new GitHub release has
+been published or that every provider has passed hardware testing.
+
+Press **L1** or tap the app logo to open sections. Use **Network** for media
+servers, direct links and QR downloads, and **Radio/Podcast** to discover and
+save stations/shows. The corresponding Home tabs show favourites only.
+
+See [online audio and navigation](docs/online-audio-preview.md) for supported
+formats, controls, limits and validation status.
+
 ## What's new in 1.2
 
 Release 1.2 expands the previous 1.0.2 public build from a local/network video

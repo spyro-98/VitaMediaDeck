@@ -6,19 +6,24 @@
 enum {
 	UI_SECTION_LOCAL_MEDIA = 0,
 	UI_SECTION_NETWORK,
+	UI_SECTION_ONLINE_AUDIO,
 	UI_SECTION_SETTINGS,
+	UI_SECTION_GUIDE,
 	UI_SECTION_INFO,
 	UI_SECTION_COUNT
 };
 
 #define UI_SECTION_NONE (-1)
 #define UI_SECTION_PLAYER UI_SECTION_COUNT
+#define UI_SECTION_DOWNLOAD (UI_SECTION_COUNT + 1)
+#define UI_SECTION_ACTION_COUNT (UI_SECTION_COUNT + 2)
 
 typedef struct {
 	int open;
 	int cursor;
 	int active;
 	int player_available;
+	int download_available;
 	float animation;
 	float focus_cursor;
 	unsigned int repeat_button;

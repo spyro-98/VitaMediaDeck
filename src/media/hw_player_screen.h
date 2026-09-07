@@ -19,6 +19,7 @@ typedef struct {
 	uint64_t start_position_ms;
 	int start_audio_track;
 	int start_subtitle_track;
+	int start_paused;
 	uint32_t expected_width;
 	uint32_t expected_height;
 	int expected_fps;
@@ -33,6 +34,6 @@ int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms,
 	                        uint64_t *last_duration_ms,
 	                        int *last_audio_track,
-	                        int *last_subtitle_track);
+	                        int *last_subtitle_track, int *last_paused);
 
 #endif

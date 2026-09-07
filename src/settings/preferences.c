@@ -115,6 +115,10 @@ _Static_assert(sizeof(VtPreferencesDiskV3) == 40,
 /* The V3 extension word also carries non-subtitle flags once the original
  * playback word is full. Zero preserves folder-first navigation on upgrades. */
 #define VT_BROWSER_FLAG_FLATTEN_FOLDERS  (1u << 12)
+#define VT_MUSIC_THEME_SHIFT                    13u
+#define VT_MUSIC_THEME_MASK              (7u << VT_MUSIC_THEME_SHIFT)
+#define VT_SUBTITLE_SIZE_HIGH_BIT        (1u << 16)
+#define VT_SUBTITLE_POSITION_HIGH_BIT    (1u << 17)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -453,6 +457,23 @@ int vt_preferences_set_folder_navigation_flattened(int enabled) {
 	return persist_subtitle_pair(g_playback_flags, next);
 }
 
+int vt_preferences_music_theme(void) {
+	if (!g_loaded) vt_preferences_init();
+	int theme = (int)((g_subtitle_flags & VT_MUSIC_THEME_MASK) >>
+	                  VT_MUSIC_THEME_SHIFT);
+	return theme >= VT_MUSIC_THEME_ARTWORK && theme <= VT_MUSIC_THEME_WARM
+	     ? theme : VT_MUSIC_THEME_ARTWORK;
+}
+
+int vt_preferences_set_music_theme(int theme) {
+	if (theme < VT_MUSIC_THEME_ARTWORK || theme > VT_MUSIC_THEME_WARM)
+		return -1;
+	if (!g_loaded) vt_preferences_init();
+	uint32_t next = (g_subtitle_flags & ~VT_MUSIC_THEME_MASK) |
+	                ((uint32_t)theme << VT_MUSIC_THEME_SHIFT);
+	return persist_subtitle_pair(g_playback_flags, next);
+}
+
 int vt_preferences_local_video_grid(void) {
 	if (!g_loaded) vt_preferences_init();
 	return (g_playback_flags & VT_LOCAL_VIDEO_FLAG_GRID) != 0;
@@ -713,10 +734,12 @@ int vt_preferences_set_subtitle_text_color(int color) {
 
 int vt_preferences_subtitle_size(void) {
 	/* zero-filled V1/V2 records retain the historical medium 20 px font. */
-	unsigned int encoded = subtitle_field(VT_SUBTITLE_SIZE_SHIFT);
+	unsigned int encoded = subtitle_field(VT_SUBTITLE_SIZE_SHIFT) |
+	                       subtitle_high_bit(VT_SUBTITLE_SIZE_HIGH_BIT);
 	return encoded == 1u ? VT_SUBTITLE_SIZE_SMALL
 	     : encoded == 2u ? VT_SUBTITLE_SIZE_LARGE
 	     : encoded == 3u ? VT_SUBTITLE_SIZE_EXTRA_LARGE
+	     : encoded == 4u ? VT_SUBTITLE_SIZE_MEDIUM_LARGE
 	                     : VT_SUBTITLE_SIZE_MEDIUM;
 }
 
@@ -726,8 +749,12 @@ int vt_preferences_set_subtitle_size(int size) {
 	else if (size == VT_SUBTITLE_SIZE_SMALL) encoded = 1;
 	else if (size == VT_SUBTITLE_SIZE_LARGE) encoded = 2;
 	else if (size == VT_SUBTITLE_SIZE_EXTRA_LARGE) encoded = 3;
+	else if (size == VT_SUBTITLE_SIZE_MEDIUM_LARGE) encoded = 4;
 	else return -1;
-	return set_subtitle_field(VT_SUBTITLE_SIZE_SHIFT, encoded);
+	if (!g_loaded) vt_preferences_init();
+	return persist_subtitle_pair(
+	    with_subtitle_field(g_playback_flags, VT_SUBTITLE_SIZE_SHIFT, encoded),
+	    with_subtitle_high_bit(g_subtitle_flags, VT_SUBTITLE_SIZE_HIGH_BIT, encoded));
 }
 
 int vt_preferences_subtitle_max_width(void) {
@@ -750,14 +777,19 @@ int vt_preferences_set_subtitle_max_width(int width) {
 }
 
 int vt_preferences_subtitle_position(void) {
-	return (int)subtitle_field(VT_SUBTITLE_POSITION_SHIFT);
+	unsigned value = subtitle_field(VT_SUBTITLE_POSITION_SHIFT) |
+	                 subtitle_high_bit(VT_SUBTITLE_POSITION_HIGH_BIT);
+	return value <= VT_SUBTITLE_POSITION_LOWER ? (int)value
+	                                         : VT_SUBTITLE_POSITION_BOTTOM;
 }
 
 int vt_preferences_set_subtitle_position(int position) {
 	if (position < VT_SUBTITLE_POSITION_BOTTOM ||
-	    position > VT_SUBTITLE_POSITION_TOP) return -1;
-	return set_subtitle_field(VT_SUBTITLE_POSITION_SHIFT,
-	                          (unsigned int)position);
+	    position > VT_SUBTITLE_POSITION_LOWER) return -1;
+	if (!g_loaded) vt_preferences_init();
+	return persist_subtitle_pair(
+	    with_subtitle_field(g_playback_flags, VT_SUBTITLE_POSITION_SHIFT, position),
+	    with_subtitle_high_bit(g_subtitle_flags, VT_SUBTITLE_POSITION_HIGH_BIT, position));
 }
 
 static unsigned int subtitle_extra_field(unsigned int shift) {

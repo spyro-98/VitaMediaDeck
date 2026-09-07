@@ -26,6 +26,9 @@ typedef struct {
 	int visible;
 	int error;
 	int is_video;
+	int is_live;
+	/* User intent, including while buffering or a pause is pending. */
+	int paused;
 	uint32_t activation_serial;
 	uint64_t position_ms;
 	uint64_t duration_ms;
@@ -45,6 +48,9 @@ typedef struct {
 typedef int (*VtBackgroundFullscreenResume)(uint64_t position_ms, void *ctx);
 
 void vt_background_playback_init(void);
+int vt_background_playback_prepare_radio(const char *url, const char *title);
+int vt_background_playback_prepare_podcast(const char *url, const char *title);
+void vt_background_playback_set_audio_details(const char *author, const char *artwork);
 
 /* Opens a file already stored on the console. The service never performs
  * network I/O and never takes ownership of the file. */
@@ -73,6 +79,11 @@ int vt_background_playback_prepare_remote_video(
 
 int vt_background_playback_prepared(void);
 int vt_background_playback_activate(uint64_t start_position_ms);
+int vt_background_playback_activate_state(uint64_t start_position_ms, int paused);
+int vt_background_playback_is_paused(void);
+/* Configure the prepared (not yet activated) video. Factories are job-owned. */
+void vt_background_playback_configure_video(int subtitle_track,
+                                            const VtJellyfinMetadata *metadata);
 void vt_background_playback_toggle_pause(void);
 void vt_background_playback_seek_to(uint64_t position_ms);
 void vt_background_playback_seek_relative(int64_t delta_ms);

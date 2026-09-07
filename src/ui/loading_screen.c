@@ -10,12 +10,18 @@
 #include <psp2/kernel/threadmgr.h>
 #include <vita2d.h>
 
+#include "app_paths.h"
 #include "common/text_log.h"
 #include "i18n/i18n.h"
+#include "network/download_manager.h"
 #include "settings/preferences.h"
+#include "system/display_awake.h"
 #include "ui/brand.h"
 #include "ui/components.h"
+#include "ui/format.h"
+#include "ui/mini_player.h"
 #include "ui/runtime.h"
+#include "ui/sections_sidebar.h"
 #include "ui/theme.h"
 #include "ui/touch.h"
 
@@ -44,6 +50,13 @@ typedef struct {
 typedef struct {
 	UiTaskState *state;
 } UiTaskThreadArgs;
+
+typedef struct {
+	uint64_t sample_time_us;
+	uint64_t sample_bytes;
+	double bytes_per_second;
+	int was_paused;
+} UiDownloadRateState;
 
 static int loading_task_thread(SceSize args, void *argp) {
 	(void)args;
@@ -78,6 +91,45 @@ static void draw_centered_text(int y, unsigned int color,
 	if (!font || !text) return;
 	ui_font_draw_text_centered(font, SCREEN_WIDTH / 2, y, SCREEN_WIDTH - 96,
 	                           color, size, text);
+}
+
+static void format_eta(uint64_t seconds, char *out, size_t out_size) {
+	if (!out || !out_size) return;
+	if (seconds < 60ULL)
+		snprintf(out, out_size, "%llus", (unsigned long long)seconds);
+	else if (seconds < 3600ULL)
+		snprintf(out, out_size, "%llum %02llus",
+		         (unsigned long long)(seconds / 60ULL),
+		         (unsigned long long)(seconds % 60ULL));
+	else
+		snprintf(out, out_size, "%lluh %02llum",
+		         (unsigned long long)(seconds / 3600ULL),
+		         (unsigned long long)((seconds % 3600ULL) / 60ULL));
+}
+
+static double update_download_rate(UiDownloadRateState *state, uint64_t current,
+	                               uint64_t now_us, int paused) {
+	if (!state) return 0.0;
+	if (!state->sample_time_us || current < state->sample_bytes || paused ||
+	    state->was_paused) {
+		state->sample_time_us = now_us;
+		state->sample_bytes = current;
+		state->was_paused = paused;
+		if (paused) state->bytes_per_second = 0.0;
+		return state->bytes_per_second;
+	}
+	state->was_paused = 0;
+	uint64_t elapsed_us = now_us - state->sample_time_us;
+	if (elapsed_us >= 500000ULL) {
+		double instant = (double)(current - state->sample_bytes) * 1000000.0 /
+		                 (double)elapsed_us;
+		state->bytes_per_second = state->bytes_per_second > 0.0
+		                        ? state->bytes_per_second * 0.70 + instant * 0.30
+		                        : instant;
+		state->sample_time_us = now_us;
+		state->sample_bytes = current;
+	}
+	return state->bytes_per_second;
 }
 
 static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
@@ -139,47 +191,129 @@ static void draw_loading_frame(const char *query, const char *message,
 	                           const volatile long *progress_current,
 	                           const volatile long *progress_total,
 	                           int cancellable, int download_controls,
-	                           int paused) {
+	                           int paused, UiDownloadRateState *rate_state,
+	                           UiDownloadProgressReadFn download_progress_read,
+	                           void *download_progress_ctx,
+	                           const char *download_title,
+	                           int background_action,
+	                           const UiSectionsSidebar *sidebar) {
 	uint64_t now = sceKernelGetProcessTimeWide();
 	vita2d_start_drawing();
 	vita2d_clear_screen();
-	ui_brand_set_loading(1);
+	/* A foreground download has its own central spinner and progress bar. Keep
+	 * the top bar available for unrelated app loading, and suppress the compact
+	 * background-download ring only while this page is visible. */
+	ui_brand_set_loading(download_controls ? 0 : 1);
+	ui_brand_set_download_progress_hidden(download_controls);
 	ui_chrome_background(COLOR_BG, COLOR_ACCENT);
 	ui_brand_draw_header(query);
+	ui_brand_set_download_progress_hidden(0);
 
 	/* Loading is a signal-acquisition scene, not an overlaid dialog. */
-	draw_acquisition_frame(480.0f, 246.0f, 184.0f, 106.0f, 152U);
+	if (!download_controls)
+		draw_acquisition_frame(480.0f, 246.0f, 184.0f, 106.0f, 152U);
 	vita2d_draw_rectangle(476, 242, 8, 8, VT_THEME_SIGNAL_DIM);
 	ui_draw_spinner(480.0f, 246.0f, now);
 	draw_centered_text(330, COLOR_TEXT, UI_FONT_DISPLAY,
-	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_MESSAGE));
+	                   download_controls && paused
+	                       ? vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_PAUSED)
+	                       : message ? message
+	                                 : vt_i18n_str(VT_STR_LOADING_DEFAULT_MESSAGE));
+	if (download_controls && download_title && download_title[0]) {
+		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+		if (small)
+			ui_font_draw_text_centered(small, SCREEN_WIDTH / 2, 362,
+			                           SCREEN_WIDTH - 160, COLOR_BUFFER,
+			                           UI_FONT_SMALL, download_title);
+	}
 
-	long current = progress_current ? *progress_current : 0;
-	long total = progress_total ? *progress_total : 0;
+	uint64_t current = 0, total = 0;
+	if (download_controls && download_progress_read) {
+		download_progress_read(download_progress_ctx, &current, &total);
+	} else {
+		long current_value = progress_current ? *progress_current : 0;
+		long total_value = progress_total ? *progress_total : 0;
+		current = current_value > 0 ? (uint64_t)current_value : 0ULL;
+		total = total_value > 0 ? (uint64_t)total_value : 0ULL;
+	}
+	double bytes_per_second = download_controls
+	                        ? update_download_rate(rate_state, current, now, paused)
+	                        : 0.0;
+	float bar_x = 180.0f, bar_y = 390.0f, bar_w = 600.0f, bar_h = 6.0f;
+	if (download_controls)
+		vita2d_draw_rectangle(bar_x, bar_y, bar_w, bar_h, COLOR_TRACK);
 	if (total > 0) {
-		float frac = (float)current / (float)total;
+		float frac = (float)((double)current / (double)total);
 		if (frac < 0.0f) frac = 0.0f;
 		if (frac > 1.0f) frac = 1.0f;
-		float bar_x = 180.0f, bar_y = 390.0f, bar_w = 600.0f, bar_h = 6.0f;
-		vita2d_draw_rectangle(bar_x, bar_y, bar_w, bar_h, COLOR_TRACK);
 		vita2d_draw_rectangle(bar_x, bar_y, bar_w * frac, bar_h, COLOR_ACCENT);
 		if (ui_runtime_font(UI_FONT_BODY)) {
-			char percent[32];
-			snprintf(percent, sizeof(percent), vt_i18n_str(VT_STR_LOADING_PROGRESS_PERCENT),
-			         (int)(frac * 100.0f));
-			draw_centered_text(430, COLOR_MUTED, UI_FONT_BODY, percent);
+			char current_size[32], total_size[32], progress[96];
+			ui_format_file_size((uint64_t)current, current_size, sizeof(current_size));
+			ui_format_file_size((uint64_t)total, total_size, sizeof(total_size));
+			snprintf(progress, sizeof(progress), "%d%%   %s / %s",
+			         (int)(frac * 100.0f), current_size, total_size);
+			draw_centered_text(418, COLOR_MUTED, UI_FONT_BODY, progress);
+			char rate_size[32], eta[32], timing[96];
+			if (bytes_per_second >= 1.0) {
+				ui_format_file_size((uint64_t)bytes_per_second,
+				                    rate_size, sizeof(rate_size));
+			uint64_t remaining = current < total ? total - current : 0ULL;
+				format_eta((uint64_t)((double)remaining / bytes_per_second + 0.5),
+				           eta, sizeof(eta));
+				snprintf(timing, sizeof(timing), "%s/s   ETA %s", rate_size, eta);
+			} else {
+				snprintf(timing, sizeof(timing), "--/s   ETA --");
+			}
+			draw_centered_text(442, COLOR_MUTED, UI_FONT_SMALL, timing);
+		}
+	} else if (download_controls) {
+		/* Chunked responses and servers that reject HEAD still expose useful live
+		 * byte progress. The moving segment explicitly means total size unknown. */
+		float segment_w = 112.0f;
+		float phase = vt_preferences_reduce_motion()
+		            ? 0.5f : (float)(now % 1400000ULL) / 1400000.0f;
+		float segment_x = bar_x - segment_w + phase * (bar_w + segment_w);
+		float left = segment_x < bar_x ? bar_x : segment_x;
+		float right = segment_x + segment_w > bar_x + bar_w
+		            ? bar_x + bar_w : segment_x + segment_w;
+		if (right > left)
+			vita2d_draw_rectangle(left, bar_y, right - left, bar_h, COLOR_BUFFER);
+		if (ui_runtime_font(UI_FONT_BODY)) {
+			char current_size[32], progress[64];
+			ui_format_file_size((uint64_t)current, current_size, sizeof(current_size));
+			snprintf(progress, sizeof(progress),
+			         vt_i18n_str(VT_STR_LOADING_DOWNLOAD_RECEIVED), current_size);
+			draw_centered_text(418, COLOR_MUTED, UI_FONT_BODY, progress);
+			char rate_size[32], timing[64];
+			if (bytes_per_second >= 1.0) {
+				ui_format_file_size((uint64_t)bytes_per_second,
+				                    rate_size, sizeof(rate_size));
+				snprintf(timing, sizeof(timing), "%s/s   ETA --", rate_size);
+			} else {
+				snprintf(timing, sizeof(timing), "--/s   ETA --");
+			}
+			draw_centered_text(442, COLOR_MUTED, UI_FONT_SMALL, timing);
 		}
 	}
 	if (download_controls) {
-		ui_action_button(246, 458, 216, 42, VT_THEME_SURFACE_RAISED, "Start",
+		int pause_x = background_action ? 72 : 246;
+		int button_w = background_action ? 240 : 216;
+		ui_action_button(pause_x, 458, button_w, 42, VT_THEME_SURFACE_RAISED, "Start",
 		                 vt_i18n_str(paused ? VT_STR_NETWORK_DOWNLOAD_RESUME
 		                                  : VT_STR_NETWORK_DOWNLOAD_PAUSE), 0);
-		ui_action_button(498, 458, 216, 42, VT_THEME_SURFACE, "Circle",
+		if (background_action)
+			ui_action_button(360, 458, 240, 42, VT_THEME_SURFACE, "Triangle",
+			                 vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_BACKGROUND), 0);
+		ui_action_button(background_action ? 648 : 498, 458, button_w, 42,
+		                 VT_THEME_SURFACE, "Circle",
 		                 vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORT), 0);
 	} else if (cancellable) {
 		draw_centered_text(total > 0 ? 470 : 402, COLOR_MUTED, UI_FONT_SMALL,
 		                   vt_i18n_str(VT_STR_LOADING_CANCEL_HINT));
 	}
+	if (sidebar && sidebar->animation > 0.01f)
+		ui_sections_sidebar_draw(sidebar);
 
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
@@ -388,7 +522,8 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 
 void ui_loading_present(const char *message) {
 	if (!ui_runtime_is_ready()) return;
-	draw_loading_frame(NULL, message, NULL, NULL, 0, 0, 0);
+	draw_loading_frame(NULL, message, NULL, NULL, 0, 0, 0, NULL, NULL, NULL,
+	                   NULL, 0, NULL);
 }
 
 static int loading_run_internal(const char *query, const char *message,
@@ -397,7 +532,9 @@ static int loading_run_internal(const char *query, const char *message,
 	                            const volatile long *progress_current,
 	                            const volatile long *progress_total,
 	                            volatile int *pause_flag,
-	                            int download_controls) {
+	                            int download_controls,
+	                            UiDownloadProgressReadFn download_progress_read,
+	                            void *download_progress_ctx) {
 	if (!task) return -1;
 
 	if (!ui_runtime_is_ready()) return -1;
@@ -409,6 +546,8 @@ static int loading_run_internal(const char *query, const char *message,
 	state.ctx = ctx;
 	state.result = -1;
 	UiTaskThreadArgs thread_args = { &state };
+	UiDownloadRateState download_rate;
+	memset(&download_rate, 0, sizeof(download_rate));
 
 	SceUID thid = sceKernelCreateThread("VitaMediaDeckUiTask", loading_task_thread,
 	                                    TASK_THREAD_PRIORITY, TASK_THREAD_STACK,
@@ -416,7 +555,10 @@ static int loading_run_internal(const char *query, const char *message,
 	if (thid < 0) {
 		draw_loading_frame(query, message, progress_current, progress_total,
 		                   cancel_flag != NULL, download_controls,
-		                   pause_flag && *pause_flag);
+		                   pause_flag && *pause_flag,
+		                   download_controls ? &download_rate : NULL,
+		                   download_progress_read, download_progress_ctx, NULL, 0,
+		                   NULL);
 		return task(ctx);
 	}
 	ret = sceKernelStartThread(thid, sizeof(thread_args), &thread_args);
@@ -424,7 +566,10 @@ static int loading_run_internal(const char *query, const char *message,
 		sceKernelDeleteThread(thid);
 		draw_loading_frame(query, message, progress_current, progress_total,
 		                   cancel_flag != NULL, download_controls,
-		                   pause_flag && *pause_flag);
+		                   pause_flag && *pause_flag,
+		                   download_controls ? &download_rate : NULL,
+		                   download_progress_read, download_progress_ctx, NULL, 0,
+		                   NULL);
 		return task(ctx);
 	}
 
@@ -432,9 +577,13 @@ static int loading_run_internal(const char *query, const char *message,
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	while (!state.done) {
+		if (download_controls) vt_display_keep_awake_tick();
 		draw_loading_frame(query, message, progress_current, progress_total,
 		                   cancel_flag != NULL, download_controls,
-		                   pause_flag && *pause_flag);
+		                   pause_flag && *pause_flag,
+		                   download_controls ? &download_rate : NULL,
+		                   download_progress_read, download_progress_ctx, NULL, 0,
+		                   NULL);
 
 		if (cancel_flag) {
 			sceCtrlPeekBufferPositive(0, &ctrl, 1);
@@ -475,7 +624,8 @@ int ui_loading_run(const char *message,
 	               const volatile long *progress_current,
 	               const volatile long *progress_total) {
 	return loading_run_internal(NULL, message, task, ctx, cancel_flag,
-	                            progress_current, progress_total, NULL, 0);
+	                            progress_current, progress_total, NULL, 0,
+	                            NULL, NULL);
 }
 
 int ui_loading_run_with_query(const char *query,
@@ -486,34 +636,146 @@ int ui_loading_run_with_query(const char *query,
 	                          const volatile long *progress_current,
 	                          const volatile long *progress_total) {
 	return loading_run_internal(query, message, task, ctx, cancel_flag,
-	                            progress_current, progress_total, NULL, 0);
+	                            progress_current, progress_total, NULL, 0,
+	                            NULL, NULL);
 }
 
 int ui_loading_run_download(const char *message,
 	                        UiLoadingTaskFn task, void *ctx,
 	                        volatile int *pause_flag,
 	                        volatile int *cancel_flag,
-	                        const volatile long *progress_current,
-	                        const volatile long *progress_total) {
+	                        UiDownloadProgressReadFn progress_read,
+	                        void *progress_ctx) {
 	return loading_run_internal(NULL, message, task, ctx, cancel_flag,
-	                            progress_current, progress_total, pause_flag, 1);
+	                            NULL, NULL, pause_flag, 1,
+	                            progress_read, progress_ctx);
 }
 
-void ui_message_show(const char *message, const char *detail, int duration_ms) {
+static void background_status_progress(void *opaque, uint64_t *current,
+	                                   uint64_t *total) {
+	const VtDownloadBackgroundStatus *status = opaque;
+	if (current) *current = status ? status->current : 0;
+	if (total) *total = status ? status->total : 0;
+}
+
+int ui_loading_monitor_background_download(void) {
+	if (!ui_runtime_is_ready()) return -1;
+	UiDownloadRateState rate;
+	memset(&rate, 0, sizeof(rate));
+	SceCtrlData ctrl, previous;
+	memset(&ctrl, 0, sizeof(ctrl));
+	sceCtrlPeekBufferPositive(0, &previous, 1);
+	UiSectionsSidebar sidebar;
+	ui_sections_sidebar_init(&sidebar, UI_SECTION_NETWORK);
+
+	for (;;) {
+		VtDownloadBackgroundStatus status;
+		vt_download_background_status(&status);
+		if (status.state == VT_DOWNLOAD_BACKGROUND_IDLE) {
+			ui_brand_set_loading(0);
+			return -1;
+		}
+		if (status.state != VT_DOWNLOAD_BACKGROUND_RUNNING) {
+			log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+			ui_brand_set_loading(0);
+			if (status.state == VT_DOWNLOAD_BACKGROUND_COMPLETE)
+				ui_message_show_success(
+				    vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_COMPLETE),
+				    status.destination, 2600);
+			else if (status.state == VT_DOWNLOAD_BACKGROUND_ABORTED)
+				ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORTED),
+				                status.destination, 2400);
+			else
+				ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_FAILED),
+				                status.detail[0] ? status.detail :
+				                vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 3000);
+			vt_download_background_acknowledge();
+			return 0;
+		}
+
+		vt_display_keep_awake_tick();
+		draw_loading_frame(NULL, vt_i18n_str(VT_STR_NETWORK_DOWNLOADING),
+		                   NULL, NULL, 1, 1, status.paused, &rate,
+		                   background_status_progress, &status,
+		                   status.title, 1, &sidebar);
+
+		sceCtrlPeekBufferPositive(0, &ctrl, 1);
+		unsigned int pressed = ctrl.buttons & ~previous.buttons;
+		previous = ctrl;
+		UiTouchEvent touch;
+		unsigned int touch_flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
+		int sidebar_was_open = sidebar.open;
+		int section = ui_sections_sidebar_handle_buttons(
+		    &sidebar, &pressed, ctrl.buttons, ctrl.ly);
+		if (sidebar.open) {
+			int touched = ui_sections_sidebar_handle_touch(
+			    &sidebar, touch_flags, touch.x, touch.y);
+			if (touched != UI_SECTION_NONE) section = touched;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
+		ui_sections_sidebar_tick(&sidebar);
+		if (section != UI_SECTION_NONE) {
+			ui_brand_set_loading(0);
+			ui_touch_reset();
+			return UI_LOADING_DOWNLOAD_SECTION_BASE + section;
+		}
+		int page_owns_input = !sidebar_was_open && !sidebar.open &&
+		                      sidebar.animation <= 0.01f;
+		if (!page_owns_input) {
+			pressed = 0;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
+		int tapped_pause = (touch_flags & UI_TOUCH_EVENT_TAP) &&
+		                   ui_touch_hit_rect(touch.x, touch.y, 72, 458, 240, 42);
+		int tapped_background = (touch_flags & UI_TOUCH_EVENT_TAP) &&
+		                        ui_touch_hit_rect(touch.x, touch.y,
+		                                          360, 458, 240, 42);
+		int tapped_abort = (touch_flags & UI_TOUCH_EVENT_TAP) &&
+		                   ui_touch_hit_rect(touch.x, touch.y, 648, 458, 240, 42);
+		if ((pressed & SCE_CTRL_START) || tapped_pause)
+			vt_download_background_toggle_pause();
+		if ((pressed & SCE_CTRL_TRIANGLE) || tapped_background) {
+			ui_brand_set_loading(0);
+			ui_touch_reset();
+			return 1;
+		}
+		if ((pressed & SCE_CTRL_CIRCLE) || tapped_abort ||
+		    touch_is_cancel_hold(touch_flags, &touch))
+			vt_download_background_abort();
+		sceKernelDelayThread(16 * 1000);
+	}
+}
+
+static void message_show_internal(const char *message, const char *detail,
+	                              int duration_ms, int success) {
 	if (duration_ms < 0) duration_ms = 0;
 	if (!ui_runtime_is_ready()) return;
 
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_brand_set_loading(0);
-	ui_chrome_background(COLOR_BG, VT_THEME_DANGER);
+	unsigned int state_color = success ? VT_THEME_SUCCESS : VT_THEME_DANGER;
+	ui_chrome_background(COLOR_BG, state_color);
 	ui_brand_draw_header(NULL);
-	/* Errors stay a full acquisition page: no modal box breaks the app's
-	 * visual continuity. */
+	/* Status stays a full acquisition page: no modal box breaks the app's
+	 * visual continuity. Successful operations use a check instead of the
+	 * error scene's warning mark. */
 	draw_acquisition_frame(480.0f, 226.0f, 112.0f, 72.0f, 112U);
-	vita2d_draw_rectangle(451.0f, 197.0f, 58.0f, 58.0f, VT_THEME_DANGER);
-	vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, COLOR_TEXT);
-	vita2d_draw_rectangle(478.0f, 237.0f, 4.0f, 4.0f, COLOR_TEXT);
+	vita2d_draw_rectangle(451.0f, 197.0f, 58.0f, 58.0f, state_color);
+	if (success) {
+		vita2d_draw_line(465.0f, 226.0f, 476.0f, 238.0f, COLOR_BG);
+		vita2d_draw_line(476.0f, 238.0f, 498.0f, 213.0f, COLOR_BG);
+		vita2d_draw_line(465.0f, 227.0f, 476.0f, 239.0f, COLOR_BG);
+		vita2d_draw_line(476.0f, 239.0f, 498.0f, 214.0f, COLOR_BG);
+	} else {
+		vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, COLOR_TEXT);
+		vita2d_draw_rectangle(478.0f, 237.0f, 4.0f, 4.0f, COLOR_TEXT);
+	}
 	draw_centered_text(312, COLOR_TEXT, UI_FONT_DISPLAY,
 	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_ERROR_MESSAGE));
 	if (detail && detail[0]) {
@@ -536,4 +798,13 @@ void ui_message_show(const char *message, const char *detail, int duration_ms) {
 		elapsed += 16;
 	}
 
+}
+
+void ui_message_show(const char *message, const char *detail, int duration_ms) {
+	message_show_internal(message, detail, duration_ms, 0);
+}
+
+void ui_message_show_success(const char *message, const char *detail,
+	                         int duration_ms) {
+	message_show_internal(message, detail, duration_ms, 1);
 }

@@ -13,6 +13,9 @@ static vita2d_font *g_subtitle_semibold_small = NULL;
 static vita2d_font *g_subtitle_semibold_body = NULL;
 static vita2d_font *g_subtitle_semibold_display = NULL;
 static vita2d_font *g_subtitle_semibold_xlarge = NULL;
+static vita2d_font *g_subtitle_medium_intermediate = NULL;
+static vita2d_font *g_subtitle_semibold_intermediate = NULL;
+static vita2d_font *g_subtitle_scaled[2];
 static vita2d_texture *g_logo = NULL;
 
 int ui_runtime_init(void) {
@@ -75,6 +78,14 @@ void ui_runtime_load_assets(void) {
 		g_subtitle_semibold_xlarge = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_font_small || !g_font_body || !g_font_display)
 		log_printf("ui asset warning: one or more Inter font instances unavailable");
+	if (!g_subtitle_medium_intermediate)
+		g_subtitle_medium_intermediate = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_subtitle_semibold_intermediate)
+		g_subtitle_semibold_intermediate = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	if (!g_subtitle_scaled[0])
+		g_subtitle_scaled[0] = vita2d_load_font_file("app0:fonts/Inter-Medium.ttf");
+	if (!g_subtitle_scaled[1])
+		g_subtitle_scaled[1] = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 }
 
 void ui_runtime_term(void) {
@@ -85,6 +96,14 @@ void ui_runtime_term(void) {
 			g_logo = NULL;
 		}
 		if (g_font_small) vita2d_free_font(g_font_small);
+		if (g_subtitle_medium_intermediate) vita2d_free_font(g_subtitle_medium_intermediate);
+		if (g_subtitle_semibold_intermediate) vita2d_free_font(g_subtitle_semibold_intermediate);
+		g_subtitle_medium_intermediate = NULL;
+		g_subtitle_semibold_intermediate = NULL;
+		for (int i = 0; i < 2; i++) {
+			if (g_subtitle_scaled[i]) vita2d_free_font(g_subtitle_scaled[i]);
+			g_subtitle_scaled[i] = NULL;
+		}
 		if (g_font_body) vita2d_free_font(g_font_body);
 		if (g_font_display) vita2d_free_font(g_font_display);
 		if (g_subtitle_medium_display) vita2d_free_font(g_subtitle_medium_display);
@@ -139,6 +158,8 @@ vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
 	if (variant >= 2)
 		return ui_font_fallback_ready() ? NULL : ui_runtime_font(size);
 	if (variant == 1) {
+		if (size == UI_FONT_SUBTITLE_MEDIUM_LARGE && g_subtitle_semibold_intermediate)
+			return g_subtitle_semibold_intermediate;
 		vita2d_font *semibold = size == UI_FONT_SMALL ? g_subtitle_semibold_small
 		                       : size == UI_FONT_BODY ? g_subtitle_semibold_body
 		                       : size == UI_FONT_SUBTITLE_LARGE
@@ -149,9 +170,19 @@ vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
 	}
 	if (size == UI_FONT_SUBTITLE_LARGE && g_subtitle_medium_display)
 		return g_subtitle_medium_display;
+	if (size == UI_FONT_SUBTITLE_MEDIUM_LARGE && g_subtitle_medium_intermediate)
+		return g_subtitle_medium_intermediate;
 	if (size == UI_FONT_SUBTITLE_EXTRA_LARGE && g_subtitle_medium_xlarge)
 		return g_subtitle_medium_xlarge;
 	return ui_runtime_font(size);
+}
+
+vita2d_font *ui_runtime_subtitle_scaled_font(int variant, unsigned int size) {
+	/* Small previews must never populate the fullscreen/body glyph atlases. */
+	vita2d_font *fallback = ui_runtime_subtitle_font(variant, size);
+	if (variant >= 2) return fallback;
+	return g_subtitle_scaled[variant == 1] ? g_subtitle_scaled[variant == 1]
+	                                      : fallback;
 }
 
 vita2d_texture *ui_runtime_logo(void) {

@@ -17,10 +17,14 @@
 #include <psp2/kernel/threadmgr.h>
 #include <vita2d.h>
 
+#include "app_paths.h"
 #include "common/text_log.h"
 #include "media/audio_volume.h"
+#include "media/live_audio.h"
+#include "network/http_audio_stream.h"
 #include "media/avplayer_init.h"
 #include "media/vita_decoder.h"
+#include "ui/subtitle.h"
 #include "settings/preferences.h"
 #include "system/background_audio.h"
 
@@ -37,7 +41,7 @@ typedef struct {
 	volatile int done;
 	volatile int cancel;
 	volatile int activate;
-	volatile unsigned int toggle_serial;
+	volatile int desired_paused;
 	volatile unsigned int seek_serial;
 	uint64_t seek_position_ms;
 	uint64_t start_position_ms;
@@ -45,9 +49,15 @@ typedef struct {
 	int mp3_source;
 	int flac_source;
 	int decoder_source;
+	VtDecoderStreamHandle podcast_stream;
+	volatile int podcast_io_lock;
 	int remote_video_source;
 	VtNetworkStreamFactory remote_factory;
 	int audio_track;
+	int subtitle_track;
+	int external_subtitle_count;
+	VtNetworkStreamFactory subtitle_factories[VT_DECODER_MAX_SUBTITLE_TRACKS];
+	VtDecoderExternalSubtitle external_subtitles[VT_DECODER_MAX_SUBTITLE_TRACKS];
 	volatile int player_lock;
 	SceAvPlayerHandle active_player;
 	VtDecoderPlayer *active_decoder;
@@ -187,6 +197,13 @@ static off_t vita_mpg123_seek(int fd, off_t offset, int whence) {
 	return ret < 0 ? (off_t)-1 : (off_t)ret;
 }
 
+static mpg123_ssize_t podcast_mpg_read(void *ctx,void *buffer,size_t size) {
+	VtDecoderStreamHandle *s=ctx;return s->read(s->opaque,buffer,size);
+}
+static off_t podcast_mpg_seek(void *ctx,off_t offset,int whence) {
+	VtDecoderStreamHandle *s=ctx;int64_t n=s->seek(s->opaque,offset,whence);
+	return n<0 || n>LONG_MAX?-1:(off_t)n;
+}
 static int play_mp3(BackgroundPlaybackJob *job) {
 	if (mpg123_init() != MPG123_OK) return -1;
 	int error = MPG123_OK;
@@ -204,10 +221,14 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	mpg123_rates(&rates, &rate_count);
 	for (size_t i = 0; i < rate_count; i++)
 		mpg123_format(decoder, rates[i], MPG123_STEREO, MPG123_ENC_SIGNED_16);
-	if (mpg123_replace_reader(decoder, vita_mpg123_read, vita_mpg123_seek) != MPG123_OK)
-		goto done;
-	fd = sceIoOpen(job->input_path, SCE_O_RDONLY, 0);
-	if (fd < 0 || mpg123_open_fd(decoder, fd) != MPG123_OK) goto done;
+	if(job->remote_video_source==2) {
+		if(mpg123_replace_reader_handle(decoder,podcast_mpg_read,podcast_mpg_seek,NULL)!=MPG123_OK ||
+		   mpg123_open_handle(decoder,&job->podcast_stream)!=MPG123_OK)goto done;
+	} else {
+		if (mpg123_replace_reader(decoder, vita_mpg123_read, vita_mpg123_seek) != MPG123_OK)goto done;
+		fd = sceIoOpen(job->input_path, SCE_O_RDONLY, 0);
+		if (fd < 0 || mpg123_open_fd(decoder, fd) != MPG123_OK) goto done;
+	}
 	long rate = 0;
 	int channels = 0, encoding = 0;
 	if (mpg123_getformat(decoder, &rate, &channels, &encoding) != MPG123_OK ||
@@ -228,11 +249,14 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	publish_audio_metadata(job, mpeg_codec, bitrate_kbps, (uint32_t)rate,
 	                       source_channels, 0);
 	off_t length = mpg123_length(decoder);
-	if (length < 0 && mpg123_scan(decoder) == MPG123_OK) length = mpg123_length(decoder);
+	if (length < 0 && job->remote_video_source!=2 && mpg123_scan(decoder) == MPG123_OK) length = mpg123_length(decoder);
 	if (length > 0 && !job->snapshot.duration_ms) {
 		snapshot_lock();
 		job->snapshot.duration_ms = (uint64_t)length * 1000ULL / (uint64_t)rate;
 		snapshot_unlock();
+	}
+	if(length<0 && job->remote_video_source==2 && bitrate_kbps && job->podcast_stream.size>0) {
+		snapshot_lock();job->snapshot.duration_ms=(uint64_t)job->podcast_stream.size*8/bitrate_kbps;snapshot_unlock();
 	}
 	uint64_t start_position_ms = player_start_position(job);
 	mpg123_seek(decoder,
@@ -244,18 +268,16 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	                           SCE_AUDIO_OUT_MODE_STEREO);
 	if (port < 0) goto done;
 	set_state(VT_BACKGROUND_PLAYING, 0);
-	unsigned int observed_toggle = job->toggle_serial;
 	player_lock(job);
 	unsigned int observed_seek = job->seek_serial;
 	player_unlock(job);
 	int applied_volume = -1;
-	int paused = 0;
+	int paused = -1;
 	uint64_t last_power_tick = 0;
 	unsigned char pcm[BACKGROUND_AUDIO_GRAIN * 2 * sizeof(int16_t)];
 	while (!job->cancel) {
-		if (observed_toggle != job->toggle_serial) {
-			observed_toggle = job->toggle_serial;
-			paused = !paused;
+		if (paused != __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE)) {
+			paused = __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE);
 			set_state(paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
 		}
 		unsigned int pending_seek_serial;
@@ -580,16 +602,14 @@ static int play_flac(BackgroundPlaybackJob *job) {
 		goto done;
 	}
 	set_state(VT_BACKGROUND_PLAYING, 0);
-	unsigned int observed_toggle = job->toggle_serial;
 	player_lock(job);
 	unsigned int observed_seek = job->seek_serial;
 	player_unlock(job);
-	int paused = 0;
+	int paused = -1;
 	ret = 0;
 	while (!job->cancel) {
-		if (observed_toggle != job->toggle_serial) {
-			observed_toggle = job->toggle_serial;
-			paused = !paused;
+		if (paused != __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE)) {
+			paused = __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE);
 			set_state(paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
 		}
 		unsigned int pending_seek_serial;
@@ -665,9 +685,23 @@ static int seek_player_ready(SceAvPlayerHandle player, uint64_t target_ms,
 	return -1;
 }
 
+static int podcast_av_open(void *ctx,const char *name) {(void)name;return ((BackgroundPlaybackJob*)ctx)->podcast_stream.opaque?0:-1;}
+static int podcast_av_close(void *ctx) {(void)ctx;return 0;}
+static uint64_t podcast_av_size(void *ctx) {BackgroundPlaybackJob *job=ctx;return job->podcast_stream.size>0?(uint64_t)job->podcast_stream.size:0;}
+static int podcast_av_read(void *ctx,uint8_t *buffer,uint64_t offset,uint32_t size) {
+	BackgroundPlaybackJob *job=ctx;VtDecoderStreamHandle *s=&job->podcast_stream;
+	if(offset>INT64_MAX||job->cancel)return -1;
+	while(__sync_lock_test_and_set(&job->podcast_io_lock,1)) {
+		if(job->cancel)return -1;
+		sceKernelDelayThread(1000);
+	}
+	int ret=s->seek(s->opaque,(int64_t)offset,SEEK_SET)<0?-1:s->read(s->opaque,buffer,size);
+	__sync_lock_release(&job->podcast_io_lock);return ret;
+}
 static int play_av_source(BackgroundPlaybackJob *job) {
 	SceAvPlayerHandle player = AVPLAYER_INVALID_HANDLE;
-	int ret = media_init(&player, NULL);
+	SceAvPlayerFileReplacement replacement={job,podcast_av_open,podcast_av_close,podcast_av_read,podcast_av_size};
+	int ret = media_init(&player, job->remote_video_source==2?&replacement:NULL);
 	if (ret < 0) return ret;
 	ret = sceAvPlayerAddSource(player, job->input_path);
 	if (ret < 0) {
@@ -713,10 +747,9 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 	set_state(VT_BACKGROUND_PLAYING, 0);
 	SceAvPlayerFrameInfo frame;
 	memset(&frame, 0, sizeof(frame));
-	unsigned int observed_toggle = job->toggle_serial;
 	unsigned int observed_seek = job->seek_serial;
 	int applied_volume = -1;
-	int paused = 0;
+	int paused = -1;
 	int16_t *boost_buffer = NULL;
 	uint32_t boost_capacity = 0;
 	uint64_t last_snapshot = 0;
@@ -737,9 +770,8 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 				snapshot_unlock();
 			}
 		}
-		if (observed_toggle != job->toggle_serial) {
-			observed_toggle = job->toggle_serial;
-			paused = !paused;
+		if (paused != __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE)) {
+			paused = __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE);
 			player_lock(job);
 			if (paused) sceAvPlayerPause(player);
 			else sceAvPlayerResume(player);
@@ -842,18 +874,24 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		return -1;
 	}
 	VtDecoderStreamFactory factory;
-	if (job->remote_video_source) factory = job->remote_factory.factory;
+	if (job->remote_video_source == 2) vt_http_audio_stream_factory(job->input_path, &factory);
+	else if (job->remote_video_source) factory = job->remote_factory.factory;
 	else vt_decoder_file_stream_factory(job->input_path, &factory);
 	uint64_t start_position_ms = player_start_position(job);
 	VtDecoderPlayerConfig config = {
 		.stream = factory,
 		.preferred_backend = VT_DECODER_BACKEND_NONE,
 		.audio_track = job->audio_track,
-		.subtitle_track = 0,
+		.subtitle_track = job->subtitle_track,
+		.start_paused = __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE),
+		.external_subtitle_count = job->external_subtitle_count,
+		.external_subtitles_replace_embedded = job->external_subtitle_count > 0,
 		.start_position_ms = start_position_ms,
 		.volume_percent = vt_audio_volume_percent(),
 		.cancel_flag = &job->cancel
 	};
+	memcpy(config.external_subtitles, job->external_subtitles,
+	       sizeof(config.external_subtitles));
 	set_state(VT_BACKGROUND_BUFFERING, 0);
 	/* Publish the allocated decoder before its cancellable open. Draw remains
 	 * disabled until local_video_source is set, but stop can already propagate to
@@ -874,11 +912,10 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 	job->local_video_source = 1;
 	player_unlock(job);
 	set_state(VT_BACKGROUND_PLAYING, 0);
-	unsigned int observed_toggle = job->toggle_serial;
 	player_lock(job);
 	unsigned int observed_seek = job->seek_serial;
 	player_unlock(job);
-	int paused = 0;
+	int paused = -1;
 	uint64_t last_power_tick = 0;
 	while (!job->cancel) {
 		if (observed_seek != job->seek_serial) {
@@ -905,9 +942,8 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 			player_unlock(job);
 			if (ret < 0) break;
 		}
-		if (observed_toggle != job->toggle_serial) {
-			observed_toggle = job->toggle_serial;
-			paused = !paused;
+		if (paused != __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE)) {
+			paused = __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE);
 			player_lock(job);
 			vt_decoder_set_paused(decoder, paused);
 			player_unlock(job);
@@ -916,7 +952,7 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		/* With animated mini-player video disabled, no scene calls present_rect().
 		 * Keep consuming frames against the presentation clock so the bounded video
 		 * queue cannot fill and stall the decoder/audio pipeline. */
-		if (!paused && !vt_preferences_mini_player_animated()) {
+		if (!paused && (!vt_preferences_mini_player_animated() || job->remote_video_source == 2)) {
 			player_lock(job);
 			if (!job->video_in_gpu && job->local_video_source &&
 			    job->active_decoder == decoder)
@@ -960,12 +996,71 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 	return job->cancel ? -1 : ret;
 }
 
+static void live_update(void *ctx, unsigned rate, unsigned bitrate, uint64_t position) {
+	BackgroundPlaybackJob *job = ctx;
+	set_state(__atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE)
+	    ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING, 0);
+	publish_audio_metadata(job, "MP3 / Live", bitrate, rate, 2, 16);
+	snapshot_lock();
+	job->snapshot.position_ms = position;
+	snapshot_unlock();
+}
+
+static void live_buffering(void *ctx) {
+	(void)ctx;
+	set_state(VT_BACKGROUND_BUFFERING, 0);
+}
+
+static void live_metadata(void *ctx, const char *station, const char *title) {
+	BackgroundPlaybackJob *job=ctx;
+	snapshot_lock();
+	/* The catalogue station name already occupies the title row. Preserve the
+	 * whole song/programme field instead of prefixing another long station name. */
+	copy_text(job->snapshot.channel,sizeof(job->snapshot.channel),
+	    title&&*title?title:station&&*station?station:"Radio");
+	snapshot_unlock();
+}
+void vt_background_playback_set_audio_details(const char *author, const char *artwork) {
+	snapshot_lock();
+	copy_text(g_background.snapshot.channel,sizeof(g_background.snapshot.channel),author);
+	copy_text(g_background.snapshot.thumbnail_url,sizeof(g_background.snapshot.thumbnail_url),artwork);
+	snapshot_unlock();
+}
+static int play_radio(BackgroundPlaybackJob *job) {
+	VtLiveAudioConfig config = {job->input_path, &job->cancel,
+	    &job->desired_paused, live_update, job, live_buffering, live_metadata};
+	set_state(VT_BACKGROUND_BUFFERING, 0);
+	return vt_live_audio_run(&config);
+}
+
+static int play_podcast(BackgroundPlaybackJob *job) {
+	VtDecoderStreamFactory factory;vt_http_audio_stream_factory(job->input_path,&factory);
+	int ret=factory.open_cancelable(factory.opaque,&job->podcast_stream,&job->cancel);
+	if(ret<0)return ret;
+	unsigned char probe[12];int bytes=job->podcast_stream.read(job->podcast_stream.opaque,probe,sizeof(probe));
+	int64_t rewind = bytes >= 8 ? job->podcast_stream.seek(job->podcast_stream.opaque,0,SEEK_SET) : -1;
+	log_printf("podcast playback: probe_bytes=%d rewind=%lld size=%lld\n",
+	    bytes, (long long)rewind, (long long)job->podcast_stream.size);
+	if(bytes>=8 && rewind>=0) {
+		/* MP3 uses mpg123; AAC/M4A uses AvPlayer over the same TLS-verified cursor.
+		 * Neither path requires a fake H.264 track or a complete local download. */
+		int mp4=!memcmp(probe+4,"ftyp",4);
+		int aac=probe[0]==0xff && (probe[1]&0xf6)==0xf0;
+		log_printf("podcast playback: format=%s\n", mp4 ? "MP4" : aac ? "AAC" : "MP3 candidate");
+		ret=mp4||aac?play_av_source(job):play_mp3(job);
+	} else ret=-1;
+	log_printf("podcast playback: result=%d cancelled=%d\n", ret, !!job->cancel);
+	job->podcast_stream.close(job->podcast_stream.opaque);memset(&job->podcast_stream,0,sizeof(job->podcast_stream));
+	return ret;
+}
 static int background_thread(SceSize args, void *argp) {
 	(void)args;
 	BackgroundPlaybackJob *job = *(void **)argp;
 	set_state(VT_BACKGROUND_READY, 0);
 	while (!job->cancel && !job->activate) sceKernelDelayThread(10 * 1000);
 	int ret = job->cancel ? -1
+	        : job->snapshot.is_live ? play_radio(job)
+	        : job->remote_video_source==2 ? play_podcast(job)
 	        : job->mp3_source ? play_mp3(job)
 	        : job->flac_source ? play_flac(job)
 	        : job->decoder_source ? play_decoder_source(job)
@@ -973,6 +1068,8 @@ static int background_thread(SceSize args, void *argp) {
 	if (ret < 0 && !job->cancel) {
 		set_state(VT_BACKGROUND_ERROR, ret);
 		log_printf("local background playback failed: 0x%08X\n", (unsigned)ret);
+		if (job->remote_video_source == 2 || job->snapshot.is_live)
+			log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	} else if (!job->cancel) {
 		snapshot_lock();
 		job->snapshot.visible = 0;
@@ -984,6 +1081,9 @@ static int background_thread(SceSize args, void *argp) {
 	 * longer needed by this worker and must not survive natural completion. */
 	memset(&job->remote_factory.credential, 0,
 	       sizeof(job->remote_factory.credential));
+	for (int i = 0; i < VT_DECODER_MAX_SUBTITLE_TRACKS; i++)
+		memset(&job->subtitle_factories[i].credential, 0,
+		       sizeof(job->subtitle_factories[i].credential));
 	job->done = 1;
 	return sceKernelExitThread(0);
 }
@@ -1008,7 +1108,12 @@ static int prepare_local(const char *media_path, const char *media_id,
 	job->thid = -1;
 	job->active_player = AVPLAYER_INVALID_HANDLE;
 	job->mp3_source = path_is_mp3(media_path);
+	job->snapshot.is_live = decoder_source == 2;
+	int podcast = decoder_source == 3;
+	if (podcast) { decoder_source = 0; job->remote_video_source = 2; }
+	if (job->snapshot.is_live) decoder_source = 0;
 	job->flac_source = path_is_flac(media_path);
+	if (podcast) job->mp3_source = job->flac_source = 0;
 	job->decoder_source = decoder_source;
 	job->audio_track = audio_track;
 	copy_text(job->input_path, sizeof(job->input_path), media_path);
@@ -1038,7 +1143,7 @@ static int prepare_local(const char *media_path, const char *media_id,
 	else if (path_suffix_ci(media_path, ".wav"))
 		copy_text(job->snapshot.audio_codec,
 		          sizeof(job->snapshot.audio_codec), "PCM");
-	job->snapshot.is_video = decoder_source != 0;
+	job->snapshot.is_video = decoder_source != 0 && !podcast;
 	job->snapshot.state = VT_BACKGROUND_PREPARING;
 	job->thid = sceKernelCreateThread("VitaMediaDeckLocalAudio", background_thread,
 	                                  BACKGROUND_THREAD_PRIORITY,
@@ -1061,6 +1166,17 @@ int vt_background_playback_prepare_local(const char *media_path,
 	                                     uint64_t duration_ms) {
 	return prepare_local(media_path, media_id, title, artist, artwork_path,
 	                     duration_ms, 0, 0);
+}
+
+int vt_background_playback_prepare_radio(const char *url, const char *title) {
+	if (!url || strlen(url) >= sizeof(g_background.input_path) ||
+	    (strncmp(url, "https://", 8) && strncmp(url, "http://", 7))) return -1;
+	return prepare_local(url, url, title, "Internet radio", NULL, 0, 2, 0);
+}
+
+int vt_background_playback_prepare_podcast(const char *url, const char *title) {
+	if (!url || strlen(url) >= sizeof(g_background.input_path)) return -1;
+	return prepare_local(url, url, title, "Podcast", NULL, 0, 3, -1);
 }
 
 int vt_background_playback_prepare_local_video(const char *media_path,
@@ -1127,10 +1243,11 @@ int vt_background_playback_prepared(void) {
 	return g_background.thid >= 0 && !g_background.done;
 }
 
-int vt_background_playback_activate(uint64_t start_position_ms) {
+int vt_background_playback_activate_state(uint64_t start_position_ms, int paused) {
 	if (g_background.thid < 0 || g_background.done) return -1;
 	player_lock(&g_background);
 	g_background.start_position_ms = start_position_ms;
+	__atomic_store_n(&g_background.desired_paused, paused != 0, __ATOMIC_RELEASE);
 	__sync_synchronize();
 	g_background.activate = 1;
 	player_unlock(&g_background);
@@ -1143,13 +1260,49 @@ int vt_background_playback_activate(uint64_t start_position_ms) {
 	return 0;
 }
 
+int vt_background_playback_activate(uint64_t start_position_ms) {
+	return vt_background_playback_activate_state(start_position_ms, 0);
+}
+
+int vt_background_playback_is_paused(void) {
+	return __atomic_load_n(&g_background.desired_paused, __ATOMIC_ACQUIRE);
+}
+
+void vt_background_playback_configure_video(int subtitle_track,
+                                            const VtJellyfinMetadata *metadata) {
+	BackgroundPlaybackJob *job = &g_background;
+	if (job->activate || !job->decoder_source) return;
+	job->subtitle_track = subtitle_track;
+	if (!job->remote_video_source || !metadata || !metadata->media_source_id[0]) return;
+	for (int i = 0; i < metadata->external_subtitle_count &&
+	                i < VT_JELLYFIN_MAX_EXTERNAL_SUBTITLES; i++) {
+		int slot = job->external_subtitle_count;
+		if (slot >= VT_DECODER_MAX_SUBTITLE_TRACKS) break;
+		const VtJellyfinSubtitleTrack *track = &metadata->external_subtitles[i];
+		VtNetworkStreamFactory *remote = &job->remote_factory;
+		if (vt_network_jellyfin_subtitle_stream_factory_init(
+		        &job->subtitle_factories[slot], &remote->source, &remote->credential,
+		        remote->path, metadata->media_source_id, track->stream_index) < 0) continue;
+		VtDecoderExternalSubtitle *external = &job->external_subtitles[slot];
+		external->stream = job->subtitle_factories[slot].factory;
+		external->info.stream_index = 0;
+		external->info.is_default = track->is_default;
+		copy_text(external->info.language, sizeof(external->info.language), track->language);
+		copy_text(external->info.title, sizeof(external->info.title), track->title);
+		copy_text(external->info.codec, sizeof(external->info.codec),
+		          track->codec[0] ? track->codec : "subrip");
+		job->external_subtitle_count++;
+	}
+}
+
 void vt_background_playback_toggle_pause(void) {
 	if (g_background.thid >= 0 && !g_background.done && g_background.activate)
-		__sync_add_and_fetch(&g_background.toggle_serial, 1);
+		__atomic_fetch_xor(&g_background.desired_paused, 1, __ATOMIC_ACQ_REL);
 }
 
 void vt_background_playback_seek_to(uint64_t position_ms) {
 	BackgroundPlaybackJob *job = &g_background;
+	if (job->snapshot.is_live) return;
 	if (job->thid < 0 || job->done || !job->activate) return;
 	snapshot_lock();
 	uint64_t duration = job->snapshot.duration_ms;
@@ -1226,6 +1379,9 @@ void vt_background_playback_stop(void) {
 	}
 	memset(&g_background.remote_factory.credential, 0,
 	       sizeof(g_background.remote_factory.credential));
+	for (int i = 0; i < VT_DECODER_MAX_SUBTITLE_TRACKS; i++)
+		memset(&g_background.subtitle_factories[i].credential, 0,
+		       sizeof(g_background.subtitle_factories[i].credential));
 	memset(&g_background.snapshot, 0, sizeof(g_background.snapshot));
 }
 
@@ -1237,6 +1393,9 @@ int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out) {
 	if (!out) return 0;
 	snapshot_lock();
 	*out = g_background.snapshot;
+	out->paused = vt_background_playback_is_paused();
+	if (out->state == VT_BACKGROUND_PLAYING || out->state == VT_BACKGROUND_PAUSED)
+		out->state = out->paused ? VT_BACKGROUND_PAUSED : VT_BACKGROUND_PLAYING;
 	snapshot_unlock();
 	return out->visible;
 }
@@ -1279,6 +1438,12 @@ int vt_background_playback_draw_video(float x, float y,
 		int drew = vt_decoder_present_rect(job->active_decoder, x, y,
 		                                  width, height, 0);
 		if (drew > 0) {
+			VtDecoderPlayerStatus status;
+			vt_decoder_get_status(job->active_decoder, &status);
+			char subtitle[1024];
+			if (vt_decoder_subtitle_text(job->active_decoder, status.position_ms,
+			                             subtitle, sizeof(subtitle)) > 0)
+				ui_subtitle_draw(subtitle, x, y, width, height);
 			__sync_synchronize();
 			job->video_in_gpu = 1;
 			__sync_synchronize();

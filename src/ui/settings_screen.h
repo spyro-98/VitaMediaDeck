@@ -7,6 +7,6 @@ int ui_settings_screen(void);
 
 /* Scrollable controls map shared by the Settings tab and the one-time
  * startup onboarding shown after a fresh install or 1.0 -> 1.0.1 upgrade. */
-void ui_settings_show_controls_reference(void);
+int ui_settings_show_controls_reference(void);
 
 #endif /* VITAMEDIADECK_UI_SETTINGS_SCREEN_H */

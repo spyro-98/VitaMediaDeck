@@ -21,6 +21,8 @@
 #include "media/music_metadata.h"
 #include "media/video_thumbnail.h"
 #include "ui/brand.h"
+#include "ui/home_tabs.h"
+#include "ui/online_audio_screen.h"
 #include "ui/components.h"
 #include "ui/focus_glow.h"
 #include "ui/format.h"
@@ -120,6 +122,7 @@ typedef struct {
 	uint32_t video_count;
 	uint32_t audio_count;
 	uint32_t image_count;
+	uint32_t podcast_count;
 } LocalMediaIndexHeader;
 
 static VtLocalMediaItem g_items[LOCAL_PAGE_ITEMS];
@@ -127,8 +130,16 @@ static LocalMediaIndexHeader g_index;
 static int g_page_filter = -1;
 static int g_page_start = -1;
 static int g_page_count;
+static int g_catalog_dirty;
+static int g_resume_actions;
+static int g_saved_filter, g_saved_selected, g_saved_top;
+static int g_saved_storage, g_saved_sort;
 
-#define LOCAL_ROOT_COUNT 12
+void ui_local_media_cache_invalidate(void) {
+	g_catalog_dirty = 1;
+}
+
+#define LOCAL_ROOT_COUNT 16
 typedef struct {
 	const char *path;
 	int external;
@@ -170,7 +181,9 @@ static const struct {
 	{ "ux0:photo", 0, 4 }, { "ux0:download", 0, 5 },
 	{ "uma0:video", 1, 0 }, { "uma0:movies", 1, 1 },
 	{ "uma0:music", 1, 2 }, { "uma0:picture", 1, 3 },
-	{ "uma0:photo", 1, 4 }, { "uma0:download", 1, 5 }
+	{ "uma0:photo", 1, 4 }, { "uma0:download", 1, 5 },
+	{ "ux0:podcast", 0, 6 }, { "uma0:podcast", 1, 6 },
+	{ "ux0:podcasts", 0, 6 }, { "uma0:podcasts", 1, 6 }
 };
 
 static const char *root_kind_name(int kind) {
@@ -180,6 +193,7 @@ static const char *root_kind_name(int kind) {
 		case 2: return vt_i18n_str(VT_STR_LOCAL_MEDIA_ROOT_MUSIC);
 		case 3: return vt_i18n_str(VT_STR_LOCAL_MEDIA_ROOT_PICTURES);
 		case 4: return vt_i18n_str(VT_STR_LOCAL_MEDIA_ROOT_PHOTOS);
+		case 6: return "Podcasts";
 		default: return vt_i18n_str(VT_STR_LOCAL_MEDIA_ROOT_DOWNLOADS);
 	}
 }
@@ -350,10 +364,14 @@ static int root_view_compare(const void *left, const void *right) {
 
 static void rebuild_root_view(int type_filter, int storage_filter,
 	                          int sort_mode) {
+	int podcasts = type_filter == 4;
+	if (podcasts) type_filter = 2;
 	g_root_view_count = 0;
 	g_root_sort_mode = sort_mode;
 	for (int i = 0; i < LOCAL_ROOT_COUNT; i++) {
 		LocalMediaRoot *root = &g_roots[i];
+		if (podcasts && root->kind != 6) continue;
+		if (!podcasts && type_filter == 2 && root->kind == 6) continue;
 		if (storage_filter == 1 && root->external) continue;
 		if (storage_filter == 2 && !root->external) continue;
 		uint32_t count = type_filter
@@ -652,7 +670,7 @@ static int scan_media(LocalMediaIndexHeader *result_index) {
 		return -1;
 	}
 	memcpy(index.magic, "VTLOCAL6", 8);
-	index.version = 7;
+	index.version = 8;
 	index.record_size = sizeof(VtLocalMediaItem);
 	/* Reserve the header, then append video, audio, and image groups. */
 	sceIoWrite(final_fd, &index, sizeof(index));
@@ -696,6 +714,12 @@ static int scan_media(LocalMediaIndexHeader *result_index) {
 		                        &index.video_count, &index.audio_count,
 		                        &index.image_count,
 	                        &index.total_count);
+	uint32_t music_count = index.audio_count;
+	for (int i = 12; i < LOCAL_ROOT_COUNT; i++)
+		scan_directory_to_index(g_root_specs[i].path, 0, 1U << (VT_LOCAL_MEDIA_AUDIO - 1),
+		    video_fd, audio_fd, image_fd, &index.video_count, &index.audio_count,
+		    &index.image_count, &index.total_count);
+	index.podcast_count = index.audio_count - music_count;
 	sceIoSyncByFd(video_fd, 0); sceIoClose(video_fd);
 	sceIoSyncByFd(audio_fd, 0); sceIoClose(audio_fd);
 	sceIoSyncByFd(image_fd, 0); sceIoClose(image_fd);
@@ -739,7 +763,7 @@ static int local_index_load(LocalMediaIndexHeader *out) {
 	uint64_t expected = sizeof(header) +
 	                    (uint64_t)header.total_count * sizeof(VtLocalMediaItem);
 	if (bytes != (int)sizeof(header) || memcmp(header.magic, "VTLOCAL6", 8) ||
-	    header.version != 7 || header.record_size != sizeof(VtLocalMediaItem) ||
+	    header.version != 8 || header.podcast_count > header.audio_count || header.record_size != sizeof(VtLocalMediaItem) ||
 	    header.total_count > LOCAL_MAX_ITEMS || grouped != header.total_count ||
 	    expected != (uint64_t)stat.st_size) return -1;
 	*out = header;
@@ -806,15 +830,28 @@ static int local_scan_finish(void) {
 	return ret == 0 ? 1 : -1;
 }
 
+/* A scan started before a file operation may still contain the old path.
+ * Retire it before rebuilding, keeping the loading UI responsive throughout. */
+static int local_mutation_rescan(void *ctx) {
+	if (g_scan_job.thid >= 0) {
+		sceKernelWaitThreadEnd(g_scan_job.thid, NULL, NULL);
+		sceKernelDeleteThread(g_scan_job.thid);
+		g_scan_job.thid = -1;
+	}
+	return scan_media((LocalMediaIndexHeader *)ctx);
+}
+
 static int filtered_count(int filter) {
 	if (filter == 1) return (int)g_index.video_count;
-	if (filter == 2 || filter == 4) return (int)g_index.audio_count;
+	if (filter == 2) return (int)(g_index.audio_count - g_index.podcast_count);
+	if (filter == 4) return (int)g_index.podcast_count;
 	if (filter == 3) return (int)g_index.image_count;
 	return (int)g_index.total_count;
 }
 
 static uint32_t filter_first_record(int filter) {
-	if (filter == 2 || filter == 4) return g_index.video_count;
+	if (filter == 2) return g_index.video_count;
+	if (filter == 4) return g_index.video_count + g_index.audio_count - g_index.podcast_count;
 	if (filter == 3) return g_index.video_count + g_index.audio_count;
 	return 0;
 }
@@ -889,11 +926,11 @@ static const char *sort_mode_name(int mode) {
 int ui_local_media_next_audio(const char *current_path, int direction,
 	                          int random, VtLocalMediaItem *out) {
 	if (!out) return -1;
-	/* Internal filter 4 aliases the complete local audio group. */
-	int count = filtered_count(4), current = -1;
+	int filter=current_path && (strstr(current_path,":podcast/")||strstr(current_path,":podcasts/"))?4:2;
+	int count = filtered_count(filter), current = -1;
 	if (count <= 0) return -1;
 	for (int i = 0; current_path && i < count; i++) {
-		int slot = filtered_index(4, i);
+		int slot = filtered_index(filter, i);
 		if (slot >= 0 && strcmp(g_items[slot].path, current_path) == 0) {
 			current = i;
 			break;
@@ -907,7 +944,7 @@ int ui_local_media_next_audio(const char *current_path, int direction,
 		if (current < 0) current = direction < 0 ? 0 : count - 1;
 		next = (current + (direction < 0 ? -1 : 1) + count) % count;
 	}
-	int slot = filtered_index(4, next);
+	int slot = filtered_index(filter, next);
 	if (slot < 0) return -1;
 	*out = g_items[slot];
 	return 0;
@@ -927,6 +964,25 @@ static unsigned int media_accent(const VtLocalMediaItem *item) {
 	if (item && item->type == VT_LOCAL_MEDIA_AUDIO) return VT_THEME_BLUE_LIGHT;
 	if (item && item->type == VT_LOCAL_MEDIA_IMAGE) return VT_THEME_SPECTRAL;
 	return VT_THEME_BLUE_BRIGHT;
+}
+
+static const char *media_preview_path(const VtLocalMediaItem *item) {
+	if (!item) return NULL;
+	if (item->artwork_path[0]) return item->artwork_path;
+	/* Folder catalogue entries intentionally use their selected representative.
+	 * Flat video entries without sidecar artwork still have a valid thumbnail
+	 * source: the movie itself. */
+	if (!item->is_directory &&
+	    (item->type == VT_LOCAL_MEDIA_VIDEO ||
+	     item->type == VT_LOCAL_MEDIA_IMAGE))
+		return item->path;
+	return NULL;
+}
+
+static uint64_t media_preview_size(const VtLocalMediaItem *item,
+	                               const char *preview_path) {
+	if (!item || !preview_path) return 0;
+	return item->artwork_path[0] ? item->artwork_size : item->size;
 }
 
 static const char *media_type_name(const VtLocalMediaItem *item) {
@@ -993,36 +1049,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	                     (!sidebar || (!sidebar->open &&
 	                                  sidebar->animation <= 0.01f));
 	int content_has_focus = page_has_focus && !focus_tabs;
-	char summary[64];
-	snprintf(summary, sizeof(summary), vt_i18n_str(VT_STR_LOCAL_MEDIA_SUMMARY),
-	         g_index.video_count, g_index.audio_count, g_index.image_count);
-	ui_scene_identity(42, 68, 338, "LIB/01",
-	                  vt_i18n_str(VT_STR_HOME_TITLE), summary);
-	const char *tabs[4] = {
-		vt_i18n_str(VT_STR_LOCAL_MEDIA_ALL),
-		vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_VIDEO),
-		vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_AUDIO),
-		vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_IMAGES)
-	};
-	if (page_has_focus && focus_tabs && focus_motion)
-		ui_focus_glow_draw(focus_motion->x, focus_motion->y,
-		                   focus_motion->width, focus_motion->height,
-		                   sceKernelGetProcessTimeWide(), 64, 112);
-	for (int i = 0; i < 4; i++) {
-		int x = TAB_X + i * TAB_STEP;
-		ui_panel(x, 68, TAB_W, 38,
-		         filter == i ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE,
-		         filter == i ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
-		if (filter == i)
-			vita2d_draw_rectangle(x + 10, 103, TAB_W - 20, 2, VT_THEME_SIGNAL);
-		if (small) {
-			char tab_text[128];
-			clip_text(small, UI_FONT_SMALL, tabs[i], tab_text, TAB_W - 16);
-			ui_font_draw_text(small, x + 8, 94,
-			                  filter == i ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
-			                  UI_FONT_SMALL, tab_text);
-		}
-	}
+	ui_home_tabs_draw(page_has_focus && focus_tabs);
 	int count = screen_count(filter, flattened);
 	int viewport_bottom = local_viewport_bottom();
 	if (count == 0) {
@@ -1053,14 +1080,16 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			ui_panel(LIST_X, row_y, LIST_W, ROW_H - 6,
 			         VT_THEME_SURFACE, media_accent(item),
 			         0);
-			vita2d_texture *art = item->artwork_path[0]
-			    ? (vt_image_supported_path(item->artwork_path)
-			          ? vt_image_thumbnail_get_priority(item->artwork_path,
-			                item->artwork_size,
+			const char *preview_path = media_preview_path(item);
+			uint64_t preview_size = media_preview_size(item, preview_path);
+			vita2d_texture *art = preview_path
+			    ? (vt_image_supported_path(preview_path)
+			          ? vt_image_thumbnail_get_priority(preview_path,
+			                preview_size,
 			                thumbnail_viewport_priority(pos, selected, top,
 			                                            visible_limit))
-			          : vt_video_thumbnail_get_priority(item->artwork_path,
-			                item->artwork_size,
+			          : vt_video_thumbnail_get_priority(preview_path,
+			                preview_size,
 			                thumbnail_viewport_priority(pos, selected, top,
 			                                            visible_limit)))
 			    : NULL;
@@ -1113,14 +1142,16 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			int y = LIST_Y + row * (GRID_CARD_H + GRID_GAP_Y);
 			ui_panel(x, y, GRID_CARD_W, GRID_CARD_H,
 			         VT_THEME_SURFACE, media_accent(item), 0);
-			vita2d_texture *art = item->artwork_path[0]
-			    ? (vt_image_supported_path(item->artwork_path)
-			          ? vt_image_thumbnail_get_priority(item->artwork_path,
-			                item->artwork_size,
+			const char *preview_path = media_preview_path(item);
+			uint64_t preview_size = media_preview_size(item, preview_path);
+			vita2d_texture *art = preview_path
+			    ? (vt_image_supported_path(preview_path)
+			          ? vt_image_thumbnail_get_priority(preview_path,
+			                preview_size,
 			                thumbnail_viewport_priority(pos, selected,
 			                    top * GRID_COLS, visible_limit))
-			          : vt_video_thumbnail_get_priority(item->artwork_path,
-			                item->artwork_size,
+			          : vt_video_thumbnail_get_priority(preview_path,
+			                preview_size,
 			                thumbnail_viewport_priority(pos, selected,
 			                    top * GRID_COLS, visible_limit)))
 			    : NULL;
@@ -1194,7 +1225,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		         vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_NAVIGATION),
 		         vt_i18n_str(flattened ? VT_STR_LOCAL_MEDIA_FOLDER_FLATTENED
 		                                : VT_STR_LOCAL_MEDIA_FOLDER_HIERARCHY));
-		const char *actions[5];
+		const char *actions[6];
 		int action_count = 0;
 		actions[action_count++] = vt_i18n_str(
 		    grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_LIST
@@ -1208,6 +1239,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		}
 		actions[action_count++] = navigation_action;
 		actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_BROWSE_FILES);
+		actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_REFRESH);
+		if (flattened && screen_count(filter, flattened) > 0)
+			actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTIONS);
 		if (right_open) {
 			float marker_y = 124.0f + right_focus * 62.0f;
 			ui_panel(panel_x + 18, marker_y, 298, 52,
@@ -1216,10 +1250,11 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		for (int i = 0; i < action_count; i++) {
 			int ay = 124 + i * 62;
 			ui_action_button((int)panel_x + 22, ay, 294, 52,
-			                 VT_THEME_SURFACE,
-			                 i + 1 < action_count ? "Left/Right" : "Cross",
+			                 i == right_cursor ? VT_THEME_SURFACE_FOCUS
+			                                     : VT_THEME_SURFACE,
+			                 i < (flattened ? 2 : 4) ? "Left/Right" : "Cross",
 			                 actions[i],
-			                 0);
+			                 i == right_cursor);
 		}
 	}
 	if (sidebar && sidebar->animation > 0.01f)
@@ -1232,6 +1267,15 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 	uint64_t navigation_started_us = sceKernelGetProcessTimeWide();
 	vt_video_thumbnail_resume();
+	if (g_catalog_dirty) {
+		LocalMediaIndexHeader fresh = {0};
+		int result = ui_loading_run(vt_i18n_str(VT_STR_LOCAL_MEDIA_REFRESH),
+		    local_mutation_rescan, &fresh, NULL, NULL, NULL);
+		if (result == 0 && local_index_publish(&fresh) == 0) {
+			sceIoRemove(LOCAL_ROOT_CACHE_PATH);
+			g_catalog_dirty = 0;
+		}
+	}
 	int refreshed = local_scan_finish();
 	LocalMediaIndexHeader cached;
 	if (local_index_load(&cached) == 0) {
@@ -1249,17 +1293,28 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		if (ret == 0) local_index_publish(&initial);
 	}
 	build_root_catalog();
-	int filter = 0, selected = 0, top = 0;
+	int filter = ui_home_tab_filter(), selected = 0, top = 0;
 	int storage_filter = 0, sort_mode = 0;
 	int flattened = vt_preferences_folder_navigation_flattened();
+	if (g_resume_actions) {
+		filter = ui_home_tab_filter();
+		selected = g_saved_selected;
+		top = g_saved_top;
+		storage_filter = g_saved_storage;
+		sort_mode = g_saved_sort;
+		g_resume_actions = 0;
+	}
 	rebuild_root_view(filter, storage_filter, sort_mode);
+	int initial_count = screen_count(filter, flattened);
+	if (selected >= initial_count) selected = initial_count > 0 ? initial_count - 1 : 0;
+	if (top > selected) top = selected;
 	log_printf("local media ready: entries=%d cache-first=%llu ms",
 	           screen_count(filter, flattened),
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                navigation_started_us) / 1000ULL));
 	int library_grid = 1;
 	int image_grid = 1;
-	int right_open = 0, right_cursor = 0, focus_tabs = 0;
+	int right_open = 0, right_cursor = 0, focus_tabs = 1;
 	float right_animation = 0.0f, right_focus = 0.0f;
 	uint64_t right_motion_tick_us = 0;
 	UiFocusMotion focus_motion;
@@ -1287,6 +1342,11 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		unsigned int pressed = ctrl.buttons & ~previous.buttons;
 		previous = ctrl;
 		UiTouchEvent touch; unsigned flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			flags = UI_TOUCH_EVENT_NONE;
+		}
 		int grid_mode = filter == 0 ? library_grid
 		              : filter == 2 ? vt_preferences_local_music_grid()
 		              : filter == 3 ? image_grid
@@ -1298,14 +1358,22 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			ctrl.buttons &= SCE_CTRL_SELECT;
 			ctrl.lx = ctrl.ly = ctrl.rx = ctrl.ry = 128;
 		}
+		if ((pressed & SCE_CTRL_LTRIGGER) &&
+		    (right_open || right_animation > 0.01f)) {
+			right_open = 0;
+			right_animation = 0.0f;
+		}
+		if ((pressed & SCE_CTRL_RTRIGGER) &&
+		    (sidebar.open || sidebar.animation > 0.01f)) {
+			sidebar.open = 0;
+			sidebar.animation = 0.0f;
+		}
 		int right_layer_was_visible = right_open || right_animation > 0.01f;
 		int was_open = sidebar.open;
 		int section = UI_SECTION_NONE;
 		if (!right_layer_was_visible)
 			section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed,
 			                                             ctrl.buttons, ctrl.ly);
-		else
-			pressed &= ~SCE_CTRL_LTRIGGER;
 		int sidebar_owned_frame = sidebar.open || was_open;
 		if (sidebar_owned_frame) {
 			int touched = ui_sections_sidebar_handle_touch(&sidebar, flags,
@@ -1328,7 +1396,9 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		}
 		if (right_open) {
 			float panel_x = 960.0f - 340.0f * right_animation;
-			int drawer_row_count = flattened ? 3 : 5;
+			int file_selected = flattened && screen_count(filter, flattened) > 0;
+			int drawer_row_count = flattened ? (file_selected ? 5 : 4) : 6;
+			if (right_cursor >= drawer_row_count) right_cursor = drawer_row_count - 1;
 			if (flags & UI_TOUCH_EVENT_TAP) {
 				int touched_row = -1;
 				for (int i = 0; i < drawer_row_count; i++) {
@@ -1362,7 +1432,8 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			    right_cursor + 1 < drawer_row_count) right_cursor++;
 			int drawer_action = flattened
 			                  ? (right_cursor == 0 ? 0
-			                     : right_cursor == 1 ? 3 : 4)
+			                     : right_cursor == 1 ? 3
+			                     : right_cursor + 2)
 			                  : right_cursor;
 			if (drawer_action == 0 &&
 			    (horizontal_step ||
@@ -1399,6 +1470,23 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			}
 			if ((pressed & SCE_CTRL_CROSS) && drawer_action == 4)
 				return local_media_leave(UI_LOCAL_MEDIA_ACTION_BROWSE_FILES);
+			if ((pressed & SCE_CTRL_CROSS) && drawer_action == 5) {
+				local_scan_start();
+				right_open = 0;
+			}
+			if (file_selected && drawer_action == 6 && (pressed & SCE_CTRL_CROSS)) {
+				const VtLocalMediaItem *item = screen_item(filter, selected, 1, NULL);
+				if (item && selected_out) {
+					*selected_out = *item;
+					g_resume_actions = 1;
+					g_saved_filter = filter;
+					g_saved_selected = selected;
+					g_saved_top = top;
+					g_saved_storage = storage_filter;
+					g_saved_sort = sort_mode;
+					return local_media_leave(UI_LOCAL_MEDIA_ACTION_MANAGE);
+				}
+			}
 			if (pressed & SCE_CTRL_CIRCLE) right_open = 0;
 			pressed = 0;
 			/* The drawer is modal: never let a tap fall through to a poster. */
@@ -1426,10 +1514,18 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		    overlay_owns_input ? 128 : ctrl.lx,
 		    overlay_owns_input ? 128 : ctrl.ly,
 		    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
-		if (focus_tabs && (nav & SCE_CTRL_LEFT))
-			filter = filter > 0 ? filter - 1 : 3;
-		if (focus_tabs && (nav & SCE_CTRL_RIGHT))
-			filter = filter < 3 ? filter + 1 : 0;
+		int tab_touch = flags && touch.down_y >= 68 && touch.down_y < 108;
+		unsigned tab_nav=ui_home_tabs_navigation(pressed,focus_tabs&&!overlay_owns_input?ctrl.buttons:0,
+		    focus_tabs&&!overlay_owns_input?ctrl.lx:128,128);
+		if (ui_home_tabs_input(tab_nav, flags, &touch, focus_tabs)) {
+			focus_tabs = 1;
+			if (ui_home_tab_online()) {
+				ui_online_audio_set_home(1);
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE + UI_SECTION_ONLINE_AUDIO);
+			}
+			filter = ui_home_tab_filter();
+		}
+		if (tab_touch) flags = 0;
 		if (old_filter != filter) {
 			rebuild_root_view(filter, storage_filter, sort_mode);
 			selected = top = 0;
@@ -1473,7 +1569,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		/* Animate the selector itself instead of delaying input: the new item is
 		 * immediately actionable while the signal rim glides across the grid. */
 		if (focus_tabs) {
-			int tab_x = TAB_X + filter * TAB_STEP;
+			int tab_x = 42;
 			ui_focus_motion_tick(&focus_motion, tab_x - 3, 65, TAB_W + 6, 44);
 		} else if (grid_mode) {
 			int row = selected / GRID_COLS - top;
@@ -1512,19 +1608,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			} else top = grid_top_for_selection(selected);
 		}
 		if (flags & UI_TOUCH_EVENT_TAP) {
-			for (int i = 0; i < 4; i++) if (ui_touch_hit_rect(touch.x, touch.y,
-			    TAB_X + i * TAB_STEP, 68, TAB_W, 38)) {
-					filter = i; selected = top = 0; focus_tabs = 1;
-					rebuild_root_view(filter, storage_filter, sort_mode);
-					grid_mode = filter == 0 ? library_grid
-					          : filter == 2 ? vt_preferences_local_music_grid()
-					          : filter == 3 ? image_grid
-					                        : vt_preferences_local_video_grid();
-					count = screen_count(filter, flattened);
-					break;
-				}
-			int touch_slots = grid_mode ? local_grid_visible_rows() * GRID_COLS
-			                            : local_list_visible_rows();
+			int touch_slots = grid_mode ? local_grid_render_rows() * GRID_COLS : local_list_visible_rows();
 			for (int slot = 0; slot < touch_slots; slot++) {
 				int pos = grid_mode ? top * 3 + slot : top + slot;
 				if (pos >= count) break;

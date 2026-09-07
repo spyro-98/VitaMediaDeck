@@ -1,5 +1,8 @@
 #include "ui/network_sources_screen.h"
 #include "ui/qr_scanner.h"
+#include "ui/folder_picker.h"
+
+#include "app_paths.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,7 +47,6 @@
 #define BROWSER_GRID_CARD_H 154
 #define BROWSER_GRID_GAP_X 12
 #define BROWSER_GRID_GAP_Y 10
-#define DESTINATION_MAX_FOLDERS 96
 #define NETWORK_BROWSER_MAX_DEPTH 24
 #define NETWORK_DIRECTORY_CACHE_SLOTS 6
 #define NETWORK_DIRECTORY_CACHE_TTL_US (10ULL * 60ULL * 1000ULL * 1000ULL)
@@ -372,6 +374,10 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 	ui_scene_identity(SOURCE_LIST_X, 68, 604, "NET/03",
 	                  vt_i18n_str(VT_STR_NETWORK_SERVERS_TITLE),
 	                  vt_i18n_str(VT_STR_NETWORK_PRIVACY));
+	ui_action_button(654, 74, 248, 40,
+	                 count < VT_NETWORK_MAX_SOURCES
+	                     ? VT_THEME_BLUE_BRIGHT : VT_THEME_SURFACE,
+	                 "Square", vt_i18n_str(VT_STR_NETWORK_ADD_SOURCE), 0);
 	/* Download tools are intentionally a separate control panel. They are not
 	 * saved media servers and must not be mistaken for one in the pager. */
 	ui_panel(642, 126, 272, 112, VT_THEME_SURFACE_RAISED, VT_THEME_SIGNAL_BRIGHT, 0);
@@ -776,7 +782,9 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 	                     const VtNetworkCredential *credential,
 	                     const VtNetworkEntry *entries, int count,
 	                     int selected, int top, int grid_mode,
-	                     const UiFocusMotion *focus_motion) {
+	                     const UiFocusMotion *focus_motion,
+	                     int right_open, int right_cursor,
+	                     const UiSectionsSidebar *sidebar) {
 	ui_mini_player_pump();
 	vt_video_thumbnail_pump();
 	vita2d_start_drawing();
@@ -943,6 +951,37 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		vita2d_disable_clipping();
 	}
 	ui_mini_player_draw();
+	if (right_open) {
+		const int panel_x = 620;
+		vita2d_draw_rectangle(panel_x, 0, 340, 544, VT_THEME_BG_SOFT);
+		vita2d_draw_rectangle(panel_x, 0, 3, 544, VT_THEME_SPECTRAL);
+		vita2d_draw_rectangle(panel_x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
+		if (body) ui_font_draw_text(body, panel_x + 30, 92, VT_THEME_TEXT,
+		                            UI_FONT_BODY,
+		                            vt_i18n_str(VT_STR_NETWORK_VIEW_TITLE));
+		char view_action[96];
+		snprintf(view_action, sizeof(view_action), "%s: %s",
+		         vt_i18n_str(VT_STR_NETWORK_VIEW_TITLE),
+		         vt_i18n_str(grid_mode ? VT_STR_NETWORK_VIEW_GRID
+		                               : VT_STR_NETWORK_VIEW_LIST));
+		const char *actions[2] = {
+			view_action,
+			vt_i18n_str(VT_STR_NETWORK_REFRESH)
+		};
+		for (int i = 0; i < 2; i++) {
+			int y = 124 + i * 62;
+			if (i == right_cursor)
+				ui_panel(panel_x + 18, y, 298, 52,
+				         VT_THEME_SURFACE_FOCUS, VT_THEME_BLUE_LIGHT, 0);
+			ui_action_button(panel_x + 22, y, 294, 52,
+			                 i == right_cursor ? VT_THEME_SURFACE_FOCUS
+			                                     : VT_THEME_SURFACE,
+			                 i == 0 ? "Left/Right" : "Cross", actions[i],
+			                 i == right_cursor);
+		}
+	}
+	if (sidebar && sidebar->animation > 0.01f)
+		ui_sections_sidebar_draw(sidebar);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
@@ -1031,188 +1070,40 @@ static void secure_zero(void *memory, size_t size) {
 	while (size--) *bytes++ = 0;
 }
 
-static int destination_join(const char *directory, const char *name,
-	                        char *out, size_t out_size) {
-	size_t length = strlen(directory);
-	const char *separator = length && directory[length - 1] == ':' ? "" : "/";
-	int written = snprintf(out, out_size, "%s%s%s", directory, separator, name);
-	return written > 0 && written < (int)out_size ? 0 : -1;
-}
 
-static void destination_parent(char *path) {
-	char *colon, *slash;
-	if (!path || !path[0]) return;
-	colon = strchr(path, ':');
-	slash = strrchr(path, '/');
-	if (slash && (!colon || slash > colon)) *slash = '\0';
-	else if (colon && colon[1]) colon[1] = '\0';
-}
-
-static int destination_read_folders(const char *path,
-	                                char names[][128], int capacity) {
-	SceUID directory = sceIoDopen(path);
-	if (directory < 0) return directory;
-	int count = 0;
-	while (count < capacity) {
-		SceIoDirent entry;
-		memset(&entry, 0, sizeof(entry));
-		int result = sceIoDread(directory, &entry);
-		if (result <= 0) break;
-		if (entry.d_name[0] == '.' || !SCE_S_ISDIR(entry.d_stat.st_mode)) continue;
-		snprintf(names[count++], 128, "%s", entry.d_name);
+static int run_download(VtDownloadJob *job) {
+	if (vt_download_background_active()) {
+		int monitor_result = ui_loading_monitor_background_download();
+		secure_zero(&job->credential, sizeof(job->credential));
+		return monitor_result;
 	}
-	sceIoDclose(directory);
-	return count;
-}
-
-static void draw_destination_picker(const char *path, char names[][128],
-	                                int count, int selected, int top) {
-	vita2d_start_drawing();
-	vita2d_clear_screen();
-	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_LIGHT);
-	ui_brand_draw_header(vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE));
-	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
-	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	ui_scene_identity(66, 68, 720, "LOCAL/DEST",
-	                  vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE),
-	                  vt_i18n_str(VT_STR_NETWORK_DESTINATION_DETAIL));
-	/* Keep destination state in a dedicated breadcrumb band.  The previous
-	 * layout started this text inside the scene description and allowed long
-	 * paths to run through adjacent copy. */
-	ui_panel(66, 124, 828, 54, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
-	if (small) {
-		char fitted[VT_NETWORK_PATH_MAX];
-		ui_font_draw_text(small, 84, 145, VT_THEME_SIGNAL_LIGHT,
-		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_NETWORK_CURRENT_DESTINATION));
-		ui_font_fit_text(small, UI_FONT_SMALL, path, fitted, sizeof(fitted), 602);
-		ui_font_draw_text(small, 274, 163, VT_THEME_TEXT,
-		                  UI_FONT_SMALL, fitted);
-	}
-	if (!count) {
-		ui_panel(66, 190, 828, 220, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
-		if (body) ui_font_draw_text(body, 94, 274, VT_THEME_TEXT, UI_FONT_BODY,
-		                             vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
-	} else {
-		for (int i = top; i < count && i < top + 4; i++) {
-			int y = 190 + (i - top) * 56;
-			ui_panel(66, y, 828, 54, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
-			if (i == selected)
-				vita2d_draw_rectangle(66, y, 4, 54, VT_THEME_SIGNAL_BRIGHT);
-			if (body) ui_font_draw_text(body, 92, y + 34, VT_THEME_TEXT,
-			                             UI_FONT_BODY, names[i]);
-		}
-	}
-	ui_action_button(66, 468, 250, 42, VT_THEME_BLUE_BRIGHT, "Start",
-	                 vt_i18n_str(VT_STR_NETWORK_USE_THIS_FOLDER), 0);
-	ui_action_button(350, 468, 250, 42, VT_THEME_SURFACE_RAISED, "Triangle",
-	                 vt_i18n_str(VT_STR_NETWORK_NEW_FOLDER), 0);
-	ui_action_button(634, 468, 260, 42, VT_THEME_SURFACE, "Circle",
-	                 !strcmp(path, "ux0:") ? vt_i18n_str(VT_STR_NETWORK_CANCEL) : "Up", 0);
-	vita2d_end_drawing();
-	vita2d_wait_rendering_done();
-	vita2d_swap_buffers();
-}
-
-static int destination_name_valid(const char *name) {
-	return name && name[0] && !strchr(name, '/') && !strchr(name, ':') &&
-	       strcmp(name, ".") && strcmp(name, "..");
-}
-
-static int choose_download_destination(char *out, size_t out_size) {
-	char path[VT_NETWORK_PATH_MAX];
-	char names[DESTINATION_MAX_FOLDERS][128];
-	SceCtrlData previous;
-	UiNavRepeat nav_repeat;
-	int selected = 0, top = 0;
-	snprintf(path, sizeof(path), "ux0:download");
-	sceIoMkdir("ux0:download", 0777);
-	memset(&previous, 0, sizeof(previous));
-	sceCtrlPeekBufferPositive(0, &previous, 1);
-	ui_nav_repeat_reset(&nav_repeat);
-	for (;;) {
-		int count = destination_read_folders(path, names, DESTINATION_MAX_FOLDERS);
-		if (count < 0) {
-			ui_message_show(vt_i18n_str(VT_STR_NETWORK_FOLDER_CREATE_FAILED), path, 2600);
-			return 0;
-		}
-		if (selected >= count) selected = count > 0 ? count - 1 : 0;
-		if (top > selected) top = selected;
-		if (selected >= top + 4) top = selected - 3;
-		draw_destination_picker(path, names, count, selected, top);
-		SceCtrlData controls;
-		sceCtrlPeekBufferPositive(0, &controls, 1);
-		unsigned pressed = controls.buttons & ~previous.buttons;
-		previous = controls;
-		unsigned nav = ui_nav_repeat_update(&nav_repeat, pressed, controls.buttons,
-		                                    controls.lx, controls.ly,
-		                                    SCE_CTRL_UP | SCE_CTRL_DOWN);
-		if ((nav & SCE_CTRL_UP) && selected > 0) selected--;
-		if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
-		if (pressed & SCE_CTRL_START) {
-			snprintf(out, out_size, "%s", path);
-			return 1;
-		}
-		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
-			char next[VT_NETWORK_PATH_MAX];
-			if (destination_join(path, names[selected], next, sizeof(next)) == 0) {
-				snprintf(path, sizeof(path), "%s", next);
-				selected = top = 0;
-			}
-		}
-		if (pressed & SCE_CTRL_TRIANGLE) {
-			char name[128] = "";
-			if (ui_text_input(vt_i18n_str(VT_STR_NETWORK_FOLDER_NAME_PROMPT), "",
-			                  name, sizeof(name)) > 0 && destination_name_valid(name)) {
-				char next[VT_NETWORK_PATH_MAX];
-				if (destination_join(path, name, next, sizeof(next)) < 0 ||
-				    sceIoMkdir(next, 0777) < 0)
-					ui_message_show(vt_i18n_str(VT_STR_NETWORK_FOLDER_CREATE_FAILED),
-					                name, 2600);
-			}
-			ui_touch_reset();
-			sceCtrlPeekBufferPositive(0, &previous, 1);
-			ui_nav_repeat_reset(&nav_repeat);
-		}
-		if (pressed & SCE_CTRL_CIRCLE) {
-			if (!strcmp(path, "ux0:")) return 0;
-			destination_parent(path);
-			selected = top = 0;
-		}
-		sceKernelDelayThread(16 * 1000);
-	}
-}
-
-static void run_download(VtDownloadJob *job) {
 	char destination[VT_NETWORK_PATH_MAX];
-	if (!choose_download_destination(destination, sizeof(destination))) return;
+	if (!ui_folder_picker(NULL, destination, sizeof(destination))) {
+		secure_zero(&job->credential, sizeof(job->credential));
+		return 0;
+	}
 	vt_download_job_set_destination(job, destination);
-	int result = ui_loading_run_download(vt_i18n_str(VT_STR_NETWORK_DOWNLOADING),
-	                                     vt_download_run, job, &job->paused,
-	                                     &job->cancel, &job->progress_current,
-	                                     &job->progress_total);
+	int result = vt_download_background_start(job);
+	int monitor_result = 0;
 	if (result == 0)
-		ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_COMPLETE),
-		                job->destination, 2600);
-	else if (job->cancel)
-		ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORTED),
-		                job->destination, 2400);
+		monitor_result = ui_loading_monitor_background_download();
 	else
 		ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_FAILED),
-		                job->detail[0] ? job->detail :
-		                vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 3000);
+		                vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_START_FAILED), 2600);
 	secure_zero(&job->credential, sizeof(job->credential));
+	return monitor_result;
 }
 
-static void download_direct_url(const char *initial) {
+static int download_direct_url(const char *initial) {
 	char url[2048];
 	if (initial && initial[0]) snprintf(url, sizeof(url), "%s", initial);
 	else url[0] = '\0';
 	if (ui_text_input(vt_i18n_str(VT_STR_NETWORK_URL_PROMPT), url,
-	                  url, sizeof(url)) <= 0) return;
+	                  url, sizeof(url)) <= 0) return 0;
 	VtDownloadJob job;
 	vt_download_job_init_url(&job, url);
 	secure_zero(url, sizeof(url));
-	run_download(&job);
+	return run_download(&job);
 }
 
 static int finish_network_screen(VtNetworkCredential *credentials, int result) {
@@ -1747,6 +1638,9 @@ static int browse_source(const VtNetworkSource *source,
 	if (selected < 0 || selected >= count) selected = count > 0 ? count - 1 : 0;
 	if (top < 0 || top > selected) top = selected;
 	int grid_mode = vt_preferences_file_browser_grid();
+	int right_open = 0, right_cursor = 0;
+	UiSectionsSidebar sidebar;
+	ui_sections_sidebar_init(&sidebar, UI_SECTION_NETWORK);
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
 	VtJellyfinMetadata metadata_cache;
@@ -1755,6 +1649,8 @@ static int browse_source(const VtNetworkSource *source,
 	int metadata_valid = 0;
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
+	UiNavRepeat right_repeat;
+	ui_nav_repeat_reset(&right_repeat);
 	SceCtrlData controls, previous;
 	memset(&controls, 0, sizeof(controls));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
@@ -1765,11 +1661,108 @@ static int browse_source(const VtNetworkSource *source,
 		ui_mini_player_handle_buttons(&pressed);
 		UiTouchEvent touch;
 		unsigned touch_flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 		if (ui_mini_player_handle_touch(touch_flags, &touch)) touch_flags = 0;
 		if (ui_mini_player_input_locked()) {
 			pressed = 0;
 			controls.buttons = 0;
 			controls.lx = controls.ly = 128;
+		}
+		if ((pressed & SCE_CTRL_LTRIGGER) && right_open) right_open = 0;
+		if ((pressed & SCE_CTRL_RTRIGGER) &&
+		    (sidebar.open || sidebar.animation > 0.01f)) {
+			sidebar.open = 0;
+			sidebar.animation = 0.0f;
+		}
+		int sidebar_was_open = sidebar.open;
+		int section = UI_SECTION_NONE;
+		if (!right_open)
+			section = ui_sections_sidebar_handle_buttons(
+			    &sidebar, &pressed, controls.buttons, controls.ly);
+		if (sidebar.open) {
+			int touched = ui_sections_sidebar_handle_touch(
+			    &sidebar, touch_flags, touch.x, touch.y);
+			if (touched != UI_SECTION_NONE) section = touched;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
+		ui_sections_sidebar_tick(&sidebar);
+		if (section != UI_SECTION_NONE) {
+			navigation->source = *source;
+			navigation->credential = *credential;
+			navigation->selected[navigation->depth] = selected;
+			navigation->top[navigation->depth] = top;
+			navigation->valid = 1;
+			vt_video_thumbnail_suspend();
+			free(entries);
+			return UI_NETWORK_ACTION_SECTION_BASE + section;
+		}
+		if (pressed & SCE_CTRL_RTRIGGER) {
+			if (sidebar.open || sidebar.animation > 0.01f) {
+				sidebar.open = 0;
+				sidebar.animation = 0.0f;
+			}
+			right_open = !right_open;
+			if (right_open) right_cursor = 0;
+			ui_nav_repeat_reset(&right_repeat);
+			pressed &= ~SCE_CTRL_RTRIGGER;
+		}
+		if (sidebar_was_open || sidebar.open || sidebar.animation > 0.01f) {
+			char sidebar_path[192];
+			network_browser_breadcrumb(navigation, sidebar_path,
+			                           sizeof(sidebar_path));
+			draw_browser(source, sidebar_path, credential, entries, count,
+			             selected, top, grid_mode, &focus_motion, 0,
+			             right_cursor, &sidebar);
+			sceKernelDelayThread(1000);
+			continue;
+		}
+		if (right_open) {
+			if (touch_flags & UI_TOUCH_EVENT_TAP) {
+				for (int i = 0; i < 2; i++)
+					if (ui_touch_hit_rect(touch.x, touch.y, 642, 124 + i * 62,
+					                      294, 52)) {
+						right_cursor = i;
+						pressed |= SCE_CTRL_CROSS;
+					}
+				if (touch.x < 620) pressed |= SCE_CTRL_CIRCLE;
+			}
+			unsigned int right_nav = ui_nav_repeat_update(
+			    &right_repeat, pressed, controls.buttons, controls.lx, controls.ly,
+			    SCE_CTRL_UP | SCE_CTRL_DOWN);
+			if ((right_nav & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
+			if ((right_nav & SCE_CTRL_DOWN) && right_cursor < 1) right_cursor++;
+			if (right_cursor == 0 &&
+			    (pressed & (SCE_CTRL_CROSS | SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
+				grid_mode = !grid_mode;
+				vt_preferences_set_file_browser_grid(grid_mode);
+				top = 0;
+				ui_focus_motion_reset(&focus_motion);
+			}
+			if (right_cursor == 1 && (pressed & SCE_CTRL_CROSS)) {
+				right_open = 0;
+				pressed = SCE_CTRL_SQUARE;
+				touch_flags = UI_TOUCH_EVENT_NONE;
+			} else if (pressed & SCE_CTRL_CIRCLE) {
+				right_open = 0;
+				draw_browser(source, navigation->paths[navigation->depth],
+				             credential, entries, count, selected, top, grid_mode,
+				             &focus_motion, 0, right_cursor, &sidebar);
+				sceKernelDelayThread(1000);
+				continue;
+			} else {
+				char drawer_path[192];
+				network_browser_breadcrumb(navigation, drawer_path,
+				                           sizeof(drawer_path));
+				draw_browser(source, drawer_path, credential, entries, count,
+				             selected, top, grid_mode, &focus_motion,
+				             right_open, right_cursor, &sidebar);
+				sceKernelDelayThread(1000);
+				continue;
+			}
 		}
 		if ((touch_flags & UI_TOUCH_EVENT_UP) &&
 		    !(touch_flags & UI_TOUCH_EVENT_TAP) && count > 0 &&
@@ -1802,12 +1795,6 @@ static int browse_source(const VtNetworkSource *source,
 				pressed |= SCE_CTRL_CROSS;
 				break;
 			}
-		}
-		if (pressed & SCE_CTRL_RTRIGGER) {
-			grid_mode = !grid_mode;
-			vt_preferences_set_file_browser_grid(grid_mode);
-			top = 0;
-			ui_focus_motion_reset(&focus_motion);
 		}
 		if (pressed & SCE_CTRL_SQUARE) {
 			char selected_path[VT_NETWORK_PATH_MAX] = "";
@@ -1946,7 +1933,18 @@ static int browse_source(const VtNetworkSource *source,
 			VtDownloadJob job;
 			vt_download_job_init_network(&job, source, credential,
 			                             entries[selected].path);
-			run_download(&job);
+			int download_result = run_download(&job);
+			if (download_result >= UI_LOADING_DOWNLOAD_SECTION_BASE) {
+				navigation->source = *source;
+				navigation->credential = *credential;
+				navigation->selected[navigation->depth] = selected;
+				navigation->top[navigation->depth] = top;
+				navigation->valid = 1;
+				vt_video_thumbnail_suspend();
+				free(entries);
+				return UI_NETWORK_ACTION_SECTION_BASE + download_result -
+				       UI_LOADING_DOWNLOAD_SECTION_BASE;
+			}
 			network_resync_input(&previous, &nav_repeat);
 			continue;
 		}
@@ -1976,7 +1974,7 @@ static int browse_source(const VtNetworkSource *source,
 		network_browser_breadcrumb(navigation, display_path, sizeof(display_path));
 		draw_browser(source, display_path,
 		             credential, entries, count, selected, top, grid_mode,
-		             &focus_motion);
+		             &focus_motion, right_open, right_cursor, &sidebar);
 		sceKernelDelayThread(1000);
 	}
 }
@@ -2007,6 +2005,8 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 			if (browse_result == UI_NETWORK_ACTION_PLAY)
 				return finish_network_screen(credentials,
 				                             UI_NETWORK_ACTION_PLAY);
+			if (browse_result >= UI_NETWORK_ACTION_SECTION_BASE)
+				return finish_network_screen(credentials, browse_result);
 		} else network_browser_resume_clear();
 	}
 	int selected = 0, top = 0, remove_confirm = 0;
@@ -2025,6 +2025,11 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 		previous = controls;
 		UiTouchEvent touch;
 		unsigned touch_flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 		int section = UI_SECTION_NONE;
 		int confirmation_owned_frame = remove_confirm;
 		int sidebar_owned_frame = 0;
@@ -2103,6 +2108,9 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 		                      sidebar.animation <= 0.01f;
 		if (page_owns_input) {
 			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x, touch.y, 654, 74, 248, 40))
+				pressed |= SCE_CTRL_SQUARE;
+			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
 			    ui_touch_hit_rect(touch.x, touch.y, 654, 160, 248, 34))
 				pressed |= SCE_CTRL_START;
 			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
@@ -2149,14 +2157,26 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				                     SOURCE_LIST_Y + (selected - top) * SOURCE_ROW_H,
 				                     SOURCE_LIST_W, SOURCE_ROW_H - 8);
 			if (pressed & SCE_CTRL_START) {
-				download_direct_url(NULL);
+				int download_result = download_direct_url(NULL);
+				if (download_result >= UI_LOADING_DOWNLOAD_SECTION_BASE)
+					return finish_network_screen(
+					    credentials, UI_NETWORK_ACTION_SECTION_BASE +
+					    download_result - UI_LOADING_DOWNLOAD_SECTION_BASE);
 				network_resync_input(&previous, &nav_repeat);
 				continue;
 			}
 			if (pressed & SCE_CTRL_RTRIGGER) {
 				char url[2048];
 				int scan_result = ui_qr_scan_https_url(url, sizeof(url));
-				if (scan_result > 0) download_direct_url(url);
+				if (scan_result > 0) {
+					int download_result = download_direct_url(url);
+					if (download_result >= UI_LOADING_DOWNLOAD_SECTION_BASE) {
+						secure_zero(url, sizeof(url));
+						return finish_network_screen(
+						    credentials, UI_NETWORK_ACTION_SECTION_BASE +
+						    download_result - UI_LOADING_DOWNLOAD_SECTION_BASE);
+					}
+				}
 				else if (scan_result < 0)
 						ui_message_show(vt_i18n_str(VT_STR_NETWORK_QR_CAMERA_FAILED),
 						                ui_qr_scan_last_error(), 3200);
@@ -2271,6 +2291,8 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				if (browse_result == UI_NETWORK_ACTION_PLAY)
 					return finish_network_screen(credentials,
 					                             UI_NETWORK_ACTION_PLAY);
+				if (browse_result >= UI_NETWORK_ACTION_SECTION_BASE)
+					return finish_network_screen(credentials, browse_result);
 			}
 			if (pressed & SCE_CTRL_CIRCLE)
 				return finish_network_screen(credentials, UI_NETWORK_ACTION_BACK);

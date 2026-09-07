@@ -14,9 +14,12 @@
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
+#include "network/download_manager.h"
 #include "settings/preferences.h"
+#include "system/display_awake.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
+#include "ui/touch.h"
 
 #include <vita_https.h>
 
@@ -75,6 +78,7 @@
 #define STATUS_GAP      14
 
 static int g_brand_loading;
+static int g_brand_download_progress_hidden;
 
 #define BATT_BODY_W 30
 #define BATT_BODY_H 16
@@ -312,9 +316,7 @@ static int draw_wifi(const header_status *st, int clock_left, float opacity) {
 	return x;
 }
 
-static void draw_status_loading(int status_left, float opacity) {
-	if (!g_brand_loading || opacity <= 0.0f) return;
-	const float center_x = (float)(status_left - STATUS_GAP - 10);
+static void draw_status_spinner(float center_x, float opacity) {
 	const float center_y = (float)UI_BRAND_HEADER_HEIGHT * 0.5f;
 	uint64_t phase = vt_preferences_reduce_motion() ? 0ULL
 	               : sceKernelGetProcessTimeWide() / 90000ULL;
@@ -331,13 +333,67 @@ static void draw_status_loading(int status_left, float opacity) {
 	}
 }
 
+static void draw_download_progress(float center_x, float opacity,
+	                               const VtDownloadBackgroundStatus *status) {
+	const float center_y = (float)UI_BRAND_HEADER_HEIGHT * 0.5f;
+	const int segments = 12;
+	int completed = 0;
+	int determinate = status && status->total > 0;
+	if (determinate) {
+		double fraction = (double)status->current / (double)status->total;
+		if (fraction < 0.0) fraction = 0.0;
+		if (fraction > 1.0) fraction = 1.0;
+		completed = (int)ceil(fraction * (double)segments);
+	}
+	uint64_t phase = vt_preferences_reduce_motion() ? 0ULL
+	               : sceKernelGetProcessTimeWide() / 110000ULL;
+	for (int segment = 0; segment < segments; segment++) {
+		float angle = -1.5707963f + (float)segment * 0.5235988f;
+		int active;
+		if (determinate) active = segment < completed;
+		else {
+			int age = (segment - (int)(phase % (uint64_t)segments) + segments) % segments;
+			active = age <= 2;
+		}
+		unsigned color = active
+		               ? (status && status->paused ? VT_THEME_COLD_LIGHT
+		                                            : VT_THEME_SIGNAL_BRIGHT)
+		               : VT_THEME_BORDER;
+		vita2d_draw_fill_circle(center_x + cosf(angle) * 7.0f,
+		                        center_y + sinf(angle) * 7.0f,
+		                        active ? 2.0f : 1.35f,
+		                        status_color_alpha(color, opacity));
+	}
+}
+
+static void draw_status_activity(int status_left, float opacity) {
+	if (opacity <= 0.0f) return;
+	VtDownloadBackgroundStatus download;
+	memset(&download, 0, sizeof(download));
+	if (!g_brand_download_progress_hidden)
+		vt_download_background_status(&download);
+	int background_download =
+	    download.state == VT_DOWNLOAD_BACKGROUND_RUNNING;
+	if (!g_brand_loading && !background_download) return;
+	if (background_download) vt_display_keep_awake_tick();
+
+	/* Download progress sits nearest the normal status group. If both signals
+	 * are active, the generic loader remains the first (leftmost) activity icon. */
+	float center_x = (float)(status_left - STATUS_GAP - 10);
+	if (background_download) {
+		draw_download_progress(center_x, opacity, &download);
+		center_x -= 28.0f;
+	}
+	if (g_brand_loading) draw_status_spinner(center_x, opacity);
+}
+
 void ui_brand_draw_status_indicators_alpha(float opacity) {
 	if (opacity <= 0.0f) return;
 	if (opacity > 1.0f) opacity = 1.0f;
 	const header_status *st = status_get();
 	draw_battery(st, opacity);
 	int wifi_left = draw_wifi(st, draw_clock(st, opacity), opacity);
-	draw_status_loading(wifi_left, opacity);
+	draw_status_activity(wifi_left, opacity);
 }
 
 void ui_brand_draw_status_indicators(void) {
@@ -506,9 +562,9 @@ static void draw_header(const char *query, int editing,
 		vita2d_font *display = ui_runtime_font(UI_FONT_DISPLAY);
 		vita2d_font *title_font = display ? display : font;
 		unsigned title_size = display ? UI_FONT_DISPLAY : UI_FONT_BODY;
-			while (title_size > UI_FONT_SMALL &&
-			       ui_font_text_width(title_font, title_size, HEADER_WORDMARK) >
-			           HEADER_NAME_MAX_W) {
+		while (title_size > UI_FONT_SMALL &&
+		       ui_font_text_width(title_font, title_size, HEADER_WORDMARK) >
+		           HEADER_NAME_MAX_W) {
 			title_size--;
 		}
 		float title_baseline =
@@ -517,7 +573,7 @@ static void draw_header(const char *query, int editing,
 		                       title_baseline,
 		                       COLOR_TEXT, title_size,
 		                       HEADER_WORDMARK);
-		}
+	}
 
 	/* Right corner: Wi-Fi, clock, battery (battery outermost). Values come
 	 * from a 2s cache, so this costs nothing per frame. */
@@ -609,8 +665,17 @@ void ui_brand_draw_header(const char *query) {
 	draw_header(query, 0, 0, 0, "");
 }
 
+int ui_brand_sections_hit(unsigned int flags, int x, int y) {
+	return (flags & UI_TOUCH_EVENT_TAP) && x >= 10 && x < 62 &&
+	       y >= 4 && y < UI_BRAND_HEADER_HEIGHT - 4;
+}
+
 void ui_brand_set_loading(int loading) {
 	g_brand_loading = loading != 0;
+}
+
+void ui_brand_set_download_progress_hidden(int hidden) {
+	g_brand_download_progress_hidden = hidden != 0;
 }
 
 void ui_brand_draw_header_placeholder(const char *query, const char *placeholder) {

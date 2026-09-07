@@ -11,6 +11,7 @@
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/components.h"
+#include "ui/mini_player.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
 #include "ui/theme.h"
@@ -110,7 +111,8 @@ static void draw_reader_tabs(vita2d_font *font, const char *parent_title,
 }
 
 static void draw_reader(const char *parent_title, const char *title,
-	                    const char *text, int first_line) {
+	                    const char *text, int first_line,
+	                    const UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	int tabbed = parent_title && parent_title[0];
@@ -159,17 +161,19 @@ static void draw_reader(const char *parent_title, const char *title,
 		vita2d_draw_rectangle(930, thumb_y, 4, thumb_h, VT_THEME_BLUE_LIGHT);
 	}
 	ui_brand_draw_status_indicators();
+	if (sidebar && sidebar->animation > 0.01f)
+		ui_sections_sidebar_draw(sidebar);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
 }
 
-static void text_reader_run_internal(const char *parent_title, const char *title,
-	                                 const char *text) {
-	if (!text || !text[0]) return;
+static int text_reader_run_internal(const char *parent_title, const char *title,
+	                                const char *text) {
+	if (!text || !text[0]) return UI_SECTION_NONE;
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	index_text(small, text);
-	if (g_reader_line_count <= 0) return;
+	if (g_reader_line_count <= 0) return UI_SECTION_NONE;
 	int tabbed = parent_title && parent_title[0];
 	int visible_lines = tabbed ? TEXT_READER_TABBED_VISIBLE_LINES
 	                           : TEXT_READER_VISIBLE_LINES;
@@ -183,21 +187,48 @@ static void text_reader_run_internal(const char *parent_title, const char *title
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
 	int touch_y = 0;
+	int result = UI_SECTION_NONE;
+	UiSectionsSidebar sidebar;
+	ui_sections_sidebar_init(&sidebar, tabbed ? UI_SECTION_SETTINGS : UI_SECTION_GUIDE);
 	ui_touch_reset();
 	for (;;) {
 		sceCtrlPeekBufferPositive(0, &ctrl, 1);
 		unsigned int pressed = ctrl.buttons & ~previous.buttons;
 		previous = ctrl;
-		if (pressed & SCE_CTRL_CIRCLE) break;
-		if (tabbed && (pressed & (SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT))) break;
+		UiTouchEvent touch;
+		unsigned int flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			flags = UI_TOUCH_EVENT_NONE;
+		}
+		int sidebar_was_open = sidebar.open;
+		int section = ui_sections_sidebar_handle_buttons(
+		    &sidebar, &pressed, ctrl.buttons, ctrl.ly);
+		if (sidebar.open) {
+			int touched = ui_sections_sidebar_handle_touch(
+			    &sidebar, flags, touch.x, touch.y);
+			if (touched != UI_SECTION_NONE) section = touched;
+			flags = UI_TOUCH_EVENT_NONE;
+		}
+		ui_sections_sidebar_tick(&sidebar);
+		if (section != UI_SECTION_NONE) { result = section; break; }
+		int page_owns_input = !sidebar_was_open && !sidebar.open &&
+		                      sidebar.animation <= 0.01f;
+		if (!page_owns_input) {
+			pressed = 0;
+			flags = UI_TOUCH_EVENT_NONE;
+		}
+		if (page_owns_input && (pressed & SCE_CTRL_CIRCLE)) break;
+		if (page_owns_input && tabbed &&
+		    (pressed & (SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT))) break;
 		unsigned int nav = ui_nav_repeat_update(
-		    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+		    &nav_repeat, pressed, page_owns_input ? ctrl.buttons : 0,
+		    page_owns_input ? ctrl.lx : 128, page_owns_input ? ctrl.ly : 128,
 		    SCE_CTRL_UP | SCE_CTRL_DOWN);
 		if ((nav & SCE_CTRL_UP) && first_line > 0) first_line--;
 		if ((nav & SCE_CTRL_DOWN) && first_line < max_first) first_line++;
-		UiTouchEvent touch;
-		unsigned int flags = ui_touch_poll(&touch);
-		if (tabbed && (flags & UI_TOUCH_EVENT_TAP) &&
+		if (page_owns_input && tabbed && (flags & UI_TOUCH_EVENT_TAP) &&
 		    ui_touch_hit_rect(touch.x, touch.y, TEXT_READER_TAB_X,
 		                      TEXT_READER_TAB_Y, TEXT_READER_TAB_W,
 		                      TEXT_READER_TAB_H))
@@ -222,17 +253,18 @@ static void text_reader_run_internal(const char *parent_title, const char *title
 				touch_y = touch.y;
 			}
 		}
-		draw_reader(parent_title, title, text, first_line);
+		draw_reader(parent_title, title, text, first_line, &sidebar);
 		sceKernelDelayThread(vt_preferences_reduce_motion() ? 16000 : 1000);
 	}
 	ui_touch_reset();
+	return result;
 }
 
-void ui_text_reader_run(const char *title, const char *text) {
-	text_reader_run_internal(NULL, title, text);
+int ui_text_reader_run(const char *title, const char *text) {
+	return text_reader_run_internal(NULL, title, text);
 }
 
-void ui_text_reader_run_tabbed(const char *parent_title, const char *title,
-	                           const char *text) {
-	text_reader_run_internal(parent_title, title, text);
+int ui_text_reader_run_tabbed(const char *parent_title, const char *title,
+	                          const char *text) {
+	return text_reader_run_internal(parent_title, title, text);
 }

@@ -12,6 +12,7 @@
 #include "i18n/i18n.h"
 #include "media/background_playback.h"
 #include "media/player_input_lock.h"
+#include "media/player_power_save.h"
 #include "settings/preferences.h"
 #include "system/display_awake.h"
 #include "ui/components.h"
@@ -49,6 +50,7 @@ static vita2d_texture *g_artwork;
 static char g_artwork_video_id[VT_BACKGROUND_MEDIA_ID_MAX];
 static int g_artwork_attempted;
 static PlayerInputLock g_mini_input_lock;
+static PlayerPowerSaveInput g_mini_start_input;
 static uint64_t g_mini_lock_visible_until_us;
 static float g_mini_lock_animation;
 static uint64_t g_mini_lock_animation_last_us;
@@ -370,6 +372,7 @@ void ui_mini_player_draw(void) {
 	format_time(snapshot.position_ms, elapsed);
 	format_time(snapshot.duration_ms, duration);
 	snprintf(timing, sizeof(timing), vt_i18n_str(VT_STR_MINI_TIMING_FORMAT), elapsed, duration);
+	if (snapshot.is_live) snprintf(timing, sizeof(timing), "%s / Live", elapsed);
 	if (small) ui_font_draw_text(small, 552, y + 50,
 	                                VT_THEME_TEXT_MUTED, UI_FONT_SMALL,
 	                                timing);
@@ -387,12 +390,13 @@ void ui_mini_player_draw(void) {
 		                    now_us < g_mini_control_feedback_until_us
 		                  ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_SURFACE_FOCUS;
 		transport_foreground[i] = ui_contrast_bw(transport_fill[i]);
+		if (snapshot.is_live && i != 1) continue;
 		vita2d_draw_rectangle(transport_x[i] - 21.0f, y + 12.0f,
 		                      42.0f, 42.0f, transport_fill[i]);
 		vita2d_draw_rectangle(transport_x[i] - 17.0f, y + 16.0f,
 		                      34.0f, 1.0f, VT_THEME_SPECTRAL_A(112));
 	}
-	if (small) {
+	if (small && !snapshot.is_live) {
 		const char *back = "<", *forward = ">";
 		int back_w = ui_font_text_width(small, UI_FONT_SMALL, back);
 		int forward_w = ui_font_text_width(small, UI_FONT_SMALL, forward);
@@ -537,6 +541,7 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 	VtBackgroundPlaybackSnapshot snapshot;
 	if (!pressed || !vt_background_playback_snapshot(&snapshot)) {
 		memset(&g_mini_input_lock, 0, sizeof(g_mini_input_lock));
+		memset(&g_mini_start_input, 0, sizeof(g_mini_start_input));
 		g_mini_lock_visible_until_us = 0;
 		g_mini_lock_animation = 0.0f;
 		/* The last 220 ms still cover the page visually. Consume controller
@@ -549,7 +554,7 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 	}
 	SceCtrlData current;
 	memset(&current, 0, sizeof(current));
-	sceCtrlPeekBufferPositive(0, &current, 1);
+	int input_available = sceCtrlPeekBufferPositive(0, &current, 1) > 0;
 	uint64_t now = sceKernelGetProcessTimeWide();
 	unsigned int attempted_press = *pressed;
 	int lock_changed = player_input_lock_update(&g_mini_input_lock,
@@ -562,15 +567,23 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 	/* SELECT belongs exclusively to the mini-player lock while it is visible.
 	 * Once locked, no command reaches the underlying page. */
 	*pressed &= ~SCE_CTRL_SELECT;
+	/* Wait for release, just like fullscreen. A press-edge restore races the
+	 * system screenshot chord when START reaches us before the PS button. */
+	int start_event = player_power_save_update(&g_mini_start_input,
+	    current.buttons, now, input_available && !g_mini_input_lock.locked);
+	int start_consumed = (*pressed & SCE_CTRL_START) ||
+	                     (current.buttons & SCE_CTRL_START) ||
+	                     start_event != PLAYER_POWER_SAVE_EVENT_NONE;
+	*pressed &= ~SCE_CTRL_START;
 	if (g_mini_input_lock.locked) {
 		*pressed = 0;
 		return 1;
 	}
-	if (!(*pressed & SCE_CTRL_START)) return 0;
-	*pressed &= ~SCE_CTRL_START;
+	if (start_event != PLAYER_POWER_SAVE_EVENT_SHORT_PRESS) return start_consumed;
 	/* Never turn START into stop: if no fullscreen callback was registered,
 	 * the local background session remains alive. */
 	vt_background_playback_video_render_complete();
+	memset(&g_mini_start_input, 0, sizeof(g_mini_start_input));
 	vt_background_playback_resume_fullscreen();
 	return 1;
 }

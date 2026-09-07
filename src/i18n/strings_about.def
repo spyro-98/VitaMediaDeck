@@ -1,14 +1,12 @@
 /* Localizable UI strings for src/ui/about_screen.c. Format:
  * VT_STR(KEY_NAME, "italian text", "english text") */
 VT_STR(ABOUT_TITLE, "Informazioni", "About")
-VT_STR(ABOUT_VERSION, "Versione 1.2", "Version 1.2")
+VT_STR(ABOUT_VERSION, "Versione 1.3.0", "Version 1.3.0")
 VT_STR(ABOUT_DEVELOPER, "Sviluppato da spyro-98 su GitHub", "Developed by spyro-98 on GitHub")
 VT_STR(ABOUT_TAGLINE, "Player multimediale locale e di rete per PlayStation Vita", "Local and network media player for PlayStation Vita")
 VT_STR(ABOUT_SPECS_TITLE, "Specifiche prestazioni", "Performance specs")
-VT_STR(ABOUT_SPECS_CPU_DEFAULT, "CPU video predefinita: 444 MHz", "Default video CPU: 444 MHz")
-VT_STR(ABOUT_SPECS_OTHER_DEFAULT, "Profilo video: ES4 222 | BUS 222 | XBR 111 MHz", "Video profile: ES4 222 | BUS 222 | XBR 111 MHz")
-VT_STR(ABOUT_SPECS_PRIORITY, "Profilo clock: %s", "Clock profile: %s")
-VT_STR(ABOUT_SPECS_CURRENT, "Attuali: CPU %d | ES4 %d | BUS %d | XBR %d MHz", "Current: CPU %d | ES4 %d | BUS %d | XBR %d MHz")
+VT_STR(ABOUT_SPECS_DEFAULT, "Video predefinito: CPU 444 | ES4 222 | BUS 222 | XBR 111 MHz", "Default video: CPU 444 | ES4 222 | BUS 222 | XBR 111 MHz")
+VT_STR(ABOUT_SPECS_ACTIVE, "Profilo %s: CPU %d | ES4 %d | BUS %d | XBR %d MHz", "%s profile: CPU %d | ES4 %d | BUS %d | XBR %d MHz")
 VT_STR(ABOUT_TAB_SPECS, "Specifiche", "Specs")
 VT_STR(ABOUT_TAB_LOGS, "Log", "Logs")
 VT_STR(ABOUT_LOG_SESSION, "Diagnostica sessione", "Session diagnostics")

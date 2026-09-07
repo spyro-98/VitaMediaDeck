@@ -5,8 +5,13 @@
 
 /* VitaMediaDeck header shared by search, results, and the IME keyboard. */
 void ui_brand_draw_header(const char *query);
+int ui_brand_sections_hit(unsigned int touch_flags, int x, int y);
 void ui_brand_draw_header_placeholder(const char *query, const char *placeholder);
 void ui_brand_set_loading(int loading);
+/* The active-download page already owns the central progress treatment. Hide
+ * only the compact download ring for that frame; generic app loading remains
+ * an independent signal. */
+void ui_brand_set_download_progress_hidden(int hidden);
 void ui_brand_draw_search_backdrop(const char *query);
 /* Variant used while sceIme is open: doesn't show the placeholder and draws
  * the caret at the current UTF-8 position, scrolling the text horizontally

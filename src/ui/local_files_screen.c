@@ -35,11 +35,12 @@
 #define FILE_Y 112
 #define FILE_W 828
 #define FILE_ROW_H 58
-#define FILE_GRID_COLS 4
-#define FILE_CARD_W 198
-#define FILE_CARD_H 154
-#define FILE_GAP_X 12
-#define FILE_GAP_Y 10
+#define FILE_GRID_COLS 3
+#define FILE_CARD_W 264
+#define FILE_CARD_H 200
+#define FILE_GAP_X 18
+#define FILE_GAP_Y 8
+#define FILE_GRID_THUMB_H 148
 #define FILE_DIRECTORY_CACHE_SLOTS 4
 
 typedef struct {
@@ -465,7 +466,9 @@ static void draw_video_preview(vita2d_texture *texture, float x, float y,
 
 static void draw_files(const LocalFileEntry *entries, int count,
 	                   int selected, int top, int grid_mode,
-	                   const UiFocusMotion *focus_motion) {
+	                   const UiFocusMotion *focus_motion,
+	                   int right_open, int right_cursor,
+	                   const UiSectionsSidebar *sidebar) {
 	ui_mini_player_pump();
 	vt_video_thumbnail_pump();
 	vita2d_start_drawing();
@@ -487,8 +490,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		                 sizeof(fitted), FILE_W - 180);
 		ui_font_draw_text(small, FILE_X + 26, 91, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, fitted);
-		const char *mode = vt_i18n_str(grid_mode
-		    ? VT_STR_LOCAL_MEDIA_VIEW_GRID : VT_STR_LOCAL_MEDIA_VIEW_LIST);
+		const char *mode = vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE);
 		char hint[64];
 		snprintf(hint, sizeof(hint), "R1  %s", mode);
 		int width = ui_font_text_width(small, UI_FONT_SMALL, hint);
@@ -580,40 +582,78 @@ static void draw_files(const LocalFileEntry *entries, int count,
 			         : entry->media.type == VT_LOCAL_MEDIA_IMAGE ? VT_THEME_SPECTRAL
 			         : entry->media.type ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER, 0);
 			if (preview) {
-				vita2d_draw_rectangle(x + 6, y + 6, FILE_CARD_W - 12, 96,
+				vita2d_draw_rectangle(x + 6, y + 6, FILE_CARD_W - 12,
+				                      FILE_GRID_THUMB_H,
 				                      VT_THEME_MEDIA_BACKDROP);
 				draw_video_preview(preview, x + 6, y + 6,
-				                   FILE_CARD_W - 12, 96);
-				vita2d_draw_rectangle(x + 6, y + 100,
+				                   FILE_CARD_W - 12, FILE_GRID_THUMB_H);
+				vita2d_draw_rectangle(x + 6, y + 6 + FILE_GRID_THUMB_H - 2,
 				                      FILE_CARD_W - 12, 2, VT_THEME_COLD);
 			} else {
-				draw_icon(entry, x + 30, y + 2);
+				draw_icon(entry, x + (FILE_CARD_W - 136) / 2, y + 18);
 			}
 			if (!entry->is_directory &&
 			    entry->media.type == VT_LOCAL_MEDIA_VIDEO) {
 				char history_id[16];
 				vt_playback_history_local_id(entry->media.path, history_id);
-				ui_watched_progress(history_id, x + 6, y + 96,
+				ui_watched_progress(history_id, x + 6,
+				                    y + 6 + FILE_GRID_THUMB_H - 4,
 				                    FILE_CARD_W - 12);
 			}
 			if (small) {
 				char title[128];
 				ui_font_fit_text(small, UI_FONT_SMALL, entry->media.name, title,
 				                 sizeof(title), FILE_CARD_W - 24);
-				ui_font_draw_text(small, x + 12, y + 126, VT_THEME_TEXT,
+				ui_font_draw_text(small, x + 12, y + 178, VT_THEME_TEXT,
 				                  UI_FONT_SMALL, title);
 				char detail[64];
 				if (entry->is_directory)
 					snprintf(detail, sizeof(detail), "%s",
 					         vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_FOLDER));
 				else ui_format_file_size(entry->media.size, detail, sizeof(detail));
-				ui_font_draw_text(small, x + 12, y + 148, VT_THEME_TEXT_MUTED,
+				ui_font_draw_text(small, x + 12, y + 196, VT_THEME_TEXT_MUTED,
 				                  UI_FONT_SMALL, detail);
 			}
 		}
 		vita2d_disable_clipping();
 	}
 	ui_mini_player_draw();
+	if (right_open) {
+		const int panel_x = 620;
+		vita2d_draw_rectangle(panel_x, 0, 340, 544, VT_THEME_BG_SOFT);
+		vita2d_draw_rectangle(panel_x, 0, 3, 544, VT_THEME_SPECTRAL);
+		vita2d_draw_rectangle(panel_x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
+		if (body) ui_font_draw_text(body, panel_x + 30, 92, VT_THEME_TEXT,
+		                            UI_FONT_BODY,
+		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
+		char view_action[96];
+		snprintf(view_action, sizeof(view_action), "%s: %s",
+		         vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE),
+		         vt_i18n_str(grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_GRID
+		                               : VT_STR_LOCAL_MEDIA_VIEW_LIST));
+		int file_selected = count > 0 && selected >= 0 && selected < count &&
+		                    !entries[selected].is_directory &&
+		                    entries[selected].media.type;
+		const char *actions[3] = {
+			view_action,
+			vt_i18n_str(VT_STR_LOCAL_MEDIA_REFRESH),
+			vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTIONS)
+		};
+		int action_count = file_selected ? 3 : 2;
+		for (int i = 0; i < action_count; i++) {
+			int y = 124 + i * 62;
+			if (i == right_cursor)
+				ui_panel(panel_x + 18, y, 298, 52,
+				         VT_THEME_SURFACE_FOCUS, VT_THEME_BLUE_LIGHT, 0);
+			ui_action_button(panel_x + 22, y, 294, 52,
+			                 i == right_cursor ? VT_THEME_SURFACE_FOCUS
+			                                     : VT_THEME_SURFACE,
+			                 i == 0 ? "Left/Right" : "Cross", actions[i],
+			                 i == right_cursor);
+		}
+	}
+	if (sidebar && sidebar->animation > 0.01f)
+		ui_sections_sidebar_draw(sidebar);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
@@ -640,6 +680,11 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 		count = load_entries_cached(g_last_path, entries, &selected, &top);
 	}
 	int grid_mode = vt_preferences_file_browser_grid();
+	int right_open = 0, right_cursor = 0;
+	UiSectionsSidebar sidebar;
+	ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
+	UiNavRepeat right_repeat;
+	ui_nav_repeat_reset(&right_repeat);
 	UiFocusMotion focus;
 	ui_focus_motion_reset(&focus);
 	UiNavRepeat repeat;
@@ -656,17 +701,115 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 		ui_mini_player_handle_buttons(&pressed);
 		UiTouchEvent touch;
 		unsigned int touch_flags = ui_touch_poll(&touch);
+		if (!ui_mini_player_input_locked() &&
+		    ui_brand_sections_hit(touch_flags, touch.x, touch.y)) {
+			pressed |= SCE_CTRL_LTRIGGER;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
 		if (ui_mini_player_handle_touch(touch_flags, &touch)) touch_flags = 0;
 		if (ui_mini_player_input_locked()) {
 			pressed = 0;
 			controls.buttons = 0;
 			controls.lx = controls.ly = 128;
 		}
+		if ((pressed & SCE_CTRL_LTRIGGER) && right_open) right_open = 0;
+		if ((pressed & SCE_CTRL_RTRIGGER) &&
+		    (sidebar.open || sidebar.animation > 0.01f)) {
+			sidebar.open = 0;
+			sidebar.animation = 0.0f;
+		}
+		int sidebar_was_open = sidebar.open;
+		int section = UI_SECTION_NONE;
+		if (!right_open)
+			section = ui_sections_sidebar_handle_buttons(
+			    &sidebar, &pressed, controls.buttons, controls.ly);
+		if (sidebar.open) {
+			int touched = ui_sections_sidebar_handle_touch(
+			    &sidebar, touch_flags, touch.x, touch.y);
+			if (touched != UI_SECTION_NONE) section = touched;
+			touch_flags = UI_TOUCH_EVENT_NONE;
+		}
+		ui_sections_sidebar_tick(&sidebar);
+		if (section != UI_SECTION_NONE) {
+			directory_cache_store(g_last_path, entries, count, selected, top);
+			vt_video_thumbnail_suspend();
+			free(entries);
+			return UI_LOCAL_MEDIA_ACTION_SECTION_BASE + section;
+		}
 		if (pressed & SCE_CTRL_RTRIGGER) {
-			grid_mode = !grid_mode;
-			vt_preferences_set_file_browser_grid(grid_mode);
-			top = 0;
-			ui_focus_motion_reset(&focus);
+			if (sidebar.open || sidebar.animation > 0.01f) {
+				sidebar.open = 0;
+				sidebar.animation = 0.0f;
+			}
+			right_open = !right_open;
+			if (right_open) right_cursor = 0;
+			ui_nav_repeat_reset(&right_repeat);
+			pressed &= ~SCE_CTRL_RTRIGGER;
+		}
+		if (sidebar_was_open || sidebar.open || sidebar.animation > 0.01f) {
+			draw_files(entries, count, selected, top, grid_mode, &focus,
+			           0, right_cursor, &sidebar);
+			sceKernelDelayThread(1000);
+			continue;
+		}
+		if (right_open) {
+			int file_selected = count > 0 && !entries[selected].is_directory &&
+			                    entries[selected].media.type;
+			int action_count = file_selected ? 3 : 2;
+			if (touch_flags & UI_TOUCH_EVENT_TAP) {
+				for (int i = 0; i < action_count; i++)
+					if (ui_touch_hit_rect(touch.x, touch.y, 642, 124 + i * 62,
+					                      294, 52)) {
+						right_cursor = i;
+						pressed |= SCE_CTRL_CROSS;
+					}
+				if (touch.x < 620) pressed |= SCE_CTRL_CIRCLE;
+			}
+			unsigned int right_nav = ui_nav_repeat_update(
+			    &right_repeat, pressed, controls.buttons, controls.lx, controls.ly,
+			    SCE_CTRL_UP | SCE_CTRL_DOWN);
+			if ((right_nav & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
+			if ((right_nav & SCE_CTRL_DOWN) && right_cursor + 1 < action_count)
+				right_cursor++;
+			if (right_cursor == 0 &&
+			    (pressed & (SCE_CTRL_CROSS | SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
+				grid_mode = !grid_mode;
+				vt_preferences_set_file_browser_grid(grid_mode);
+				top = 0;
+				ui_focus_motion_reset(&focus);
+			}
+			if (right_cursor == 1 && (pressed & SCE_CTRL_CROSS)) {
+				char selected_path[VT_LOCAL_MEDIA_PATH_MAX] = "";
+				if (count > 0)
+					snprintf(selected_path, sizeof(selected_path), "%s",
+					         entries[selected].media.path);
+				ui_local_files_cache_invalidate();
+				count = load_entries_cached(g_last_path, entries, &selected, &top);
+				if (count < 0) count = 0;
+				for (int i = 0; selected_path[0] && i < count; i++)
+					if (!strcmp(entries[i].media.path, selected_path)) {
+						selected = i;
+						break;
+					}
+				top = grid_mode ? selected / FILE_GRID_COLS : selected;
+				vt_video_thumbnail_suspend();
+				vt_video_thumbnail_resume();
+				ui_focus_motion_reset(&focus);
+				right_open = 0;
+			}
+			if (file_selected && right_cursor == 2 &&
+			    (pressed & SCE_CTRL_CROSS)) {
+				if (selected_out) *selected_out = entries[selected].media;
+				directory_cache_store(g_last_path, entries, count, selected, top);
+				vt_video_thumbnail_suspend();
+				free(entries);
+				return UI_LOCAL_MEDIA_ACTION_MANAGE;
+			}
+			if (pressed & SCE_CTRL_CIRCLE) right_open = 0;
+			draw_files(entries, count, selected, top, grid_mode, &focus,
+			           right_open, right_cursor, &sidebar);
+			sceKernelDelayThread(1000);
+			continue;
 		}
 		unsigned int nav = ui_nav_repeat_update(
 		    &repeat, pressed, controls.buttons, controls.lx, controls.ly,
@@ -745,7 +888,8 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 			vt_video_thumbnail_suspend();
 			vt_video_thumbnail_resume();
 		}
-		draw_files(entries, count, selected, top, grid_mode, &focus);
+		draw_files(entries, count, selected, top, grid_mode, &focus,
+		           right_open, right_cursor, &sidebar);
 		sceKernelDelayThread(1000);
 	}
 }

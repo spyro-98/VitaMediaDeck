@@ -34,6 +34,16 @@
 #define VT_VIDEO_DECODER_HW_H264    1
 #define VT_VIDEO_DECODER_SW_FFMPEG  2
 
+/* Ambient animation used by the full-screen music player. Artwork is the
+ * upgrade-safe zero value; the player transparently falls back to the app
+ * palette when the current track has no cover. */
+#define VT_MUSIC_THEME_ARTWORK 0
+#define VT_MUSIC_THEME_NONE    1
+#define VT_MUSIC_THEME_APP     2
+#define VT_MUSIC_THEME_RANDOM  3
+#define VT_MUSIC_THEME_COLD    4
+#define VT_MUSIC_THEME_WARM    5
+
 /* Subtitle appearance. Values are stable public preference values; their
  * compact on-disk bit encoding is deliberately private to preferences.c. */
 #define VT_SUBTITLE_OUTLINE_1 1
@@ -62,6 +72,7 @@
 #define VT_SUBTITLE_SIZE_MEDIUM 1
 #define VT_SUBTITLE_SIZE_LARGE  2
 #define VT_SUBTITLE_SIZE_EXTRA_LARGE 3
+#define VT_SUBTITLE_SIZE_MEDIUM_LARGE 4
 
 #define VT_SUBTITLE_WIDTH_60 0
 #define VT_SUBTITLE_WIDTH_75 1
@@ -72,6 +83,7 @@
 #define VT_SUBTITLE_POSITION_LOW    1
 #define VT_SUBTITLE_POSITION_CENTER 2
 #define VT_SUBTITLE_POSITION_TOP    3
+#define VT_SUBTITLE_POSITION_LOWER  4
 
 #define VT_SUBTITLE_FONT_INTER_MEDIUM   0
 #define VT_SUBTITLE_FONT_INTER_SEMIBOLD 1
@@ -149,6 +161,10 @@ int vt_preferences_set_local_music_grid(int enabled);
  * system timeout while audio continues. */
 int vt_preferences_music_keep_display_awake(void);
 int vt_preferences_set_music_keep_display_awake(int enabled);
+
+/* Full-screen music animation palette. */
+int vt_preferences_music_theme(void);
+int vt_preferences_set_music_theme(int theme);
 
 /* Decoder used for newly opened video sessions. */
 int vt_preferences_video_decoder(void);
