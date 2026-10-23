@@ -48,3 +48,12 @@ rapid reversals, cache append and touch during command-deck motion. It checks
 bounded overscan, shared transforms and non-overlapping hit regions. Set
 `VMD_MOTION_OUTPUT` to choose its output directory. These are synthetic host
 fixtures, not Vita GPU timing or screenshots.
+
+## Guide and current-focus help
+
+The page fixture also compares guide headings with localized chapter roles,
+checks current-theme and saved normal/swapped mapping prefixes, rejects a tiny
+output buffer, and exercises index-to-text, scroll, return and exit in IT/EN
+with and without mini-player for every theme. Hint widths are checked against
+the actual Inter and Deck 90 Mono metrics, including the HUD/panel rails.
+Reference `guide-home-*` images show the active theme and scrolled chapter.

@@ -326,21 +326,77 @@ The viewer caps its display proxy at 2048 pixels on the longest edge, retains
 the original dimensions in the HUD, and never allocates an unbounded
 full-resolution JPEG or PNG bitmap. GIF is displayed as its first frame.
 
-VitaMediaDeck does not discover, extract, convert, or copy media from online
-catalogues. It downloads only resource URLs or authenticated server files
-explicitly selected by the user.
+Radio/podcast discovery browses public catalogues. Downloads copy only the
+resource URLs, podcast episodes or authenticated server files explicitly chosen
+by the user; the app does not bypass provider access or transcode remote media.
 
 ## Controls
 
+X means **Cross**, O means **Circle**. Directions below are the D-pad; the
+left stick also navigates lists. The right stick is named explicitly.
+
 | Input | Browser | Video | Music |
 | --- | --- | --- | --- |
-| D-pad / left stick | Move focus | Seek | Navigate/seek |
-| Cross | Open/confirm | Pause/resume | Pause/resume |
-| Circle | Back | Stop | Stop |
+| D-pad / left stick | Navigate the focused menu/list | Seek when panels are closed | Navigate panels / seek |
+| X | Open/confirm | Pause/resume | Pause/resume |
+| O | Back or close the open panel | Stop fullscreen playback | Stop fullscreen playback |
 | L1 | Sections | Sections | Sections |
-| R1 | Actions / view | Playback and tracks | Playback options |
-| Right stick | — | Volume | Volume |
-| Touch timeline | — | Seek | Seek |
+| R1 | Context options | Playback, audio and subtitles | Shuffle, repeat and colours |
+| Right stick | Ghost Mesh: section wheel | Vertical: volume | Vertical: volume |
+| Short Start, released before 900 ms | Restore the active mini-player | Minimize where supported | Minimize |
+| Hold Start for 900 ms | — | Toggle OLED ECO | Toggle OLED ECO |
+| Hold Select for 900 ms | Lock/unlock while mini-player is active | Lock/unlock input | Lock/unlock input |
+| Tap / drag timeline | — | Show HUD / seek where available | Seek where available |
+
+A short Select press is distinct from input lock: it can show details, star a
+playlist or remove a saved source, depending on the page. With the mini-player
+visible in browsers, Start restores it and Select is reserved for input lock;
+use available R1 actions or stop it before using those page shortcuts. Circle stops the
+fullscreen player; use short Start to continue listening in the mini-player.
+
+The player mapping can be swapped in **Settings → Controls**: D-pad left/right
+then opens panels and L1/R1 seeks. The horizontal left stick remains a seek
+control. This changes video/music controls, not Home theme navigation. Live
+radio and segmented HLS/DASH do not support seeking. In video options,
+up/down chooses a row, left/right prepares a track, X applies, O closes.
+
+### Home navigation by theme
+
+The selected menu and the results are separate focus areas. The in-app
+**Controls guide → Home and themes** begins with the active theme and both sets
+of directions. New-theme Home footers follow the current focus. Tap any visible
+section or item to select it.
+
+| Theme | Choose a section | Enter results / return to sections |
+| --- | --- | --- |
+| Legacy | Up from the first result row, then left/right on the top tabs | Down enters; Up from the first row returns |
+| Ghost Mesh | Right stick aims at the section wheel | D-pad/left stick always controls the left list; X opens its item |
+| Deck 90 | Up/down in the left menu | Right or X enters; Left returns |
+| Signal | Left/right on the top tabs | Down or X enters; Up from the first row returns |
+| Aperture | Left/right on the bottom tabs | Up or X enters; Down from the final item returns |
+| Relay | Up/down in the side menu | Right or X enters; Left from the grid's left edge returns |
+| Mosaic | Left/right on the top tabs | Down or X enters; left/right picks covers, Down/Up changes pages; Up from the first page returns |
+
+For Ghost Mesh, return the right stick to centre after closing a modal before
+selecting another sector. Reorder Home sections in **Settings → Interface →
+Theme tab positions**: up/down selects a row, left/right moves it, X saves,
+O cancels. Each theme keeps its own order. Video/music keep their saved panel/seek mapping across all Home themes.
+
+### Images, guide and downloads
+
+Images: Triangle zooms in, X zooms out, Square rotates 90 degrees, Start resets.
+D-pad/left stick or one-finger drag pans; release stops movement. Pinch zooms.
+L1 opens Sections, R1 image information; O closes a panel or returns to files.
+Right-stick rotation and two-finger twist are not controls.
+
+In the guide, up/down selects a chapter, Right or X enters its text, up/down
+scrolls it and Left returns to the index. O exits. The Player chapter shows the
+currently saved mapping. The native keyboard keeps its system confirmation keys.
+
+Download destination: X enters a folder, Triangle creates one, Start accepts the
+current location, O goes up/cancels at root. During transfer Start pauses/resumes,
+O aborts, and Background/L1 navigation lets the job continue. L1 → Download
+reopens progress. QR from Network or IPTV accepts HTTP(S); O/touch Cancel exits.
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
 saved server. Inside a Jellyfin library, Triangle opens the spectral metadata
@@ -428,6 +484,8 @@ SMB test-server instructions are in
   meet the active Vita decoder contract.
 
 ## Documentation
+
+- [Controls clarification follow-up and test-build identity](docs/controls-guide-2026-10-23.md)
 
 - [Complete documentation index and current/historical scope](docs/README.md)
 - [1.4.1 release notes](docs/releases/1.4.1.md)

@@ -7,6 +7,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Controls clarification follow-up](controls-guide-2026-10-23.md): guide, theme navigation, active mapping and README audit.
+
 - [Release 1.4.1](releases/1.4.1.md): integrated changes, profile and limits.
 - [Validation](VALIDATION.md): suite commands, evidence levels and console checklist.
 - [Specification](../mds/PROJECT_SPECIFICATION.md): current features and contracts.
@@ -93,3 +95,4 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [tests/ui_coverage/README.md](../tests/ui_coverage/README.md) | Executable suite guide; host/device limits stated locally |
 | [tests/ui_crossfade/README.md](../tests/ui_crossfade/README.md) | Executable suite guide; host/device limits stated locally |
 | [tools/local_streaming/README.md](../tools/local_streaming/README.md) | Current reference, policy or build instructions |
+| [docs/controls-guide-2026-10-23.md](controls-guide-2026-10-23.md) | Current controls clarification following the 1.4.1 standard snapshot |

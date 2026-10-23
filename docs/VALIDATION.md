@@ -94,3 +94,11 @@ See [the actual record](console-validation-playerfix-2026-10-23.md).
 The current 1.4.1 release integrates the accepted work; no fresh physical run,
 battery measurement or successful authenticated-provider matrix is inferred
 from compilation, source review, an emulator or host reference pictures.
+
+## Controls follow-up
+
+The post-1.4.1 [controls audit](controls-guide-2026-10-23.md) uses a distinct
+controls-1023 test identity. Its guide tests add actual-theme/current-mapping
+prefixes, hint-width limits, safe buffer failure and index/text navigation.
+The repository README and mds/CONTROLS.md use the same verified theme routes.
+The original archived standard VPK is not silently replaced by that test build.

@@ -240,6 +240,13 @@ void ui_panel(float x, float y, float width, float height,
 void ui_action_button(float x, float y, float width, float height,
 	                  unsigned int fill, const char *key, const char *label,
 	                  int active) {
+	/* Face-button names stay consistent with the pad and translated help. */
+ if(key){
+  if(!strcmp(key,"Cross"))key="X";
+  else if(!strcmp(key,"Circle"))key="O";
+  else if(!strcmp(key,"Triangle"))key=vt_i18n_str(VT_STR_UI_KEY_TRIANGLE);
+  else if(!strcmp(key,"Square"))key=vt_i18n_str(VT_STR_UI_KEY_SQUARE);
+ }
 	unsigned int foreground = ui_contrast_bw(fill);
 	ui_panel(x, y, width, height, fill,
 	         active ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER, active);

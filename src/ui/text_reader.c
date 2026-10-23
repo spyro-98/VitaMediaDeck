@@ -9,12 +9,14 @@
 #include <vita2d.h>
 
 #include "settings/preferences.h"
+#include "i18n/i18n.h"
 #include "ui/brand.h"
 #include "ui/components.h"
 #include "ui/mini_player.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
 #include "ui/theme.h"
+#include "ui/theme_home.h"
 #include "ui/touch.h"
 
 #define TEXT_READER_MAX_LINES 8192
@@ -275,6 +277,19 @@ static int guide_chapters(const char *text, GuideChapter *chapters, int capacity
  return count;
 }
 
+static int guide_chapter_content(const GuideChapter *chapter,char *out,size_t capacity){
+ int prefix=0;
+ if(!strcmp(chapter->title,vt_i18n_str(VT_STR_GUIDE_HOME_HEADING)))
+  prefix=snprintf(out,capacity,"%s\n%s\n%s\n\n",ui_theme_name(ui_theme_id()),
+    ui_theme_home_controls_hint(1),ui_theme_home_controls_hint(0));
+ else if(!strcmp(chapter->title,vt_i18n_str(VT_STR_GUIDE_PLAYER_HEADING)))
+  prefix=snprintf(out,capacity,"%s\n\n",vt_i18n_str(vt_preferences_player_swap_shoulders()?
+    VT_STR_GUIDE_MAPPING_SWAPPED:VT_STR_GUIDE_MAPPING_DEFAULT));
+ if(prefix<0 || (size_t)prefix>=capacity || chapter->length>=capacity-(size_t)prefix)return -1;
+ memcpy(out+prefix,chapter->body,chapter->length);out[prefix+chapter->length]=0;
+ return 0;
+}
+
 int ui_controls_guide_run(const char *title, const char *text) {
  if(!text || !*text)return UI_SECTION_NONE;
  GuideChapter chapters[8];int count=guide_chapters(text,chapters,8);
@@ -328,8 +343,8 @@ int ui_controls_guide_run(const char *title, const char *text) {
     first+=(touch.down_y-touch.y)/TEXT_READER_LINE_HEIGHT;
   } else ui_nav_repeat_reset(&repeat);
   if(cursor!=loaded) {
-   memcpy(content,chapters[cursor].body,chapters[cursor].length);
-   content[chapters[cursor].length]=0;
+   if(guide_chapter_content(&chapters[cursor],content,sizeof(content))<0)
+    return ui_text_reader_run(title,text);
    index_text(ui_runtime_font(UI_FONT_SMALL),content,604);loaded=cursor;first=0;
   }
   int max_first=g_reader_line_count>visible?g_reader_line_count-visible:0;
@@ -354,7 +369,8 @@ int ui_controls_guide_run(const char *title, const char *text) {
    ui_focus_outline_draw(&focus);
   }
   ui_scroll_rail(934,112,panel_height-58,first,visible,g_reader_line_count);
-  ui_footer(ui_mini_player_top(),"L1  /  R1    •    ← →    •    ↑ ↓","Circle");
+  ui_footer(ui_mini_player_top(),vt_i18n_str(content_focus?VT_STR_GUIDE_TEXT_HINT:VT_STR_GUIDE_INDEX_HINT),
+            vt_i18n_str(VT_STR_GUIDE_EXIT_HINT));
   ui_mini_player_draw();
   if(sidebar.animation>.01f)ui_sections_sidebar_draw(&sidebar);
   vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();
