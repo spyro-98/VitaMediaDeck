@@ -1,4 +1,5 @@
 #include "ui/mini_player.h"
+#include "media/video_thumbnail.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -11,6 +12,7 @@
 
 #include "i18n/i18n.h"
 #include "media/background_playback.h"
+#include "media/image_loader.h"
 #include "media/player_input_lock.h"
 #include "media/player_power_save.h"
 #include "settings/preferences.h"
@@ -86,11 +88,7 @@ static MiniVideoRect mini_video_rect(const VtBackgroundPlaybackSnapshot *snapsho
 	float aspect = 16.0f / 9.0f;
 	if (snapshot && snapshot->video_width > 0 && snapshot->video_height > 0)
 		aspect = (float)snapshot->video_width / (float)snapshot->video_height;
-	else if (g_artwork) {
-		int tw = vita2d_texture_get_width(g_artwork);
-		int th = vita2d_texture_get_height(g_artwork);
-		if (tw > 0 && th > 0) aspect = (float)tw / (float)th;
-	}
+	else if (g_artwork) aspect = 1.0f;
 	if (aspect < 0.2f) aspect = 0.2f;
 	if (aspect > 5.0f) aspect = 5.0f;
 	float expanded_h = MINI_VIDEO_EXPANDED_W / aspect;
@@ -101,6 +99,10 @@ static MiniVideoRect mini_video_rect(const VtBackgroundPlaybackSnapshot *snapsho
 		MINI_VIDEO_COMPACT_X, bar_y + 8.0f,
 		MINI_VIDEO_COMPACT_W, MINI_VIDEO_COMPACT_H
 	};
+	if(g_artwork && (!snapshot || !snapshot->video_width)) {
+		compact.x+=(compact.width-compact.height)*.5f;
+		compact.width=compact.height;
+	}
 	MiniVideoRect expanded = {
 		MINI_VIDEO_EXPANDED_MARGIN,
 		bar_y - expanded_h - MINI_VIDEO_EXPANDED_MARGIN,
@@ -120,24 +122,11 @@ static int mini_video_hit(const MiniVideoRect *rect, int x, int y) {
 	       (float)y >= rect->y && (float)y <= rect->y + rect->height;
 }
 
-static int ends_with_ci(const char *text, const char *suffix) {
-	if (!text || !suffix) return 0;
-	size_t text_len = strlen(text), suffix_len = strlen(suffix);
-	if (suffix_len > text_len) return 0;
-	const char *tail = text + text_len - suffix_len;
-	for (size_t i = 0; i < suffix_len; i++)
-		if (tolower((unsigned char)tail[i]) != tolower((unsigned char)suffix[i]))
-			return 0;
-	return 1;
-}
-
 static void artwork_start(const VtBackgroundPlaybackSnapshot *snapshot) {
 	if (!snapshot || !snapshot->thumbnail_url[0]) return;
 	/* Artwork is intentionally file-only. The local mini-player must never
 	 * create an implicit network request behind the current screen. */
-	g_artwork = ends_with_ci(snapshot->thumbnail_url, ".png")
-	          ? vita2d_load_PNG_file(snapshot->thumbnail_url)
-	          : vita2d_load_JPEG_file(snapshot->thumbnail_url);
+	g_artwork = vt_image_load_texture(snapshot->thumbnail_url,256,NULL,NULL,0);
 }
 
 static void artwork_pump(const VtBackgroundPlaybackSnapshot *snapshot) {
@@ -162,7 +151,7 @@ static void draw_artwork_cover(const vita2d_texture *texture,
 	float th = (float)vita2d_texture_get_height(texture);
 	if (tw <= 0.0f || th <= 0.0f) return;
 	float scale = width / tw;
-	if (th * scale < height) scale = height / th;
+	if (th * scale > height) scale = height / th;
 	float draw_w = tw * scale, draw_h = th * scale;
 	vita2d_set_clip_rectangle((int)x, (int)y, (int)(x + width), (int)(y + height));
 	vita2d_enable_clipping();
@@ -279,19 +268,9 @@ void ui_mini_player_draw(void) {
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	const int y = ui_mini_player_top();
 
-	/* A docked signal strip: OLED glass, spectral acquisition rail, sparse packet
-	 * marks. It remains the same height so every page keeps its viewport math. */
-	vita2d_draw_rectangle(0, y - 4, SCREEN_WIDTH, 4, RGBA8(0, 0, 0, 112));
-	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, UI_MINI_PLAYER_HEIGHT,
-	                      VT_THEME_BG_SOFT);
-	vita2d_draw_rectangle(0, y, SCREEN_WIDTH, 1, VT_THEME_SPECTRAL);
-	vita2d_draw_rectangle(474, y + 1, 286, 1, VT_THEME_SIGNAL_BRIGHT);
-	for (int packet = 0; packet < 10; packet++)
-		vita2d_draw_rectangle(506.0f + packet * 13.0f, y + 8.0f,
-		                      packet == 4 ? 7.0f : 2.0f, 2.0f,
-		                      packet == 4 ? VT_THEME_SIGNAL_LIGHT
-		                      : packet % 3 == 0 ? VT_THEME_COLD
-		                                          : VT_THEME_SPECTRAL_A(92));
+	/* A quiet dock leaves focus to the page. Its reserved viewport is unchanged. */
+ vita2d_draw_rectangle(0,y,SCREEN_WIDTH,UI_MINI_PLAYER_HEIGHT,VT_THEME_SURFACE);
+ vita2d_draw_rectangle(18,y,924,1,VT_THEME_BORDER);
 
 	MiniVideoRect video_rect = mini_video_rect(
 	    &snapshot, (float)y, g_mini_video_expansion);
@@ -388,7 +367,7 @@ void ui_mini_player_draw(void) {
 	for (int i = 0; i < 3; i++) {
 		transport_fill[i] = g_mini_control_feedback == i + 1 &&
 		                    now_us < g_mini_control_feedback_until_us
-		                  ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_SURFACE_FOCUS;
+		                  ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_SURFACE_RAISED;
 		transport_foreground[i] = ui_contrast_bw(transport_fill[i]);
 		if (snapshot.is_live && i != 1) continue;
 		vita2d_draw_rectangle(transport_x[i] - 21.0f, y + 12.0f,
@@ -451,6 +430,7 @@ void ui_mini_player_draw(void) {
 }
 
 void ui_mini_player_pump(void) {
+	vt_background_playback_checkpoint();
 	/* Every page calls pump before beginning the next vita2d frame, therefore
 	 * the preceding wait_rendering_done has already retired the AvPlayer surface
 	 * submitted by draw(). */
@@ -585,6 +565,7 @@ int ui_mini_player_handle_buttons(unsigned int *pressed) {
 	vt_background_playback_video_render_complete();
 	memset(&g_mini_start_input, 0, sizeof(g_mini_start_input));
 	vt_background_playback_resume_fullscreen();
+	vt_video_thumbnail_resume();
 	return 1;
 }
 
@@ -625,6 +606,7 @@ int ui_mini_player_handle_touch(unsigned int touch_flags,
 			 * video surface above; audio-only sessions can never enter that state. */
 			vt_background_playback_video_render_complete();
 			vt_background_playback_resume_fullscreen();
+			vt_video_thumbnail_resume();
 		}
 		else if (ui_touch_hit_rect(
 		             touch->x, touch->y, (int)MINI_TRANSPORT_CLOSE_X - 26,

@@ -12,6 +12,7 @@
 
 #include "app_paths.h"
 #include "network/network_internal.h"
+#include "network/personal_media.h"
 
 #define SOURCE_DB_PATH VITAMEDIADECK_NETWORK_DIR "/sources.bin"
 #define SOURCE_DB_TEMP VITAMEDIADECK_NETWORK_DIR "/sources.tmp"
@@ -332,6 +333,9 @@ int vt_network_list(const VtNetworkSource *source,
 		case VT_NETWORK_SMB:
 			return vt_smb_list(source, credential, path, entries, capacity,
 			                   detail, detail_size);
+		case VT_NETWORK_NAVIDROME:
+		case VT_NETWORK_IMMICH:
+			return vt_personal_list(source, credential, path, entries, capacity, detail, detail_size);
 		case VT_NETWORK_JELLYFIN:
 			return vt_jellyfin_list(source, credential, path, entries, capacity,
 			                        detail, detail_size);
@@ -344,6 +348,8 @@ int vt_network_prepare_source(const VtNetworkSource *source,
 	                          char *detail, size_t detail_size) {
 	if (!source || !credential) return -1;
 	if (detail && detail_size) detail[0] = '\0';
+	if (source->protocol == VT_NETWORK_NAVIDROME || source->protocol == VT_NETWORK_IMMICH)
+		return vt_personal_authenticate(source, credential, detail, detail_size);
 	if (source->protocol == VT_NETWORK_JELLYFIN)
 		return vt_jellyfin_authenticate(source, credential, detail, detail_size);
 	return 0;
@@ -373,7 +379,7 @@ int vt_network_https_probe_public_key(const VtNetworkSource *source,
 	if (source->protocol == VT_NETWORK_WEBDAV)
 		return vt_webdav_probe_public_key(source, credential, pin, pin_size,
 		                                  detail, detail_size);
-	if (source->protocol == VT_NETWORK_JELLYFIN)
+	if (source->protocol == VT_NETWORK_JELLYFIN || source->protocol == VT_NETWORK_NAVIDROME || source->protocol == VT_NETWORK_IMMICH)
 		return vt_jellyfin_probe_public_key(source, pin, pin_size,
 		                                    detail, detail_size);
 	return -1;
@@ -397,6 +403,13 @@ static int network_factory_open_cancelable(void *opaque,
 			return vt_smb_open_stream(&factory->source,
 			                          &factory->credential, factory->path, out,
 			                          cancel_flag);
+		case VT_NETWORK_NAVIDROME: {
+			char url[3072];
+			if (vt_personal_stream_url(&factory->source, &factory->credential, factory->path, url, sizeof(url)) < 0) return -1;
+			int result = vt_authenticated_range_stream(&factory->source, url, out, cancel_flag, &factory->buffer, &factory->buffer_owner);
+			memset(url, 0, sizeof(url));
+			return result;
+		}
 		case VT_NETWORK_JELLYFIN:
 			if (factory->jellyfin_subtitle_stream)
 				return vt_jellyfin_open_subtitle_stream(
@@ -486,6 +499,8 @@ int vt_network_fetch_artwork(const VtNetworkSource *source,
 	if (!source || !data || !size) return -1;
 	*data = NULL;
 	*size = 0;
+	if (source->protocol == VT_NETWORK_NAVIDROME || source->protocol == VT_NETWORK_IMMICH)
+		return vt_personal_artwork(source, credential, path, data, size, cancel_flag);
 	if (source->protocol == VT_NETWORK_JELLYFIN)
 		return vt_jellyfin_fetch_primary_image(source, credential, path,
 		                                       data, size, cancel_flag);
@@ -521,6 +536,8 @@ const char *vt_network_protocol_name(VtNetworkProtocol protocol) {
 		case VT_NETWORK_SFTP: return "SFTP";
 		case VT_NETWORK_SMB: return "SMB";
 		case VT_NETWORK_JELLYFIN: return "Jellyfin";
+		case VT_NETWORK_NAVIDROME: return "Navidrome";
+		case VT_NETWORK_IMMICH: return "Immich";
 		default: return "?";
 	}
 }

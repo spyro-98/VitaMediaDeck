@@ -4,8 +4,11 @@
 ffmpeg-hw.commit=ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
 wiliwili.commit=88e5876bea9502d06f46a8656e3530684d3aaf7d
 wiliwili.ffmpeg-patch.sha256=2d38529d10c74560db3909cf8c2f3e359b128c04fb29f6dd0085770ed81cef6c
-ffmpeg-sw.version=8.1.2
-ffmpeg-sw.source.sha256=464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c
+# The app deliberately shares the patched n6.0 archives between both decoders.
+ffmpeg-sw.app.commit=ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
+# Historical standalone builder inputs, not the FFmpeg linked in this VPK.
+ffmpeg-sw.standalone.version=8.1.2
+ffmpeg-sw.standalone.source.sha256=464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c
 curl.version=8.21.0
 curl.source.sha256=aa1b66a70eace83dc624508745646c08ae561de512ab403adffb93ac87fc72e6
 mbedtls.version=3.6.5
@@ -42,3 +45,8 @@ pthread-embedded.commit=11d2e5722d98c86f33c908fc47b2cf6e55205db5
 reavplayer-source.commit=abff24a21ffec3e57fc1cd3b1d17dc26666251b0
 vita-media-player-module.commit=0b5e7c933196227f955588c806c51b0b66c10654
 reavplayer-module.sha256=8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850
+
+# Local component revisions used by VitaMediaDeck 1.4.0 standard.
+vita-hw-decoder.commit=cb38fa8efd8fb59eee79f9e296daca8359a3ebf3
+vita-sw-decoder.commit=15709b12a9ecdab0541da15ffa052e373fe1c34e
+vita-https.commit=a67dc3154ae38158283a53e54d9baea56c61948d

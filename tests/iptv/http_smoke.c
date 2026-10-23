@@ -18,9 +18,10 @@ static int progress(void *ctx,curl_off_t a,curl_off_t b,curl_off_t c,curl_off_t 
 }
 int vt_iptv_http_fetch(void *ctx,const char *url,size_t limit,unsigned char **data,
     size_t *size,char *effective,size_t capacity,volatile int *cancel) {
-    (void)ctx;Buffer buffer={.limit=limit,.cancel=cancel};CURL *curl=curl_easy_init();
+    const VtIptvHttpOptions *options=ctx;Buffer buffer={.limit=limit,.cancel=cancel};CURL *curl=curl_easy_init();
     if(!curl)return VT_IPTV_MEMORY;
     requests++;curl_easy_setopt(curl,CURLOPT_URL,url);curl_easy_setopt(curl,CURLOPT_FOLLOWLOCATION,1L);
+    curl_easy_setopt(curl,CURLOPT_USERAGENT,options && options->user_agent[0]?options->user_agent:"VitaMediaDeck/1.4.0");
     curl_easy_setopt(curl,CURLOPT_MAXREDIRS,5L);curl_easy_setopt(curl,CURLOPT_PROTOCOLS_STR,"http,https");
     curl_easy_setopt(curl,CURLOPT_REDIR_PROTOCOLS_STR,!strncmp(url,"https://",8)?"https":"http,https");
     curl_easy_setopt(curl,CURLOPT_SSL_VERIFYPEER,1L);curl_easy_setopt(curl,CURLOPT_SSL_VERIFYHOST,2L);

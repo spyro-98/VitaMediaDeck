@@ -119,6 +119,20 @@ _Static_assert(sizeof(VtPreferencesDiskV3) == 40,
 #define VT_MUSIC_THEME_MASK              (7u << VT_MUSIC_THEME_SHIFT)
 #define VT_SUBTITLE_SIZE_HIGH_BIT        (1u << 16)
 #define VT_SUBTITLE_POSITION_HIGH_BIT    (1u << 17)
+/* New, previously unused bits; all existing V1/V2/V3 records keep centered art. */
+#define VT_AUDIO_LAYOUT_SHIFT 18u
+#define VT_AUDIO_LAYOUT_MASK (3u << VT_AUDIO_LAYOUT_SHIFT)
+/* Previously unused V3 extension bits; V1/V2/V3 zero remains Legacy. */
+#define VT_INTERFACE_THEME_SHIFT 20u
+#define VT_INTERFACE_THEME_MASK (3u << VT_INTERFACE_THEME_SHIFT)
+#define VT_GHOST_BROWSER_LIST (1u << 22)
+#define VT_DECK_BROWSER_GRID (1u << 23)
+#define VT_SIGNAL_BROWSER_GRID (1u << 24)
+/* Extend the theme ID without moving the shipped low bits or browser flags. */
+#define VT_INTERFACE_THEME_HIGH (1u << 25)
+#define VT_APERTURE_BROWSER_LIST (1u << 26)
+#define VT_RELAY_BROWSER_GRID (1u << 27)
+#define VT_MOSAIC_BROWSER_LIST (1u << 28)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -435,12 +449,34 @@ int vt_preferences_set_player_swap_shoulders(int enabled) {
 	return set_playback_flag(VT_PLAYBACK_FLAG_SWAP_SHOULDERS, enabled);
 }
 
+static uint32_t interface_browser_bit(void){
+ switch(vt_preferences_interface_theme()){
+  case VT_UI_THEME_GHOST_MESH:return VT_GHOST_BROWSER_LIST;
+  case VT_UI_THEME_DECK_90:return VT_DECK_BROWSER_GRID;
+  case VT_UI_THEME_SIGNAL:return VT_SIGNAL_BROWSER_GRID;
+  case VT_UI_THEME_APERTURE:return VT_APERTURE_BROWSER_LIST;
+  case VT_UI_THEME_RELAY:return VT_RELAY_BROWSER_GRID;
+  case VT_UI_THEME_MOSAIC:return VT_MOSAIC_BROWSER_LIST;
+  default:return 0;
+ }
+}
+static int interface_browser_defaults_grid(void){
+ int theme=vt_preferences_interface_theme();
+ return theme==VT_UI_THEME_GHOST_MESH||theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC;
+}
 int vt_preferences_file_browser_grid(void) {
 	if (!g_loaded) vt_preferences_init();
+ uint32_t bit=interface_browser_bit();
+ if(bit){int value=(g_subtitle_flags&bit)!=0;
+  return interface_browser_defaults_grid()?!value:value;}
 	return (g_playback_flags & VT_FILE_BROWSER_FLAG_LIST) == 0;
 }
 
 int vt_preferences_set_file_browser_grid(int enabled) {
+ if(!g_loaded)vt_preferences_init();
+ uint32_t bit=interface_browser_bit();
+ if(bit){int set=interface_browser_defaults_grid()?!enabled:!!enabled;
+  return persist_subtitle_pair(g_playback_flags,set?g_subtitle_flags|bit:g_subtitle_flags&~bit);}
 	return set_playback_flag(VT_FILE_BROWSER_FLAG_LIST, !enabled);
 }
 
@@ -472,6 +508,34 @@ int vt_preferences_set_music_theme(int theme) {
 	uint32_t next = (g_subtitle_flags & ~VT_MUSIC_THEME_MASK) |
 	                ((uint32_t)theme << VT_MUSIC_THEME_SHIFT);
 	return persist_subtitle_pair(g_playback_flags, next);
+}
+
+int vt_preferences_interface_theme(void) {
+ if(!g_loaded)vt_preferences_init();
+ unsigned value=((g_subtitle_flags & VT_INTERFACE_THEME_MASK)>>VT_INTERFACE_THEME_SHIFT) |
+                ((g_subtitle_flags & VT_INTERFACE_THEME_HIGH)?4u:0u);
+ return value<VT_UI_THEME_COUNT?(int)value:VT_UI_THEME_LEGACY;
+}
+int vt_preferences_set_interface_theme(int theme) {
+ if(theme<0||theme>=VT_UI_THEME_COUNT)return -1;
+ if(!g_loaded)vt_preferences_init();
+ return persist_subtitle_pair(g_playback_flags,
+     (g_subtitle_flags & ~(VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH)) |
+     (((uint32_t)theme&3u)<<VT_INTERFACE_THEME_SHIFT) |
+     ((theme&4)?VT_INTERFACE_THEME_HIGH:0));
+}
+
+int vt_preferences_audio_layout(void) {
+	if (!g_loaded) vt_preferences_init();
+	unsigned value=(g_subtitle_flags & VT_AUDIO_LAYOUT_MASK)>>VT_AUDIO_LAYOUT_SHIFT;
+	return value<=VT_AUDIO_LAYOUT_RIGHT ? (int)value : VT_AUDIO_LAYOUT_CENTER;
+}
+
+int vt_preferences_set_audio_layout(int layout) {
+	if(layout<VT_AUDIO_LAYOUT_CENTER || layout>VT_AUDIO_LAYOUT_RIGHT) return -1;
+	if(!g_loaded) vt_preferences_init();
+	return persist_subtitle_pair(g_playback_flags,(g_subtitle_flags & ~VT_AUDIO_LAYOUT_MASK) |
+	    ((uint32_t)layout<<VT_AUDIO_LAYOUT_SHIFT));
 }
 
 int vt_preferences_local_video_grid(void) {

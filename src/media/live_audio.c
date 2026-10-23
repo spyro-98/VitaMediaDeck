@@ -165,7 +165,7 @@ int vt_live_audio_run(const VtLiveAudioConfig *config) {
 		if (config->buffering) config->buffering(config->ctx);
 		LiveContext c = { .config = config, .port = -1, .position_us = position_us };
 		c.decoder = mpg123_new(NULL, NULL);
-		VitaHttpsClientConfig options = { .user_agent = "VitaMediaDeck/1.3.0",
+		VitaHttpsClientConfig options = { .user_agent = "VitaMediaDeck/1.4.0",
 		    .allow_http = 1, .connect_timeout_ms = 10000,
 		    .request_timeout_ms = LONG_MAX, .low_speed_bytes_per_second = 128,
 		    .low_speed_seconds = 15 };

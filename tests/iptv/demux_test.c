@@ -10,10 +10,12 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/error.h>
 #include <libavutil/mathematics.h>
+#include <libavutil/time.h>
 
 static unsigned checks, requests, segments;
-#define CHECK(x) do { ++checks; assert(x); } while (0)
+#define CHECK(x) do { __atomic_add_fetch(&checks,1,__ATOMIC_RELAXED); assert(x); } while (0)
 static const char *fixture;
+#ifndef VMD_EXTERNAL_FETCH
 int vt_iptv_http_fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     size_t *size, char *effective, size_t capacity, volatile int *cancel) {
     (void)ctx;
@@ -28,11 +30,15 @@ int vt_iptv_http_fetch(void *ctx, const char *url, size_t limit, unsigned char *
     if(bytes<=0||(unsigned long)bytes>limit){fclose(f);return VT_IPTV_LIMIT;}
     *data=malloc((size_t)bytes);assert(*data);*size=fread(*data,1,(size_t)bytes,f);fclose(f);
     if(*size!=(size_t)bytes)return VT_IPTV_IO;
+#ifdef VMD_FIXTURE_REWRITE
+    rewrite_fixture(url,data,size);
+#endif
     snprintf(effective,capacity,"%s",url);
     __atomic_add_fetch(&requests,1,__ATOMIC_RELAXED);
     if(!strstr(url,".m3u8"))__atomic_add_fetch(&segments,1,__ATOMIC_RELAXED);
     return 0;
 }
+#endif
 typedef struct { VtDecoderStreamHandle cursor; AVIOContext *io; AVFormatContext *format; } Input;
 static int read_bytes(void *ctx,uint8_t *data,int size) {
     VtDecoderStreamHandle *c=ctx;int result=c->read(c->opaque,data,(size_t)size);
@@ -40,6 +46,9 @@ static int read_bytes(void *ctx,uint8_t *data,int size) {
 }
 static void open_input(Input *in,VtDecoderStreamFactory *factory) {
     CHECK(!factory->open(factory->opaque,&in->cursor));
+#ifdef VMD_EXTERNAL_FETCH
+    int64_t probe_started=av_gettime();
+#endif
     CHECK(!in->cursor.seek&&in->cursor.size==-1&&in->cursor.abort);
     in->io=avio_alloc_context(av_malloc(65536),65536,0,&in->cursor,read_bytes,NULL,NULL);
     CHECK(in->io);in->io->seekable=0;
@@ -49,15 +58,24 @@ static void open_input(Input *in,VtDecoderStreamFactory *factory) {
     in->format->skip_estimate_duration_from_pts=1;
     in->format->probesize=512*1024;
     in->format->max_analyze_duration=2*AV_TIME_BASE;
+#if (defined(VMD_EXTERNAL_FETCH) && !defined(VMD_HLS_NETWORK)) || defined(VMD_FIXTURE_REWRITE)
+    /* Match version 2 of the decoder's opt-in remuxed-IPTV contract. */
+    in->format->probesize=64*1024;in->format->max_analyze_duration=AV_TIME_BASE;
+    in->format->fps_probe_size=0;
+#endif
     CHECK(!avformat_open_input(&in->format,NULL,av_find_input_format("mpegts"),NULL));
     CHECK(avformat_find_stream_info(in->format,NULL)>=0);
+#ifdef VMD_EXTERNAL_FETCH
+    fprintf(stderr,"Live demux probe: bytes=%lld streams=%u start=%lld elapsed=%lld ms\n",(long long)in->io->bytes_read,
+        in->format->nb_streams,(long long)in->format->start_time,(long long)((av_gettime()-probe_started)/1000));
+#endif
 }
 static void close_input(Input *in) {
     avformat_close_input(&in->format);
     av_freep(&in->io->buffer);avio_context_free(&in->io);
     in->cursor.close(in->cursor.opaque);
 }
-typedef struct { AVCodecContext *codec; AVFrame *frame; int stream; unsigned frames; int64_t first,last,origin; } Decode;
+typedef struct { AVCodecContext *codec; AVFrame *frame; int stream; unsigned frames; int64_t first,last,origin,next_audio_pts; } Decode;
 static void decoder_open(Decode *d,Input *in,enum AVMediaType type,int64_t origin) {
     d->stream=av_find_best_stream(in->format,type,-1,-1,NULL,0);CHECK(d->stream>=0);
     AVCodecParameters *p=in->format->streams[d->stream]->codecpar;
@@ -65,6 +83,7 @@ static void decoder_open(Decode *d,Input *in,enum AVMediaType type,int64_t origi
     const AVCodec *codec=avcodec_find_decoder(p->codec_id);CHECK(codec);
     d->codec=avcodec_alloc_context3(codec);CHECK(d->codec);
     CHECK(avcodec_parameters_to_context(d->codec,p)>=0);
+    d->codec->pkt_timebase=in->format->streams[d->stream]->time_base;
     d->codec->thread_count=1;CHECK(avcodec_open2(d->codec,codec,NULL)>=0);
     d->frame=av_frame_alloc();CHECK(d->frame);d->origin=origin;
     for(unsigned i=0;i<in->format->nb_streams;i++)
@@ -73,9 +92,25 @@ static void decoder_open(Decode *d,Input *in,enum AVMediaType type,int64_t origi
 static void drain(Decode *d,Input *in) {
     int result;
     while((result=avcodec_receive_frame(d->codec,d->frame))>=0) {
+        int64_t pts;
+#ifdef VMD_HLS_NETWORK
+        /* Some public TS encoders timestamp a PES rather than every AAC AU.
+         * Match the elementary audio clock: anchor once, then count samples.
+         * Never synthesize video timestamps or silently move an existing PTS. */
+        if(d->frame->best_effort_timestamp==AV_NOPTS_VALUE && d->codec->codec_id==AV_CODEC_ID_AAC) {
+            CHECK(d->frame->nb_samples>0 && d->frame->sample_rate>0);
+            CHECK(d->frames || in->format->streams[d->stream]->start_time!=AV_NOPTS_VALUE);
+            pts=d->frames?d->next_audio_pts:av_rescale_q(in->format->streams[d->stream]->start_time,
+                in->format->streams[d->stream]->time_base,AV_TIME_BASE_Q)-d->origin;
+        } else
+#endif
+        {
         CHECK(d->frame->best_effort_timestamp!=AV_NOPTS_VALUE);
-        int64_t pts=av_rescale_q(d->frame->best_effort_timestamp,
+        pts=av_rescale_q(d->frame->best_effort_timestamp,
             in->format->streams[d->stream]->time_base,AV_TIME_BASE_Q)-d->origin;
+        }
+        if(d->frame->nb_samples && d->frame->sample_rate)
+            d->next_audio_pts=pts+av_rescale(d->frame->nb_samples,AV_TIME_BASE,d->frame->sample_rate);
         if(!d->frames)d->first=pts;else CHECK(pts>=d->last);
         d->last=pts;d->frames++;av_frame_unref(d->frame);
     }

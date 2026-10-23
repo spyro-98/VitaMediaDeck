@@ -22,6 +22,7 @@
 #include "media/audio_volume.h"
 #include "media/live_audio.h"
 #include "network/http_audio_stream.h"
+#include "history/playback_history.h"
 #include "media/avplayer_init.h"
 #include "media/vita_decoder.h"
 #include "ui/subtitle.h"
@@ -46,6 +47,8 @@ typedef struct {
 	uint64_t seek_position_ms;
 	uint64_t start_position_ms;
 	char input_path[512];
+	char podcast_history[16];
+	uint64_t checkpoint_us, checkpoint_position;
 	int mp3_source;
 	int flac_source;
 	int decoder_source;
@@ -221,7 +224,7 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	mpg123_rates(&rates, &rate_count);
 	for (size_t i = 0; i < rate_count; i++)
 		mpg123_format(decoder, rates[i], MPG123_STEREO, MPG123_ENC_SIGNED_16);
-	if(job->remote_video_source==2) {
+	if(job->remote_video_source>=2) {
 		if(mpg123_replace_reader_handle(decoder,podcast_mpg_read,podcast_mpg_seek,NULL)!=MPG123_OK ||
 		   mpg123_open_handle(decoder,&job->podcast_stream)!=MPG123_OK)goto done;
 	} else {
@@ -249,13 +252,13 @@ static int play_mp3(BackgroundPlaybackJob *job) {
 	publish_audio_metadata(job, mpeg_codec, bitrate_kbps, (uint32_t)rate,
 	                       source_channels, 0);
 	off_t length = mpg123_length(decoder);
-	if (length < 0 && job->remote_video_source!=2 && mpg123_scan(decoder) == MPG123_OK) length = mpg123_length(decoder);
+	if (length < 0 && job->remote_video_source<2 && mpg123_scan(decoder) == MPG123_OK) length = mpg123_length(decoder);
 	if (length > 0 && !job->snapshot.duration_ms) {
 		snapshot_lock();
 		job->snapshot.duration_ms = (uint64_t)length * 1000ULL / (uint64_t)rate;
 		snapshot_unlock();
 	}
-	if(length<0 && job->remote_video_source==2 && bitrate_kbps && job->podcast_stream.size>0) {
+	if(length<0 && job->remote_video_source>=2 && bitrate_kbps && job->podcast_stream.size>0) {
 		snapshot_lock();job->snapshot.duration_ms=(uint64_t)job->podcast_stream.size*8/bitrate_kbps;snapshot_unlock();
 	}
 	uint64_t start_position_ms = player_start_position(job);
@@ -424,7 +427,9 @@ static FLAC__StreamDecoderReadStatus flac_read_callback(
 		if (bytes) *bytes = 0;
 		return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
 	}
-	int read = sceIoRead(context->fd, buffer, *bytes);
+	int read = context->job->remote_video_source >= 2
+	    ? context->job->podcast_stream.read(context->job->podcast_stream.opaque, buffer, *bytes)
+	    : sceIoRead(context->fd, buffer, *bytes);
 	if (read < 0) {
 		*bytes = 0;
 		return FLAC__STREAM_DECODER_READ_STATUS_ABORT;
@@ -441,7 +446,9 @@ static FLAC__StreamDecoderSeekStatus flac_seek_callback(
 	FlacPlaybackContext *context = client_data;
 	if (!context || absolute_byte_offset > (FLAC__uint64)INT64_MAX)
 		return FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
-	return sceIoLseek(context->fd, (SceOff)absolute_byte_offset, SCE_SEEK_SET) < 0
+	return (context->job->remote_video_source >= 2
+	    ? context->job->podcast_stream.seek(context->job->podcast_stream.opaque, (int64_t)absolute_byte_offset, SEEK_SET)
+	    : sceIoLseek(context->fd, (SceOff)absolute_byte_offset, SCE_SEEK_SET)) < 0
 	     ? FLAC__STREAM_DECODER_SEEK_STATUS_ERROR
 	     : FLAC__STREAM_DECODER_SEEK_STATUS_OK;
 }
@@ -451,7 +458,9 @@ static FLAC__StreamDecoderTellStatus flac_tell_callback(
 	void *client_data) {
 	(void)decoder;
 	FlacPlaybackContext *context = client_data;
-	SceOff position = context ? sceIoLseek(context->fd, 0, SCE_SEEK_CUR) : -1;
+	SceOff position = !context ? -1 : context->job->remote_video_source >= 2
+	    ? context->job->podcast_stream.seek(context->job->podcast_stream.opaque, 0, SEEK_CUR)
+	    : sceIoLseek(context->fd, 0, SCE_SEEK_CUR);
 	if (position < 0) return FLAC__STREAM_DECODER_TELL_STATUS_ERROR;
 	*absolute_byte_offset = (FLAC__uint64)position;
 	return FLAC__STREAM_DECODER_TELL_STATUS_OK;
@@ -472,7 +481,9 @@ static FLAC__bool flac_eof_callback(const FLAC__StreamDecoder *decoder,
 	                                void *client_data) {
 	(void)decoder;
 	FlacPlaybackContext *context = client_data;
-	SceOff position = context ? sceIoLseek(context->fd, 0, SCE_SEEK_CUR) : -1;
+	SceOff position = !context ? -1 : context->job->remote_video_source >= 2
+	    ? context->job->podcast_stream.seek(context->job->podcast_stream.opaque, 0, SEEK_CUR)
+	    : sceIoLseek(context->fd, 0, SCE_SEEK_CUR);
 	return position >= 0 && (FLAC__uint64)position >= context->file_size;
 }
 
@@ -541,10 +552,16 @@ static int play_flac(BackgroundPlaybackJob *job) {
 	int lease_ready = 0;
 	int ret = -1;
 
-	context.fd = sceIoOpen(job->input_path, SCE_O_RDONLY, 0);
-	if (context.fd < 0) return context.fd;
-	SceOff end = sceIoLseek(context.fd, 0, SCE_SEEK_END);
-	if (end <= 0 || sceIoLseek(context.fd, 0, SCE_SEEK_SET) < 0) goto done;
+	SceOff end;
+	if (job->remote_video_source >= 2) {
+		end = job->podcast_stream.size;
+		if (end <= 0 || job->podcast_stream.seek(job->podcast_stream.opaque, 0, SEEK_SET) < 0) goto done;
+	} else {
+		context.fd = sceIoOpen(job->input_path, SCE_O_RDONLY, 0);
+		if (context.fd < 0) return context.fd;
+		end = sceIoLseek(context.fd, 0, SCE_SEEK_END);
+		if (end <= 0 || sceIoLseek(context.fd, 0, SCE_SEEK_SET) < 0) goto done;
+	}
 	context.file_size = (FLAC__uint64)end;
 	decoder = FLAC__stream_decoder_new();
 	if (!decoder) goto done;
@@ -690,18 +707,26 @@ static int podcast_av_close(void *ctx) {(void)ctx;return 0;}
 static uint64_t podcast_av_size(void *ctx) {BackgroundPlaybackJob *job=ctx;return job->podcast_stream.size>0?(uint64_t)job->podcast_stream.size:0;}
 static int podcast_av_read(void *ctx,uint8_t *buffer,uint64_t offset,uint32_t size) {
 	BackgroundPlaybackJob *job=ctx;VtDecoderStreamHandle *s=&job->podcast_stream;
-	if(offset>INT64_MAX||job->cancel)return -1;
+	if(offset>INT64_MAX||size>INT_MAX||job->cancel)return -1;
 	while(__sync_lock_test_and_set(&job->podcast_io_lock,1)) {
 		if(job->cancel)return -1;
 		sceKernelDelayThread(1000);
 	}
-	int ret=s->seek(s->opaque,(int64_t)offset,SEEK_SET)<0?-1:s->read(s->opaque,buffer,size);
+	int ret = -1;
+	if(s->seek(s->opaque,(int64_t)offset,SEEK_SET)==(int64_t)offset) {
+		uint32_t received=0;
+		while(received<size && !job->cancel) {
+			int n=s->read(s->opaque,buffer+received,size-received);
+			if(n<=0){ret=received?(int)received:n;break;}
+			received+=(uint32_t)n;ret=(int)received;
+		}
+	}
 	__sync_lock_release(&job->podcast_io_lock);return ret;
 }
 static int play_av_source(BackgroundPlaybackJob *job) {
 	SceAvPlayerHandle player = AVPLAYER_INVALID_HANDLE;
 	SceAvPlayerFileReplacement replacement={job,podcast_av_open,podcast_av_close,podcast_av_read,podcast_av_size};
-	int ret = media_init(&player, job->remote_video_source==2?&replacement:NULL);
+	int ret = media_init(&player, job->remote_video_source>=2?&replacement:NULL);
 	if (ret < 0) return ret;
 	ret = sceAvPlayerAddSource(player, job->input_path);
 	if (ret < 0) {
@@ -874,7 +899,7 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		return -1;
 	}
 	VtDecoderStreamFactory factory;
-	if (job->remote_video_source == 2) vt_http_audio_stream_factory(job->input_path, &factory);
+	if (job->remote_video_source >= 2) vt_http_audio_stream_factory(job->input_path, &factory);
 	else if (job->remote_video_source) factory = job->remote_factory.factory;
 	else vt_decoder_file_stream_factory(job->input_path, &factory);
 	uint64_t start_position_ms = player_start_position(job);
@@ -952,7 +977,7 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		/* With animated mini-player video disabled, no scene calls present_rect().
 		 * Keep consuming frames against the presentation clock so the bounded video
 		 * queue cannot fill and stall the decoder/audio pipeline. */
-		if (!paused && (!vt_preferences_mini_player_animated() || job->remote_video_source == 2)) {
+		if (!paused && (!vt_preferences_mini_player_animated() || job->remote_video_source >= 2)) {
 			player_lock(job);
 			if (!job->video_in_gpu && job->local_video_source &&
 			    job->active_decoder == decoder)
@@ -1034,7 +1059,9 @@ static int play_radio(BackgroundPlaybackJob *job) {
 }
 
 static int play_podcast(BackgroundPlaybackJob *job) {
-	VtDecoderStreamFactory factory;vt_http_audio_stream_factory(job->input_path,&factory);
+	VtDecoderStreamFactory factory;
+	if (job->remote_video_source == 3) factory = job->remote_factory.factory;
+	else vt_http_audio_stream_factory(job->input_path,&factory);
 	int ret=factory.open_cancelable(factory.opaque,&job->podcast_stream,&job->cancel);
 	if(ret<0)return ret;
 	unsigned char probe[12];int bytes=job->podcast_stream.read(job->podcast_stream.opaque,probe,sizeof(probe));
@@ -1047,7 +1074,8 @@ static int play_podcast(BackgroundPlaybackJob *job) {
 		int mp4=!memcmp(probe+4,"ftyp",4);
 		int aac=probe[0]==0xff && (probe[1]&0xf6)==0xf0;
 		log_printf("podcast playback: format=%s\n", mp4 ? "MP4" : aac ? "AAC" : "MP3 candidate");
-		ret=mp4||aac?play_av_source(job):play_mp3(job);
+		int flac=!memcmp(probe,"fLaC",4);
+		ret=flac?play_flac(job):mp4||aac?play_av_source(job):play_mp3(job);
 	} else ret=-1;
 	log_printf("podcast playback: result=%d cancelled=%d\n", ret, !!job->cancel);
 	job->podcast_stream.close(job->podcast_stream.opaque);memset(&job->podcast_stream,0,sizeof(job->podcast_stream));
@@ -1060,7 +1088,7 @@ static int background_thread(SceSize args, void *argp) {
 	while (!job->cancel && !job->activate) sceKernelDelayThread(10 * 1000);
 	int ret = job->cancel ? -1
 	        : job->snapshot.is_live ? play_radio(job)
-	        : job->remote_video_source==2 ? play_podcast(job)
+	        : job->remote_video_source>=2 ? play_podcast(job)
 	        : job->mp3_source ? play_mp3(job)
 	        : job->flac_source ? play_flac(job)
 	        : job->decoder_source ? play_decoder_source(job)
@@ -1068,7 +1096,7 @@ static int background_thread(SceSize args, void *argp) {
 	if (ret < 0 && !job->cancel) {
 		set_state(VT_BACKGROUND_ERROR, ret);
 		log_printf("local background playback failed: 0x%08X\n", (unsigned)ret);
-		if (job->remote_video_source == 2 || job->snapshot.is_live)
+		if (job->remote_video_source >= 2 || job->snapshot.is_live)
 			log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	} else if (!job->cancel) {
 		snapshot_lock();
@@ -1179,6 +1207,34 @@ int vt_background_playback_prepare_podcast(const char *url, const char *title) {
 	return prepare_local(url, url, title, "Podcast", NULL, 0, 3, -1);
 }
 
+uint64_t vt_background_playback_set_podcast_history(const char *identity) {
+	BackgroundPlaybackJob *job = &g_background;
+	if (!identity || !*identity || job->activate) return 0;
+	vt_playback_history_local_id(identity, job->podcast_history);
+	memcpy(job->podcast_history, "podcs", 5);
+	snapshot_lock();
+	job->snapshot.is_podcast = 1;
+	snapshot_unlock();
+	job->checkpoint_position = UINT64_MAX;
+	return vt_playback_history_position(job->podcast_history, 0);
+}
+static void podcast_checkpoint(int force) {
+	BackgroundPlaybackJob *job = &g_background;
+	if (!job->podcast_history[0] || !job->activate) return;
+	uint64_t now = sceKernelGetProcessTimeWide();
+	if (!force && now - job->checkpoint_us < 15000000ULL) return;
+	VtBackgroundPlaybackSnapshot snapshot;
+	snapshot_lock(); snapshot = job->snapshot; snapshot_unlock();
+	if (snapshot.state == VT_BACKGROUND_PREPARING || snapshot.state == VT_BACKGROUND_READY) return;
+	if (snapshot.state == VT_BACKGROUND_ERROR && !snapshot.duration_ms) return;
+	if (snapshot.position_ms != job->checkpoint_position) {
+		vt_playback_history_update(job->podcast_history, snapshot.position_ms, snapshot.duration_ms);
+		job->checkpoint_position = snapshot.position_ms;
+	}
+	job->checkpoint_us = now;
+}
+void vt_background_playback_checkpoint(void) { podcast_checkpoint(0); }
+
 int vt_background_playback_prepare_local_video(const char *media_path,
 	                                           const char *media_id,
 	                                           const char *title,
@@ -1190,7 +1246,7 @@ int vt_background_playback_prepare_local_video(const char *media_path,
 	                     duration_ms, 1, audio_track);
 }
 
-int vt_background_playback_prepare_remote_video(
+static int prepare_remote_media(
 	const VtNetworkSource *source,
 	const VtNetworkCredential *credential,
 	const char *media_path,
@@ -1208,7 +1264,8 @@ int vt_background_playback_prepare_remote_video(
 	job->thid = -1;
 	job->active_player = AVPLAYER_INVALID_HANDLE;
 	job->decoder_source = 1;
-	job->remote_video_source = 1;
+	job->remote_video_source = source->protocol == VT_NETWORK_NAVIDROME ? 3 : 1;
+	copy_text(job->input_path, sizeof(job->input_path), media_path);
 	job->audio_track = audio_track;
 	int ret = vt_network_stream_factory_init(&job->remote_factory, source,
 	                                         credential, media_path);
@@ -1217,7 +1274,7 @@ int vt_background_playback_prepare_remote_video(
 	copy_text(job->snapshot.title, sizeof(job->snapshot.title), title);
 	copy_text(job->snapshot.channel, sizeof(job->snapshot.channel), location);
 	job->snapshot.duration_ms = duration_ms;
-	job->snapshot.is_video = 1;
+	job->snapshot.is_video = source->protocol != VT_NETWORK_NAVIDROME;
 	job->snapshot.state = VT_BACKGROUND_PREPARING;
 	job->thid = sceKernelCreateThread("VitaMediaDeckRemoteVideo",
 	                                  background_thread,
@@ -1237,6 +1294,18 @@ int vt_background_playback_prepare_remote_video(
 		return ret;
 	}
 	return 0;
+}
+
+int vt_background_playback_prepare_remote_video(
+ const VtNetworkSource *s, const VtNetworkCredential *c, const char *path,
+ const char *id, const char *title, const char *location, uint64_t duration, int track) {
+ return prepare_remote_media(s,c,path,id,title,location,duration,track);
+}
+int vt_background_playback_prepare_remote_audio(
+ const VtNetworkSource *s, const VtNetworkCredential *c, const char *path,
+ const char *id, const char *title, uint64_t duration) {
+ if (!s || s->protocol != VT_NETWORK_NAVIDROME) return -1;
+ return prepare_remote_media(s,c,path,id,title,"Navidrome",duration,0);
 }
 
 int vt_background_playback_prepared(void) {
@@ -1377,6 +1446,9 @@ void vt_background_playback_stop(void) {
 		sceKernelDeleteThread(g_background.thid);
 		g_background.thid = -1;
 	}
+	podcast_checkpoint(1);
+	if (g_background.podcast_history[0]) log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+	g_background.podcast_history[0] = 0;
 	memset(&g_background.remote_factory.credential, 0,
 	       sizeof(g_background.remote_factory.credential));
 	for (int i = 0; i < VT_DECODER_MAX_SUBTITLE_TRACKS; i++)

@@ -30,6 +30,9 @@ vita2d_texture *vt_video_thumbnail_get_priority(
  * The full image decoder is never called from a grid render loop. */
 vita2d_texture *vt_image_thumbnail_get(
 	const char *path, uint64_t source_size);
+/* Square, uncropped artwork, independently keyed from video/photo thumbnails. */
+vita2d_texture *vt_artwork_thumbnail_get(const char *path);
+vita2d_texture *vt_country_flag_get(const char *country_code);
 vita2d_texture *vt_image_thumbnail_get_priority(
 	const char *path, uint64_t source_size, int priority);
 

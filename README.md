@@ -19,7 +19,25 @@ VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
 or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
-## Current development: 1.3.0
+Navidrome music and Immich photos are available as dedicated **L1** sections
+in all seven themes, and as Home entries in Library, Audio and Images. Add each
+server from its section; use Navidrome credentials or an Immich API key. See
+[configuration, supported media and Vita tests](docs/personal-media-2026-10-23.md).
+The six newer themes include native animated lighting and material effects;
+Legacy groups L1 into active tasks, content/services and application tools.
+See [native UI changes and validation limits](docs/game-ui-2026-10-23.md) and
+[cached navigation, compact covers and the Ghost 3D scene](docs/cache-and-ghost-2026-10-23.md).
+The [latest interface revision](docs/theme-chrome-2026-10-23.md) adds GPU MSAA 2x,
+per-theme status chrome and command decks, more Legacy group spacing, and
+independently saved Home tab positions for each theme.
+
+## Current version: 1.4.0
+
+Standard build: **VitaMediaDeck**, Vita `APP_VER` **01.04**, title ID
+`VMDK00001`. Includes the updated seven themes, personal-media services,
+cached browsing, decoder improvements and the MP4/subtitle seek fixes.
+See [1.4.0 release notes and validation](docs/releases/1.4.0.md).
+The local package is separate from publication of a GitHub release.
 
 The integrated development baseline adds live MP3 radio, public podcast
 discovery/streaming/downloads, favourites-only Radio/Podcast Home tabs,
@@ -30,19 +48,79 @@ been published or that every provider has passed hardware testing.
 
 Press **L1** or tap the app logo to open sections. Use **Network** for media
 servers, direct links and QR downloads, and **Radio/Podcast** to discover and
-save stations/shows. The corresponding Home tabs show favourites only.
+save stations/shows. Radio Home shows favourites. The single **Podcast** tab
+has an Online favourites column and an Offline folder-navigation column.
 
 See [online audio and navigation](docs/online-audio-preview.md) for supported
 formats, controls, limits and validation status.
+See the [22 October quality review and Vita checklist](docs/quality-audit-2026-10-22.md)
+for the latest host checks, fixes and remaining console acceptance tests.
+Subsequent console-feedback fixes and four targeted Vita checks are documented
+in [Home, thumbnails, image controls and seek](docs/ui-feedback-2026-10-22.md).
+The [visual research and grid correction](docs/ui-style-research-2026-10-22.md)
+compares new interface directions and records the equal-row layout checks.
+Seven [native themes and shared navigation](docs/themes-navigation-2026-10-23.md) are available in Settings → Interface → Theme:
+Legacy (the unchanged default), Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic.
+Ghost Mesh uses the right stick for its wheel and the left stick/D-pad for content;
+non-Legacy themes retain their own shell in radio, podcasts and discovery.
 
-On `feature/iptv`, **L1 → IPTV** opens the experimental HLS player. Enter an
-HTTP(S) HLS link, or select **Use test stream**, then **Play stream**. The first
-subset accepts unencrypted MPEG-TS with H.264 and mono/stereo AAC, up to 720p.
-Pause/resume reconnects at the live point; leaving the player stops the stream.
-The existing decoder APIs/layouts remain intact; live playback uses separate
-opt-in entry points. Channel-list import, EPG, encrypted/fMP4 streams and live
-mini-player handoff are not supported yet. This preview needs Vita testing;
-see [IPTV controls, limits and validation](docs/iptv-plan.md).
+On `feature/iptv`, **L1 → IPTV** opens your saved lists and channels.
+Choose **Start / Add stream** to enter an HTTP(S) HLS, DASH (`.mpd`) or M3U
+channel-list URL. **R1 → Options** contains QR scanning and saving;
+on saved entries, **R1 → Rename** changes the title without losing favourites.
+Select **Play stream** or **Open channel list** to open
+the link. **Select / Save link** registers a named list or stream. Select
+saved entries; Square toggles a favourite, Triangle searches and R1 offers All/Starred. In an
+opened list, Square stars a channel and Select stars the list. Saved URLs may
+contain access tokens: `ux0:data/VitaMediaDeck/iptv-saved.json` is local storage,
+not encrypted credential storage; do not share it.
+
+During IPTV playback, **Square** or the HUD **Favourite** button stars/unstars
+the current channel. In channel lists, **Filter errors** (also in R1 Options)
+checks URLs without decoding playback and temporarily hides DNS/403/404
+failures. Circle cancels; **Show all** restores everything. Unknown/time-out
+results remain visible. See [availability checks and crash investigation](docs/iptv-availability.md)
+for limitations and hardware retest notes.
+
+HLS now uses FFmpeg's demuxer over the app's verified HTTP transport: MPEG-TS,
+fragmented MP4 initialization maps, byte-range segments, separate audio/video
+renditions and AES-128 (explicit/sequence IVs and rotating keys). DASH accepts unencrypted fragmented MP4 with
+SegmentTemplate/SegmentTimeline or SegmentList. Both require compatible H.264
+and mono/stereo AAC. DASH also retains HE-AAC output-rate metadata, and caps
+automatic selection at 720p and a 720p30 pixel-rate budget. It combines separate
+audio/video fragments without re-encoding. Live pause/resume reconnects at the
+live point. Finite HLS/DASH VOD starts at the
+beginning, displays elapsed/total time and resumes at the paused position;
+Segmented-stream seeking is not available. Direct MP4/MKV VOD uses the existing seekable
+player (HTTP Range and compatible H.264/AAC required). Triangle changes the
+input type for extensionless links. No test streams are bundled in the UI.
+Playlist-supplied, validated
+`http-user-agent` identifiers are retained for segmented HLS/DASH requests;
+arbitrary VLC options, cookies and custom authentication headers are not imported.
+Leaving the player stops IPTV. Existing file-decoder APIs/layouts and version-1
+live callers remain compatible; version 2 of the same 16-byte live options
+adds explicit decoded AAC sample-rate/channel hints for remuxed streams.
+EPG, licensed DRM, multi-period/byte-range DASH and live
+mini-player handoff are not supported yet. IPTV reserves up to 24 MiB of compressed
+cache and waits for six synchronized HLS/DASH remux chunks (about six seconds)
+before opening the player, with bounded-cache/short-VOD escape paths.
+This adds startup/live latency to absorb transient network delays, not a guarantee
+against sustained bandwidth shortages. HLS/DASH selection is limited to 1280x720;
+the player also rejects oversized direct HLS streams rather than downscaling a
+higher-resolution network stream. DNS, access rejection, missing links, timeouts
+and TLS failures have distinct messages; signed URL paths/tokens are not logged.
+DASH playback has been confirmed by
+the user on Vita. Host decoding passed for Inter TV's separate tracks and Pluto's
+AES-128 stream (including a 60-second refresh/key-rotation run); the new HLS path
+still needs a console retest. This does not add every codec or provider DRM.
+See [IPTV controls, limits and validation](docs/iptv-plan.md) and
+[DASH transport details and tests](docs/dash-streaming.md).
+
+The current refinement uses square, uncropped radio/podcast/IPTV artwork,
+compact catalogue cards, contextual R1 actions and mutually exclusive side
+panels. Home still shows favourites rather than discovery controls. Flags are
+stored in one indexed resource instead of 255 separate VPK entries to reduce
+installation filesystem overhead. See the [refinement checks and controls](docs/ui-refinement.md).
 
 ## What's new in 1.2
 

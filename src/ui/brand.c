@@ -1,4 +1,5 @@
 #include "ui/brand.h"
+#include "ui/breadcrumbs.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -66,7 +67,7 @@
 #define COLOR_TEXT    VT_THEME_TEXT
 #define COLOR_MUTED   VT_THEME_TEXT_MUTED
 #define COLOR_BLUE    VT_THEME_BLUE_BRIGHT
-#define COLOR_FIELD   RGBA8(6, 17, 19, 248)
+#define COLOR_FIELD   (ui_theme_id()==VT_UI_THEME_LEGACY ? RGBA8(6,17,19,248) : ui_theme_alpha(VT_THEME_SURFACE,248))
 /* Status indicators: same palette family as the rest of the topbar. */
 #define COLOR_DIM     VT_THEME_BORDER
 #define COLOR_BATT_OK   RGBA8(76, 217, 100, 255)
@@ -219,7 +220,8 @@ static void draw_battery(const header_status *st, float opacity) {
 	unsigned int level_color = st->battery_pct >= 50 ? COLOR_BATT_OK
 	                        : (st->battery_pct >= 20 ? COLOR_BATT_WARN
 	                                                 : COLOR_BATT_LOW);
-	if (st->battery_charging) level_color = COLOR_BATT_OK;
+	if(ui_theme_id()!=VT_UI_THEME_LEGACY)level_color=st->battery_pct>=50?VT_THEME_SIGNAL_BRIGHT:st->battery_pct>=20?VT_THEME_WARNING:VT_THEME_DANGER;
+    if (st->battery_charging) level_color = ui_theme_id()==VT_UI_THEME_LEGACY?COLOR_BATT_OK:VT_THEME_SUCCESS;
 	level_color = status_color_alpha(level_color, opacity);
 	unsigned int muted_color = status_color_alpha(COLOR_MUTED, opacity);
 	unsigned int text_color = status_color_alpha(COLOR_TEXT, opacity);
@@ -299,7 +301,7 @@ static int draw_wifi(const header_status *st, int clock_left, float opacity) {
 	if (x < min_x) x = min_x;
 	if (!st->wifi_valid) return x;  /* reserve its stable group position */
 
-	unsigned int on_color = COLOR_BLUE;
+	unsigned int on_color = ui_theme_id()==VT_UI_THEME_LEGACY?COLOR_BLUE:VT_THEME_SIGNAL_BRIGHT;
 	if (!st->wifi_strength_known) {
 		/* Connecting, or connected with unknown signal strength. */
 		on_color = COLOR_MUTED;
@@ -400,58 +402,58 @@ void ui_brand_draw_status_indicators(void) {
 	ui_brand_draw_status_indicators_alpha(1.0f);
 }
 
-static unsigned int mix_rgb(unsigned int from, unsigned int to, int step, int steps) {
-	int fr = from & 0xFF;
-	int fg = (from >> 8) & 0xFF;
-	int fb = (from >> 16) & 0xFF;
-	int tr = to & 0xFF;
-	int tg = (to >> 8) & 0xFF;
-	int tb = (to >> 16) & 0xFF;
-	int r = fr + (tr - fr) * step / steps;
-	int g = fg + (tg - fg) * step / steps;
-	int b = fb + (tb - fb) * step / steps;
-	return RGBA8(r, g, b, 255);
-}
-
 static void draw_gradient_bar(void) {
-	const int strips = 48;
-	const float strip_w = (float)SCREEN_WIDTH / (float)strips;
-	const unsigned int black = VT_THEME_BG_SOFT;
-	const unsigned int optical_black = RGBA8(4, 18, 20, 255);
-	for (int i = 0; i < strips; i++) {
-		vita2d_draw_rectangle((float)i * strip_w, 0.0f, strip_w + 1.0f,
-		                       (float)UI_BRAND_HEADER_HEIGHT,
-		                       mix_rgb(black, optical_black, i, strips - 1));
-	}
-	/* Command-rail partitions are functional: brand, scene title, status. */
-	vita2d_draw_rectangle(248, 8, 1, 38, VT_THEME_BORDER_DIM);
-	vita2d_draw_rectangle(708, 8, 1, 38, VT_THEME_BORDER_DIM);
-	vita2d_draw_rectangle(0.0f, (float)UI_BRAND_HEADER_HEIGHT - 1.0f,
-	                       (float)SCREEN_WIDTH, 1.0f, VT_THEME_COLD_DIM);
-	vita2d_draw_rectangle(540.0f, (float)UI_BRAND_HEADER_HEIGHT - 2.0f,
-	                       260.0f, 1.0f, VT_THEME_SIGNAL_BRIGHT);
-	vita2d_draw_rectangle(800.0f, (float)UI_BRAND_HEADER_HEIGHT - 2.0f,
-	                       92.0f, 1.0f, VT_THEME_SPECTRAL);
-	for (int i = 0; i < 9; i++)
-		vita2d_draw_rectangle(420.0f + i * 12.0f,
-		                      (float)UI_BRAND_HEADER_HEIGHT - 6.0f,
-		                      i == 4 ? 6.0f : 2.0f, 2.0f,
-		                      i == 4 ? VT_THEME_SIGNAL_LIGHT
-		                             : VT_THEME_SIGNAL_DIM);
+ int theme=ui_theme_id();
+ if(theme==VT_UI_THEME_LEGACY){
+  vita2d_draw_rectangle(0,0,SCREEN_WIDTH,UI_BRAND_HEADER_HEIGHT,VT_THEME_SURFACE);
+  vita2d_draw_rectangle(708,8,1,38,VT_THEME_BORDER_DIM);
+  vita2d_draw_rectangle(0,UI_BRAND_HEADER_HEIGHT-1,SCREEN_WIDTH,1,VT_THEME_BORDER_DIM);return;
+ }
+ vita2d_draw_rectangle(0,0,960,54,VT_THEME_BG);
+ switch(theme){
+  case VT_UI_THEME_GHOST_MESH:
+   vita2d_draw_rectangle(12,7,246,40,VT_THEME_SURFACE);
+   vita2d_draw_rectangle(710,7,238,40,VT_THEME_SURFACE);
+   vita2d_draw_line(12,15,20,7,VT_THEME_COLD);vita2d_draw_line(940,47,948,39,VT_THEME_COLD);
+   vita2d_draw_rectangle(22,47,226,1,VT_THEME_BORDER);
+   vita2d_draw_rectangle(720,47,218,1,VT_THEME_BORDER);break;
+  case VT_UI_THEME_DECK_90:
+   vita2d_draw_rectangle(12,6,936,42,VT_THEME_SURFACE);
+   vita2d_draw_rectangle(12,48,936,2,VT_THEME_SIGNAL_BRIGHT);
+   vita2d_draw_rectangle(708,12,1,30,VT_THEME_BORDER);break;
+  case VT_UI_THEME_SIGNAL:
+   vita2d_draw_rectangle(0,0,960,54,VT_THEME_BG);
+   vita2d_draw_rectangle(18,50,36,3,VT_THEME_SIGNAL_BRIGHT);
+   vita2d_draw_rectangle(710,8,238,38,VT_THEME_SURFACE);
+   vita2d_draw_rectangle(710,8,2,38,VT_THEME_SIGNAL_BRIGHT);break;
+  case VT_UI_THEME_APERTURE:
+   vita2d_draw_rectangle(12,6,684,42,ui_theme_alpha(VT_THEME_SURFACE,210));
+   vita2d_draw_rectangle(710,6,238,42,ui_theme_alpha(VT_THEME_SURFACE,210));
+   vita2d_draw_rectangle(12,6,34,1,VT_THEME_COLD);vita2d_draw_rectangle(914,47,34,1,VT_THEME_COLD);break;
+  case VT_UI_THEME_RELAY:
+   vita2d_draw_rectangle(0,0,960,54,VT_THEME_SURFACE_RAISED);
+   vita2d_draw_rectangle(710,7,238,40,VT_THEME_BG);
+   vita2d_draw_rectangle(18,51,924,1,VT_THEME_BORDER);
+   vita2d_draw_rectangle(18,51,38,2,VT_THEME_SIGNAL_BRIGHT);break;
+  case VT_UI_THEME_MOSAIC:
+   vita2d_draw_rectangle(12,6,684,42,VT_THEME_SURFACE);
+   vita2d_draw_rectangle(710,6,238,42,VT_THEME_SURFACE_RAISED);
+   vita2d_draw_rectangle(12,6,684,1,VT_THEME_BORDER);
+   vita2d_draw_rectangle(710,6,238,1,VT_THEME_COLD);break;
+ }
 }
 
 static void draw_logo(void) {
+    if(ui_theme_id()!=VT_UI_THEME_LEGACY){
+        unsigned fill=ui_theme_id()==VT_UI_THEME_SIGNAL?VT_THEME_SIGNAL_BRIGHT:VT_THEME_SURFACE_RAISED;
+        vita2d_draw_rectangle(18,10,36,34,fill);
+        vita2d_draw_rectangle(18,10,2,34,VT_THEME_SIGNAL_BRIGHT);
+        vita2d_font *font=ui_runtime_font(UI_FONT_SMALL);
+        if(font){unsigned color=ui_theme_id()==VT_UI_THEME_SIGNAL?VT_THEME_BG:VT_THEME_SIGNAL_BRIGHT;
+            ui_font_draw_text(font,25,33,color,UI_FONT_SMALL,"L1");}
+        return;
+    }
 	vita2d_texture *logo = ui_runtime_logo();
-	/* Four acquisition brackets turn any supplied icon into part of the system
-	 * without modifying the user's artwork asset. */
-	unsigned int warm_frame = VT_THEME_WARM_LIGHT;
-	unsigned int cold_frame = VT_THEME_SPECTRAL;
-	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 10, 2, cold_frame);
-	vita2d_draw_rectangle(HEADER_ICON_X - 3, HEADER_ICON_Y - 3, 2, 10, cold_frame);
-	vita2d_draw_rectangle(HEADER_ICON_X + HEADER_ICON_SIZE - 7,
-	                      HEADER_ICON_Y + HEADER_ICON_SIZE + 1, 10, 2, warm_frame);
-	vita2d_draw_rectangle(HEADER_ICON_X + HEADER_ICON_SIZE + 1,
-	                      HEADER_ICON_Y + HEADER_ICON_SIZE - 7, 2, 10, warm_frame);
 	if (logo) {
 		unsigned int w = vita2d_texture_get_width(logo);
 		unsigned int h = vita2d_texture_get_height(logo);
@@ -554,6 +556,10 @@ static void fit_search_edit_text(vita2d_font *font, const char *text,
 static void draw_header(const char *query, int editing,
 	                    size_t caret_byte, int caret_visible,
 	                    const char *placeholder) {
+	if (!editing) {
+		ui_brand_draw_breadcrumbs(NULL, NULL, query && query[0] ? query : placeholder);
+		return;
+	}
 	draw_gradient_bar();
 	draw_logo();
 
@@ -665,6 +671,41 @@ void ui_brand_draw_header(const char *query) {
 	draw_header(query, 0, 0, 0, "");
 }
 
+void ui_brand_draw_home_header(void) {
+ draw_gradient_bar();
+ draw_logo();
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY)ui_breadcrumb_draw(HEADER_NAME_X,696,NULL,NULL,NULL,1);
+ ui_brand_draw_status_indicators();
+ g_brand_loading = 0;
+}
+
+void ui_brand_draw_breadcrumbs(const char *section, const char *parent, const char *leaf) {
+	draw_gradient_bar();
+	draw_logo();
+	/* 696 clears even a 12-hour clock plus BOTH activity indicators. */
+	ui_breadcrumb_draw(HEADER_NAME_X, 696, section, parent, leaf, 1.0f);
+	ui_brand_draw_status_indicators();
+	g_brand_loading = 0;
+}
+
+void ui_brand_draw_path(const char *section, const char *path) {
+	char parent[1024];
+	snprintf(parent, sizeof(parent), "%s", path ? path : "");
+	size_t n = strlen(parent);
+	while (n && parent[n - 1] == '/') parent[--n] = 0;
+	char *last = strrchr(parent, '/');
+	if (last) {
+		*last++ = 0;
+		ui_brand_draw_breadcrumbs(section, parent, last);
+	} else ui_brand_draw_breadcrumbs(section, NULL, parent);
+}
+
+void ui_brand_draw_player_breadcrumbs(const char *section, const char *parent,
+                                      const char *leaf, float opacity) {
+	ui_breadcrumb_draw(18, 696, section, parent, leaf, opacity);
+	ui_brand_draw_status_indicators_alpha(opacity);
+}
+
 int ui_brand_sections_hit(unsigned int flags, int x, int y) {
 	return (flags & UI_TOUCH_EVENT_TAP) && x >= 10 && x < 62 &&
 	       y >= 4 && y < UI_BRAND_HEADER_HEIGHT - 4;
@@ -698,19 +739,9 @@ int ui_brand_search_clear_hit(int x, int y) {
 }
 
 static void draw_text_input_signal_field(void) {
-	/* The system IME owns the lower screen. Keep the app-authored upper field
-	 * quiet, but visibly part of the same acquisition language. */
-	for (int line = 0; line < 5; line++)
-		vita2d_draw_rectangle(0, 112 + line * 76, SCREEN_WIDTH, 1,
-		                      VT_THEME_SIGNAL_A(line == 0 ? 44 : 16));
-	vita2d_draw_rectangle(146, 138, 34, 2, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(146, 138, 2, 34, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(780, 138, 34, 2, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(812, 138, 2, 34, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(146, 236, 34, 2, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(146, 204, 2, 34, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(780, 236, 34, 2, VT_THEME_SIGNAL_DIM);
-	vita2d_draw_rectangle(812, 204, 2, 34, VT_THEME_SIGNAL_DIM);
+ /* Platform keyboard remains native; the app supplies only its quiet header. */
+ vita2d_draw_rectangle(18,118,924,130,VT_THEME_SURFACE);
+ vita2d_draw_rectangle(18,118,924,1,VT_THEME_BORDER_DIM);
 }
 
 void ui_brand_draw_search_backdrop(const char *query) {

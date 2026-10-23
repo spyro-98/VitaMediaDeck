@@ -145,28 +145,8 @@ static int load_log(int index) {
 }
 
 static void draw_tabs(void) {
-	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
-	const char *labels[2] = {
-		vt_i18n_str(VT_STR_ABOUT_TAB_SPECS),
-		vt_i18n_str(VT_STR_ABOUT_TAB_LOGS)
-	};
-	for (int i = 0; i < 2; i++) {
-		int x = 36 + i * 190;
-		ui_panel(x, TAB_Y, 178, TAB_H,
-		         i == 1 ? VT_THEME_SURFACE_RAISED : COLOR_CARD,
-		         i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
-		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		if (small) {
-			char index[4];
-			snprintf(index, sizeof(index), "%02d", i + 1);
-			ui_font_draw_text(small, x + 12, TAB_BASELINE_Y,
-			                  i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
-			                  UI_FONT_SMALL, index);
-		}
-		if (font) ui_font_draw_text(font, x + 46, TAB_BASELINE_Y,
-		                                 i == 1 ? COLOR_TEXT : COLOR_MUTED,
-		                                 UI_FONT_BODY, labels[i]);
-	}
+ ui_tab(36,TAB_Y,178,TAB_H,vt_i18n_str(VT_STR_ABOUT_TAB_SPECS),0);
+ ui_tab(226,TAB_Y,178,TAB_H,vt_i18n_str(VT_STR_ABOUT_TAB_LOGS),1);
 }
 
 static void draw_log_screen(int cursor, int viewing, int first_line,
@@ -177,16 +157,13 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
-	ui_brand_draw_header(NULL);
+	ui_brand_draw_breadcrumbs(vt_i18n_str(VT_STR_SECTIONS_ABOUT), NULL,
+	                          vt_i18n_str(VT_STR_ABOUT_TAB_LOGS));
 	draw_tabs();
 	int page_has_focus = !ui_mini_player_input_locked() &&
 	                     (!sidebar || (!sidebar->open &&
 	                                      sidebar->animation <= 0.01f));
 	if (!viewing) {
-		if (page_has_focus && focus_motion)
-			ui_focus_glow_draw(focus_motion->x, focus_motion->y,
-			                   focus_motion->width, focus_motion->height,
-			                   sceKernelGetProcessTimeWide(), LOG_LIST_Y, 490);
 		for (int i = 0; i < (int)(sizeof(g_entries) / sizeof(g_entries[0])); i++) {
 			int y = LOG_LIST_Y + i * LOG_ROW_H;
 			ui_panel(36, y, 888, 48,
@@ -206,6 +183,7 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 				                      UI_FONT_SMALL, detail);
 			}
 		}
+		if (page_has_focus && focus_motion) ui_focus_outline_draw(focus_motion);
 		if (small) ui_font_draw_text(
 		    small, 40, 507,
 		    vt_preferences_disk_logs_enabled() ? COLOR_MUTED : VT_THEME_WARNING,

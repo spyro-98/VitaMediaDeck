@@ -1,0 +1,3 @@
+# Preserve upstream license bytes and unified-diff context lines verbatim.
+assets/fonts/IBM-Plex-OFL.txt -whitespace
+tools/ffmpeg-hls-custom-io.patch -whitespace

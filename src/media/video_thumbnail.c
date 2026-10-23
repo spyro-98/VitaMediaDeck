@@ -9,6 +9,7 @@
 
 #include <jpeglib.h>
 #include <png.h>
+#include <webp/decode.h>
 
 #include <psp2/gxm.h>
 #include <psp2/io/fcntl.h>
@@ -27,10 +28,15 @@
 
 #include "common/text_log.h"
 #include "media/image_loader.h"
+#include "media/artwork_pixels.h"
+#include "media/country_flags.h"
+#define ARTWORK_EDGE                192
+#define FLAG_EDGE                    64
 #define THUMB_WIDTH                 264
 #define THUMB_HEIGHT                148
 #define THUMB_PIXELS                (THUMB_WIDTH * THUMB_HEIGHT)
 #define THUMB_BYTES                 (THUMB_PIXELS * sizeof(uint16_t))
+_Static_assert(ARTWORK_EDGE * ARTWORK_EDGE <= THUMB_PIXELS, "Artwork exceeds thumbnail memory budget");
 #define THUMB_PATH_MAX              VT_NETWORK_PATH_MAX
 #define THUMB_REQUEST_CAPACITY      18
 #define THUMB_TEXTURE_CAPACITY      12
@@ -72,6 +78,7 @@ typedef struct ThumbnailResult {
 	unsigned int generation;
 	char path[THUMB_PATH_MAX];
 	uint16_t *pixels;
+	unsigned width, height;
 } ThumbnailResult;
 
 typedef struct ThumbnailTexture {
@@ -181,7 +188,14 @@ static uint64_t thumbnail_key(const char *path, uint64_t source_size,
 	                          int still_image) {
 	uint64_t hash = thumbnail_hash_text(14695981039346656037ULL, path);
 	hash = thumbnail_hash_u64(hash, source_size);
-	return thumbnail_hash_u64(hash, still_image ? 1U : 0U);
+	return thumbnail_hash_u64(hash, (unsigned)still_image);
+}
+
+static unsigned thumbnail_width(int kind) {
+	return kind == 2 ? ARTWORK_EDGE : kind == 3 ? FLAG_EDGE : THUMB_WIDTH;
+}
+static unsigned thumbnail_height(int kind) {
+	return kind >= 2 ? thumbnail_width(kind) : THUMB_HEIGHT;
 }
 
 static uint64_t remote_thumbnail_key(const VtNetworkSource *source,
@@ -249,7 +263,8 @@ static int cache_load(const ThumbnailRequest *request, uint16_t *pixels) {
 	if (result == 0 &&
 	    (memcmp(header.magic, "VTTHMB3", 8) != 0 ||
 	     header.version != THUMB_CACHE_VERSION ||
-	     header.width != THUMB_WIDTH || header.height != THUMB_HEIGHT ||
+	     header.width != thumbnail_width(request->still_image) ||
+	     header.height != thumbnail_height(request->still_image) ||
 	     header.pixel_format != 1 || header.key != request->key ||
 	     header.source_size != request->source_size ||
 	     header.payload_size != THUMB_BYTES)) result = -1;
@@ -271,8 +286,8 @@ static void cache_store(const ThumbnailRequest *request,
 	memset(&header, 0, sizeof(header));
 	memcpy(header.magic, "VTTHMB3", 8);
 	header.version = THUMB_CACHE_VERSION;
-	header.width = THUMB_WIDTH;
-	header.height = THUMB_HEIGHT;
+	header.width = thumbnail_width(request->still_image);
+	header.height = thumbnail_height(request->still_image);
 	header.pixel_format = 1;
 	header.key = request->key;
 	header.source_size = request->source_size;
@@ -615,14 +630,17 @@ static int decode_still_thumbnail(const ThumbnailRequest *request,
 	/* Decode close to the actual card width.  This lets libjpeg use its native
 	 * 1/8 DCT path for phone photos instead of spending seconds building an
 	 * unnecessary 512px proxy before the final 264x148 crop. */
-	int result = vt_image_decode(request->path, THUMB_WIDTH, &decoded,
+	int result = vt_image_decode(request->path, thumbnail_width(request->still_image), &decoded,
 	                             error, sizeof(error));
 	if (result < 0) {
 		log_printf("image thumbnail decode failed: %s: %s\n",
 		           request->path, error);
 		return AVERROR_INVALIDDATA;
 	}
-	result = rgba_to_rgb565(decoded.pixels, (int)decoded.stride,
+	if (request->still_image == 2)
+		result = vt_artwork_fit_rgb565(decoded.pixels, decoded.stride,
+		    decoded.width, decoded.height, 4, pixels, ARTWORK_EDGE);
+	else result = rgba_to_rgb565(decoded.pixels, (int)decoded.stride,
 	                       (int)decoded.width, (int)decoded.height, pixels);
 	vt_image_decoded_free(&decoded);
 	return result;
@@ -756,8 +774,8 @@ static void thumbnail_png_read(png_structp png, png_bytep out, png_size_t size) 
 	input->offset += size;
 }
 
-static int decode_png_cover(const unsigned char *data, size_t size,
-                            uint16_t *pixels, ThumbnailInterrupt *interrupt) {
+static int decode_png_cover_shape(const unsigned char *data, size_t size,
+                            uint16_t *pixels, ThumbnailInterrupt *interrupt, unsigned edge) {
 	if (!data || size < 8 || !pixels) return AVERROR(EINVAL);
 	/* Keep mutable allocations off the setjmp stack. Every row (and compressed
 	 * input read) can yield ownership immediately when playback is requested. */
@@ -793,7 +811,10 @@ static int decode_png_cover(const unsigned char *data, size_t size,
 	if (color == PNG_COLOR_TYPE_GRAY && depth < 8) png_set_expand_gray_1_2_4_to_8(png);
 	if (color == PNG_COLOR_TYPE_GRAY || color == PNG_COLOR_TYPE_GRAY_ALPHA)
 		png_set_gray_to_rgb(png);
-	if (color & PNG_COLOR_MASK_ALPHA) png_set_strip_alpha(png);
+	if (edge && ((color & PNG_COLOR_MASK_ALPHA) || png_get_valid(png,info,PNG_INFO_tRNS))) {
+		png_color_16 background={0};
+		png_set_background(png,&background,PNG_BACKGROUND_GAMMA_SCREEN,0,1.0);
+	} else if (color & PNG_COLOR_MASK_ALPHA) png_set_strip_alpha(png);
 	int passes = png_set_interlace_handling(png);
 	png_read_update_info(png, info);
 	size_t stride = png_get_rowbytes(png, info);
@@ -806,11 +827,46 @@ static int decode_png_cover(const unsigned char *data, size_t size,
 			png_read_row(png, input->pixels + row * stride, NULL);
 		}
 	}
-	int result = rgb24_to_rgb565(input->pixels, (int)stride, width, height, pixels);
+	int result = edge ? vt_artwork_fit_rgb565(input->pixels, stride, width, height, 3, pixels, edge)
+	                  : rgb24_to_rgb565(input->pixels, (int)stride, width, height, pixels);
 	free(input->pixels);
 	png_destroy_read_struct(&png, &info, NULL);
 	free(input);
 	return result;
+}
+
+static int decode_webp_cover(const unsigned char *data,size_t size,uint16_t *pixels,
+                             ThumbnailInterrupt *interrupt) {
+    if(thumbnail_interrupted(interrupt))return AVERROR_EXIT;
+    WebPDecoderConfig config;
+    if(!WebPInitDecoderConfig(&config) || WebPGetFeatures(data,size,&config.input)!=VP8_STATUS_OK ||
+       config.input.width<=0 || config.input.height<=0 || config.input.has_animation)return AVERROR_INVALIDDATA;
+    int width=config.input.width,height=config.input.height;
+    if(width>512 || height>512) {
+        if(width>=height){height=(int)((int64_t)height*512/width);width=512;}
+        else{width=(int)((int64_t)width*512/height);height=512;}
+        if(width<1)width=1;
+        if(height<1)height=1;
+    }
+    config.options.use_scaling=1;config.options.scaled_width=width;config.options.scaled_height=height;
+    config.output.colorspace=MODE_RGB;
+    VP8StatusCode status=WebPDecode(data,size,&config);
+    int ret=status!=VP8_STATUS_OK?AVERROR_INVALIDDATA:thumbnail_interrupted(interrupt)?AVERROR_EXIT:
+        rgb24_to_rgb565(config.output.u.RGBA.rgba,config.output.u.RGBA.stride,width,height,pixels);
+    WebPFreeDecBuffer(&config.output);return ret;
+}
+
+static int decode_png_cover(const unsigned char *data, size_t size,
+                            uint16_t *pixels, ThumbnailInterrupt *interrupt) {
+	return decode_png_cover_shape(data, size, pixels, interrupt, 0);
+}
+
+static int decode_country_flag(const ThumbnailRequest *request, uint16_t *pixels,
+                               ThumbnailInterrupt *interrupt) {
+	size_t size;
+	unsigned char *data = vt_country_flag_read("app0:flags.pack", request->path+5, &size);
+	int result = data ? decode_png_cover_shape(data, size, pixels, interrupt, FLAG_EDGE) : -1;
+	free(data); return result;
 }
 
 static int choose_target_and_seek(AVFormatContext *format, int stream_index) {
@@ -1192,19 +1248,20 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		}
 		ThumbnailInterrupt cover_interrupt = { .generation = request.generation };
 		uint64_t started_us = sceKernelGetProcessTimeWide();
-		uint16_t *pixels = malloc(THUMB_BYTES);
-		int result = pixels ? cache_load(&request, pixels) : AVERROR(ENOMEM);
+		uint16_t *pixels = calloc(1, THUMB_BYTES);
+		int result = pixels && request.still_image != 3 ? cache_load(&request, pixels) : AVERROR(ENOMEM);
 		int from_cache = result == 0;
 		int origin = THUMB_ORIGIN_NONE;
 		if (result < 0 && pixels && state->enabled && !state->stop &&
 		    request.still_image) {
-			result = decode_still_thumbnail(&request, pixels);
+			result = request.still_image == 3 ? decode_country_flag(&request, pixels, &cover_interrupt)
+			                                  : decode_still_thumbnail(&request, pixels);
 			if (result == 0) origin = THUMB_ORIGIN_PROVIDER;
 		}
 		if (result < 0 && pixels && state->enabled && !state->stop &&
 		    !request.still_image) {
 			if (request.remote &&
-			    request.source.protocol == VT_NETWORK_JELLYFIN) {
+			    (request.source.protocol == VT_NETWORK_JELLYFIN || request.source.protocol == VT_NETWORK_NAVIDROME || request.source.protocol == VT_NETWORK_IMMICH)) {
 				unsigned char *artwork = NULL;
 				size_t artwork_size = 0;
 				result = vt_network_fetch_artwork(
@@ -1217,6 +1274,8 @@ static int thumbnail_worker(SceSize args, void *argp) {
 					else if (artwork_size >= 8 && artwork[0] == 0x89 &&
 					         !memcmp(artwork + 1, "PNG\r\n\x1a\n", 7))
 						result = decode_png_cover(artwork, artwork_size, pixels, &cover_interrupt);
+					else if(artwork_size>=12 && !memcmp(artwork,"RIFF",4) && !memcmp(artwork+8,"WEBP",4))
+						result=decode_webp_cover(artwork,artwork_size,pixels,&cover_interrupt);
 					else result = AVERROR_INVALIDDATA;
 					if (result == 0 && thumbnail_information_score(pixels) > 0)
 						origin = THUMB_ORIGIN_PROVIDER;
@@ -1245,7 +1304,7 @@ static int thumbnail_worker(SceSize args, void *argp) {
 			memset(&remote.credential, 0, sizeof(remote.credential));
 		}
 		uint16_t *cache_pixels = NULL;
-		if (result == 0 && !from_cache && pixels) {
+		if (result == 0 && !from_cache && pixels && request.still_image != 3) {
 			cache_pixels = malloc(THUMB_BYTES);
 			if (cache_pixels) memcpy(cache_pixels, pixels, THUMB_BYTES);
 		}
@@ -1264,6 +1323,8 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		    !state->result.pixels) {
 			state->result.key = request.key;
 			state->result.source_size = request.source_size;
+			state->result.width = thumbnail_width(request.still_image);
+			state->result.height = thumbnail_height(request.still_image);
 				state->result.generation = request.generation;
 			snprintf(state->result.path, sizeof(state->result.path), "%s",
 			         request.path);
@@ -1343,16 +1404,23 @@ int vt_video_thumbnail_init(void) {
 
 void vt_video_thumbnail_resume(void) {
 	if (!g_thumbnail.initialized) return;
-	sceKernelChangeThreadPriority(g_thumbnail.thid, THUMB_THREAD_RUNTIME_PRIORITY);
 	thumbnail_lock();
+	if (g_thumbnail.enabled) {
+		thumbnail_unlock();
+		return;
+	}
 	g_thumbnail.enabled = 1;
-	/* suspend() increments generation before raising active_cancel. Therefore an
+	/* Playback allocation pressure is transient. A newly visible browser must
+	 * be allowed to retry failed covers immediately, including cached files. */
+	memset(g_thumbnail.failures, 0, sizeof(g_thumbnail.failures));
+	/* suspend() changes generation while holding this same lock. Therefore an
 	 * old in-flight request remains cancelled by its generation mismatch even
 	 * after this shared flag is cleared. Waiting for worker_busy here created a
 	 * race on mini-player/full-player return: the new grid inherited cancel=1 and
 	 * could not request any cover until another scene transition. */
 	g_thumbnail.active_cancel = 0;
 	thumbnail_unlock();
+	sceKernelChangeThreadPriority(g_thumbnail.thid, THUMB_THREAD_RUNTIME_PRIORITY);
 }
 
 void vt_video_thumbnail_suspend(void) {
@@ -1436,7 +1504,7 @@ void vt_video_thumbnail_pump(void) {
 		memset(cached, 0, sizeof(*cached));
 	}
 	vita2d_texture *texture = vita2d_create_empty_texture_format(
-		THUMB_WIDTH, THUMB_HEIGHT, SCE_GXM_TEXTURE_FORMAT_R5G6B5);
+		result.width, result.height, SCE_GXM_TEXTURE_FORMAT_R5G6B5);
 	if (!texture) {
 		log_printf("video thumbnail GPU upload allocation failed: %s\n",
 		           result.path);
@@ -1454,7 +1522,7 @@ void vt_video_thumbnail_pump(void) {
 	}
 	unsigned int stride = vita2d_texture_get_stride(texture);
 	unsigned char *destination = vita2d_texture_get_datap(texture);
-	if (!destination || stride < THUMB_WIDTH * sizeof(uint16_t)) {
+	if (!destination || stride < result.width * sizeof(uint16_t)) {
 		log_printf("video thumbnail GPU upload layout invalid: %s\n",
 		           result.path);
 		vita2d_free_texture(texture);
@@ -1470,10 +1538,10 @@ void vt_video_thumbnail_pump(void) {
 		free(result.pixels);
 		return;
 	}
-	for (int row = 0; row < THUMB_HEIGHT; row++)
+	for (unsigned row = 0; row < result.height; row++)
 		memcpy(destination + row * stride,
-		       result.pixels + row * THUMB_WIDTH,
-		       THUMB_WIDTH * sizeof(uint16_t));
+		       result.pixels + row * result.width,
+		       result.width * sizeof(uint16_t));
 	vita2d_texture_set_filters(texture, SCE_GXM_TEXTURE_FILTER_LINEAR,
 	                           SCE_GXM_TEXTURE_FILTER_LINEAR);
 	free(result.pixels);
@@ -1601,6 +1669,16 @@ vita2d_texture *vt_video_thumbnail_get_priority(
 
 vita2d_texture *vt_image_thumbnail_get(const char *path, uint64_t source_size) {
 	return thumbnail_get(NULL, NULL, path, source_size, 0, 1);
+}
+
+vita2d_texture *vt_artwork_thumbnail_get(const char *path) {
+	return thumbnail_get(NULL, NULL, path, 0, 10, 2);
+}
+
+vita2d_texture *vt_country_flag_get(const char *code) {
+	if (!code || strlen(code)!=2 || code[0]<'A' || code[0]>'Z' || code[1]<'A' || code[1]>'Z') return NULL;
+	char path[8]; snprintf(path, sizeof(path), "flag:%s", code);
+	return thumbnail_get(NULL, NULL, path, 0, 10, 3);
 }
 
 vita2d_texture *vt_image_thumbnail_get_priority(

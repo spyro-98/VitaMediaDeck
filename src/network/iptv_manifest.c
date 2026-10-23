@@ -66,7 +66,9 @@ static int attribute(const char *text, const char *key, char *out, size_t capaci
 static int codecs_supported(const char *text) {
     int video = 0, audio = 0;
     while (*text) {
+        while(*text==' ' || *text=='\t')text++;
         const char *end = strchr(text, ','); size_t n = end ? (size_t)(end - text) : strlen(text);
+        while(n && (text[n-1]==' ' || text[n-1]=='\t'))n--;
         if (n == 11 && !memcmp(text, "avc1.", 5)) {
             for (size_t i = 5; i < n; i++) if (!isxdigit((unsigned char)text[i])) return 0;
             /* Baseline, Main or 8-bit High; profile is not a device capability guarantee. */
@@ -96,16 +98,23 @@ static int variant(const char *text, VtIptvVariant *out) {
         if (!number(separator, &n) || !n || n > UINT32_MAX) return VT_IPTV_INVALID;
         out->height = (uint32_t)n;
     }
-    out->compatible = has_codecs && has_resolution && codecs_supported(codecs);
+    /* RFC 8216 recommends CODECS and makes RESOLUTION optional. Missing
+     * metadata is not an unsupported codec. The bounded TS demux and existing
+     * decoder checks validate the actual stream, including the 720p cap. */
+    out->codecs_declared=has_codecs;
+    out->compatible = !has_codecs || codecs_supported(codecs);
     const char *groups[] = {"AUDIO", "VIDEO", "SUBTITLES"};
     for (unsigned i = 0; i < 3; i++) {
         int present = attribute(text, groups[i], group, sizeof(group));
         if (present < 0) return VT_IPTV_INVALID;
-        if (present) out->compatible = 0; /* Separate rendition synchronization is a later gate. */
+        if(present && i<2){out->compatible=0;out->external_av=1;}
+        if(present && i==2)out->subtitle_group=1;
+        /* Optional sidecar subtitles don't prevent multiplexed A/V playback.
+         * Separate audio/video renditions still need a synchronized remuxer. */
     }
     return VT_IPTV_OK;
 }
-int vt_iptv_manifest_parse(const void *bytes, size_t size, const char *base, VtIptvManifest *out) {
+int vt_iptv_manifest_parse_window(const void *bytes, size_t size, const char *base, uint64_t first, VtIptvManifest *out) {
     if (!out) return VT_IPTV_INVALID;
     memset(out, 0, sizeof(*out));
     if (!bytes || !size || size > VT_IPTV_PLAYLIST_LIMIT || memchr(bytes, 0, size) || !safe_url(base)) return VT_IPTV_INVALID;
@@ -128,7 +137,7 @@ int vt_iptv_manifest_parse(const void *bytes, size_t size, const char *base, VtI
             if (version_seen++ || !number(line + 15, &version) || !version) return VT_IPTV_INVALID;
             if (version > 7) return VT_IPTV_UNSUPPORTED;
         } else if (!strncmp(line, "#EXT-X-STREAM-INF:", 18)) {
-            if (pending || out->segment_count || target_seen || seq_seen || disc_seen || disc_tag_seen || out->ended) return VT_IPTV_INVALID;
+            if (pending || out->total_segments || target_seen || seq_seen || disc_seen || disc_tag_seen || out->ended) return VT_IPTV_INVALID;
             int result = variant(line + 18, &candidate); if (result) return result;
             pending = 2;
         } else if (!strncmp(line, "#EXTINF:", 8)) {
@@ -142,9 +151,9 @@ int vt_iptv_manifest_parse(const void *bytes, size_t size, const char *base, VtI
             if (target_seen++ || !number(line + 22, &n) || !n || n > 120 || out->variant_count) return VT_IPTV_INVALID;
             out->target_ms = (uint32_t)n * 1000;
         } else if (!strncmp(line, "#EXT-X-MEDIA-SEQUENCE:", 22)) {
-            if (seq_seen++ || out->segment_count || out->variant_count || pending == 2 || !number(line + 22, &sequence)) return VT_IPTV_INVALID;
+            if (seq_seen++ || out->total_segments || out->variant_count || pending == 2 || !number(line + 22, &sequence)) return VT_IPTV_INVALID;
         } else if (!strncmp(line, "#EXT-X-DISCONTINUITY-SEQUENCE:", 30)) {
-            if (disc_seen++ || disc_tag_seen || out->segment_count || out->variant_count || pending == 2 || !number(line + 30, &discontinuity)) return VT_IPTV_INVALID;
+            if (disc_seen++ || disc_tag_seen || out->total_segments || out->variant_count || pending == 2 || !number(line + 30, &discontinuity)) return VT_IPTV_INVALID;
         } else if (!strcmp(line, "#EXT-X-DISCONTINUITY")) {
             if (discontinuity == UINT64_MAX || out->variant_count || pending == 2) return VT_IPTV_INVALID;
             discontinuity++; disc_tag_seen = 1;
@@ -152,11 +161,12 @@ int vt_iptv_manifest_parse(const void *bytes, size_t size, const char *base, VtI
             if (pending || out->ended || out->variant_count) return VT_IPTV_INVALID;
             out->ended = 1;
         } else if (!strncmp(line, "#EXT-X-KEY:", 11)) {
-            if (strcmp(line + 11, "METHOD=NONE")) return VT_IPTV_UNSUPPORTED;
+            if (strcmp(line + 11, "METHOD=NONE")) return VT_IPTV_ENCRYPTED;
         } else if (!strncmp(line, "#EXT-X-MAP:", 11) || !strncmp(line, "#EXT-X-BYTERANGE:", 17) ||
                    !strncmp(line, "#EXT-X-PART", 11) || !strncmp(line, "#EXT-X-SKIP:", 12) ||
-                   !strncmp(line, "#EXT-X-SESSION-KEY:", 19) || !strncmp(line, "#EXT-X-DEFINE:", 14) ||
+                   !strncmp(line, "#EXT-X-DEFINE:", 14) ||
                    !strcmp(line, "#EXT-X-GAP") || !strcmp(line, "#EXT-X-I-FRAMES-ONLY")) return VT_IPTV_UNSUPPORTED;
+        else if(!strncmp(line,"#EXT-X-SESSION-KEY:",19))return VT_IPTV_ENCRYPTED;
         else if (line[0] != '#') {
             if (!pending || out->ended) return VT_IPTV_INVALID;
             if (pending == 2) {
@@ -164,21 +174,29 @@ int vt_iptv_manifest_parse(const void *bytes, size_t size, const char *base, VtI
                 int result = vt_iptv_resolve_url(base, line, candidate.url, sizeof(candidate.url)); if (result) return result;
                 out->variants[out->variant_count++] = candidate;
             } else {
-                if (out->segment_count == VT_IPTV_MAX_SEGMENTS) return VT_IPTV_LIMIT;
                 if (sequence == UINT64_MAX) return VT_IPTV_INVALID;
-                VtIptvSegment *segment = &out->segments[out->segment_count];
+                VtIptvSegment skipped;
+                int keep = sequence >= first && out->segment_count < VT_IPTV_MAX_SEGMENTS;
+                VtIptvSegment *segment = keep ? &out->segments[out->segment_count] : &skipped;
                 int result = vt_iptv_resolve_url(base, line, segment->url, sizeof(segment->url)); if (result) return result;
                 segment->sequence = sequence++; segment->discontinuity = discontinuity; segment->duration_ms = duration;
-                out->segment_count++;
+                if (!target_seen || (duration + 500) / 1000 > out->target_ms / 1000) return VT_IPTV_INVALID;
+                if (keep) out->segment_count++;
+                out->total_segments++; out->total_duration_ms += duration; out->last_sequence = sequence - 1;
             }
             pending = 0;
         }
     }
     if (!header || pending || (!out->segment_count && !out->variant_count)) return VT_IPTV_INVALID;
+    if (!out->ended && out->total_segments > VT_IPTV_MAX_SEGMENTS) return VT_IPTV_LIMIT;
     if (out->segment_count && !target_seen) return VT_IPTV_INVALID;
     for (unsigned i = 0; i < out->segment_count; i++)
         if ((out->segments[i].duration_ms + 500) / 1000 > out->target_ms / 1000) return VT_IPTV_INVALID;
     return VT_IPTV_OK;
+}
+int vt_iptv_manifest_parse(const void *bytes, size_t size, const char *base, VtIptvManifest *out) {
+    int result = vt_iptv_manifest_parse_window(bytes, size, base, 0, out);
+    return !result && out->total_segments > VT_IPTV_MAX_SEGMENTS ? VT_IPTV_LIMIT : result;
 }
 int vt_iptv_manifest_variant(const VtIptvManifest *m, uint32_t bandwidth, uint32_t width, uint32_t height) {
     if (!m) return -1;

@@ -1,6 +1,7 @@
 #ifndef VMD_ONLINE_AUDIO_H
 #define VMD_ONLINE_AUDIO_H
 #include <stddef.h>
+#include <stdint.h>
 #define VT_ONLINE_MAX 64
 #define VT_ONLINE_CACHE_MAX 256
 #define VT_ONLINE_FEED_LIMIT (8u * 1024u * 1024u)
@@ -15,6 +16,9 @@ typedef struct {
 	char description[1024];
 	char artwork_url[512];
 	char artwork_path[192];
+	char show_title[160]; /* RSS channel title, including direct-feed navigation. */
+	uint64_t duration_ms;
+	char published_date[11]; /* Feed-local calendar date, YYYY-MM-DD; empty if unknown. */
 	int kind;
 } VtOnlineItem;
 typedef struct {
@@ -33,6 +37,9 @@ typedef struct {
 } VtOnlineQuery;
 int vt_online_url_valid(const char *url);
 int vt_online_fetch_query(void *query);
+/* Read-only snapshots are shown immediately; successful worker fetches replace them. */
+int vt_online_query_cache_read(VtOnlineQuery *query);
+int vt_online_query_cache_write(const VtOnlineQuery *query);
 int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlineQuery *out);
 int vt_online_load_saved(VtOnlineItem *out, int capacity);
 int vt_online_save(const VtOnlineItem *item);

@@ -15,6 +15,44 @@ An open sidebar owns navigation before the underlying screen. Circle closes the
 active panel before leaving its page. While resumable playback is running, the
 sidebar adds **Active player** above Home; selecting it restores the full player.
 
+## Theme-specific Home controls
+
+Ghost Mesh keeps **right stick → section wheel** and **left stick / D-pad → content**
+independent across local, radio and podcast screens. Returning to the first item
+never transfers the left stick to the wheel. A held sector does not select again
+on a screen change; close modal menus and return the right stick to neutral
+before selecting a new sector.
+
+Deck 90 uses Up/Down for its section sidebar, Right/X to enter content and Left
+to return. Relay uses a two-column section matrix. Mosaic uses a three-column
+section matrix and a two-column content area. Aperture places sections below
+its preview/content split; Up enters content. X enters content in all themes.
+Legacy retains its original compact carousel and radio/podcast tabs. Playback
+controls below are independent of the Home theme.
+
+## Radio, podcasts and IPTV (1.3.0 preview)
+
+Home Radio and Podcast contain favourites; use **L1 → Radio/Podcast** for
+discovery. **R1 → Options** provides relevant search, catalogue, URL, save,
+information, refresh and download actions. L1 and R1 close the opposite panel.
+Country/genre/station grids navigate with the d-pad or touch and page lazily.
+Radio: X plays/pauses and reconnects live after pause. Podcast: X opens a show
+or streams an episode, Start downloads an episode, Select/Square shows details.
+Outside episodes, Triangle searches, Start adds a URL and Square saves.
+
+**L1 → IPTV** opens saved lists/channels. **Start / Add stream** opens the URL
+form. R1 offers Enter link, Scan QR and save actions. In the
+form, Triangle changes the detected format and X activates the focused control.
+In a list, X opens, Square stars a channel, Select stars the current playlist;
+Triangle searches lists/channels; R1 offers All/Favourites for saved entries.
+Circle returns. During IPTV playback, **Square** or the HUD Favourite button
+toggles the current channel's favourite state without restarting playback.
+**Filter errors** (also in R1 Options) checks entry URLs without decoding media
+and hides only DNS/403/404 failures. Circle cancels; **Show all** restores the
+list without deleting anything. Other errors and unchecked channels stay visible.
+Live pause resumes at the live point; finite segmented VOD resumes in place.
+See [IPTV limits](../docs/iptv-plan.md) before choosing a source.
+
 ## Local Media
 
 The combined Library opens as a folder grid instead of flattening every indexed
@@ -204,3 +242,25 @@ it is disabled by default.
 Audio-only media uses artwork when available; local video uses the same decoder
 compatibility path as fullscreen playback. The ECO status and input-lock badge
 use separate positions so the lock never covers the OLED ECO label.
+
+## Navidrome and Immich
+
+Open the dedicated section with L1. Cross connects, Square adds a server,
+Triangle edits, and two R1 presses remove a local connection. Circle returns;
+Select remains available for mini-player input lock. Navidrome uses the existing
+music-player controls; Immich uses the existing image-viewer controls.
+See [setup and console checks](../docs/personal-media-2026-10-23.md).
+
+Nel tema **Legacy**, L1 separa In corso (player/download disponibili), Contenuti
+e servizi (Home, rete, Navidrome, Immich, Radio/Podcast, IPTV) e Applicazione
+(impostazioni, guida, informazioni). Le intestazioni non ricevono il fuoco.
+Navidrome è disponibile anche in Audio locale; Immich in Immagini; entrambi
+sono nella Libreria di tutti i temi.
+
+**Posizioni Home per tema:** Impostazioni → Interfaccia → Posizione tab del
+tema. Su/giù sceglie la voce; sinistra/destra o le frecce touch la spostano;
+X salva, Cerchio annulla. La posizione viene salvata solo per il tema attivo.
+Nei nuovi L1 a tre colonne, sinistra/destra cambia colonna quando non è
+abilitata la pagina di disposizione del player; in quel caso mantiene il
+passaggio fra Sezioni e Player. La Libreria elenca i servizi dopo i locali;
+Musica e Immagini tengono il rispettivo servizio in testa.

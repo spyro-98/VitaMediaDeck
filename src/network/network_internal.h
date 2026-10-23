@@ -40,4 +40,6 @@ int vt_jellyfin_fetch_primary_image(const VtNetworkSource *,
 	                                const VtNetworkCredential *, const char *,
 	                                unsigned char **, size_t *, volatile int *);
 
+int vt_authenticated_range_stream(const VtNetworkSource *, const char *, VtDecoderStreamHandle *, volatile int *, VtNetworkBufferTelemetry *, volatile uintptr_t *);
+
 #endif

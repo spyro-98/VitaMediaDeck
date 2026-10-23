@@ -96,6 +96,8 @@ typedef struct VtDecoderPlayerConfig {
 	int volume_percent;
 	volatile int *cancel_flag;
 	int start_paused;
+	/* IPTV-only decoded audio shape, retained across DASH -> ADTS remuxing. */
+	uint32_t live_audio_sample_rate, live_audio_channels;
 } VtDecoderPlayerConfig;
 
 typedef struct VtDecoderPlayerStatus {

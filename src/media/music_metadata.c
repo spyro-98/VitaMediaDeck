@@ -1,4 +1,5 @@
 #include "media/music_metadata.h"
+#include "media/podcast_metadata.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -456,6 +457,7 @@ int vt_music_metadata_save(const char *media_path,
 }
 
 int vt_music_metadata_load(const char *media_path, VtMusicMetadata *metadata) {
+	if (vt_podcast_metadata_load(media_path, metadata) == 0) return 0;
 	char path[512];
 	if (!metadata || sidecar_path(media_path, path) < 0) return -1;
 	SceIoStat stat;

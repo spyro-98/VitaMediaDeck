@@ -19,19 +19,19 @@
 #include "system/display_awake.h"
 #include "ui/brand.h"
 #include "ui/components.h"
+#include "ui/audio_layout.h"
+#include "ui/theme_scene.h"
 #include "ui/loading_screen.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
 #include "ui/theme.h"
 #include "ui/touch.h"
 
-#define MUSIC_TIMELINE_X 112
-#define MUSIC_TIMELINE_Y 432
-#define MUSIC_TIMELINE_W 736
-#define MUSIC_CONTROLS_Y 478
-#define MUSIC_CONTROLS_H 62
-#define MUSIC_TEXT_LEFT 72
-#define MUSIC_TEXT_RIGHT 888
+#define MUSIC_TIMELINE_X UI_AUDIO_SEEK_X
+#define MUSIC_TIMELINE_Y UI_AUDIO_SEEK_Y
+#define MUSIC_TIMELINE_W UI_AUDIO_SEEK_W
+#define MUSIC_CONTROLS_Y UI_AUDIO_CONTROL_Y
+#define MUSIC_CONTROLS_H UI_AUDIO_CONTROL_H
 #define MUSIC_VOLUME_INTERVAL_US (80 * 1000ULL)
 #define MUSIC_VOLUME_VISIBLE_US (1200 * 1000ULL)
 #define MUSIC_HUD_VISIBLE_US (3500 * 1000ULL)
@@ -44,7 +44,7 @@
 #define MUSIC_STICK_REPEAT_US (220 * 1000ULL)
 #define MUSIC_VOLUME_STEP 5
 #define MUSIC_VOLUME_MAX 300
-#define MUSIC_RIGHT_PANEL_W 306.0f
+#define MUSIC_RIGHT_PANEL_W 430.0f
 #define MUSIC_RIGHT_ROW_Y 82.0f
 #define MUSIC_RIGHT_ROW_STEP 68.0f
 #define MUSIC_CONTROL_FEEDBACK_US 170000ULL
@@ -91,7 +91,8 @@ static void format_audio_details(uint32_t sample_rate, uint16_t channels,
 static void draw_music_audio_hud(const char *codec_name,
 	                             uint32_t bitrate_kbps,
 	                             uint32_t sample_rate, float baseline,
-	                             unsigned foreground, float opacity) {
+	                             unsigned foreground, float opacity,
+	                             float left, float available, int centered) {
 	if (opacity <= 0.01f) return;
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (!small) return;
@@ -108,16 +109,18 @@ static void draw_music_audio_hud(const char *codec_name,
 	else if (sample_rate)
 		snprintf(metadata, sizeof(metadata), "%s  |  %s", codec, rate);
 	else snprintf(metadata, sizeof(metadata), "%s", codec);
-	int text_width = ui_font_text_width(small, UI_FONT_SMALL, metadata);
-	float panel_x = 480.0f - (float)text_width * 0.5f - 12.0f;
+	char fitted[112];ui_font_fit_text(small,UI_FONT_SMALL,metadata,fitted,sizeof(fitted),(int)available);
+	int text_width = ui_font_text_width(small, UI_FONT_SMALL, fitted);
+	float text_x=left+(centered?(available-text_width)*.5f:0);
+	float panel_x = text_x - 8;
 	vita2d_draw_rectangle(panel_x, baseline - 21.0f,
-	                      (float)text_width + 24.0f, 28.0f,
+	                      (float)text_width + 16.0f, 28.0f,
 	                      fade_color(VT_THEME_GLASS_A(210), opacity));
 	vita2d_draw_rectangle(panel_x, baseline - 21.0f, 3.0f, 28.0f,
 	                      fade_color(VT_THEME_SPECTRAL, opacity));
-	ui_font_draw_text(small, (int)(480.0f - text_width * 0.5f),
+	ui_font_draw_text(small, (int)text_x,
 	                  (int)baseline, fade_color(foreground, opacity),
-	                  UI_FONT_SMALL, metadata);
+	                  UI_FONT_SMALL, fitted);
 }
 
 static void draw_cover(vita2d_texture *cover, float x, float y, float size,
@@ -130,12 +133,8 @@ static void draw_cover(vita2d_texture *cover, float x, float y, float size,
 	vita2d_draw_rectangle(x - 5, y - 5, size + 10, size + 10, frame);
 	vita2d_draw_rectangle(x - 5, y - 5, size + 10, 3,
 	                      (foreground & 0x00ffffffU) | (220U << 24));
-	/* Acquisition corners make the album object feel scanned, not framed. */
-	unsigned mark = (foreground & 0x00ffffffU) | (196U << 24);
-	vita2d_draw_rectangle(x - 12, y - 12, 28, 2, mark);
-	vita2d_draw_rectangle(x - 12, y - 12, 2, 28, mark);
-	vita2d_draw_rectangle(x + size - 16, y + size + 10, 28, 2, mark);
-	vita2d_draw_rectangle(x + size + 10, y + size - 16, 2, 28, mark);
+	/* A quiet frame leaves the entire cover visible and separates it from
+	 * the ambient animation without acquisition brackets crowding the HUD. */
 	float w = (float)vita2d_texture_get_width(cover);
 	float h = (float)vita2d_texture_get_height(cover);
 	float scale = size / (w > h ? w : h);
@@ -374,10 +373,9 @@ static void random_music_palette(unsigned colors[5], uint32_t seed) {
 
 static void music_theme_palette(int theme, const unsigned artwork[5],
 	                            const unsigned random[5], unsigned out[5]) {
-	static const unsigned app[5] = {
-		RGBA8(5, 31, 52, 255), RGBA8(10, 84, 108, 255),
-		RGBA8(48, 168, 187, 255), RGBA8(213, 238, 241, 255),
-		RGBA8(182, 108, 48, 255)
+	const unsigned app[5] = {
+		VT_THEME_SURFACE, RGBA8(24, 70, 64, 255),
+		VT_THEME_SIGNAL_BRIGHT, VT_THEME_TEXT, VT_THEME_FOCUS
 	};
 	static const unsigned cold[5] = {
 		RGBA8(10, 29, 70, 255), RGBA8(22, 70, 138, 255),
@@ -403,6 +401,7 @@ static void draw_flow_background(const unsigned colors[5], uint64_t now,
 	        ? 0.0f : (float)(now % 90000000ULL) / 1000000.0f;
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 	                      544 - UI_BRAND_HEADER_HEIGHT, VT_THEME_BG);
+    if(ui_theme_id()!=VT_UI_THEME_LEGACY)ui_theme_fx_background(VT_THEME_BG);
 	if (theme == VT_MUSIC_THEME_NONE) return;
 	/* Apple Music-inspired ambient artwork: a few very large, feathered colour
 	 * fields drift behind the cover. Concentric low-alpha discs approximate a
@@ -423,39 +422,22 @@ static void draw_flow_background(const unsigned colors[5], uint64_t now,
 	 * when a cover is mostly white or highly saturated. */
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 	                      544 - UI_BRAND_HEADER_HEIGHT, RGBA8(0, 0, 0, 76));
-	/* Sparse points retain VitaMediaDeck's signal-field identity. */
-	unsigned int phase = vt_preferences_reduce_motion()
-	                   ? 0U : (unsigned int)((now / 52000ULL) % 420ULL);
-	for (unsigned int i = 0; i < 28; i++) {
-		unsigned int seed = 0x45D9F3BU * (i + 17U);
-		seed ^= seed >> 15;
-		float x = 24.0f + (float)(seed % 912U);
-		float y = 76.0f + (float)((seed / 277U + phase * (1U + i % 2U)) % 438U);
-		unsigned dot_alpha = 26U + seed % 78U;
-		unsigned particle = i % 9U == 0U ? VT_THEME_SIGNAL_BRIGHT
-		                  : i % 7U == 0U ? VT_THEME_SPECTRAL
-		                                  : colors[i % 5U];
-		float size = i % 11U == 0U ? 3.0f : i % 4U == 0U ? 2.0f : 1.0f;
-		vita2d_draw_rectangle(x, y, size, size,
-		                      with_alpha(particle, dot_alpha));
-		if (i % 10U == 0U)
-			vita2d_draw_line(x, y, 480.0f, 204.0f,
-			                 VT_THEME_SPECTRAL_A(16U));
-	}
+	/* No idle particles or optical connection lines over readable metadata. */
 	(void)foreground;
 }
 
-static void draw_metadata_scrim(float title_y, unsigned foreground,
+static void draw_metadata_scrim(const UiAudioLayout *layout, float bottom, unsigned foreground,
 	                            float opacity) {
 	if (opacity <= 0.01f) return;
 	unsigned fill = foreground == RGBA8(255, 255, 255, 255)
 	              ? RGBA8(0, 5, 12, 128) : RGBA8(255, 255, 255, 132);
 	unsigned edge = with_alpha(foreground, 58);
-	vita2d_draw_rectangle(48, title_y - 30.0f, 864, 126,
+	float x=layout->text_x-12,y=layout->title_y-30,w=layout->text_width+24;
+	vita2d_draw_rectangle(x, y, w, bottom-y+8,
 	                      fade_color(fill, opacity));
-	vita2d_draw_rectangle(48, title_y - 30.0f, 864, 1,
+	vita2d_draw_rectangle(x, y, w, 1,
 	                      fade_color(edge, opacity));
-	vita2d_draw_rectangle(48, title_y + 95.0f, 864, 1,
+	vita2d_draw_rectangle(x, bottom+7, w, 1,
 	                      fade_color(edge, opacity));
 }
 
@@ -470,7 +452,7 @@ static const char *music_state_text(VtBackgroundPlaybackState state) {
 
 static void draw_music_state(const VtBackgroundPlaybackSnapshot *snapshot,
 	                         unsigned foreground, uint64_t now,
-	                         float opacity) {
+	                         float opacity, float x) {
 	if (!snapshot || opacity <= 0.01f) return;
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (!small) return;
@@ -482,12 +464,12 @@ static void draw_music_state(const VtBackgroundPlaybackSnapshot *snapshot,
 	unsigned panel = foreground == RGBA8(255, 255, 255, 255)
 	               ? RGBA8(3, 10, 12, 218) : RGBA8(236, 244, 242, 224);
 	unsigned state_color = ui_contrast_bw(panel);
-	vita2d_draw_rectangle(72, 82, width, 34, fade_color(panel, opacity));
-	vita2d_draw_rectangle(72, 82, 3, 34,
+	vita2d_draw_rectangle(x, 82, width, 34, fade_color(panel, opacity));
+	vita2d_draw_rectangle(x, 82, 3, 34,
 	                      fade_color(snapshot->state == VT_BACKGROUND_ERROR
 	                          ? VT_THEME_DANGER : VT_THEME_BLUE_LIGHT, opacity));
-	if (loading) draw_music_spinner_compact(94, 99, now, opacity);
-	ui_font_draw_text(small, 86 + (loading ? 24 : 0), 106,
+	if (loading) draw_music_spinner_compact(x+22, 99, now, opacity);
+	ui_font_draw_text(small, x+14 + (loading ? 24 : 0), 106,
 	                  fade_color(state_color, opacity),
 	                  UI_FONT_SMALL, label);
 }
@@ -499,53 +481,26 @@ static unsigned music_control_fill(unsigned base, int control,
 	     ? VT_THEME_BLUE_LIGHT : base;
 }
 
-static void draw_music_action_button(float x, float y, float width,
-	                                 float height, unsigned fill,
-	                                 const char *key, const char *label,
-	                                 int active, float opacity) {
-	if (opacity <= 0.01f) return;
-	unsigned foreground = ui_contrast_bw(fill);
-	unsigned accent = active ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER;
-	vita2d_draw_rectangle(x, y, width, height, fade_color(fill, opacity));
-	vita2d_draw_rectangle(x, y, width, 2, fade_color(accent, opacity));
-	vita2d_draw_rectangle(x + 1, y + height - 1, width - 2, 1,
-	                      fade_color(active ? accent : VT_THEME_BORDER_DIM,
-	                                 opacity));
-	vita2d_draw_rectangle(x, y, 12, 2, fade_color(accent, opacity));
-	vita2d_draw_rectangle(x, y, 2, 10, fade_color(accent, opacity));
-	vita2d_draw_rectangle(x + width - 12, y + height - 2, 12, 2,
-	                      fade_color(accent, opacity));
-	vita2d_draw_rectangle(x + width - 2, y + height - 10, 2, 10,
-	                      fade_color(accent, opacity));
-
-	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	float key_width = 0.0f;
-	if (small && key && key[0]) {
-		key_width = (float)ui_font_text_width(small, UI_FONT_SMALL, key) + 14.0f;
-		if (key_width < 34.0f) key_width = 34.0f;
-	}
-	if (key_width > 0.0f) {
-		unsigned cap = foreground == RGBA8(255, 255, 255, 255)
-		             ? RGBA8(255, 255, 255, 28) : RGBA8(0, 0, 0, 28);
-		vita2d_draw_rectangle(x + 10, y + 9, key_width, height - 18,
-		                      fade_color(cap, opacity));
-		int key_text_width = ui_font_text_width(small, UI_FONT_SMALL, key);
-		ui_font_draw_text(small,
-		                  (int)(x + 10 + (key_width - key_text_width) * .5f),
-		                  (int)(y + height * .5f + 7),
-		                  fade_color(foreground, opacity), UI_FONT_SMALL, key);
-	}
-	if (small && label && label[0]) {
-		char fitted[192];
-		float left = key_width > 0.0f ? x + key_width + 17.0f : x + 12.0f;
-		float available = width - key_width - 24.0f;
-		ui_font_fit_text(small, UI_FONT_SMALL, label, fitted, sizeof(fitted),
-		                 (int)available);
-		int label_width = ui_font_text_width(small, UI_FONT_SMALL, fitted);
-		ui_font_draw_text(small,
-		                  (int)(left + (available - label_width) * .5f),
-		                  (int)(y + height * .5f + 7),
-		                  fade_color(foreground, opacity), UI_FONT_SMALL, fitted);
+/* Compact symbols retain 48x44 touch regions. No per-frame textures/fonts. */
+static void draw_transport(int x, int control, int paused, int enabled,
+                           int feedback, uint64_t until, uint64_t now,
+                           unsigned foreground, float opacity) {
+	if(opacity<=.01f)return;
+	float y=MUSIC_CONTROLS_Y;
+	unsigned fill=foreground==RGBA8(255,255,255,255)?VT_THEME_GLASS_A(224):RGBA8(240,244,248,230);
+	fill=music_control_fill(fill,control,feedback,until,now);
+	unsigned ink=fade_color(enabled?ui_contrast_bw(fill):VT_THEME_TEXT_FAINT,opacity);
+	vita2d_draw_rectangle(x,y,48,44,fade_color(fill,opacity));
+ ui_theme_scene_transport(x,y,48,44,control==MUSIC_CONTROL_PLAY,opacity);
+	if(control==MUSIC_CONTROL_PLAY && !paused) {
+		vita2d_draw_rectangle(x+17,y+12,4,20,ink);
+		vita2d_draw_rectangle(x+27,y+12,4,20,ink);
+	} else if(control==MUSIC_CONTROL_PLAY) {
+		for(int i=0;i<14;i++)vita2d_draw_rectangle(x+18+i,y+11+i*.75f,1,22-i*1.5f,ink);
+	} else {
+		int back=control==MUSIC_CONTROL_BACK;
+		vita2d_draw_rectangle(x+(back?12:34),y+12,2,20,ink);
+		for(int i=0;i<13;i++)vita2d_draw_rectangle(x+(back?29-i:18+i),y+12+i*.75f,1,20-i*1.5f,ink);
 	}
 }
 
@@ -578,19 +533,17 @@ static void draw_power_save_status_at(int x, int y) {
 
 static void draw_marquee(vita2d_font *font, float size, const char *text,
 	                     float baseline, unsigned color, uint64_t now,
-	                     uint64_t phase_offset) {
+	                     uint64_t phase_offset, float left, float available, int centered) {
 	if (!font || !text || !text[0]) return;
-	const float left = MUSIC_TEXT_LEFT;
-	const float available = MUSIC_TEXT_RIGHT - MUSIC_TEXT_LEFT;
 	float width = (float)ui_font_text_width(font, size, text);
 	if (width <= available) {
-		ui_font_draw_text(font, (960.0f - width) * .5f, baseline,
+		ui_font_draw_text(font, left+(centered?(available-width)*.5f:0), baseline,
 		                  color, size, text);
 		return;
 	}
 	if (vt_preferences_reduce_motion()) {
-		ui_font_draw_text_centered(font, 480, (int)baseline,
-		                           (int)available, color, (unsigned)size, text);
+		char fitted[512];ui_font_fit_text(font,size,text,fitted,sizeof(fitted),(int)available);
+		ui_font_draw_text(font,left,baseline,color,size,fitted);
 		return;
 	}
 	const float speed = 34.0f;
@@ -609,7 +562,7 @@ static void draw_marquee(vita2d_font *font, float size, const char *text,
 		offset = travel - seconds * speed;
 	}
 	vita2d_set_clip_rectangle((int)left, (int)(baseline - size - 8),
-	                          (int)MUSIC_TEXT_RIGHT, (int)(baseline + 8));
+	                          (int)(left+available), (int)(baseline + 8));
 	vita2d_enable_clipping();
 	ui_font_draw_text(font, left - offset, baseline, color, size, text);
 	vita2d_disable_clipping();
@@ -648,8 +601,7 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	const float width = MUSIC_RIGHT_PANEL_W;
 	float x = 960.0f - width * animation;
 	vita2d_draw_rectangle(x, 0, width, 544, VT_THEME_BG_SOFT);
-	vita2d_draw_rectangle(x, 0, 3, 544, VT_THEME_SPECTRAL);
-	vita2d_draw_rectangle(x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(x, 0, 1, 544, VT_THEME_BORDER);
 	vita2d_draw_rectangle(x + 4, 0, width - 4, 1, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -678,9 +630,7 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	};
 	for (int i = 0; i < 3; i++) {
 		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
-		ui_panel(x + 18, y, width - 36, 56,
-		         focused && i == cursor ? VT_THEME_SURFACE_FOCUS : VT_THEME_SURFACE,
-		         VT_THEME_BORDER_DIM, 0);
+		ui_panel(x + 18, y, width - 36, 56,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 	}
 	const char *info_labels[3] = {
 		vt_i18n_str(VT_STR_MUSIC_PLAYER_FORMAT_LABEL),
@@ -713,10 +663,8 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	}
 	if (focused) {
 		float focus_y = MUSIC_RIGHT_ROW_Y + focus_position * MUSIC_RIGHT_ROW_STEP;
-		vita2d_draw_rectangle(x + 14, focus_y - 4, width - 28, 64,
-		                      VT_THEME_HALO_A(76));
-		ui_panel(x + 18, focus_y, width - 36, 56,
-		         VT_THEME_SURFACE_FOCUS, VT_THEME_SIGNAL_LIGHT, 0);
+		UiFocusMotion focus={.x=x+18,.y=focus_y,.width=width-36,.height=56,.initialized=1};
+		ui_focus_outline_draw(&focus);
 	}
 	for (int i = 0; i < 3; i++) {
 		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
@@ -773,10 +721,15 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 	int touch_reveal_only = 0;
 	UiSectionsSidebar sidebar;
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
+	int audio_layout=vt_preferences_audio_layout();
+	sidebar.audio_layout_available=1;
+	sidebar.audio_layout_cursor=sidebar.audio_layout_selected=audio_layout;
+	UiAudioLayout layout=ui_theme_audio_layout(audio_layout,cover!=NULL);
 	int right_open = 0;
 	int right_cursor = 0;
 	float right_animation = 0.0f;
 	float right_focus_position = 0.0f;
+	UiFocusMotion right_motion={0};
 	int control_feedback = MUSIC_CONTROL_NONE;
 	uint64_t control_feedback_until_us = 0;
 	int hud_visible = 1;
@@ -793,6 +746,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 	uint64_t volume_visible_until_us = 0;
 	int action = UI_MUSIC_PLAYER_STOP;
 	for (;;) {
+		vt_background_playback_checkpoint();
 		VtBackgroundPlaybackSnapshot snapshot;
 		if (!vt_background_playback_snapshot(&snapshot)) {
 			action = g_repeat_one ? UI_MUSIC_PLAYER_REPEAT
@@ -923,6 +877,12 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			if (!right_open && right_animation <= 0.01f) {
 				int section = ui_sections_sidebar_handle_buttons(
 				    &sidebar, &pressed, ctrl.buttons, ctrl.ly);
+				if(section>=UI_SECTION_AUDIO_LAYOUT_BASE && section<UI_SECTION_AUDIO_LAYOUT_BASE+3) {
+					int next=section-UI_SECTION_AUDIO_LAYOUT_BASE;
+					if(!vt_preferences_set_audio_layout(next))audio_layout=sidebar.audio_layout_selected=next;
+					else ui_message_show(vt_i18n_str(VT_STR_MUSIC_LAYOUT_TITLE),vt_i18n_str(VT_STR_MUSIC_LAYOUT_SAVE_FAILED),2000);
+					section=UI_SECTION_NONE;
+				}
 				if (section != UI_SECTION_NONE) {
 					action = UI_MUSIC_PLAYER_SECTION_BASE + section;
 					break;
@@ -1023,6 +983,12 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		if (sidebar.open) {
 			int section = ui_sections_sidebar_handle_touch(
 			    &sidebar, touch_flags, touch.x, touch.y);
+			if(section>=UI_SECTION_AUDIO_LAYOUT_BASE && section<UI_SECTION_AUDIO_LAYOUT_BASE+3) {
+				int next=section-UI_SECTION_AUDIO_LAYOUT_BASE;
+				if(!vt_preferences_set_audio_layout(next))audio_layout=sidebar.audio_layout_selected=next;
+				else ui_message_show(vt_i18n_str(VT_STR_MUSIC_LAYOUT_TITLE),vt_i18n_str(VT_STR_MUSIC_LAYOUT_SAVE_FAILED),2000);
+				section=UI_SECTION_NONE;
+			}
 			if (section != UI_SECTION_NONE) {
 				action = UI_MUSIC_PLAYER_SECTION_BASE + section;
 				break;
@@ -1055,7 +1021,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		    snapshot.state != VT_BACKGROUND_ERROR &&
 		    (touch_flags & UI_TOUCH_EVENT_DOWN) &&
 		    ui_touch_hit_rect(touch.x, touch.y, MUSIC_TIMELINE_X,
-		                      MUSIC_TIMELINE_Y - 22, MUSIC_TIMELINE_W, 48)) {
+		                      MUSIC_TIMELINE_Y - 16, MUSIC_TIMELINE_W, 32)) {
 			dragging_timeline = 1;
 			drag_fraction = (float)(touch.x - MUSIC_TIMELINE_X) /
 			                (float)MUSIC_TIMELINE_W;
@@ -1082,23 +1048,17 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		           (touch_flags & UI_TOUCH_EVENT_TAP)) {
 			control_feedback = MUSIC_CONTROL_NONE;
 			if (snapshot.state != VT_BACKGROUND_ERROR &&
-			    ui_touch_hit_rect(touch.x, touch.y, 372, MUSIC_CONTROLS_Y, 166, MUSIC_CONTROLS_H)) {
+			    ui_touch_hit_rect(touch.x, touch.y, UI_AUDIO_PLAY_X, MUSIC_CONTROLS_Y, UI_AUDIO_CONTROL_W, MUSIC_CONTROLS_H)) {
 				vt_background_playback_toggle_pause();
 				control_feedback = MUSIC_CONTROL_PLAY;
 			} else if (snapshot.duration_ms && snapshot.state != VT_BACKGROUND_ERROR &&
-			           ui_touch_hit_rect(touch.x, touch.y, 220, MUSIC_CONTROLS_Y, 128, MUSIC_CONTROLS_H)) {
+			           ui_touch_hit_rect(touch.x, touch.y, UI_AUDIO_BACK_X, MUSIC_CONTROLS_Y, UI_AUDIO_CONTROL_W, MUSIC_CONTROLS_H)) {
 				vt_background_playback_seek_relative(-10000);
 				control_feedback = MUSIC_CONTROL_BACK;
 			} else if (snapshot.duration_ms && snapshot.state != VT_BACKGROUND_ERROR &&
-			           ui_touch_hit_rect(touch.x, touch.y, 562, MUSIC_CONTROLS_Y, 128, MUSIC_CONTROLS_H)) {
+			           ui_touch_hit_rect(touch.x, touch.y, UI_AUDIO_NEXT_X, MUSIC_CONTROLS_Y, UI_AUDIO_CONTROL_W, MUSIC_CONTROLS_H)) {
 				vt_background_playback_seek_relative(10000);
 				control_feedback = MUSIC_CONTROL_FORWARD;
-			} else if (!snapshot.is_live && ui_touch_hit_rect(touch.x, touch.y, 46, MUSIC_CONTROLS_Y, 166, MUSIC_CONTROLS_H)) {
-				g_shuffle = !g_shuffle;
-				control_feedback = MUSIC_CONTROL_SHUFFLE;
-			} else if (!snapshot.is_live && ui_touch_hit_rect(touch.x, touch.y, 698, MUSIC_CONTROLS_Y, 216, MUSIC_CONTROLS_H)) {
-				g_repeat_one = !g_repeat_one;
-				control_feedback = MUSIC_CONTROL_REPEAT;
 			}
 			if (control_feedback != MUSIC_CONTROL_NONE) {
 				control_feedback_until_us = input_now + MUSIC_CONTROL_FEEDBACK_US;
@@ -1125,13 +1085,13 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			right_animation = approach_time_based(
 			    right_animation, right_open ? 1.0f : 0.0f, 18.0f,
 			    animation_delta_s);
-			right_focus_position = approach_time_based(
-			    right_focus_position, (float)right_cursor, 22.0f,
-			    animation_delta_s);
+
 			hud_opacity = approach_time_based(
 			    hud_opacity, hud_visible ? 1.0f : 0.0f, 16.0f,
 			    animation_delta_s);
 		}
+		ui_focus_motion_tick(&right_motion,0,(float)right_cursor,1,1);
+		right_focus_position=right_motion.y;
 		if (!hud_visible && hud_opacity < 0.001f) hud_opacity = 0.0f;
 
 		if (vt_preferences_music_keep_display_awake() || energy_saving)
@@ -1150,7 +1110,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				energy_redraw = 1;
 			}
 			if (energy_redraw) {
-				vita2d_start_drawing();
+				const unsigned *music_theme_before=ui_theme_media_begin();
+		 vita2d_start_drawing();
 				vita2d_clear_screen();
 				vita2d_draw_rectangle(0, 0, 960, 544, RGBA8(0, 0, 0, 255));
 				int lock_x, lock_y;
@@ -1161,7 +1122,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 					draw_input_lock_at(lock_x,
 					    lock_y > 430 ? lock_y - 50 : lock_y + 34, 0.18f);
 				}
-				vita2d_end_drawing();
+				ui_theme_media_end(music_theme_before);
+		 vita2d_end_drawing();
 				vita2d_wait_rendering_done();
 				vita2d_swap_buffers();
 				energy_redraw = 0;
@@ -1169,41 +1131,50 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			sceKernelDelayThread(10000);
 			continue;
 		}
-		vita2d_start_drawing();
+		const unsigned *music_theme_before=ui_theme_media_begin();
+		 vita2d_start_drawing();
 		vita2d_clear_screen();
-		draw_flow_background(palette, now, foreground, music_theme);
-		ui_brand_draw_header(NULL);
-		/* The composition sits lower than the video HUD and leaves a quiet top
-		 * band for VitaMediaDeck's system header. */
-		if (cover) draw_cover(cover, 371.0f, 76.0f, 218.0f, foreground);
-		draw_music_state(&snapshot, foreground, now, hud_opacity);
-		vita2d_font *display = ui_runtime_font(UI_FONT_DISPLAY);
-		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
-		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		if (small && hud_opacity > 0.01f) {
-			char shortcuts[192];
-			ui_font_fit_text(small, UI_FONT_SMALL,
-			                 vt_i18n_str(VT_STR_PLAYER_SHORTCUTS_HINT), shortcuts,
-			                 sizeof(shortcuts), 300);
-			vita2d_draw_rectangle(626, 94, 2, 30,
-			                      fade_color(VT_THEME_COLD, hud_opacity));
-			ui_font_draw_text(small, 640, 114,
-			                  fade_color(VT_THEME_COLD_LIGHT, hud_opacity),
-			                  UI_FONT_SMALL, shortcuts);
-		}
-		float title_y = cover ? 330.0f : 228.0f;
-		/* Metadata itself stays readable in the quiet state. Only the protective
-		 * panel belongs to the HUD and therefore dissolves with the controls. */
-		draw_metadata_scrim(title_y, foreground, hud_opacity);
-		draw_marquee(display, UI_FONT_DISPLAY, snapshot.title, title_y,
-		              foreground, now, 0);
-		draw_marquee(body, UI_FONT_BODY, snapshot.channel, title_y + 36.0f,
-		              foreground, now, 600000ULL);
-		draw_marquee(small, UI_FONT_SMALL, album, title_y + 64.0f,
-		              foreground, now, 1200000ULL);
-		draw_music_audio_hud(display_codec, display_bitrate,
-		                     snapshot.audio_sample_rate,
-		                     title_y + 88.0f, foreground, hud_opacity);
+		ui_theme_scene_begin(UI_SCENE_AUDIO,snapshot.title);
+		draw_flow_background(palette,now,foreground,music_theme);
+		ui_brand_draw_breadcrumbs(snapshot.is_live ? vt_i18n_str(VT_STR_ONLINE_RADIO) :
+		    snapshot.is_podcast ? "Podcast" : vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_AUDIO),
+		    NULL, snapshot.title);
+		UiAudioLayout target=ui_theme_audio_layout(audio_layout,cover!=NULL);
+		/* Presentation-only interpolation; artwork remains the same texture. */
+		float blend=vt_preferences_reduce_motion()?1.0f:1.0f-expf(-20.0f*animation_delta_s);
+#define MOVE_LAYOUT(field) layout.field+=(target.field-layout.field)*blend
+		MOVE_LAYOUT(cover_x);MOVE_LAYOUT(cover_y);MOVE_LAYOUT(cover_size);
+		MOVE_LAYOUT(text_x);MOVE_LAYOUT(text_width);MOVE_LAYOUT(title_y);
+#undef MOVE_LAYOUT
+		int centered=ui_theme_id()==VT_UI_THEME_LEGACY?(!cover || audio_layout==VT_AUDIO_LAYOUT_CENTER):
+            (audio_layout==VT_AUDIO_LAYOUT_CENTER&&(ui_theme_id()==VT_UI_THEME_APERTURE||ui_theme_id()==VT_UI_THEME_GHOST_MESH));
+        if(ui_theme_id()!=VT_UI_THEME_LEGACY) {
+            float cx=layout.cover_x+layout.cover_size*.5f,cy=layout.cover_y+layout.cover_size*.5f;
+            ui_theme_scene_model(UI_SCENE_AUDIO,cx,cy,layout.cover_size*1.4f,1,snapshot.state==VT_BACKGROUND_PLAYING);
+        }
+		if(cover){
+            if(ui_theme_id()==VT_UI_THEME_LEGACY)draw_cover(cover,layout.cover_x,layout.cover_y,layout.cover_size,foreground);
+            else ui_theme_scene_art(cover,layout.cover_x,layout.cover_y,layout.cover_size,snapshot.state==VT_BACKGROUND_PLAYING);
+        }
+		draw_music_state(&snapshot,foreground,now,hud_opacity,centered?18:layout.text_x);
+		vita2d_font *display=ui_runtime_font(UI_FONT_DISPLAY);
+		vita2d_font *body=ui_runtime_font(UI_FONT_BODY);
+		vita2d_font *small=ui_runtime_font(UI_FONT_SMALL);
+		float line=layout.title_y;
+		float author_y=line+36;
+		if(snapshot.channel[0])line+=36;
+		float album_y=line+28;
+		if(album && album[0])line+=28;
+		float info_y=line+26;
+		draw_metadata_scrim(&layout,info_y,foreground,hud_opacity);
+		draw_marquee(display,UI_FONT_DISPLAY,snapshot.title,layout.title_y,foreground,now,0,
+		    layout.text_x,layout.text_width,centered);
+		if(snapshot.channel[0])draw_marquee(body,UI_FONT_BODY,snapshot.channel,author_y,foreground,now,600000ULL,
+		    layout.text_x,layout.text_width,centered);
+		if(album && album[0])draw_marquee(small,UI_FONT_SMALL,album,album_y,foreground,now,1200000ULL,
+		    layout.text_x,layout.text_width,centered);
+		draw_music_audio_hud(display_codec,display_bitrate,snapshot.audio_sample_rate,
+		    info_y,foreground,hud_opacity,layout.text_x,layout.text_width,centered);
 		float progress = dragging_timeline ? drag_fraction : snapshot.duration_ms
 		               ? (float)snapshot.position_ms / (float)snapshot.duration_ms : 0.0f;
 		if (progress < 0) progress = 0;
@@ -1227,58 +1198,27 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		time_text(shown_position, current);
 		time_text(snapshot.duration_ms, duration);
 		if (snapshot.is_live) snprintf(duration, sizeof(duration), "Live");
-		if (small) {
-			ui_font_draw_text(small, MUSIC_TIMELINE_X, 465,
-			                  fade_color(foreground, hud_opacity),
-			                  UI_FONT_SMALL, current);
-			int width = ui_font_text_width(small, UI_FONT_SMALL, duration);
-			ui_font_draw_text(small, MUSIC_TIMELINE_X + MUSIC_TIMELINE_W - width,
-			                  465, fade_color(foreground, hud_opacity),
-			                  UI_FONT_SMALL, duration);
+		if(small) {
+			char elapsed[64];
+			snprintf(elapsed,sizeof(elapsed),snapshot.is_live?"%s":"%s / %s",
+			    snapshot.is_live?"Live":current,duration);
+			ui_font_draw_text(small,18,478,fade_color(foreground,hud_opacity),UI_FONT_SMALL,elapsed);
+			char hint[128];
+			snprintf(hint,sizeof(hint),"L1  %s / %s",vt_i18n_str(VT_STR_SECTIONS_TITLE),vt_i18n_str(VT_STR_MUSIC_LAYOUT_TITLE));
+			char fitted[128];ui_font_fit_text(small,UI_FONT_SMALL,hint,fitted,sizeof(fitted),580);
+			ui_font_draw_text(small,18,526,fade_color(foreground,hud_opacity),UI_FONT_SMALL,fitted);
+			snprintf(hint,sizeof(hint),"R1  %s",vt_i18n_str(VT_STR_PLAYER_PANEL_TITLE));
+			ui_font_fit_text(small,UI_FONT_SMALL,hint,fitted,sizeof(fitted),310);
+			int width=ui_font_text_width(small,UI_FONT_SMALL,fitted);
+			ui_font_draw_text(small,942-width,526,fade_color(foreground,hud_opacity),UI_FONT_SMALL,fitted);
 		}
-		unsigned button_fill = foreground == RGBA8(255, 255, 255, 255)
-		                     ? VT_THEME_GLASS_A(224)
-		                     : RGBA8(240, 244, 248, 230);
-		if (!snapshot.is_live) {
-		draw_music_action_button(46, MUSIC_CONTROLS_Y, 166, 56,
-		                 music_control_fill(button_fill, MUSIC_CONTROL_SHUFFLE,
-		                                    control_feedback,
-		                                    control_feedback_until_us, now),
-		                 vt_i18n_str(VT_STR_MUSIC_PLAYER_KEY_SQUARE),
-		                 vt_i18n_str(g_shuffle ? VT_STR_MUSIC_PLAYER_SHUFFLE_ON
-		                                           : VT_STR_MUSIC_PLAYER_SHUFFLE),
-		                 g_shuffle, hud_opacity);
-		draw_music_action_button(220, MUSIC_CONTROLS_Y, 128, 56,
-		                 music_control_fill(button_fill, MUSIC_CONTROL_BACK,
-		                                    control_feedback,
-		                                    control_feedback_until_us, now),
-		                 NULL, "<", 0, hud_opacity);
-		}
-		draw_music_action_button(372, MUSIC_CONTROLS_Y, 166, 56,
-		                 music_control_fill(button_fill, MUSIC_CONTROL_PLAY,
-		                                    control_feedback,
-		                                    control_feedback_until_us, now),
-		                 vt_i18n_str(VT_STR_MUSIC_PLAYER_KEY_CROSS),
-		                 snapshot.state == VT_BACKGROUND_ERROR
-		                     ? vt_i18n_str(VT_STR_MINI_STATE_ERROR)
-		                     : vt_i18n_str(snapshot.state == VT_BACKGROUND_PAUSED
-		                         ? VT_STR_MUSIC_PLAYER_PLAY : VT_STR_MUSIC_PLAYER_PAUSE),
-		                 snapshot.state != VT_BACKGROUND_ERROR, hud_opacity);
-		if (!snapshot.is_live) {
-		draw_music_action_button(562, MUSIC_CONTROLS_Y, 128, 56,
-		                 music_control_fill(button_fill, MUSIC_CONTROL_FORWARD,
-		                                    control_feedback,
-		                                    control_feedback_until_us, now),
-		                 NULL, ">", 0, hud_opacity);
-		draw_music_action_button(698, MUSIC_CONTROLS_Y, 216, 56,
-		                 music_control_fill(button_fill, MUSIC_CONTROL_REPEAT,
-		                                    control_feedback,
-		                                    control_feedback_until_us, now),
-		                 vt_i18n_str(VT_STR_MUSIC_PLAYER_KEY_TRIANGLE),
-		                 vt_i18n_str(g_repeat_one ? VT_STR_MUSIC_PLAYER_REPEAT_ONE_ACTION
-		                                             : VT_STR_MUSIC_PLAYER_REPEAT_ACTION),
-		                 g_repeat_one, hud_opacity);
-		}
+		int ready=snapshot.state!=VT_BACKGROUND_ERROR;
+		if(!snapshot.is_live)draw_transport(UI_AUDIO_BACK_X,MUSIC_CONTROL_BACK,0,ready&&snapshot.duration_ms,
+		    control_feedback,control_feedback_until_us,now,foreground,hud_opacity);
+		draw_transport(UI_AUDIO_PLAY_X,MUSIC_CONTROL_PLAY,snapshot.state==VT_BACKGROUND_PAUSED,ready,
+		    control_feedback,control_feedback_until_us,now,foreground,hud_opacity);
+		if(!snapshot.is_live)draw_transport(UI_AUDIO_NEXT_X,MUSIC_CONTROL_FORWARD,0,ready&&snapshot.duration_ms,
+		    control_feedback,control_feedback_until_us,now,foreground,hud_opacity);
 		float volume_opacity = 0.0f;
 		if (now < volume_visible_until_us) {
 			uint64_t remaining = volume_visible_until_us - now;
@@ -1296,7 +1236,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		                         display_bitrate, snapshot.audio_sample_rate,
 		                         snapshot.audio_channels,
 		                         snapshot.audio_bits_per_sample);
-		vita2d_end_drawing();
+		ui_theme_media_end(music_theme_before);
+		 vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();
 		sceKernelDelayThread(1000);

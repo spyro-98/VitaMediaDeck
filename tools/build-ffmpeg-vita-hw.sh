@@ -42,6 +42,7 @@ if [[ "$actual_sha" != "$patch_sha256" ]]; then
 fi
 
 patch -d "$work/ffmpeg" -p1 < "$patch_file"
+patch -d "$work/ffmpeg" -p1 < "$repo_root/tools/ffmpeg-hls-custom-io.patch"
 
 # Preserve the exact patched tree before configuration adds generated files.
 tar -C "$work" --exclude='ffmpeg/.git' -czf "$work/ffmpeg-n6.0-h264-vita-source.tar.gz" ffmpeg
@@ -64,8 +65,8 @@ env VITASDK="$vita_sdk" PATH="$vita_sdk/bin:/usr/bin:/bin" ./configure \
   --disable-programs --disable-doc --disable-autodetect --disable-network \
   --disable-avfilter --disable-swscale --disable-swresample --disable-avdevice \
   --disable-encoders \
-  --disable-decoders --enable-decoder=h264,h264_vita \
-  --disable-demuxers --enable-demuxer=mov,matroska,mpegts,aac,h264,srt \
+  --disable-decoders --enable-decoder=h264,h264_vita,aac \
+  --disable-demuxers --enable-demuxer=mov,matroska,mpegts,aac,h264,srt,hls,mp3,ac3,eac3 \
   --disable-muxers --enable-muxer=mov,mp4,mpegts \
   --disable-parsers --enable-parser=aac,aac_latm,h264,mpeg4audio \
   --disable-protocols --enable-protocol=file \

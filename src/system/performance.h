@@ -1,10 +1,17 @@
 #ifndef VITAMEDIADECK_SYSTEM_PERFORMANCE_H
 #define VITAMEDIADECK_SYSTEM_PERFORMANCE_H
 
+#ifdef VT_VIDEO_STOCK_CLOCKS
+#define VT_VIDEO_DEFAULT_ARM_MHZ 333
+#define VT_720P60_BUS_MHZ 166
+#define VT_720P60_GPU_MHZ 166
+#define VT_720P60_XBAR_MHZ 111
+#else
 #define VT_VIDEO_DEFAULT_ARM_MHZ 444
 #define VT_720P60_BUS_MHZ 222
 #define VT_720P60_GPU_MHZ 222
 #define VT_720P60_XBAR_MHZ 111
+#endif
 
 typedef struct VtPerformanceClockGuard {
 	int previous_arm_mhz;

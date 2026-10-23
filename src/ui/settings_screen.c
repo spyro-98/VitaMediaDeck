@@ -12,6 +12,7 @@
 #include "network/network_source.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
+#include "ui/layout.h"
 #include "ui/home_tabs.h"
 #include "ui/components.h"
 #include "ui/focus_glow.h"
@@ -25,22 +26,22 @@
 #include "ui/touch.h"
 
 #define SCREEN_WIDTH 960
-#define TAB_X 32
-#define TAB_Y 67
-#define TAB_W 171
+#define TAB_X UI_CONTENT_X
+#define TAB_Y UI_TABS_Y
+#define TAB_W 178
 #define TAB_H 40
-#define ROW_X 44
-#define ROW_Y 130
-#define ROW_W 872
+#define ROW_X UI_CONTENT_X
+#define ROW_Y 118
+#define ROW_W UI_CONTENT_W
 #define ROW_H 56
 #define ROW_STEP 64
 #define SETTINGS_VISIBLE_ROWS 5
 #define SUBTITLE_VISIBLE_ROWS 5
-#define SUBTITLE_ROW_W 440
-#define SUBTITLE_PREVIEW_X 504
+#define SUBTITLE_ROW_W 386
+#define SUBTITLE_PREVIEW_X 427
 #define SUBTITLE_PREVIEW_Y 172
-#define SUBTITLE_PREVIEW_W 432
-#define SUBTITLE_PREVIEW_H 245
+#define SUBTITLE_PREVIEW_W 515
+#define SUBTITLE_PREVIEW_H 292
 
 enum {
 	TAB_SYSTEM = 0,
@@ -60,6 +61,7 @@ typedef struct {
 enum {
 	ROW_TOGGLE,
 	ROW_LANGUAGE,
+	ROW_INTERFACE_THEME,
 	ROW_CLOCK,
 	ROW_MAPPING,
 	ROW_DECODER,
@@ -185,6 +187,10 @@ static void draw_value(vita2d_font *small, int y, int row_width,
 	                   const char *value) {
 	if (!small || !value) return;
 	if (row_width == SUBTITLE_ROW_W) y += 12;
+	char fitted[256];
+	ui_font_fit_text(small,UI_FONT_SMALL,value,fitted,sizeof(fitted),
+	    row_width==SUBTITLE_ROW_W ? row_width-32 : row_width/2-32);
+	value=fitted;
 	float width = ui_font_text_width(small, UI_FONT_SMALL, value);
 	ui_font_draw_text(small, ROW_X + row_width - width - 22, y + 34,
 	                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, value);
@@ -241,7 +247,8 @@ static int rows_for_tab(int tab, SettingRow rows[9]) {
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_REDUCE_MOTION), vt_preferences_reduce_motion(), ROW_TOGGLE };
 		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_ALWAYS_STATUS), vt_preferences_player_status_always_visible(), ROW_TOGGLE };
 		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_HOME_TAB_ORDER), 0, ROW_ACTION };
-		return 4;
+		rows[4] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_INTERFACE_THEME), vt_preferences_interface_theme(), ROW_INTERFACE_THEME };
+		return 5;
 	}
 	if (tab == TAB_SYSTEM) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_CLOCK_CONTROL), vt_preferences_clock_source(), ROW_CLOCK };
@@ -344,6 +351,12 @@ static int apply_row(int tab, int row, int direction) {
 			}
 		}
 	} else if (tab == TAB_INTERFACE) {
+		if(row==4){
+   int theme=(vt_preferences_interface_theme()+(direction<0?VT_UI_THEME_COUNT-1:1))%VT_UI_THEME_COUNT;
+   int result=vt_preferences_set_interface_theme(theme);
+   if(result==0){ui_theme_apply(theme);ui_runtime_prepare_theme();}
+   return result;
+  }
 		if (row == 3) return ui_home_tabs_configure();
 		if (row == 0) {
 			int language = vt_preferences_language() + (direction < 0 ? -1 : 1);
@@ -401,7 +414,7 @@ static void draw_subtitle_preview(vita2d_font *label_font) {
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_PREVIEW));
 	for (int i = 0; i < 10; i++) {
 		int bh = 20 + (i * 29) % 84;
-		vita2d_draw_rectangle(x + i * 44, y + h - bh, 36, bh,
+		vita2d_draw_rectangle(x + i * (w/10), y + h - bh, w/10-8, bh,
 		                      i & 1 ? RGBA8(4, 17, 24, 255) : RGBA8(7, 25, 34, 255));
 	}
 	static const int widths[] = {60, 75, 88, 96};
@@ -413,12 +426,12 @@ static void draw_subtitle_preview(vita2d_font *label_font) {
 }
 
 int ui_settings_show_controls_reference(void) {
-	return ui_text_reader_run(
+	return ui_controls_guide_run(
 	    vt_i18n_str(VT_STR_SECTIONS_GUIDE),
 	    vt_i18n_str(VT_STR_SETTINGS_CONTROLS_REFERENCE_IT));
 }
 
-static void draw_screen(int tab, int cursor, float focus,
+static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion *focus,
 	                    UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -434,41 +447,12 @@ static void draw_screen(int tab, int cursor, float focus,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
-	ui_brand_draw_header(NULL);
+	ui_brand_draw_breadcrumbs(vt_i18n_str(VT_STR_SECTIONS_SETTINGS), NULL, tab_label(tab));
 
 	for (int i = 0; i < TAB_COUNT; i++) {
 		int x = TAB_X + i * (TAB_W + 8);
-		ui_panel(x, TAB_Y, TAB_W, TAB_H,
-		         i == tab ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE,
-		         i == tab ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM,
-		         0);
-		if (small) {
-			char index[4];
-			snprintf(index, sizeof(index), "%02d", i + 1);
-			ui_font_draw_text(small, x + 11, TAB_Y + 26,
-			                  i == tab ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
-			                  UI_FONT_SMALL, index);
-		}
-		if (body) ui_font_draw_text(body, x + 43, TAB_Y + 27,
-		                             i == tab ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
-		                             UI_FONT_BODY, tab_label(i));
-		if (i == tab) {
-			vita2d_draw_rectangle(x + 8, TAB_Y + TAB_H - 3, TAB_W - 16, 3,
-			                      VT_THEME_SIGNAL_LIGHT);
-			vita2d_draw_rectangle(x + 8, TAB_Y + 4, 28, 1,
-			                      VT_THEME_COLD_LIGHT);
-		}
+		ui_tab(x, TAB_Y, TAB_W, TAB_H, tab_label(i), i == tab);
 	}
-	vita2d_draw_rectangle(TAB_X, TAB_Y + TAB_H + 8,
-	                      TAB_COUNT * TAB_W + (TAB_COUNT - 1) * 8, 1,
-	                      VT_THEME_BORDER_DIM);
-	vita2d_draw_rectangle(TAB_X, TAB_Y + TAB_H + 8,
-	                      (tab + 1) * TAB_W + tab * 8, 2,
-	                      VT_THEME_SPECTRAL);
-	if (page_has_focus)
-		ui_focus_glow_draw(ROW_X, ROW_Y + focus * ROW_STEP, row_width, ROW_H,
-			                   sceKernelGetProcessTimeWide(), ROW_Y,
-			                   450);
 
 	for (int slot = 0; slot < visible_rows; slot++) {
 		int i = first_row + slot;
@@ -476,18 +460,17 @@ static void draw_screen(int tab, int cursor, float focus,
 		ui_panel(ROW_X, y, row_width, ROW_H, VT_THEME_SURFACE,
 		         page_has_focus && i == cursor
 		             ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
-		vita2d_draw_rectangle(ROW_X + 12, y + 14, 3, ROW_H - 28,
-		                      page_has_focus && i == cursor
-		                          ? VT_THEME_SIGNAL : VT_THEME_BORDER_DIM);
-		if (body) ui_font_draw_text(body, ROW_X + 22,
-		                             y + (tab == TAB_SUBTITLES ? 22 : 35),
-		                             page_has_focus && i == cursor
-		                                 ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
-		                             UI_FONT_BODY, rows[i].label);
+		if (body) ui_text_line(ROW_X + 16,
+		    y + (tab == TAB_SUBTITLES ? 22 : 35),
+		    tab == TAB_SUBTITLES ? row_width-32 : row_width/2-32,
+		    rows[i].label, VT_THEME_TEXT, UI_FONT_BODY);
 		if (rows[i].kind == ROW_TOGGLE)
 			draw_toggle(ROW_X + row_width - 78, y + 14, rows[i].value);
 		else if (rows[i].kind == ROW_LANGUAGE)
 			draw_value(small, y, row_width, language_label(rows[i].value));
+		else if (rows[i].kind == ROW_INTERFACE_THEME)
+			draw_value(small,y,row_width,ui_theme_name(rows[i].value));
+        else if(tab==TAB_INTERFACE&&i==3)draw_value(small,y,row_width,ui_theme_name(ui_theme_id()));
 		else if (rows[i].kind == ROW_CLOCK)
 			draw_value(small, y, row_width, rows[i].value == VT_CLOCK_SOURCE_APP
 			                       ? "VitaMediaDeck 444/222/222/111"
@@ -556,6 +539,8 @@ static void draw_screen(int tab, int cursor, float focus,
 		                  UI_FONT_SMALL, fitted);
 	}
 
+	if (page_has_focus) ui_focus_outline_draw(focus);
+	(void)focus_tabs;
 	ui_mini_player_draw();
 	if (sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
@@ -572,9 +557,8 @@ int ui_settings_screen(void) {
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	int tab = 0, cursor = 0;
-	float focus = 0.0f;
-	uint64_t focus_tick_us = 0;
+	int tab = 0, cursor = 0, focus_tabs = 1;
+	UiFocusMotion focus = {0};
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
 	for (;;) {
@@ -624,16 +608,25 @@ int ui_settings_screen(void) {
 			if (nav & SCE_CTRL_LEFT) {
 				tab = tab > 0 ? tab - 1 : TAB_COUNT - 1;
 				cursor = 0;
+				focus_tabs = 1;
 			}
 			if (nav & SCE_CTRL_RIGHT) {
 				tab = (tab + 1) % TAB_COUNT;
 				cursor = 0;
+				focus_tabs = 1;
 			}
 			SettingRow rows[9];
 			int count = rows_for_tab(tab, rows);
-			if ((nav & SCE_CTRL_UP) && cursor > 0) cursor--;
-			if ((nav & SCE_CTRL_DOWN) && cursor + 1 < count) cursor++;
-			if (pressed & SCE_CTRL_CROSS) {
+			if (nav & SCE_CTRL_UP) {
+				if (!focus_tabs && cursor > 0) cursor--;
+				else focus_tabs = 1;
+			}
+			if (nav & SCE_CTRL_DOWN) {
+				if (focus_tabs) focus_tabs = 0;
+				else if (cursor + 1 < count) cursor++;
+			}
+			if ((pressed & SCE_CTRL_CROSS) && focus_tabs) focus_tabs = 0;
+			else if (pressed & SCE_CTRL_CROSS) {
 				if (tab == TAB_CONTROLS && cursor == 1) {
 					int reference_section = ui_settings_show_controls_reference();
 					if (reference_section != UI_SECTION_NONE)
@@ -649,6 +642,7 @@ int ui_settings_screen(void) {
 			    (pressed & SCE_CTRL_RTRIGGER)) {
 				tab = (tab + 1) % TAB_COUNT;
 				cursor = 0;
+				focus_tabs = 1;
 			}
 			if (touch_flags & UI_TOUCH_EVENT_TAP) {
 				for (int i = 0; i < TAB_COUNT; i++) {
@@ -656,6 +650,7 @@ int ui_settings_screen(void) {
 					if (ui_touch_hit_rect(touch.x, touch.y, x, TAB_Y, TAB_W, TAB_H)) {
 						tab = i;
 						cursor = 0;
+						focus_tabs = 1;
 					}
 				}
 				count = rows_for_tab(tab, rows);
@@ -670,6 +665,7 @@ int ui_settings_screen(void) {
 					if (ui_touch_hit_rect(touch.x, touch.y, ROW_X,
 					                      ROW_Y + slot * ROW_STEP, row_width, ROW_H)) {
 						cursor = i;
+						focus_tabs = 0;
 						if (tab == TAB_CONTROLS && cursor == 1) {
 							int reference_section = ui_settings_show_controls_reference();
 							if (reference_section != UI_SECTION_NONE)
@@ -689,18 +685,10 @@ int ui_settings_screen(void) {
 		int focus_count = rows_for_tab(tab, focus_rows);
 		int focus_first = first_visible_row(cursor, focus_count,
 		                                    visible_rows_for_tab(tab));
-		float target = (float)(cursor - focus_first);
-		if (vt_preferences_reduce_motion()) focus = target;
-		else {
-			uint64_t now = sceKernelGetProcessTimeWide();
-			uint64_t elapsed = focus_tick_us && now > focus_tick_us
-			                 ? now - focus_tick_us : 16667ULL;
-			if (elapsed > 50000ULL) elapsed = 50000ULL;
-			focus_tick_us = now;
-			float alpha = (float)elapsed / (55000.0f + (float)elapsed);
-			focus += (target - focus) * alpha;
-		}
-		draw_screen(tab, cursor, focus, &sidebar);
+		if (focus_tabs) ui_focus_motion_tick(&focus, TAB_X+tab*(TAB_W+8), TAB_Y, TAB_W, TAB_H);
+		else ui_focus_motion_tick(&focus, ROW_X, ROW_Y+(cursor-focus_first)*ROW_STEP,
+		    tab==TAB_SUBTITLES?SUBTITLE_ROW_W:ROW_W, ROW_H);
+		draw_screen(tab, cursor, focus_tabs, &focus, &sidebar);
 		sceKernelDelayThread(vt_preferences_reduce_motion() ? 16000 : 1000);
 	}
 }

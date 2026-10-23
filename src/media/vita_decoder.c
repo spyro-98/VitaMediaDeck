@@ -439,6 +439,11 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		publish_hardware_candidate(player, hardware_candidate);
 		stage_started = sceKernelGetProcessTimeWide();
 		VitaHwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
+		if (live && config->live_audio_sample_rate && config->live_audio_channels) {
+			live_options.version = 2;
+			live_options.audio.sample_rate = config->live_audio_sample_rate;
+			live_options.audio.channels = config->live_audio_channels;
+		}
 		result = !hardware_candidate ? -1 : live
 		       ? vita_hw_decoder_open_live(hardware_candidate, &hardware, &live_options)
 		       : vita_hw_decoder_open(hardware_candidate, &hardware);
@@ -489,6 +494,11 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	publish_software_candidate(player, software_candidate);
 	stage_started = sceKernelGetProcessTimeWide();
 	VitaSwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
+	if (live && config->live_audio_sample_rate && config->live_audio_channels) {
+		live_options.version = 2;
+		live_options.audio.sample_rate = config->live_audio_sample_rate;
+		live_options.audio.channels = config->live_audio_channels;
+	}
 	result = !software_candidate ? -1 : live
 	       ? vita_sw_decoder_open_live(software_candidate, &software, &live_options)
 	       : vita_sw_decoder_open(software_candidate, &software);
@@ -628,7 +638,13 @@ int vt_decoder_seek(VtDecoderPlayer *player, uint64_t position_ms) {
 		           result, (unsigned long long)position_ms);
 		result = vt_decoder_fallback_to_software(player, position_ms);
 	}
-	if (result >= 0) open_selected_subtitles(player, position_ms);
+    if (result >= 0) {
+        /* Both backends can clamp a seek near EOF. Subtitle expiration must
+         * follow the reached clock, not the original out-of-range request. */
+        VtDecoderPlayerStatus landed;
+        vt_decoder_get_status(player, &landed);
+        open_selected_subtitles(player, landed.position_ms);
+    }
 	return result;
 }
 

@@ -1,0 +1,14 @@
+#ifndef VMD_UI_LAYOUT_H
+#define VMD_UI_LAYOUT_H
+/* Shared 960 x 544 content rails. Keep drawing, focus and hit areas together. */
+enum {
+    UI_CONTENT_X = 18, UI_CONTENT_W = 924, UI_CONTENT_RIGHT = 942,
+    UI_CONTENT_GAP = 8, UI_CONTENT_BOTTOM = 536,
+    UI_HOME_TABS_X = 76, UI_HOME_TABS_RIGHT = 700,
+    UI_HOME_TABS_Y = 8, UI_HOME_TABS_H = 38, UI_HOME_TABS_BOTTOM = 46,
+    UI_HOME_CONTENT_Y = 62,
+    UI_TABS_Y = 62, UI_TABS_H = 40, UI_TABS_BOTTOM = 102,
+    UI_GRID_COLS = 3, UI_GRID_CARD_W = 302, UI_GRID_CARD_H = 176,
+    UI_GRID_THUMB_H = 108, UI_GRID_TITLE_Y = 134, UI_GRID_DETAIL_Y = 160
+};
+#endif

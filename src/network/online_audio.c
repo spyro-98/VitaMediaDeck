@@ -1,8 +1,10 @@
 #include "network/online_audio.h"
+#include "network/artwork_cache.h"
 #include "common/text_log.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <jansson.h>
 #include <libxml/parser.h>
@@ -55,7 +57,7 @@ static char *fetch_limited(const char *url, volatile int *cancel, size_t *length
 	Response result = {.data = malloc(1), .capacity = 1, .limit = limit};
 	if (!result.data) return NULL;
 	result.data[0] = 0;
-	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.3.0",
+	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.0",
 	    .allow_http = 1, .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
 	VitaHttpsClient *client = vita_https_client_create(&options);
 	if (!client) { free(result.data); return NULL; }
@@ -104,11 +106,50 @@ static void node_text(xmlNode *node, char *out, size_t cap) {
 }
 static void image_artwork(xmlNode *node, const char *base, char *out, size_t cap) {
 	xmlChar *link = xmlGetProp(node, BAD_CAST "href");
-	if (!link) link = xmlNodeGetContent(child(node, "url"));
+	if (!link) link = xmlGetProp(node, BAD_CAST "url");
+    if (!link) link = xmlGetProp(node, BAD_CAST "src");
+    if (!link) link = xmlNodeGetContent(child(node, "url"));
+    if (!link && (!xmlStrcmp(node->name,BAD_CAST "logo") || !xmlStrcmp(node->name,BAD_CAST "icon")))link=xmlNodeGetContent(node);
 	xmlChar *absolute = link ? xmlBuildURI(link, BAD_CAST base) : NULL;
 	if (absolute && vt_online_url_valid((char *)absolute))
 		snprintf(out, cap, "%s", (char *)absolute);
 	xmlFree(absolute); xmlFree(link);
+}
+static void episode_date(xmlNode *node, char out[11]) {
+	char value[128];node_text(node,value,sizeof(value));out[0]=0;
+	char *p=value;while(*p==' ')p++;
+	int year=0,month=0,day=0,used=0;
+	/* Keep the publisher's calendar date: timezone conversion could move an
+	 * episode to the previous/next day, and time_t is 32-bit on the Vita. */
+	if(sscanf(p,"%4d-%2d-%2d%n",&year,&month,&day,&used)!=3 ||
+	   (p[used] && p[used]!='T' && p[used]!=' ')) {
+		char *comma=strchr(p,',');if(comma)p=comma+1;
+		char name[4]={0};
+		if(sscanf(p," %2d %3s %4d%n",&day,name,&year,&used)!=3 ||
+		   (p[used] && p[used]!=' '))return;
+		static const char *months[]={"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+		month=0;for(int i=0;i<12;i++)if(!strcasecmp(name,months[i])){month=i+1;break;}
+	}
+	if(year<1000 || year>9999 || month<1 || month>12 || day<1)return;
+	static const int days[]={31,28,31,30,31,30,31,31,30,31,30,31};
+	int max=days[month-1]+(month==2 && year%4==0 && (year%100!=0 || year%400==0));
+	if(day>max)return;
+	snprintf(out,11,"%04d-%02d-%02d",year,month,day);
+}
+static uint64_t episode_duration(xmlNode *node) {
+	char value[64]; node_text(node,value,sizeof(value));
+	char *begin=value;while(*begin==' ')begin++;
+	size_t length=strlen(begin);while(length && begin[length-1]==' ')begin[--length]=0;
+	uint64_t total=0,part=0;unsigned fields=0,digits=0;
+	for(const char *p=begin;;p++) {
+		if(*p>='0'&&*p<='9') {part=part*10+(unsigned)(*p-'0');digits++;if(part>2592000)return 0;}
+		else if(*p==':'||!*p) {
+			if(!digits || (fields && part>=60) || ++fields>3)return 0;
+			total=total*60+part;if(total>2592000)return 0;
+			if(!*p)return total*1000;
+			part=digits=0;
+		} else return 0;
+	}
 }
 static void node_artwork(xmlNode *node, const char *base, char *out, size_t cap) {
 	for(xmlNode *n=node?node->children:NULL;n;n=n->next) {
@@ -132,6 +173,9 @@ static void feed_item(xmlNode *node, const char *url, VtOnlineQuery *q, unsigned
 		}
 		if(q->count>before) {
 			VtOnlineItem *item=&q->items[before];
+			item->duration_ms=episode_duration(child(node,"duration"));
+			episode_date(child(node,"pubDate"),item->published_date);
+			if(!item->published_date[0])episode_date(child(node,"date"),item->published_date);
 			node_text(child(node,"author"),item->author,sizeof(item->author));
 			if(!item->author[0])node_text(child(node,"creator"),item->author,sizeof(item->author));
 			node_text(child(node,"description"),item->description,sizeof(item->description));
@@ -173,6 +217,7 @@ int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlin
 			xmlNode *node = xmlTextReaderExpand(reader);
 			if (!node) { status = -1; break; }
 			if (!xmlStrcmp(node->name, BAD_CAST "item")) feed_item(node, url, q, &eligible);
+			else if (!xmlStrcmp(node->name, BAD_CAST "title")) node_text(node, defaults.title, sizeof(defaults.title));
 			else if (!xmlStrcmp(node->name, BAD_CAST "author")) node_text(node, defaults.author, sizeof(defaults.author));
 			else if (!xmlStrcmp(node->name, BAD_CAST "description")) node_text(node, defaults.description, sizeof(defaults.description));
 			else if (!xmlStrcmp(node->name, BAD_CAST "image")) image_artwork(node, url, defaults.artwork_url, sizeof(defaults.artwork_url));
@@ -187,6 +232,7 @@ int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlin
 	 * parsing, without retaining the complete feed tree. */
 	for (int i = 0; i < q->count; i++) {
 		VtOnlineItem *item = &q->items[i];
+		snprintf(item->show_title, sizeof(item->show_title), "%s", defaults.title);
 		if (!item->author[0]) snprintf(item->author, sizeof(item->author), "%s", defaults.author);
 		if (!item->description[0]) snprintf(item->description, sizeof(item->description), "%s", defaults.description);
 		if (!item->artwork_url[0]) snprintf(item->artwork_url, sizeof(item->artwork_url), "%s", defaults.artwork_url);
@@ -476,30 +522,141 @@ int vt_online_fetch_cover(VtOnlineItem *item, volatile int *cancel) {
 		snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",json_text(entry,"favicon"));
 		snprintf(item->description,sizeof(item->description),"%s",json_text(entry,"tags"));json_decref(root);
 	}
+    if(item && item->kind==VT_ONLINE_FEED && !item->artwork_url[0] && vt_online_url_valid(item->url)) {
+        size_t size=0;char *data=fetch_limited(item->url,cancel,&size,VT_ONLINE_FEED_LIMIT);
+        xmlTextReaderPtr reader=data?xmlReaderForMemory(data,(int)size,item->url,NULL,XML_PARSE_NONET|XML_PARSE_NOERROR|XML_PARSE_NOWARNING):NULL;
+        if(reader) {
+            while(!(cancel&&*cancel)&&xmlTextReaderRead(reader)==1) {
+                if(xmlTextReaderNodeType(reader)!=XML_READER_TYPE_ELEMENT)continue;
+                const xmlChar *name=xmlTextReaderConstLocalName(reader);
+                if(!name)continue;
+                if(!xmlStrcmp(name,BAD_CAST "item")||!xmlStrcmp(name,BAD_CAST "entry"))break;
+                if(!xmlStrcmp(name,BAD_CAST "image")||!xmlStrcmp(name,BAD_CAST "logo")||!xmlStrcmp(name,BAD_CAST "icon")||!xmlStrcmp(name,BAD_CAST "thumbnail")) {
+                    xmlNode *node=xmlTextReaderExpand(reader);
+                    if(node)image_artwork(node,item->url,item->artwork_url,sizeof(item->artwork_url));
+                    if(item->artwork_url[0])break;
+                }
+            }
+            xmlFreeTextReader(reader);
+        }
+        free(data);
+    }
 	if(!item || !vt_online_url_valid(item->artwork_url))return -1;
-	unsigned hash=2166136261u;
-	for(const unsigned char *p=(unsigned char*)item->artwork_url;*p;p++)hash=(hash^*p)*16777619u;
-	/* Sixteen slots, one image per slot, at most 32 MiB on disk. */
-	char stamp[192],path[192];snprintf(stamp,sizeof(stamp),"ux0:data/VitaMediaDeck/cover-%02u.id",hash%16);
-	unsigned previous=0;FILE *f=fopen(stamp,"rb");if(f){fread(&previous,1,sizeof(previous),f);fclose(f);}
-	const char *extensions[]={"jpg","png","webp","gif","bmp"};SceIoStat st;
-	if(previous==hash)for(int i=0;i<5;i++) {
-		snprintf(path,sizeof(path),"ux0:data/VitaMediaDeck/cover-%08x.%s",hash,extensions[i]);
-		if(sceIoGetstat(path,&st)>=0&&st.st_size>0){snprintf(item->artwork_path,sizeof(item->artwork_path),"%s",path);return 0;}
-	}
-	size_t size=0;char *data=fetch(item->artwork_url,cancel,&size);if(!data)return -1;
-	int png=size>=8&&!memcmp(data,"\x89PNG\r\n\x1a\n",8);
-	int encoding=png?1:size>=3&&(unsigned char)data[0]==255&&(unsigned char)data[1]==216&&(unsigned char)data[2]==255?0:
-	    size>=12&&!memcmp(data,"RIFF",4)&&!memcmp(data+8,"WEBP",4)?2:
-	    size>=6&&(!memcmp(data,"GIF87a",6)||!memcmp(data,"GIF89a",6))?3:
-	    size>=2&&!memcmp(data,"BM",2)?4:-1;
-	if(encoding<0){free(data);return -1;}
-	/* Invalidate the old slot before replacing its image, including encoding. */
-	sceIoRemove(stamp);
-	for(int i=0;i<5;i++){snprintf(path,sizeof(path),"ux0:data/VitaMediaDeck/cover-%08x.%s",previous,extensions[i]);sceIoRemove(path);}
-	snprintf(path,sizeof(path),"ux0:data/VitaMediaDeck/cover-%08x.%s",hash,extensions[encoding]);
-	f=fopen(path,"wb");int ok=0;if(f){ok=fwrite(data,1,size,f)==size;if(fflush(f))ok=0;if(fclose(f))ok=0;}free(data);
-	if(!ok){sceIoRemove(path);return -1;}
-	f=fopen(stamp,"wb");if(f){fwrite(&hash,1,sizeof(hash),f);fclose(f);}
-	snprintf(item->artwork_path,sizeof(item->artwork_path),"%s",path);return 0;
+	return vt_artwork_cache_get(item->artwork_url, item->artwork_path,
+	    sizeof(item->artwork_path), cancel, fetch);
+}
+
+/* Public catalogue snapshots: offline reads precede a background refresh.
+ * The key includes every selector; validate it even after a digest match. */
+#define QUERY_CACHE_ROOT "ux0:data/VitaMediaDeck/catalogue"
+#define QUERY_CACHE_FILES 16
+#ifdef __vita__
+#include <mbedtls/sha256.h>
+#else
+#include <openssl/sha.h>
+#endif
+#include <dirent.h>
+#include <sys/stat.h>
+#include <utime.h>
+#include <pthread.h>
+static pthread_mutex_t query_cache_mutex=PTHREAD_MUTEX_INITIALIZER;
+static void query_cache_key(const VtOnlineQuery *q,char key[65]) {
+    char text[600];unsigned char digest[32];
+    snprintf(text,sizeof(text),"%d|%d|%d|%u|%.2s|%s",q->kind,q->browse,q->search_field,q->offset,q->country,q->query);
+#ifdef __vita__
+    mbedtls_sha256((const unsigned char *)text,strlen(text),digest,0);
+#else
+    SHA256((const unsigned char *)text,strlen(text),digest);
+#endif
+    for(int i=0;i<32;i++)snprintf(key+2*i,3,"%02x",digest[i]);
+}
+static int query_cache_matches(json_t *root,const VtOnlineQuery *q) {
+    return json_integer_value(json_object_get(root,"version"))==1 &&
+        json_integer_value(json_object_get(root,"kind"))==q->kind &&
+        json_integer_value(json_object_get(root,"browse"))==q->browse &&
+        json_integer_value(json_object_get(root,"field"))==q->search_field &&
+        json_integer_value(json_object_get(root,"offset"))==q->offset &&
+        !strcmp(json_text(root,"country"),q->country) && !strcmp(json_text(root,"query"),q->query);
+}
+static int query_cache_read_locked(VtOnlineQuery *q) {
+    if(!q)return -1;
+    char key[65],path[192];query_cache_key(q,key);snprintf(path,sizeof(path),QUERY_CACHE_ROOT "/%s.json",key);
+    struct stat st;
+    if(stat(path,&st)) {snprintf(path,sizeof(path),QUERY_CACHE_ROOT "/%s.bak",key);if(stat(path,&st))return -1;}
+    if(st.st_size<=0||st.st_size>512*1024)return -1;
+    json_t *root=json_load_file(path,JSON_REJECT_DUPLICATES,NULL);
+    json_t *items=json_object_get(root,"items");size_t count=json_array_size(items);
+    if(!root||!query_cache_matches(root,q)||!json_is_array(items)||count>VT_ONLINE_MAX){json_decref(root);return -1;}
+    /* Validate before touching the caller's last-known-good list. */
+    size_t i;json_t *entry;
+    json_array_foreach(items,i,entry)if(!json_is_object(entry)||
+        strlen(json_text(entry,"title"))>=sizeof(q->items[0].title)||
+        strlen(json_text(entry,"url"))>=sizeof(q->items[0].url)) {json_decref(root);return -1;}
+    json_array_foreach(items,i,entry) {
+        VtOnlineItem *item=&q->items[i];memset(item,0,sizeof(*item));
+#define READ_TEXT(member,keyname) snprintf(item->member,sizeof(item->member),"%s",json_text(entry,keyname))
+        READ_TEXT(title,"title");READ_TEXT(url,"url");READ_TEXT(id,"id");READ_TEXT(detail,"detail");
+        READ_TEXT(author,"author");READ_TEXT(description,"description");READ_TEXT(artwork_url,"artwork");
+        READ_TEXT(artwork_path,"path");READ_TEXT(show_title,"show");READ_TEXT(published_date,"date");
+#undef READ_TEXT
+        item->kind=(int)json_integer_value(json_object_get(entry,"kind"));
+        json_int_t duration=json_integer_value(json_object_get(entry,"duration"));item->duration_ms=duration>0?(uint64_t)duration:0;
+        /* A cache path must stay in our managed artwork directory. */
+        if(strncmp(item->artwork_path,"ux0:data/VitaMediaDeck/artwork/",sizeof("ux0:data/VitaMediaDeck/artwork/")-1)||strstr(item->artwork_path,"..")||stat(item->artwork_path,&st))item->artwork_path[0]=0;
+    }
+    q->count=(int)count;q->has_more=json_is_true(json_object_get(root,"more"));
+    json_decref(root);utime(path,NULL);return 0;
+}
+static void query_cache_trim(void) {
+    for(;;) {
+        DIR *dir=opendir(QUERY_CACHE_ROOT);if(!dir)return;
+        unsigned count=0;time_t oldest=0;char victim[192]="";struct dirent *entry;
+        while((entry=readdir(dir))) {
+            if(strlen(entry->d_name)!=69||strspn(entry->d_name,"0123456789abcdef")!=64||strcmp(entry->d_name+64,".json"))continue;
+            char path[192];struct stat st;snprintf(path,sizeof(path),QUERY_CACHE_ROOT "/%.69s",entry->d_name);
+            if(stat(path,&st)||!S_ISREG(st.st_mode))continue;
+            count++;if(!victim[0]||st.st_mtime<oldest){oldest=st.st_mtime;snprintf(victim,sizeof(victim),"%s",path);}
+        }
+        closedir(dir);if(count<=QUERY_CACHE_FILES||!victim[0]||remove(victim))return;
+    }
+}
+static int query_cache_write_locked(const VtOnlineQuery *q) {
+    if(!q||q->cancel||q->count<0||q->count>VT_ONLINE_MAX)return -1;
+    json_t *items=json_array();if(!items)return -1;
+    for(int i=0;i<q->count;i++) {
+        const VtOnlineItem *item=&q->items[i];
+        json_t *entry=json_pack("{s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:s,s:i,s:I}",
+            "title",item->title,"url",item->url,"id",item->id,"detail",item->detail,
+            "author",item->author,"description",item->description,"artwork",item->artwork_url,
+            "path",item->artwork_path,"show",item->show_title,"date",item->published_date,
+            "kind",item->kind,"duration",(json_int_t)item->duration_ms);
+        if(!entry||json_array_append_new(items,entry)<0){json_decref(items);return -1;}
+    }
+    json_t *root=json_pack("{s:i,s:i,s:i,s:i,s:I,s:s,s:s,s:b,s:o}","version",1,
+        "kind",q->kind,"browse",q->browse,"field",q->search_field,"offset",(json_int_t)q->offset,
+        "country",q->country,"query",q->query,"more",q->has_more,"items",items);
+    if(!root)return -1;
+    mkdir(QUERY_CACHE_ROOT,0777);char key[65],path[192],temp[192];query_cache_key(q,key);
+    snprintf(path,sizeof(path),QUERY_CACHE_ROOT "/%s.json",key);
+    snprintf(temp,sizeof(temp),QUERY_CACHE_ROOT "/%s.tmp",key);
+    FILE *file=fopen(temp,"wb");int result=file?json_dumpf(root,file,JSON_COMPACT):-1;
+    if(file){if(fflush(file))result=-1;if(fclose(file))result=-1;}
+    json_decref(root);
+    if(q->cancel)result=-1;
+    if(!result) {
+        char backup[192];snprintf(backup,sizeof(backup),QUERY_CACHE_ROOT "/%s.bak",key);
+        struct stat status;int old=stat(path,&status)==0;
+        remove(backup);
+        if(old&&rename(path,backup))result=-1;
+        if(!result&&rename(temp,path)){result=-1;if(old)rename(backup,path);}
+        if(!result)remove(backup);
+    }
+    if(result)remove(temp);else query_cache_trim();return result;
+}
+
+int vt_online_query_cache_read(VtOnlineQuery *q) {
+ pthread_mutex_lock(&query_cache_mutex);int result=query_cache_read_locked(q);pthread_mutex_unlock(&query_cache_mutex);return result;
+}
+int vt_online_query_cache_write(const VtOnlineQuery *q) {
+ pthread_mutex_lock(&query_cache_mutex);int result=query_cache_write_locked(q);pthread_mutex_unlock(&query_cache_mutex);return result;
 }

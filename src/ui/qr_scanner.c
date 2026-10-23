@@ -22,6 +22,7 @@
 #include "ui/components.h"
 #include "ui/runtime.h"
 #include "ui/theme.h"
+#include "ui/touch.h"
 
 /* This is the working camera path used by cxziaho/qrdemo: the rear camera
  * writes ABGR frames directly to a CDRAM vita2d texture. */
@@ -48,12 +49,9 @@
 
 /* The scan view deliberately fills the screen height.  The top bar yields to
  * the live image so a QR code can occupy enough real camera pixels. */
-#define QR_PREVIEW_X 260
-#define QR_PREVIEW_Y 48
+#define QR_PREVIEW_X 18
+#define QR_PREVIEW_Y 62
 #define QR_PREVIEW_SIZE 444
-#define QR_GUIDE_X 282
-#define QR_GUIDE_Y 70
-#define QR_GUIDE_SIZE 400
 
 typedef struct QrDecodeWorker {
 	struct quirc *decoder;
@@ -420,8 +418,9 @@ static void draw_scanner(vita2d_texture *preview, int has_preview,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);
-	/* The large square is intentionally above the normal header area. */
-	ui_panel(248, 36, 468, 468, VT_THEME_SURFACE, VT_THEME_SIGNAL_BRIGHT, 1);
+	ui_brand_draw_header_placeholder(NULL, "Scan QR");
+	ui_panel(QR_PREVIEW_X, QR_PREVIEW_Y, QR_PREVIEW_SIZE, QR_PREVIEW_SIZE,
+	         VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
 	if (has_preview && preview) {
 		vita2d_draw_texture_part_scale(preview, QR_PREVIEW_X, QR_PREVIEW_Y,
 		                              QR_CAMERA_CROP_X, QR_CAMERA_CROP_Y,
@@ -430,27 +429,19 @@ static void draw_scanner(vita2d_texture *preview, int has_preview,
 		                              (float)QR_PREVIEW_SIZE / QR_CAMERA_CROP_SIZE);
 	} else {
 		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
-		if (body) ui_font_draw_text_centered(body, 480, 278, 420, VT_THEME_TEXT,
+		if (body) ui_font_draw_text_centered(body, 240, 278, 420, VT_THEME_TEXT,
 		                                    UI_FONT_BODY, "Starting rear camera...");
 	}
-	vita2d_draw_rectangle(QR_GUIDE_X, QR_GUIDE_Y, QR_GUIDE_SIZE, 2, VT_THEME_SIGNAL_LIGHT);
-	vita2d_draw_rectangle(QR_GUIDE_X, QR_GUIDE_Y, 2, QR_GUIDE_SIZE, VT_THEME_SIGNAL_LIGHT);
-	vita2d_draw_rectangle(QR_GUIDE_X + QR_GUIDE_SIZE - 2, QR_GUIDE_Y, 2, QR_GUIDE_SIZE,
-	                     VT_THEME_SIGNAL_LIGHT);
-	vita2d_draw_rectangle(QR_GUIDE_X, QR_GUIDE_Y + QR_GUIDE_SIZE - 2, QR_GUIDE_SIZE, 2,
-	                     VT_THEME_SIGNAL_LIGHT);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	if (body) ui_font_draw_text_centered(body, 132, 132, 228, VT_THEME_TEXT,
-	                                    UI_FONT_BODY, scanner_status(worker));
+	if (body) ui_text_line(488, 154, 454, scanner_status(worker), VT_THEME_TEXT, UI_FONT_BODY);
 	if (small && worker) {
 		char progress[96];
 		snprintf(progress, sizeof(progress), "Frames %u submitted / %u analyzed",
 		         worker->submitted_frames, worker->analyzed_frames);
-		ui_font_draw_text_centered(small, 132, 155, 228, VT_THEME_TEXT_MUTED,
-		                           UI_FONT_SMALL, progress);
+		ui_text_line(488, 192, 454, progress, VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
 	}
-	ui_action_button(24, 484, 212, 42, VT_THEME_SURFACE_RAISED, "Circle",
+	ui_action_button(488, 454, 454, 52, VT_THEME_SURFACE_RAISED, "Circle",
 	                 vt_i18n_str(VT_STR_NETWORK_CANCEL), 0);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
@@ -553,11 +544,16 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 	memset(&previous, 0, sizeof(previous));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	log_printf("qr camera: active ABGR 640x480/30, BLACKWHITE, decoder centre 480x480\n");
+	ui_touch_reset();
 	while (1) {
 		SceCtrlData controls;
 		sceCtrlPeekBufferPositive(0, &controls, 1);
 		unsigned pressed = controls.buttons & ~previous.buttons;
 		previous = controls;
+		UiTouchEvent touch;
+		unsigned touch_flags=ui_touch_poll(&touch);
+		if((touch_flags&UI_TOUCH_EVENT_TAP) &&
+		   ui_touch_hit_rect(touch.x,touch.y,488,454,454,52))pressed|=SCE_CTRL_CIRCLE;
 		if (pressed & SCE_CTRL_CIRCLE) { result = 0; break; }
 		/* The worker publishes result with a barrier. Check it before another
 		 * blocking camera read, so a successful decode cannot be delayed or
@@ -593,6 +589,7 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 		draw_scanner(preview, 1, worker);
 	}
 done:
+	ui_touch_reset();
 	if (worker) {
 		worker->stop = 1;
 		if (worker->thid >= 0) {

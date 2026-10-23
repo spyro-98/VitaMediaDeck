@@ -17,6 +17,7 @@ static vita2d_font *g_subtitle_medium_intermediate = NULL;
 static vita2d_font *g_subtitle_semibold_intermediate = NULL;
 static vita2d_font *g_subtitle_scaled[2];
 static vita2d_texture *g_logo = NULL;
+static vita2d_font *g_theme_mono[3], *g_theme_hero;
 
 int ui_runtime_init(void) {
 	if (g_runtime_ready) return 0;
@@ -24,7 +25,9 @@ int ui_runtime_init(void) {
 	/* Do not initialize AppUtil/CommonDialog here. This combination was
 	 * already tried on hardware on 2026-08-04 and prevented the app from
 	 * starting. The keyboard uses sceIme directly and shares this framebuffer. */
-	int ret = vita2d_init();
+	/* Native 960x544 output with GPU edge coverage; no oversized render target
+     * or additional full-screen supersampling pass. */
+	int ret = vita2d_init_advanced_with_msaa(1024u*1024u,SCE_GXM_MULTISAMPLE_2X);
 	/* libvita2d returns 1 even when many internal GXM calls have failed:
 	 * the return value alone isn't a useful postcondition. */
 	if (ret <= 0 || vita2d_get_context() == NULL ||
@@ -32,6 +35,7 @@ int ui_runtime_init(void) {
 		return -1;
 	}
 
+	ui_theme_apply(vt_preferences_interface_theme());
 	vita2d_set_clear_color(VT_THEME_BG);
 	g_runtime_ready = 1;
 	return 0;
@@ -76,6 +80,7 @@ void ui_runtime_load_assets(void) {
 		g_subtitle_semibold_display = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 	if (!g_subtitle_semibold_xlarge)
 		g_subtitle_semibold_xlarge = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+	ui_runtime_prepare_theme();
 	if (!g_font_small || !g_font_body || !g_font_display)
 		log_printf("ui asset warning: one or more Inter font instances unavailable");
 	if (!g_subtitle_medium_intermediate)
@@ -88,9 +93,20 @@ void ui_runtime_load_assets(void) {
 		g_subtitle_scaled[1] = vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
 }
 
+void ui_runtime_prepare_theme(void){
+ if(!g_runtime_ready)return;
+ if(ui_theme_id()==VT_UI_THEME_DECK_90){
+  for(int i=0;i<3;i++)if(!g_theme_mono[i])g_theme_mono[i]=vita2d_load_font_file("app0:fonts/IBMPlexMono-Regular.ttf");
+ }
+ if((ui_theme_id()==VT_UI_THEME_SIGNAL||ui_theme_id()==VT_UI_THEME_APERTURE||ui_theme_id()==VT_UI_THEME_GHOST_MESH)&&!g_theme_hero)
+  g_theme_hero=vita2d_load_font_file("app0:fonts/Inter-SemiBold.ttf");
+ vita2d_set_clear_color(VT_THEME_BG);
+}
 void ui_runtime_term(void) {
 	if (g_runtime_ready) {
 		vita2d_wait_rendering_done();
+		for(int i=0;i<3;i++)if(g_theme_mono[i]){vita2d_free_font(g_theme_mono[i]);g_theme_mono[i]=NULL;}
+		if(g_theme_hero){vita2d_free_font(g_theme_hero);g_theme_hero=NULL;}
 		if (g_logo) {
 			vita2d_free_texture(g_logo);
 			g_logo = NULL;
@@ -131,7 +147,7 @@ int ui_runtime_is_ready(void) {
 	return g_runtime_ready;
 }
 
-vita2d_font *ui_runtime_font(unsigned int size) {
+static vita2d_font *base_ui_font(unsigned int size) {
 	ui_font_set_system_preference(UI_FONT_SYSTEM_AUTO);
 	vita2d_font *preferred = size == UI_FONT_SMALL ? g_font_small
 	                       : size == UI_FONT_BODY ? g_font_body
@@ -145,6 +161,16 @@ vita2d_font *ui_runtime_font(unsigned int size) {
 	return g_font_display;
 }
 
+vita2d_font *ui_runtime_font(unsigned int size) {
+ ui_font_set_system_preference(UI_FONT_SYSTEM_AUTO);
+ if(size==UI_FONT_HERO&&g_theme_hero)return g_theme_hero;
+ if(ui_theme_id()==VT_UI_THEME_DECK_90){
+  int i=size==UI_FONT_SMALL?0:size==UI_FONT_BODY?1:2;
+  if(g_theme_mono[i])return g_theme_mono[i];
+ }
+ return base_ui_font(size);
+}
+
 vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
 	int system_preference = UI_FONT_SYSTEM_AUTO;
 	if (variant == 3) system_preference = UI_FONT_SYSTEM_JAPANESE;
@@ -156,7 +182,7 @@ vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
 	 * established signal that makes the mixed renderer select its Latin/J/C/K
 	 * PGFs directly. Fall back to Inter only if PGF initialization failed. */
 	if (variant >= 2)
-		return ui_font_fallback_ready() ? NULL : ui_runtime_font(size);
+		return ui_font_fallback_ready() ? NULL : base_ui_font(size);
 	if (variant == 1) {
 		if (size == UI_FONT_SUBTITLE_MEDIUM_LARGE && g_subtitle_semibold_intermediate)
 			return g_subtitle_semibold_intermediate;
@@ -174,7 +200,7 @@ vita2d_font *ui_runtime_subtitle_font(int variant, unsigned int size) {
 		return g_subtitle_medium_intermediate;
 	if (size == UI_FONT_SUBTITLE_EXTRA_LARGE && g_subtitle_medium_xlarge)
 		return g_subtitle_medium_xlarge;
-	return ui_runtime_font(size);
+	return base_ui_font(size);
 }
 
 vita2d_font *ui_runtime_subtitle_scaled_font(int variant, unsigned int size) {

@@ -23,7 +23,9 @@ typedef enum {
 	VT_NETWORK_WEBDAV = 1,
 	VT_NETWORK_SFTP = 2,
 	VT_NETWORK_SMB = 3,
-	VT_NETWORK_JELLYFIN = 4
+	VT_NETWORK_JELLYFIN = 4,
+	VT_NETWORK_NAVIDROME = 5,
+	VT_NETWORK_IMMICH = 6
 } VtNetworkProtocol;
 
 typedef struct {
@@ -61,6 +63,11 @@ typedef struct {
 	int is_directory;
 	int is_video;
 	int is_audio;
+	int is_image;
+	char artist[112];
+	char album[160];
+	char audio_format[24];
+	uint32_t audio_bitrate_kbps;
 } VtNetworkEntry;
 
 typedef struct {

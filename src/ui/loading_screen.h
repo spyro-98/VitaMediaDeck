@@ -35,6 +35,10 @@ typedef struct {
 	 * this hook wakes a decoder blocked inside a range/socket read. */
 	UiPlayerLoadingCancelFn cancel_action;
 	void *cancel_ctx;
+	/* Optional UI-owned frozen canvas. This callback must never touch a decoder
+	 * while its seek/restart worker is active. */
+	void (*draw_backdrop)(void *ctx);
+	void *backdrop_ctx;
 } UiPlayerLoadingInfo;
 
 /* Presents a single loading frame immediately. Needed before system

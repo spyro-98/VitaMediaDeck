@@ -96,3 +96,6 @@ int main(void) {
     printf("Online navigation: %u assertions passed\n", checks);
     return 0;
 }
+
+int vt_online_query_cache_read(VtOnlineQuery *q){(void)q;return -1;}
+int vt_online_query_cache_write(const VtOnlineQuery *q){(void)q;return 0;}

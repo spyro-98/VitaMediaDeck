@@ -10,6 +10,7 @@
 #include <vita2d.h>
 
 #include "i18n/i18n.h"
+#include "app_build.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
 #include "ui/components.h"
@@ -43,37 +44,16 @@
 #define SCROLL_PAGE_STEP (VIEW_H - 40)
 #define SCROLL_SPEED_PX_PER_SECOND 290.0f
 
-#define MARGIN_X 40
+#define MARGIN_X 24
 #define LINE_STEP 27
 
 static void draw_legend_line(vita2d_font *small, int x, int y, const char *text) {
-	vita2d_draw_fill_circle((float)x + 3.0f, (float)y - 5.0f, 3.0f, COLOR_BLUE);
-	if (small) ui_font_draw_text(small, x + 16, y, COLOR_MUTED, UI_FONT_SMALL, text);
+ if(small) ui_text_block(x,y,408,27,3,text,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 }
 
 static void draw_about_tabs(void) {
-	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
-	const char *labels[2] = {
-		vt_i18n_str(VT_STR_ABOUT_TAB_SPECS),
-		vt_i18n_str(VT_STR_ABOUT_TAB_LOGS)
-	};
-	for (int i = 0; i < 2; i++) {
-		int x = 36 + i * 190;
-		ui_panel(x, TAB_Y, 178, TAB_H,
-		         i == 0 ? VT_THEME_SURFACE_RAISED : COLOR_CARD,
-		         i == 0 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
-		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		if (small) {
-			char index[4];
-			snprintf(index, sizeof(index), "%02d", i + 1);
-			ui_font_draw_text(small, x + 12, TAB_BASELINE_Y,
-			                  i == 0 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
-			                  UI_FONT_SMALL, index);
-		}
-		if (font) ui_font_draw_text(font, x + 46, TAB_BASELINE_Y,
-		                                 i == 0 ? COLOR_TEXT : COLOR_MUTED,
-		                                 UI_FONT_BODY, labels[i]);
-	}
+ ui_tab(36,TAB_Y,178,TAB_H,vt_i18n_str(VT_STR_ABOUT_TAB_SPECS),1);
+ ui_tab(226,TAB_Y,178,TAB_H,vt_i18n_str(VT_STR_ABOUT_TAB_LOGS),0);
 }
 
 int ui_about_screen(int player_context) {
@@ -212,7 +192,7 @@ int ui_about_screen(int player_context) {
 
 		/* Compact two-panel composition: identity and performance are distinct
 		 * information groups, and both remain visible without wasting a column. */
-		ui_panel(32, y - 8, 896, 144, VT_THEME_SURFACE,
+		ui_panel(18, y - 8, 448, 300, VT_THEME_SURFACE,
 		         VT_THEME_BLUE_LIGHT, 0);
 		if (logo) {
 			unsigned int lw = vita2d_texture_get_width(logo);
@@ -221,35 +201,33 @@ int ui_about_screen(int player_context) {
 				float scale_w = 96.0f / (float)lw;
 				float scale_h = 96.0f / (float)lh;
 				float scale = scale_w < scale_h ? scale_w : scale_h;
-				vita2d_draw_texture_scale(logo, 52.0f, (float)y + 10.0f,
+				vita2d_draw_texture_scale(logo, 38.0f, (float)y + 10.0f,
 				                          scale, scale);
 			}
 		}
 		if (display) {
-			ui_font_draw_text(display, 174, y + 38, COLOR_TEXT,
-			                     UI_FONT_DISPLAY, "VitaMediaDeck");
+			ui_text_line(150, y + 48, 292, VT_BUILD_NAME, COLOR_TEXT, UI_FONT_DISPLAY);
 		}
 		if (small) {
-			ui_font_draw_text(small, 174, y + 68, COLOR_MUTED, UI_FONT_SMALL,
-			                     vt_i18n_str(VT_STR_ABOUT_TAGLINE));
-			ui_font_draw_text(small, 174, y + 94, COLOR_CYAN, UI_FONT_SMALL,
+			ui_text_block(38,y+142,408,26,2,vt_i18n_str(VT_STR_ABOUT_TAGLINE),COLOR_MUTED,UI_FONT_SMALL);
+			ui_font_draw_text(small, 38, y + 208, COLOR_CYAN, UI_FONT_SMALL,
 			                     vt_i18n_str(VT_STR_ABOUT_VERSION));
-			ui_font_draw_text(small, 174, y + 120, COLOR_MUTED, UI_FONT_SMALL,
+			ui_font_draw_text(small, 38, y + 246, COLOR_MUTED, UI_FONT_SMALL,
 			                     vt_i18n_str(VT_STR_ABOUT_DEVELOPER));
 		}
-		y += 154;
+
 
 		/* Performance contract kept visible in-app. The explicit Settings value
 		 * controls the complete video clock policy. */
-		ui_panel(32, y, 896, 120, VT_THEME_SURFACE_RAISED,
+		ui_panel(486, y - 8, 456, 300, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_BLUE_BRIGHT, 0);
 		if (body) {
-			ui_font_draw_text(body, 56, y + 35, COLOR_TEXT,
+			ui_font_draw_text(body, 510, y + 35, COLOR_TEXT,
 			                     UI_FONT_BODY,
 			                     vt_i18n_str(VT_STR_ABOUT_SPECS_TITLE));
 		}
 		if (small) {
-			draw_legend_line(small, 56, y + 67,
+			draw_legend_line(small, 510, y + 86,
 			                 vt_i18n_str(VT_STR_ABOUT_SPECS_DEFAULT));
 			char specs_line[192];
 			snprintf(specs_line, sizeof(specs_line),
@@ -261,9 +239,9 @@ int ui_about_screen(int player_context) {
 			         scePowerGetGpuClockFrequency(),
 			         scePowerGetBusClockFrequency(),
 			         scePowerGetGpuXbarClockFrequency());
-			draw_legend_line(small, 56, y + 94, specs_line);
+			draw_legend_line(small, 510, y + 186, specs_line);
 		}
-		y += 134;
+		y += 310;
 		/* Measured from the layout itself, so adding an information line or
 		 * a longer translation keeps scrolling correct with no constant to
 		 * update by hand. */
@@ -273,7 +251,8 @@ int ui_about_screen(int player_context) {
 
 		/* Header drawn after the clipped content so the content scrolling
 		 * under it is hidden behind the bar, not on top of it. */
-		ui_brand_draw_header(NULL);
+		ui_brand_draw_breadcrumbs(vt_i18n_str(VT_STR_SECTIONS_ABOUT), NULL,
+		                          vt_i18n_str(VT_STR_ABOUT_TAB_SPECS));
 		draw_about_tabs();
 
 		if (max_scroll > 0) {
