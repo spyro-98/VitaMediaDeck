@@ -1,5 +1,7 @@
 # Verifica qualità e prove su Vita — 22 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 ## Stato
 
 Baseline locale 1.3.0 sul ramo `feature/iptv`. La revisione conserva il lavoro

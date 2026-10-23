@@ -1,5 +1,7 @@
 # Cyberpunk UI study
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Originating branch: `feature/cyberpunk-ui-study`. This shared-component pass is included with the accumulated 1.3.0 work in the local master integration. This document records the design study, not publication or hardware acceptance.
 
 ## Direction: quiet cybernetic terminal

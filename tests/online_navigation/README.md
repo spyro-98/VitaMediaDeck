@@ -1,5 +1,7 @@
 # Online audio navigation regression checks
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 This harness includes the production screen implementation and substitutes only
 the platform, network task and player entry points. It verifies transactional
 feed loading, retained favorites/selection on failures and cancellation, empty

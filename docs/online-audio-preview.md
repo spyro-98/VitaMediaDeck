@@ -1,5 +1,7 @@
 # Navigation and online audio preview
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 App version 1.3.0. This work originated on `feature/cyberpunk-ui-study` and is included in the local master integration. GitHub publication and hardware acceptance are separate steps.
 
 ## Navigation

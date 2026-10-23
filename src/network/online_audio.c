@@ -57,7 +57,7 @@ static char *fetch_limited(const char *url, volatile int *cancel, size_t *length
 	Response result = {.data = malloc(1), .capacity = 1, .limit = limit};
 	if (!result.data) return NULL;
 	result.data[0] = 0;
-	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.0",
+	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.1",
 	    .allow_http = 1, .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
 	VitaHttpsClient *client = vita_https_client_create(&options);
 	if (!client) { free(result.data); return NULL; }

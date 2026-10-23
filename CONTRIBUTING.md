@@ -18,3 +18,9 @@ bypasses or plaintext credential persistence.
 Before proposing a change, run `tools/release-audit.sh --allow-dirty`, build the
 VPK, run `git diff --check`, and test archive integrity. Hardware-specific
 behavior still requires a physical PS Vita test.
+
+For 1.4.1 and later maintenance, use the [documentation index](docs/README.md)
+and [validation guide](docs/VALIDATION.md). Update app version, monotonically
+increasing Vita APP_VER, About/client identity and SPDX together. Decoder ABI
+versions are independent. Keep dated reports faithful; document new acceptance
+separately. Standard build identity is `standard`, not a cached test label.

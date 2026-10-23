@@ -1,5 +1,7 @@
 # Playback performance audit
 
+> Historical design/research evidence. Current release: [1.4.1](../docs/releases/1.4.1.md); current checks: [validation](../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 This audit records the causes and verification boundaries for the August 2026
 startup, seek, track-switch, subtitle, mini-player, and cover-preview work. It
 separates code/package validation from measurements that still require a real

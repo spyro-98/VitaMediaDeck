@@ -1,5 +1,7 @@
 # VitaMediaDeck — ricerca visiva e correzione griglie, 22 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Aggiornamento: i quattro temi sono ora integrati. Vedi [temi nativi e verifiche](themes-2026-10-22.md). Il seguito documenta la precedente fase di ricerca e confronto.
 
 

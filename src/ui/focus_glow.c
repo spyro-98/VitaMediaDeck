@@ -1,5 +1,6 @@
 #include "ui/focus_glow.h"
 #include <string.h>
+#include <math.h>
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
 #include "settings/preferences.h"
@@ -40,17 +41,54 @@ void ui_focus_motion_tick(UiFocusMotion *m, float x, float y, float w, float h) 
 	m->last_tick_us=now;
 }
 
+static unsigned focus_alpha(unsigned color,unsigned alpha) {
+ return (color&0xffffffu)|((alpha>255?255:alpha)<<24);
+}
 void ui_theme_fx_focus(float x,float y,float w,float h) {
- if(ui_theme_id()==VT_UI_THEME_LEGACY)return;
- for(int i=3;i>=1;i--){
-  unsigned color=(VT_THEME_FOCUS&0xffffffU)|((unsigned)(72/i)<<24);
-  float left=x-i,top=y-i,width=w+i*2,height=h+i*2;
-  vita2d_draw_rectangle(left,top,width,1,color);vita2d_draw_rectangle(left,top+height-1,width,1,color);
-  vita2d_draw_rectangle(left,top,1,height,color);vita2d_draw_rectangle(left+width-1,top,1,height,color);
+ if(w<8||h<8)return;
+ int theme=ui_theme_id(),reduced=vt_preferences_reduce_motion();
+ float phase=reduced?.5f:(float)(sceKernelGetProcessTimeWide()%4200000ULL)/4200000;
+ float sweep=reduced?.5f:.5f-.5f*cosf(phase*6.28318530718f);
+ int layers=theme==VT_UI_THEME_LEGACY?2:3;
+ unsigned hot=VT_THEME_FOCUS,cold=VT_THEME_COLD_LIGHT;
+ /* Feathered edge geometry, not a bloom framebuffer or full-card wash. */
+ for(int i=layers;i>=1;i--){
+  unsigned color=focus_alpha(hot,(unsigned)(theme==VT_UI_THEME_LEGACY?32/i:48/i));
+  vita2d_draw_rectangle(x-i,y-i,w+i*2,1,color);
+  vita2d_draw_rectangle(x-i,y+h+i-1,w+i*2,1,color);
+  vita2d_draw_rectangle(x-i,y-i,1,h+i*2,color);
+  vita2d_draw_rectangle(x+w+i-1,y-i,1,h+i*2,color);
  }
- float phase=vt_preferences_reduce_motion()?0.0f:(float)(sceKernelGetProcessTimeWide()%2800000ULL)/2800000.0f;
- float length=w<80?w*.4f:32;
- vita2d_draw_rectangle(x+phase*(w-length),y-1,length,3,VT_THEME_FOCUS);
+ float length=fminf(w*.35f,38),head=x+4+sweep*fmaxf(0,w-length-8);
+ unsigned light=focus_alpha(hot,170);
+ if(theme==VT_UI_THEME_LEGACY){
+  vita2d_draw_rectangle(head,y-1,length,1,light);
+  vita2d_draw_rectangle(x+w-4-sweep*fmaxf(0,w-length-8)-length,y+h-1,length,1,light);
+ }else if(theme==VT_UI_THEME_GHOST_MESH){
+  vita2d_draw_rectangle(head,y-1,length,2,light);
+  vita2d_draw_rectangle(x+w-1,y+4+sweep*fmaxf(0,h-20),2,fminf(16,h-8),focus_alpha(cold,160));
+ }else if(theme==VT_UI_THEME_DECK_90){
+  vita2d_draw_rectangle(x+1,y+3,2,h-6,focus_alpha(hot,90));
+  vita2d_draw_rectangle(head,y+h-2,length,2,light);
+ }else if(theme==VT_UI_THEME_SIGNAL){
+  for(int i=0;i<5;i++){
+   vita2d_draw_rectangle(x+w-11+i*2,y-2+i*2,7,1,focus_alpha(hot,170-i*20));
+   vita2d_draw_rectangle(x+2+i*2,y+h-9+i*2,7,1,focus_alpha(cold,100-i*12));
+  }
+ }else if(theme==VT_UI_THEME_APERTURE){
+  float split=fminf(w*.18f,48)*(1-sweep*.3f);
+  vita2d_draw_rectangle(x+w*.5f-split-8,y-2,split,2,light);
+  vita2d_draw_rectangle(x+w*.5f+8,y-2,split,2,light);
+  vita2d_draw_rectangle(x+2,y+4,2,fminf(20,h-8),focus_alpha(cold,130));
+ }else if(theme==VT_UI_THEME_RELAY){
+  vita2d_draw_rectangle(head,y+h-1,length,2,light);
+  vita2d_draw_rectangle(x+w-2,y+4,2,fminf(12,h-8),focus_alpha(cold,140));
+  vita2d_draw_rectangle(x+w-13,y+4,12,2,focus_alpha(cold,140));
+ }else{
+  vita2d_draw_rectangle(head,y-1,length,2,light);
+  vita2d_draw_rectangle(x+w-12,y+2,10,1,focus_alpha(cold,160));
+  vita2d_draw_rectangle(x+w-2,y+2,1,fminf(10,h-4),focus_alpha(cold,160));
+ }
 }
 
 void ui_focus_outline_draw(const UiFocusMotion *m) {

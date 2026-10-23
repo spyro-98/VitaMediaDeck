@@ -1,5 +1,7 @@
 # Temi e navigazione — 23 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 ## Correzioni
 
 Il percorso radio/podcast riutilizzava il selettore compatto della Home e il browser di scoperta precedente. Inoltre un flag di presentazione veniva ripristinato all'uscita dalla Home locale. I temi nuovi mantenevano quindi la palette, ma perdevano la propria composizione entrando nel catalogo o tornando indietro.

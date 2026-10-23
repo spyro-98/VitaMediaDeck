@@ -140,7 +140,11 @@ static int sidebar_row_height(void) {
 }
 
 static float sidebar_offset(const UiSectionsSidebar *sidebar) {
- return -(ui_theme_id()==VT_UI_THEME_LEGACY?SIDEBAR_WIDTH:960)*(1-sidebar->animation);
+ float travel=1-sidebar->animation;
+ int theme=ui_theme_id();UiThemeMotionProfile profile=ui_theme_motion_profile(theme);
+ if(theme==VT_UI_THEME_GHOST_MESH||theme==VT_UI_THEME_SIGNAL||theme==VT_UI_THEME_RELAY)travel*=travel;
+ else if(theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC)travel*=.6f+.4f*travel;
+ return (profile.menu_from_right?1:-1)*(theme==VT_UI_THEME_LEGACY?SIDEBAR_WIDTH:960)*travel;
 }
 static UiThemeRect sidebar_slot_rect(const UiSectionsSidebar *sidebar,int slot) {
  if(ui_theme_id()==VT_UI_THEME_LEGACY)return (UiThemeRect){ITEM_X,(int)sidebar_row_y(sidebar,(float)slot),ITEM_W,sidebar_row_height()};
@@ -228,7 +232,7 @@ static void sidebar_themed_draw(const UiSectionsSidebar *sidebar,const char *con
    int selected=sidebar->open&&i==sidebar->cursor;
    unsigned background=selected?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE;
    unsigned fg=selected?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT;
-   if(theme==VT_UI_THEME_DECK_90&&selected){background=VT_THEME_SIGNAL_BRIGHT;fg=VT_THEME_BG;}
+   /* A travelling phosphor rim carries focus without bright row inversions. */
    ui_theme_scene_card(UI_SCENE_MENU,r,selected,i);
    if(theme!=VT_UI_THEME_APERTURE)ui_theme_fx_surface(r.x+3,r.y+2,r.w-6,r.h-4,background,selected);
    else vita2d_draw_rectangle(r.x+5,r.y+4,r.w-10,r.h-8,background);
@@ -407,7 +411,7 @@ void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	if (vt_preferences_reduce_motion())
 		sidebar->animation = sidebar->open ? 1.0f : 0.0f;
 	else {
-		float alpha = (float)elapsed / (60000.0f + (float)elapsed);
+		float alpha = (float)elapsed / (ui_theme_motion_profile(ui_theme_id()).menu_us + (float)elapsed);
 		sidebar->animation += ((sidebar->open ? 1.0f : 0.0f) -
 		                       sidebar->animation) * alpha;
 	}

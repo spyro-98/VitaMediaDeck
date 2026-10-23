@@ -16,3 +16,9 @@ secrets from logs and dumps.
 
 VitaMediaDeck intentionally has no option to disable TLS verification. A build that
 links the legacy VitaSDK OpenSSL libcurl is not a supported or releasable build.
+
+The [current specification](mds/PROJECT_SPECIFICATION.md) also covers Navidrome
+credentials, Immich API keys and explicit HTTP(S) downloads/IPTV. Saved IPTV
+URLs can contain tokens in plaintext; never share source databases or raw logs.
+The QR scanner accepts HTTP(S) payloads and returns them to the same explicit
+source/download flow; recognizing a QR is not trust or authorization.

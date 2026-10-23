@@ -1,5 +1,7 @@
 # IPTV host checks (not on-device playback)
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 ## Expanded HLS transport
 
 The pinned FFmpeg 6 host build must enable `hls,mpegts,mov,aac` demuxers,

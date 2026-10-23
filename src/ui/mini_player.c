@@ -399,15 +399,16 @@ void ui_mini_player_draw(void) {
 	}
 	unsigned close_fill = g_mini_control_feedback == MINI_CONTROL_CLOSE &&
 	                      now_us < g_mini_control_feedback_until_us
-	                    ? VT_THEME_DANGER : RGBA8(54, 31, 48, 255);
+	                    ? VT_THEME_DANGER : VT_THEME_SURFACE_RAISED;
+	unsigned close_ink = ui_contrast_bw(close_fill);
 	vita2d_draw_rectangle(MINI_TRANSPORT_CLOSE_X - 21.0f, y + 12.0f,
 	                      42.0f, 42.0f, close_fill);
 	vita2d_draw_line(MINI_TRANSPORT_CLOSE_X - 7, y + 26,
 	                 MINI_TRANSPORT_CLOSE_X + 7, y + 40,
-	                 RGBA8(255, 165, 177, 255));
+	                 close_ink);
 	vita2d_draw_line(MINI_TRANSPORT_CLOSE_X + 7, y + 26,
 	                 MINI_TRANSPORT_CLOSE_X - 7, y + 40,
-	                 RGBA8(255, 165, 177, 255));
+	                 close_ink);
 	if (g_mini_lock_animation > 0.01f) {
 		unsigned int lock_color = VT_THEME_COLD_A(
 		    (unsigned int)(255.0f * g_mini_lock_animation));

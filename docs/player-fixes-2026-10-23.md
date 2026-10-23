@@ -1,5 +1,7 @@
 # Correzioni dopo i test sulla console — 23 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 ## Durata e seek MP4
 
 Riprodotto con FFmpeg 6 reale: `avformat_open_input` restituisce MP4 H.264/AAC

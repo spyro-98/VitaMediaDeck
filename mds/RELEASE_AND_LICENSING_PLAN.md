@@ -22,19 +22,16 @@ A public release should contain:
 Generated dependency trees, credentials, source databases, host fingerprints,
 media indexes, logs, and private research worktrees must not be committed.
 
-## Hardware player module
+## Independent decoder packages
 
-The module currently belongs to the GPL-3.0-only VitaMediaDeck tree and can be
-published under the same license. Before a standalone release:
-
-1. move all required support sources under the module directory;
-2. provide a standalone CMake target and install rules;
-3. list exact FFmpeg/wiliwili/VitaSDK dependencies;
-4. build the example independently;
-5. document the independent-cursor, cancellation, and render-completion
-   contracts;
-6. validate local file plus at least one external custom stream factory;
-7. include all applicable license texts and source-offer information.
+`vita-hw-decoder` and `vita-sw-decoder` are independent GPL-3.0-only repositories
+with 2.0.0 ABI, CMake targets, install rules, examples, dependency locks and
+source-packaging/audit tools. The app pins exact commits in its dependency lock.
+Their runtime/performance guides distinguish source contracts, host fixtures,
+Vita builds and physical acceptance. The app shares patched FFmpeg n6.0 between
+them; the SW standalone 8.1.2 builder is a separate distribution configuration.
+Preserve matching source/license obligations for the actual linked archives.
+Documentation-only decoder commits do not change ABI or playback code.
 
 ## Security release gates
 
@@ -46,7 +43,9 @@ published under the same license. Before a standalone release:
   optional password databases.
 - SFTP rejects unknown or changed host keys until explicit confirmation.
 - SMB does not fall back to guest access.
-- Remote operations are read-only.
+- Remote browsing is read-only; explicit downloads write only to the chosen
+  local destination. Do not claim every provider API is read-only: Jellyfin
+  playback/favourite interactions may update user state.
 - Network failures cannot strand decoder threads or keep secrets alive after a
   session closes.
 

@@ -1,5 +1,7 @@
 # Motion system — proposed, not implemented in VitaMediaDeck
 
+> Historical design/research evidence. Current release: [1.4.1](../../docs/releases/1.4.1.md); current checks: [validation](../../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 ## Focus is one shared state machine
 
 ```text

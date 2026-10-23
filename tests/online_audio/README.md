@@ -1,5 +1,7 @@
 # Online audio host checks
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 Run the existing audio, artwork/cache and read-ahead regressions under
 ASan/UBSan and ThreadSanitizer with one command (requires host Jansson,
 FFmpeg, pkg-config, mpg123, OpenSSL and libxml2):

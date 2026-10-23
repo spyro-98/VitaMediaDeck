@@ -107,3 +107,11 @@ Source: https://github.com/IBM/plex, commit `017181e320cd0bea18f798d9ceb27a11c88
 The license is in `assets/fonts/IBM-Plex-OFL.txt`, packaged as
 `licenses/IBM-Plex-OFL.txt`. This font is used by the Deck 90 interface;
 subtitle font selection remains independent.
+
+## 1.4.1 integration record
+
+Current source/dependency revisions are pinned in `release/DEPENDENCIES.lock`;
+the app identity is 1.4.1 and the linked FFmpeg for both decoders remains patched
+n6.0. Decoder documentation commits do not alter their 2.0.0 ABI or third-party
+licenses. See [release record](docs/releases/1.4.1.md) and
+[package integration](mds/PACKAGE_INTEGRATION.md).

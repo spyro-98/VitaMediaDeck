@@ -51,7 +51,7 @@ int main(int argc,char **argv) {
    frame=pass*40;ui_theme_scene_begin(UI_SCENE_BROWSER,pass%2?"parent":"child");
    UiThemeRect first=ui_theme_browser_rect(theme,0,536,1);
    frame+=1;UiThemeRect second=ui_theme_browser_rect(theme,0,536,1);
-   CHECK(first.x!=second.x||first.y!=second.y);
+   CHECK(first.x==second.x&&first.y==second.y);
    frame+=30;UiThemeRect settled=ui_theme_browser_rect(theme,0,536,1);
    host_reduced_motion=1;UiThemeRect exact=ui_theme_browser_rect(theme,0,536,1);CHECK(!memcmp(&settled,&exact,sizeof(exact)));host_reduced_motion=0;
   }
@@ -72,7 +72,7 @@ int main(int argc,char **argv) {
   for(int i=0;i<24;i++){frame+=2;vita2d_clear_screen();ui_theme_scene_model(UI_SCENE_AUDIO,480,250,220,1,1);}CHECK(memcmp(first_pixels,pixels,sizeof(pixels)));
   host_reduced_motion=1;
   host_reduced_motion=0;frame=0;ui_theme_scene_enter(UI_SCENE_MENU,"reopen");UiThemeRect reopened=ui_theme_scene_reveal(UI_SCENE_MENU,(UiThemeRect){104,234,250,58},0);
-  frame=30;UiThemeRect end=ui_theme_scene_reveal(UI_SCENE_MENU,(UiThemeRect){104,234,250,58},0);CHECK(reopened.x!=end.x||reopened.y!=end.y);
+  frame=30;UiThemeRect end=ui_theme_scene_reveal(UI_SCENE_MENU,(UiThemeRect){104,234,250,58},0);CHECK(reopened.x==end.x&&reopened.y==end.y);
   ui_theme_scene_enter(UI_SCENE_MENU,"reopen");UiThemeRect again=ui_theme_scene_reveal(UI_SCENE_MENU,(UiThemeRect){104,234,250,58},0);CHECK(again.x==reopened.x&&again.y==reopened.y);
   host_reduced_motion=1;
   /* Bounds/hit regions for timeline and each video transport. */

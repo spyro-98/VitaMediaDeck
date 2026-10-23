@@ -28,6 +28,8 @@ static float scene_x, scene_y, scene_scale, scene_opacity;
 static struct {
     uint64_t hash, changed, last, clock;
     int theme, ready;
+    UiPageMotion page;
+    UiPageView view;
 } scene_state[UI_SCENE_COUNT];
 static void scene_picture(vita2d_texture *art,float x,float y,float size,float pitch,float yaw,float roll);
 static unsigned scene_alpha(unsigned c, float opacity) {
@@ -154,6 +156,58 @@ static void scene_flush(void) {
     }
     scene_count = 0;
 }
+UiPageView ui_theme_page(UiThemeScene scene, const char *owner, const char *identity,
+    int first, int count, int columns, int slots, float step) {
+    if(scene<0||scene>=UI_SCENE_COUNT)return (UiPageView){0};
+    scene_state[scene].view=ui_page_update(&scene_state[scene].page,
+        sceKernelGetProcessTimeWide(),ui_theme_id(),vt_preferences_reduce_motion(),
+        owner,identity,first,count,columns,slots,step);
+    return scene_state[scene].view;
+}
+void ui_theme_page_rebase(UiThemeScene scene,int before,int after) {
+    if(scene>=0&&scene<UI_SCENE_COUNT)ui_page_rebase(&scene_state[scene].page,before,after);
+}
+UiThemeRect ui_theme_page_rect(UiThemeScene scene, UiThemeRect r) {
+    if(scene<0||scene>=UI_SCENE_COUNT)return r;
+    /* A hidden screen must not leak its last offset into a new hit test. */
+    UiPageMotion *m=&scene_state[scene].page;
+    uint64_t now=sceKernelGetProcessTimeWide();
+    if(!m->ready||m->theme!=ui_theme_id()||vt_preferences_reduce_motion()||
+       now<m->last||now-m->last>250000ULL)return r;
+    r.x+=(int)roundf(scene_state[scene].view.dx);
+    r.y+=(int)roundf(scene_state[scene].view.dy);
+    return r;
+}
+void ui_theme_page_finish(UiThemeScene scene,int x,int top,int width,int bottom) {
+    if(scene<0||scene>=UI_SCENE_COUNT||bottom<=top||width<20||vt_preferences_reduce_motion())return;
+    float energy=scene_state[scene].view.energy;
+    if(energy<.005f)return;
+    int theme=ui_theme_id();
+    unsigned color=(VT_THEME_FOCUS&0xffffffu)|((unsigned)(energy*110)<<24);
+    float travel=.5f-.5f*cosf(scene_state[scene].page.row*3.14159265359f+
+                                  scene_state[scene].page.camera*.08f);
+    if(travel<0)travel=0;
+    if(travel>1)travel=1;
+    /* Thin spatial light trails only: never flash a translucent full-page quad. */
+    for(int i=2;i>=0;i--){
+        unsigned c=(color&0xffffffu)|((unsigned)(energy*(36-i*10))<<24);
+        if(theme==VT_UI_THEME_SIGNAL){
+            float edge=x+width-4-i*3;
+            vita2d_draw_line(edge,top+12,edge-18,bottom-12,c);
+        }else if(theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC){
+            vita2d_draw_rectangle(x+8+i,top+i,width-16-i*2,1,c);
+            vita2d_draw_rectangle(x+8+i,bottom-i-2,width-16-i*2,1,c);
+        }else vita2d_draw_rectangle(x+1+i,top+4,1,bottom-top-8,c);
+    }
+    float y=top+6+travel*fmaxf(0,bottom-top-40);
+    if(theme==VT_UI_THEME_RELAY){
+        vita2d_draw_rectangle(x+3,y,18,2,color);
+        vita2d_draw_rectangle(x+19,y,2,12,color);
+    }else if(theme==VT_UI_THEME_DECK_90)
+        vita2d_draw_rectangle(x+4,y,16,2,color);
+    else if(theme==VT_UI_THEME_GHOST_MESH)
+        vita2d_draw_rectangle(x+3,y,2,24,color);
+}
 void ui_theme_scene_begin(UiThemeScene scene, const char *identity) {
     if (scene < 0 || scene >= UI_SCENE_COUNT || ui_theme_id() == VT_UI_THEME_LEGACY)
         return;
@@ -179,11 +233,15 @@ void ui_theme_scene_enter(UiThemeScene scene, const char *identity) {
     ui_theme_scene_begin(scene, identity);
 }
 static float scene_reveal_amount(UiThemeScene scene, int slot) {
-    if (vt_preferences_reduce_motion() || !scene_state[scene].ready)
+    (void)slot;
+    /* Lists and command decks move as one surface. Their container/viewport
+     * already animates, so replaying staggered object entrances causes flicker. */
+    if (scene==UI_SCENE_HOME || scene==UI_SCENE_BROWSER || scene==UI_SCENE_MENU ||
+        vt_preferences_reduce_motion() || !scene_state[scene].ready)
         return 1;
     uint64_t now = sceKernelGetProcessTimeWide(), changed = scene_state[scene].changed;
     float t = now >= changed ? (now - changed) / 1000.0f : 1000;
-    float delay = (slot < 0 ? 0 : slot % 9) * 12.0f;
+    float delay = 0;
     float duration = ui_theme_id() == VT_UI_THEME_DECK_90    ? 170
                      : ui_theme_id() == VT_UI_THEME_APERTURE ? 300
                                                              : 240;
@@ -215,7 +273,7 @@ UiThemeRect ui_theme_scene_reveal(UiThemeScene scene, UiThemeRect r, int slot) {
         r.x += (int)(k * 22);
         r.y += (int)(k * 6);
     } else if (theme == VT_UI_THEME_MOSAIC) {
-        r.x += (int)(k * (slot%5-2)*6);
+        r.x += (int)(k * ((slot%5+5)%5-2)*6);
         r.y += (int)(k * (r.h<100?6:16));
     }
     return r;
@@ -325,7 +383,15 @@ static void scene_card_motion(UiThemeScene role, UiThemeRect r, int selected, in
                                                : -.07f;
     float yaw = theme == VT_UI_THEME_SIGNAL ? -.12f : theme == VT_UI_THEME_DECK_90 ? .04f : .08f;
     float k = 1 - scene_reveal_amount(role, slot);
+    float camera=vt_preferences_reduce_motion()?0:scene_state[role].page.camera;
     float z = 28;
+    /* The same continuous camera drives depth and its labels/hit rectangle.
+     * Faces never disappear or replay a per-item entrance when data changes. */
+    if(theme==VT_UI_THEME_GHOST_MESH)yaw+=camera*.015f;
+    else if(theme==VT_UI_THEME_SIGNAL)yaw-=camera*.025f;
+    else if(theme==VT_UI_THEME_APERTURE)z+=fabsf(camera)*8;
+    else if(theme==VT_UI_THEME_RELAY)tilt+=camera*.008f;
+    else if(theme==VT_UI_THEME_MOSAIC)yaw+=camera*.02f;
     if (theme == VT_UI_THEME_DECK_90)
         z += k * 160;
     else if (theme == VT_UI_THEME_SIGNAL)
@@ -335,7 +401,7 @@ static void scene_card_motion(UiThemeScene role, UiThemeRect r, int selected, in
     } else if (theme == VT_UI_THEME_RELAY) {
         tilt=-.08f;z+=k*100;
     } else if (theme == VT_UI_THEME_MOSAIC) {
-        tilt=0;yaw=(slot%5-2)*(.08f+k*.28f);z+=abs(slot%5-2)*7;
+        tilt=0;yaw=((slot%5+5)%5-2)*(.08f+k*.28f);z+=abs((slot%5+5)%5-2)*7;
     }
     scene_box(0, 0, z, r.w - 16, r.h - 14, theme == VT_UI_THEME_RELAY ? 18 : 8, tilt, yaw, 0,
               selected ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_COLD);
@@ -370,15 +436,16 @@ UiThemeHomeLayout ui_theme_browser_layout(int theme, int bottom, int grid) {
 }
 UiThemeRect ui_theme_browser_rect(int theme, int slot, int bottom, int grid) {
     UiThemeHomeLayout l = ui_theme_browser_layout(theme, bottom, grid);
-    UiThemeRect r = {l.x + (slot % l.columns) * (l.w + 12), l.y + (slot / l.columns) * l.step, l.w,
+    int row=slot/l.columns,col=slot%l.columns;if(col<0){col+=l.columns;row--;}
+    UiThemeRect r = {l.x + col * (l.w + 12), l.y + row * l.step, l.w,
                      l.step - 12};
     if (theme == VT_UI_THEME_RELAY && grid){
-        r.x=52+(slot%2)*446;r.y=134+(slot/2)*134+(slot%2)*26;r.h=100;
+        r.x=52+col*446;r.y=134+row*134+col*26;r.h=100;
     }else if(theme==VT_UI_THEME_MOSAIC && grid){
-        r.y=140+abs(slot%5-2)*18;
+        r.x+=row*960;r.y=140+abs(col-2)*18;
         r.h=bottom-34-176;if(r.h>286)r.h=286;
     }
-    return ui_theme_scene_reveal(UI_SCENE_BROWSER, r, slot);
+    return ui_theme_page_rect(UI_SCENE_BROWSER, r);
 }
 UiAudioLayout ui_theme_audio_layout(int layout, int has_cover) {
     UiAudioLayout l = ui_audio_layout(layout, has_cover);
@@ -478,7 +545,7 @@ void ui_theme_browser_tile(UiThemeScene role, UiThemeRect r, int slot, int selec
         vita2d_draw_rectangle(r.x+8,r.y+2,r.w*.56f,10,selected?VT_THEME_SIGNAL_BRIGHT:VT_THEME_COLD);
         int size=r.w-32;if(size>r.h-78)size=r.h-78;
         int ax=r.x+(r.w-size)/2,ay=r.y+20;
-        if(art)scene_picture(art,ax,ay,size,.02f,(slot%5-2)*.16f,(slot%5-2)*.015f);
+        if(art)scene_picture(art,ax,ay,size,.02f,((slot%5+5)%5-2)*.16f,((slot%5+5)%5-2)*.015f);
         else scene_artwork(ax,ay,size,NULL,folder);
         ui_text_line(r.x+14,r.y+r.h-43,r.w-28,title,selected?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT,UI_FONT_SMALL);
         ui_text_line(r.x+14,r.y+r.h-20,r.w-28,detail,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);

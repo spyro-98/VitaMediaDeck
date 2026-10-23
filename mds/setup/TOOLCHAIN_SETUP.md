@@ -28,8 +28,8 @@ Install Vita-targeted packages through `vdpm`; do not link host libraries from
 Homebrew or the Linux distribution. The application requires the Vita ports of:
 
 ```text
-libvita2d freetype libpng libjpeg-turbo zlib bzip2 mpg123
-mbedtls libxml2 zstd libsmb2
+libvita2d freetype libpng libjpeg-turbo libwebp zlib bzip2 mpg123
+flac libogg mbedtls libxml2 zstd libsmb2
 ```
 
 The exact archive order in `CMakeLists.txt` is authoritative.
@@ -91,7 +91,11 @@ cmake -S . -B build \
 ## Build VitaMediaDeck
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DVITAMEDIADECK_TEST_ID= \
+  -DVITAMEDIADECK_VIDEO_CLOCK_PROFILE=performance \
+  -DVITA_SW_DECODER_PLANAR_UPLOAD=OFF \
+  -DVITA_HW_DECODER_CPU_THREADS=3 -DVITA_SW_DECODER_CPU_THREADS=3
 cmake --build build --parallel
 unzip -t build/VitaMediaDeck.vpk
 shasum -a 256 build/VitaMediaDeck.vpk
@@ -141,3 +145,16 @@ must be tested on physical hardware.
 - https://github.com/vitasdk/vita-toolchain
 - https://github.com/vitasdk/packages
 - https://cmake.org/documentation/
+
+## Standard identity and host verification
+
+1.4.1: APP_VER 01.05, bubble VitaMediaDeck, TITLE_ID VMDK00001. Clear the cached
+test ID and experimental flags when reusing a build directory; an old cache can
+otherwise keep a test bubble, stock clocks or planar upload. Standard diagnostics
+write `ux0:data/VitaMediaDeck/session_standard.txt`.
+
+Before configuring, also prepare quirc, stb and release license resources with
+`tools/build-quirc-vita.sh`, `tools/prepare-stb-image.sh` and
+`tools/prepare-release-licenses.sh`. App FFmpeg is the patched n6.0 prefix shared
+by both packages. See [validation guide](../../docs/VALIDATION.md) for host
+prerequisites, suite commands and physical-device boundaries.

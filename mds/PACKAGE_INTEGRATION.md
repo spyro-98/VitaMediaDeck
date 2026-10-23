@@ -77,3 +77,19 @@ For release builds, `vita-https/tools/build-curl-mbedtls.sh` must run first and
 libcurl/OpenSSL archives are not an accepted fallback. `tools/build-libssh2-vita.sh`
 also builds libssh2 with Mbed TLS so the final executable contains no legacy
 OpenSSL symbols.
+
+## 1.4.1 reproducible baseline
+
+App 1.4.1 uses package APP_VER 01.05 and pins decoder/HTTPS revisions in
+`release/DEPENDENCIES.lock`. Decoder ABI versions remain 2.0.0. Both app decoder
+targets link the same patched FFmpeg n6.0 prefix selected by the root CMake file;
+the SW package's standalone FFmpeg 8.1.2 builder is not the VPK's linked FFmpeg.
+
+Standard options: empty `VITAMEDIADECK_TEST_ID`, performance clock profile,
+`VITA_SW_DECODER_PLANAR_UPLOAD=OFF`, both CPU-thread cache options at 3. The HW
+backend remains hardware-only; the thread option is not three hardware decode
+engines. Forward-only SW input always selects one worker.
+
+App-owned subtitle state, media resume, UI themes/QR and network provider setup
+are not moved into decoder packages. The new continuous UI motion and utility
+coverage do not alter decoder APIs, libraries or default clock policy.

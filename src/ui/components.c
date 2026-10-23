@@ -1,4 +1,5 @@
 #include "ui/components.h"
+#include "ui/page_motion.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -45,7 +46,7 @@ void ui_context_menu_tick(UiContextMenu *menu) {
 	uint64_t now=sceKernelGetProcessTimeWide();
 	float elapsed=menu->last_us && now>menu->last_us?(float)(now-menu->last_us):16667.0f;
 	menu->last_us=now;
-	float alpha=elapsed/(80000.0f+elapsed);
+	float alpha=elapsed/(ui_theme_motion_profile(ui_theme_id()).menu_us+10000+elapsed);
 	menu->animation+=((menu->open?1.0f:0.0f)-menu->animation)*alpha;
 	if (vt_preferences_reduce_motion() || fabsf(menu->animation-(menu->open?1.0f:0.0f))<.025f)
 		menu->animation=menu->open?1.0f:0.0f;

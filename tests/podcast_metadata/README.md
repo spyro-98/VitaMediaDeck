@@ -1,5 +1,7 @@
 # Offline podcast checks
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 Run `VMD_HOST_JANSSON=/path/to/host-jansson bash tests/podcast_metadata/run-host-tests.sh`.
 The prefix must contain `include/jansson.h` and `lib/libjansson.a` for the host.
 `VMD_HOST_FLAC` defaults to Homebrew's FLAC prefix.

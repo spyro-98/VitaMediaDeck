@@ -1,5 +1,7 @@
 # Nitidezza, barra di stato, L1 e posizioni Home — 23 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 ## Resa e coerenza
 
 L'output resta nativo 960×544. Il renderer viene inizializzato con il percorso

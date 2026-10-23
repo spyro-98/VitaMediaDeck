@@ -1,5 +1,7 @@
 # Image controls regression checks
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 Run from the repository root:
 
 ```sh
