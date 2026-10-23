@@ -1,5 +1,7 @@
 # VitaMediaDeck — film-inspired interface study
 
+> Historical design/research evidence. Current release: [1.4.1](../../docs/releases/1.4.1.md); current checks: [validation](../../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 Design review, 7 September 2026. **No production UI, player, decoder, packaging, preference or version changes belong to this study.** Existing app work on `feature/iptv` is preserved. These drafts are not README release screenshots.
 
 ## Review artifacts

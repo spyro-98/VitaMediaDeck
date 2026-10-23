@@ -153,7 +153,7 @@ static int audio_open(void *ctx, VtDecoderStreamHandle *out, volatile int *cance
     if (!vt_online_url_valid(ctx) ||
         (cancel && __atomic_load_n(cancel, __ATOMIC_ACQUIRE))) return -1;
     HttpAudio *h = calloc(1, sizeof(*h)); if (!h) return -1;
-    VitaHttpsClientConfig config = { .user_agent = "VitaMediaDeck/1.4.0",
+    VitaHttpsClientConfig config = { .user_agent = "VitaMediaDeck/1.4.1",
         .allow_http = 1, .connect_timeout_ms = 10000, .request_timeout_ms = 20000 };
     h->client = vita_https_client_create(&config);
     h->storage = malloc((SLOTS + 1) * BLOCK);

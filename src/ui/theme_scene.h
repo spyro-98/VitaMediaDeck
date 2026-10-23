@@ -1,6 +1,7 @@
 #ifndef VMD_THEME_SCENE_H
 #define VMD_THEME_SCENE_H
 #include "ui/audio_layout.h"
+#include "ui/page_motion.h"
 #include "ui/theme_home.h"
 /* Presentation channels have independent clocks and navigation identities. */
 typedef enum {
@@ -10,8 +11,17 @@ typedef enum {
     UI_SCENE_VIDEO,
     UI_SCENE_IMAGE,
     UI_SCENE_MENU,
+    UI_SCENE_PICKER,
+    UI_SCENE_SOURCES,
+    UI_SCENE_QR,
     UI_SCENE_COUNT
 } UiThemeScene;
+/* Viewport coordinates are shared by drawing, focus and touch hit testing. */
+UiPageView ui_theme_page(UiThemeScene scene, const char *owner, const char *identity,
+    int first, int count, int columns, int slots, float step);
+void ui_theme_page_rebase(UiThemeScene scene,int before,int after);
+UiThemeRect ui_theme_page_rect(UiThemeScene scene, UiThemeRect rect);
+void ui_theme_page_finish(UiThemeScene scene, int x, int top, int width, int bottom);
 void ui_theme_scene_background(void);
 void ui_theme_scene_enter(UiThemeScene scene, const char *identity);
 void ui_theme_scene_begin(UiThemeScene scene, const char *identity);

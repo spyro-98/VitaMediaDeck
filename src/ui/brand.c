@@ -1,5 +1,6 @@
 #include "ui/brand.h"
 #include "ui/breadcrumbs.h"
+#include "ui/components.h"
 
 #include <math.h>
 #include <stdint.h>
@@ -740,8 +741,8 @@ int ui_brand_search_clear_hit(int x, int y) {
 
 static void draw_text_input_signal_field(void) {
  /* Platform keyboard remains native; the app supplies only its quiet header. */
- vita2d_draw_rectangle(18,118,924,130,VT_THEME_SURFACE);
- vita2d_draw_rectangle(18,118,924,1,VT_THEME_BORDER_DIM);
+ ui_chrome_background(COLOR_BG, VT_THEME_SIGNAL_BRIGHT);
+ ui_panel(18,118,924,130,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 }
 
 void ui_brand_draw_search_backdrop(const char *query) {

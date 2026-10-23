@@ -17,7 +17,7 @@ UiThemeRect ui_theme_home_tab_rect(int theme,int p,int expanded){
   float angle=-1.57079632679f+p*1.0471975512f;
   return (UiThemeRect){(int)roundf(690+cosf(angle)*164)-85,(int)roundf(272+sinf(angle)*164)-20,170,40};
  }
- if(theme==VT_UI_THEME_DECK_90)return ui_theme_scene_reveal(UI_SCENE_HOME,(UiThemeRect){28,112+p*54,188,44},p);
+ if(theme==VT_UI_THEME_DECK_90)return (UiThemeRect){28,112+p*54,188,44};
  if(theme==VT_UI_THEME_APERTURE)return (UiThemeRect){18+p*155,420,147,38};
  if(theme==VT_UI_THEME_RELAY)return (UiThemeRect){28+(p%2)*18,82+p*57,172,44};
  if(theme==VT_UI_THEME_MOSAIC)return (UiThemeRect){18+p*155,64+(p%2)*4,147,42};
@@ -44,14 +44,15 @@ UiThemeHomeLayout ui_theme_home_layout(int theme,int bottom){
 }
 UiThemeRect ui_theme_home_item_rect(int theme,int slot,int bottom){
  UiThemeHomeLayout l=ui_theme_home_layout(theme,bottom);
- UiThemeRect r={l.x+(slot%l.columns)*(l.w+12),l.y+(slot/l.columns)*l.step,l.w,l.step-8};
+ int row=slot/l.columns,col=slot%l.columns;if(col<0){col+=l.columns;row--;}
+ UiThemeRect r={l.x+col*(l.w+12),l.y+row*l.step,l.w,l.step-8};
  if(theme==VT_UI_THEME_RELAY){
-  r.x=264+(slot%2)*326;r.y=168+(slot/2)*128+(slot%2)*28;r.h=96;
+  r.x=264+col*326;r.y=168+row*128+col*28;r.h=96;
  }else if(theme==VT_UI_THEME_MOSAIC){
-  r.y=210+abs(slot%5-2)*20;
+  r.x+=row*960;r.y=210+abs(col-2)*20;
   r.h=bottom-38-250;if(r.h>244)r.h=244;if(r.h<110)r.h=110;
  }
- return ui_theme_scene_reveal(UI_SCENE_HOME,r,slot);
+ return ui_theme_page_rect(UI_SCENE_HOME,r);
 }
 int ui_theme_home_top(int theme,int selected,int top,int bottom){
  UiThemeHomeLayout l=ui_theme_home_layout(theme,bottom);
@@ -97,7 +98,14 @@ static void fx_frame(float x,float y,float w,float h,unsigned color){
  vita2d_draw_rectangle(x,y,1,h,color);vita2d_draw_rectangle(x+w-1,y,1,h,color);
 }
 void ui_theme_fx_background(unsigned base){
- int theme=ui_theme_id();if(theme==VT_UI_THEME_LEGACY)return;
+ int theme=ui_theme_id();
+ if(theme==VT_UI_THEME_LEGACY){
+  float phase=fx_phase(10000000ULL);
+  unsigned alpha=(unsigned)(10+6*(1-cosf(phase*6.28318530718f)));
+  vita2d_draw_rectangle(0,54,1,490,fx_alpha(VT_THEME_COLD,alpha));
+  vita2d_draw_rectangle(959,54,1,490,fx_alpha(VT_THEME_FOCUS,alpha));
+  return;
+ }
  unsigned accent=VT_THEME_SIGNAL_BRIGHT;
  /* The light horizon and floor share a vanishing point: real spatial structure
   * rather than a translucent wash behind otherwise flat cards. */
@@ -342,6 +350,11 @@ static void fx_category_icon(float x,float y,float scale,int category,unsigned c
 }
 
 void ui_theme_home_menu(int theme,int selected,const char *const labels[6],const unsigned char *categories,int focused,UiFocusMotion *motion){
+ static UiFocusMotion menu_motion;
+ static int menu_theme=-1;
+ if(menu_theme!=theme){ui_focus_motion_reset(&menu_motion);menu_theme=theme;}
+ UiThemeRect target=ui_theme_home_tab_rect(theme,selected,1);
+ ui_focus_motion_tick(&menu_motion,target.x,target.y,target.w,target.h);
  fx_select(theme,selected);
  if(theme==VT_UI_THEME_GHOST_MESH){
   fx_ghost_core(selected);
@@ -367,7 +380,7 @@ void ui_theme_home_menu(int theme,int selected,const char *const labels[6],const
    vita2d_draw_line(690+dx*72/len,272+dy*72/len,r.x+r.w*.5f,r.y+r.h*.5f,active?VT_THEME_FOCUS:VT_THEME_BORDER_DIM);
   }
   if(theme==VT_UI_THEME_DECK_90&&active&&focused){
-   vita2d_draw_rectangle(r.x,r.y,r.w,r.h,VT_THEME_SIGNAL_BRIGHT);fg=VT_THEME_BG;
+   vita2d_draw_rectangle(r.x,r.y,r.w,r.h,VT_THEME_SURFACE_RAISED);fg=VT_THEME_SIGNAL_BRIGHT;
   }
   if(theme==VT_UI_THEME_RELAY||theme==VT_UI_THEME_MOSAIC){
    vita2d_draw_rectangle(r.x,r.y,r.w,r.h,active?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE);
@@ -386,7 +399,7 @@ void ui_theme_home_menu(int theme,int selected,const char *const labels[6],const
   if(theme==VT_UI_THEME_SIGNAL)ui_theme_scene_transport(r.x+5,r.y+4,r.w-10,r.h-8,active,active?.8f:.15f);
   if(theme==VT_UI_THEME_MOSAIC&&active)ui_theme_scene_transport(r.x,r.y,r.w,r.h,1,1);
   if(theme==VT_UI_THEME_SIGNAL || (theme==VT_UI_THEME_DECK_90&&active&&focused))
-   ui_theme_fx_surface(r.x,r.y,r.w,r.h,theme==VT_UI_THEME_DECK_90&&active&&focused?VT_THEME_SIGNAL_BRIGHT:active?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,active);
+   ui_theme_fx_surface(r.x,r.y,r.w,r.h,theme==VT_UI_THEME_DECK_90&&active&&focused?VT_THEME_SURFACE_RAISED:active?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,active);
   int inset=12,baseline=r.y+(r.h>60?66:r.h>44?35:27);
   if(theme==VT_UI_THEME_GHOST_MESH){fx_category_icon(r.x+10,r.y+11,.8f,category,fg);inset=42;}
   if(theme==VT_UI_THEME_MOSAIC){fx_category_icon(r.x+10,r.y+13,.8f,category,fg);inset=42;}
@@ -395,10 +408,11 @@ void ui_theme_home_menu(int theme,int selected,const char *const labels[6],const
   if(active&&theme!=VT_UI_THEME_DECK_90&&theme!=VT_UI_THEME_RELAY&&theme!=VT_UI_THEME_MOSAIC)
    vita2d_draw_rectangle(r.x+12,r.y+r.h-2,r.w-24,2,VT_THEME_SIGNAL_BRIGHT);
  }
- if(focused&&motion){UiThemeRect r=ui_theme_home_tab_rect(theme,selected,1);
-  ui_focus_motion_tick(motion,r.x,r.y,r.w,r.h);
+ if(focused&&motion){
+  *motion=menu_motion;
   if(theme==VT_UI_THEME_GHOST_MESH||theme==VT_UI_THEME_RELAY||theme==VT_UI_THEME_MOSAIC){
-   UiThemeRect moving={(int)motion->x,(int)motion->y,(int)motion->width,(int)motion->height};corners(moving,VT_THEME_FOCUS);
+   UiThemeRect moving={(int)motion->x,(int)motion->y,(int)motion->width,(int)motion->height};
+   ui_theme_fx_focus(motion->x,motion->y,motion->width,motion->height);corners(moving,VT_THEME_FOCUS);
   }
   else ui_focus_outline_draw(motion);
  }
@@ -415,11 +429,13 @@ void ui_theme_home_heading(const char *title,const char *path,int bottom){
  else ui_text_line(l.x,y+27,l.w,path?path:"",VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  if(theme!=VT_UI_THEME_MOSAIC)vita2d_draw_rectangle(l.x,l.y-13,l.w,1,VT_THEME_BORDER);
  if(theme==VT_UI_THEME_RELAY){
+  vita2d_set_clip_rectangle(0,l.y-4,960,bottom);vita2d_enable_clipping();
   for(int i=1;i<4;i++){
    UiThemeRect a=ui_theme_home_item_rect(theme,i-1,bottom),b=ui_theme_home_item_rect(theme,i,bottom);
    float x=a.x+a.w*.5f,y=a.y+a.h*.5f,nx=b.x+b.w*.5f,ny=b.y+b.h*.5f;
    vita2d_draw_line(x,y,nx,y,VT_THEME_COLD);vita2d_draw_line(nx,y,nx,ny,VT_THEME_COLD);
   }
+  vita2d_disable_clipping();
  }
  if(theme==VT_UI_THEME_SIGNAL){
   /* Parallel edges and constant thickness: an intentional diagonal, no stair gaps. */
@@ -430,10 +446,10 @@ static void theme_home_row(int slot,int ordinal,const char *name,const char *det
  int theme=ui_theme_id();UiThemeRect r=ui_theme_home_item_rect(theme,slot,bottom);
  if(r.h>80){ui_theme_browser_tile(UI_SCENE_HOME,r,slot,selected&&focused,art,name,detail,!placeholder||!strcmp(placeholder,"DIR"));return;}
  unsigned fg=VT_THEME_TEXT,muted=VT_THEME_TEXT_MUTED;
- unsigned fill=selected&&focused?(theme==VT_UI_THEME_DECK_90?VT_THEME_SIGNAL_BRIGHT:theme==VT_UI_THEME_SIGNAL?VT_THEME_TEXT:VT_THEME_SURFACE_RAISED):VT_THEME_SURFACE;
+ unsigned fill=selected&&focused?(theme==VT_UI_THEME_SIGNAL?VT_THEME_TEXT:VT_THEME_SURFACE_RAISED):VT_THEME_SURFACE;
  ui_theme_scene_card(UI_SCENE_HOME,r,selected&&focused,slot);
  ui_theme_fx_surface(r.x+4,r.y+3,r.w-8,r.h-6,fill,selected&&focused);
- if(selected&&focused&&(theme==VT_UI_THEME_DECK_90||theme==VT_UI_THEME_SIGNAL))fg=muted=VT_THEME_BG;
+ if(selected&&focused&&theme==VT_UI_THEME_SIGNAL)fg=muted=VT_THEME_BG;
  int inset=theme==VT_UI_THEME_SIGNAL?48:14;
  if(theme==VT_UI_THEME_SIGNAL&&!placeholder){char n[16];snprintf(n,sizeof(n),"%02d",ordinal+1);
   ui_text_line(r.x+8,r.y+32,38,n,selected&&focused?fg:VT_THEME_SIGNAL_BRIGHT,UI_FONT_BODY);}
@@ -463,7 +479,7 @@ void ui_theme_home_position(int selected,int count,int bottom){
  if(theme<VT_UI_THEME_APERTURE||count<=0)return;
  char text[40];snprintf(text,sizeof(text),"%d / %d",selected+1,count);
  int y=bottom-10;
- if(theme==VT_UI_THEME_APERTURE){UiThemeRect r=ui_theme_home_item_rect(theme,0,bottom);y=r.y+r.h-22;}
+ if(theme==VT_UI_THEME_APERTURE){UiThemeHomeLayout l=ui_theme_home_layout(theme,bottom);y=l.y+l.step-30;}
  ui_text_line(822,y,94,text,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 }
 void ui_theme_home_service(int slot,int bottom,int service){

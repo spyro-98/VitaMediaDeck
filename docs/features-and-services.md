@@ -1,6 +1,19 @@
 # Feature roadmap and service feasibility
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Service research reviewed 6 September 2026. The wider roadmap below remains proposals, not a release commitment. No Apple/Spotify account integration has been implemented. Current implementation and validation status are maintained in [Online audio](online-audio-preview.md).
+
+## 1.4.1 implementation delta
+
+Navidrome music and Immich photo services are implemented with dedicated L1
+sections, configuration, cached artwork and media viewing/playback. Seven
+themes, continuous page/menu motion and themed QR/editor/log/loading screens
+are standard; these are no longer design proposals. See
+[personal media](personal-media-2026-10-23.md),
+[screen coverage](theme-coverage-2026-10-23.md) and
+[1.4.1 release scope](releases/1.4.1.md). The provider research below retains
+its original date and does not add Apple Music/Spotify account playback.
 
 ## Integrated implementation
 

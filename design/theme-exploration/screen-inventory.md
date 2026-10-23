@@ -1,5 +1,7 @@
 # Draft coverage and source map
 
+> Historical design/research evidence. Current release: [1.4.1](../../docs/releases/1.4.1.md); current checks: [validation](../../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 The atlas contains 58 initial page/state compositions, repeated across three directions. Families share primitives intentionally; this is not a claim to have captured every runtime branch, provider response, localization or system IME state.
 
 | Drafts | Family | Current app source / behavior reference |

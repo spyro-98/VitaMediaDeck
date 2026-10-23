@@ -1,5 +1,7 @@
 # Regressioni di riproduzione dopo le prove Vita
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 I test includono i veri `media_tracks.c` e `vita_decoder.c` e i due header
 `input_timing.h` usati dai pacchetti. I worker SceKernel sono sostituiti con
 pthread host; FFmpeg e la versione 6 fissata dal progetto. Nessuna prova esegue

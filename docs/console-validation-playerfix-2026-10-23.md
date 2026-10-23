@@ -1,5 +1,7 @@
 # Verifica dei test PlayerFix sulla console — 23 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 L'utente ha completato le prove e conferma che i difetti visibili precedentemente
 segnalati non si presentano più. Questo rapporto aggiunge la verifica dei tre log
 recuperati dalla console, senza equipararla a una misura elettrica o a un benchmark

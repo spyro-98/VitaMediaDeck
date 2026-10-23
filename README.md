@@ -31,12 +31,22 @@ The [latest interface revision](docs/theme-chrome-2026-10-23.md) adds GPU MSAA 2
 per-theme status chrome and command decks, more Legacy group spacing, and
 independently saved Home tab positions for each theme.
 
-## Current version: 1.4.0
+The [continuous page-motion revision](docs/theme-motion-2026-10-23.md) adds
+coherent list transitions, persistent menu focus and effects specific to each
+of the seven themes. This work and the
+[utility-screen theme coverage](docs/theme-coverage-2026-10-23.md) are integrated
+in standard 1.4.1. Console animation/performance acceptance remains distinct
+from host rendering checks.
 
-Standard build: **VitaMediaDeck**, Vita `APP_VER` **01.04**, title ID
+## Current version: 1.4.1
+
+Standard build: **VitaMediaDeck**, Vita `APP_VER` **01.05**, title ID
 `VMDK00001`. Includes the updated seven themes, personal-media services,
-cached browsing, decoder improvements and the MP4/subtitle seek fixes.
-See [1.4.0 release notes and validation](docs/releases/1.4.0.md).
+cached browsing, decoder improvements and the MP4/subtitle seek fixes. This
+patch integrates continuous list/menu motion, theme-specific focus effects,
+QR/editor/loading coverage, badge contrast and cached destination enumeration.
+See [1.4.1 release notes and validation](docs/releases/1.4.1.md),
+[documentation index](docs/README.md) and [validation guide](docs/VALIDATION.md).
 The local package is separate from publication of a GitHub release.
 
 The integrated development baseline adds live MP3 radio, public podcast
@@ -54,13 +64,15 @@ has an Online favourites column and an Offline folder-navigation column.
 See [online audio and navigation](docs/online-audio-preview.md) for supported
 formats, controls, limits and validation status.
 See the [22 October quality review and Vita checklist](docs/quality-audit-2026-10-22.md)
-for the latest host checks, fixes and remaining console acceptance tests.
+for that historical host-check snapshot. The current
+[validation guide](docs/VALIDATION.md) separates release checks from remaining
+console acceptance tests.
 Subsequent console-feedback fixes and four targeted Vita checks are documented
 in [Home, thumbnails, image controls and seek](docs/ui-feedback-2026-10-22.md).
 The [visual research and grid correction](docs/ui-style-research-2026-10-22.md)
 compares new interface directions and records the equal-row layout checks.
 Seven [native themes and shared navigation](docs/themes-navigation-2026-10-23.md) are available in Settings → Interface → Theme:
-Legacy (the unchanged default), Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic.
+Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic.
 Ghost Mesh uses the right stick for its wheel and the left stick/D-pad for content;
 non-Legacy themes retain their own shell in radio, podcasts and discovery.
 
@@ -122,7 +134,7 @@ panels. Home still shows favourites rather than discovery controls. Flags are
 stored in one indexed resource instead of 255 separate VPK entries to reduce
 installation filesystem overhead. See the [refinement checks and controls](docs/ui-refinement.md).
 
-## What's new in 1.2
+## Historical 1.2 milestone
 
 Release 1.2 expands the previous 1.0.2 public build from a local/network video
 player into a broader media library and download client:
@@ -145,7 +157,7 @@ player into a broader media library and download client:
 - UI fixes for network/download layouts, destination dialogs, player bitrate,
   music HUD toggling, startup placeholders, and the top-bar loading indicator.
 
-The **Spectral Reassembly** interface combines pitch-black OLED fields,
+The Legacy **Spectral Reassembly** interface combines pitch-black OLED fields,
 spectral-cyan controls, cold blue/teal atmosphere, restrained amber telemetry,
 particle clouds, and scan traces. Its visual and multilingual typography
 contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
@@ -184,9 +196,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
   selected cell and visible rows take priority over one speculative next row.
   Video covers include a persistent watched percentage rail for local files and
   remote server items.
-- A bounded full-screen image viewer with drag/pinch/twist gestures, L1/R1 zoom,
-  inverted left-stick/D-pad panning, right-stick rotation, and byte-scaled file
-  size telemetry.
+- A bounded full-screen image viewer with drag/pinch gestures, Triangle/Cross
+  zoom, Square rotation in 90-degree steps, bounded left-stick/D-pad panning,
+  Start reset and byte-scaled file-size telemetry. L1/R1 open panels.
 - Native Jellyfin library browsing with memory-only access tokens, server
   posters, rich item records, and seekable direct play over HTTPS or explicitly
   selected LAN HTTP. Detail records include synopsis, original/series title,
@@ -197,8 +209,9 @@ contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 - Download any selected file from those authenticated servers, or paste/scan
   an HTTP(S) resource URL from the web or local network. Choose any local
   destination folder (and create one when needed); the transfer view provides
-  live progress plus Pause/Resume and Abort. Interrupted downloads remain
-  `.part` files and are never presented as complete media.
+  live progress plus Pause/Resume and Abort. Active transfers use
+  `.part` files; successful completion renames atomically, while handled aborts
+  and failures remove the partial file. A crash may leave an incomplete `.part`.
 - Hardware-first H.264 playback with an automatic CPU/FFmpeg fallback. When
   the global decoder preference is `AUTO`, the player right drawer can switch
   the current session between HW and SW at the same playback position.
@@ -323,7 +336,7 @@ explicitly selected by the user.
 | --- | --- | --- | --- |
 | D-pad / left stick | Move focus | Seek | Navigate/seek |
 | Cross | Open/confirm | Pause/resume | Pause/resume |
-| Circle | Back | Stop | Back/minimize |
+| Circle | Back | Stop | Stop |
 | L1 | Sections | Sections | Sections |
 | R1 | Actions / view | Playback and tracks | Playback options |
 | Right stick | — | Volume | Volume |
@@ -363,7 +376,11 @@ export PATH="$VITASDK/bin:$PATH"
 ./tools/prepare-stb-image.sh
 ./tools/prepare-release-licenses.sh
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DVITAMEDIADECK_TEST_ID= \
+  -DVITAMEDIADECK_VIDEO_CLOCK_PROFILE=performance \
+  -DVITA_SW_DECODER_PLANAR_UPLOAD=OFF \
+  -DVITA_HW_DECODER_CPU_THREADS=3 -DVITA_SW_DECODER_CPU_THREADS=3
 cmake --build build --parallel
 unzip -t build/VitaMediaDeck.vpk
 ```
@@ -412,6 +429,10 @@ SMB test-server instructions are in
 
 ## Documentation
 
+- [Complete documentation index and current/historical scope](docs/README.md)
+- [1.4.1 release notes](docs/releases/1.4.1.md)
+- [Reproducible validation and console checklist](docs/VALIDATION.md)
+
 - [Project specification](mds/PROJECT_SPECIFICATION.md)
 - [Package integration](mds/PACKAGE_INTEGRATION.md)
 - [Controls](mds/CONTROLS.md)
@@ -429,3 +450,7 @@ VitaMediaDeck is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE) and
 
 VitaMediaDeck is an independent homebrew project. PlayStation, PS Vita, Sony,
 and their related marks belong to their respective owners.
+
+Theme coverage of QR, text input, logs and messages is recorded in
+[the screen inventory](docs/theme-coverage-2026-10-23.md); reproduce it with
+`bash tests/ui_coverage/run-host-tests.sh`. The keyboard keys remain Vita OS UI.

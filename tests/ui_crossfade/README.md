@@ -1,5 +1,7 @@
 # Crossfade native layout checks
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 Run `bash tests/ui_crossfade/run-host-tests.sh` from the repository.
 
 The harness uses the production components, focus, settings, controls guide,
@@ -37,3 +39,12 @@ checks the worker's typed counts, large file totals and representative artwork.
 `run-theme-flows.sh` also runs held-worker transition tests: leaving never
 joins unfinished I/O, stale replies cannot replace the new list, failed refresh
 keeps cached data, and every compact media row requests its thumbnail.
+
+## Continuous page transitions
+
+`run-host-tests.sh` also runs `page_motion_test.c` against the production physics.
+`run-motion.sh` renders browser/Home reference frames for all seven themes with
+rapid reversals, cache append and touch during command-deck motion. It checks
+bounded overscan, shared transforms and non-overlapping hit regions. Set
+`VMD_MOTION_OUTPUT` to choose its output directory. These are synthetic host
+fixtures, not Vita GPU timing or screenshots.

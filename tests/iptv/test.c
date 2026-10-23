@@ -230,7 +230,7 @@ static void http_tests(void) {
     unsigned char *data;size_t size;char effective[2048];volatile int cancel=0;
     CHECK(!vt_iptv_http_fetch(NULL,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));
     CHECK(size==strlen(media)&&strstr(effective,"/final/"));free(data);
-    CHECK(!strcmp(http_agent,"VitaMediaDeck/1.4.0"));
+    CHECK(!strcmp(http_agent,"VitaMediaDeck/1.4.1"));
     VtIptvHttpOptions options={.user_agent="HbbTV/1.6.1"};
     CHECK(!vt_iptv_http_fetch(&options,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));free(data);
     CHECK(!strcmp(http_agent,"HbbTV/1.6.1"));

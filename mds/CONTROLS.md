@@ -30,7 +30,7 @@ its preview/content split; Up enters content. X enters content in all themes.
 Legacy retains its original compact carousel and radio/podcast tabs. Playback
 controls below are independent of the Home theme.
 
-## Radio, podcasts and IPTV (1.3.0 preview)
+## Radio, podcasts and IPTV
 
 Home Radio and Podcast contain favourites; use **L1 → Radio/Podcast** for
 discovery. **R1 → Options** provides relevant search, catalogue, URL, save,
@@ -71,7 +71,7 @@ fixed-size previews, so scrolling never synchronously loads viewer-sized images.
 | Circle | Return. |
 
 The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
-`uma0:`. It defaults to a four-column grid inspired by Finder's icon view.
+`uma0:`. Grid/list geometry follows the chosen theme and each saved view mode.
 
 | Input | Local folder browser behavior |
 | --- | --- |
@@ -86,12 +86,11 @@ The R1 panel also opens **Browse folders**, a direct browser for `ux0:` and
 | --- | --- |
 | One-finger drag | Pan the image. |
 | Two-finger pinch | Zoom around the gesture midpoint. |
-| Two-finger twist | Rotate continuously. |
-| D-pad / left stick | Pan in the inverted viewport direction. |
-| Right stick horizontally | Rotate continuously. |
-| Triangle / Square | Zoom in / out. |
-| L1 / R1 | Zoom out / in continuously. |
-| Cross | Reset fit, pan, and rotation. |
+| D-pad / left stick | Pan with bounded displacement; neutral stops movement. |
+| Triangle / Cross | Zoom in / out. |
+| Square | Rotate 90 degrees: 0, 90, 180, 270. |
+| L1 / R1 | Sections / image options. |
+| Start | Reset fit, pan and rotation. |
 | Circle | Close the image. |
 
 ## Network Sources
@@ -152,6 +151,7 @@ so this also works with opaque Jellyfin item identifiers.
 | Circle | Go up one folder; cancel at `ux0:`. The initial folder is `ux0:download`. |
 | Start during transfer | Pause or resume. |
 | Circle during transfer | Abort and remove the partial file. |
+| Cross on Background / L1 navigation | Continue browsing while the download runs. |
 
 ## Video player
 
@@ -264,3 +264,14 @@ Nei nuovi L1 a tre colonne, sinistra/destra cambia colonna quando non è
 abilitata la pagina di disposizione del player; in quel caso mantiene il
 passaggio fra Sezioni e Player. La Libreria elenca i servizi dopo i locali;
 Musica e Immagini tengono il rispettivo servizio in testa.
+
+## QR scanner and system keyboard
+
+Open QR from Network Download Tools or IPTV R1 Options. Aim a complete HTTP(S)
+QR at the rear camera; Circle or the touch Cancel button returns without changing
+the pending link. Unsupported payloads stay in the scanner with a translated
+status. All seven themes frame the same unobscured 444x444 preview.
+
+URL, search, username and password prompts use themed app chrome behind the
+native Vita IME. Key layout and native keyboard appearance belong to Vita OS.
+Reduced motion preserves static focus while freezing decorative animation.

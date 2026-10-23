@@ -1,4 +1,5 @@
 #include "ui/qr_scanner.h"
+#include "ui/qr_view.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -31,8 +32,8 @@
 /* The displayed guide and the decoder consume the exact same centre crop.
  * It makes a QR code physically larger for quirc than a 16:9 full-frame,
  * half-resolution feed. */
-#define QR_CAMERA_CROP_SIZE 480
-#define QR_CAMERA_CROP_X ((QR_CAMERA_WIDTH - QR_CAMERA_CROP_SIZE) / 2)
+#define QR_CAMERA_CROP_SIZE UI_QR_CAMERA_SIZE
+#define QR_CAMERA_CROP_X UI_QR_CAMERA_CROP_X
 #define QR_CAMERA_CROP_Y 0
 #define QR_DECODE_WIDTH QR_CAMERA_CROP_SIZE
 #define QR_DECODE_HEIGHT QR_CAMERA_CROP_SIZE
@@ -46,12 +47,6 @@
  * verbose per-frame telemetry in production builds. */
 #define QR_DEBUG_DIAGNOSTICS 0
 #define QR_DEBUG_LOG_INTERVAL 30
-
-/* The scan view deliberately fills the screen height.  The top bar yields to
- * the live image so a QR code can occupy enough real camera pixels. */
-#define QR_PREVIEW_X 18
-#define QR_PREVIEW_Y 62
-#define QR_PREVIEW_SIZE 444
 
 typedef struct QrDecodeWorker {
 	struct quirc *decoder;
@@ -403,55 +398,36 @@ static void report_decoder_diagnostics(const QrDecodeWorker *worker,
 	}
 }
 
-static const char *scanner_status(const QrDecodeWorker *worker) {
-	if (!worker) return "Starting QR decoder...";
-	if (worker->result) return "QR link recognized";
-	if (worker->rejection == 2) return "QR read: link is not HTTP or HTTPS";
-	if (worker->rejection == 1) return "QR read: unsupported link length";
-	if (worker->decode_error) return "QR candidate found: decoding...";
-	if (worker->candidates > 0) return "QR candidate found";
-	return "Searching for QR code...";
+static UiQrState scanner_state(const QrDecodeWorker *worker) {
+ if (!worker) return UI_QR_STARTING;
+ if (worker->result) return UI_QR_RECOGNIZED;
+ if (worker->rejection == 2) return UI_QR_INVALID_PROTOCOL;
+ if (worker->rejection == 1) return UI_QR_INVALID_LENGTH;
+ if (worker->decode_error) return UI_QR_DECODING;
+ if (worker->candidates > 0) return UI_QR_CANDIDATE;
+ return UI_QR_SEARCHING;
 }
 
 static void draw_scanner(vita2d_texture *preview, int has_preview,
-	                     const QrDecodeWorker *worker) {
-	vita2d_start_drawing();
-	vita2d_clear_screen();
-	ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);
-	ui_brand_draw_header_placeholder(NULL, "Scan QR");
-	ui_panel(QR_PREVIEW_X, QR_PREVIEW_Y, QR_PREVIEW_SIZE, QR_PREVIEW_SIZE,
-	         VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
-	if (has_preview && preview) {
-		vita2d_draw_texture_part_scale(preview, QR_PREVIEW_X, QR_PREVIEW_Y,
-		                              QR_CAMERA_CROP_X, QR_CAMERA_CROP_Y,
-		                              QR_CAMERA_CROP_SIZE, QR_CAMERA_CROP_SIZE,
-		                              (float)QR_PREVIEW_SIZE / QR_CAMERA_CROP_SIZE,
-		                              (float)QR_PREVIEW_SIZE / QR_CAMERA_CROP_SIZE);
-	} else {
-		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
-		if (body) ui_font_draw_text_centered(body, 240, 278, 420, VT_THEME_TEXT,
-		                                    UI_FONT_BODY, "Starting rear camera...");
-	}
-	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
-	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	if (body) ui_text_line(488, 154, 454, scanner_status(worker), VT_THEME_TEXT, UI_FONT_BODY);
-	if (small && worker) {
-		char progress[96];
-		snprintf(progress, sizeof(progress), "Frames %u submitted / %u analyzed",
-		         worker->submitted_frames, worker->analyzed_frames);
-		ui_text_line(488, 192, 454, progress, VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
-	}
-	ui_action_button(488, 454, 454, 52, VT_THEME_SURFACE_RAISED, "Circle",
-	                 vt_i18n_str(VT_STR_NETWORK_CANCEL), 0);
-	vita2d_end_drawing();
-	vita2d_wait_rendering_done();
-	vita2d_swap_buffers();
+                         const QrDecodeWorker *worker) {
+ UiQrStatus status={.state=scanner_state(worker)};
+ if(worker) {
+  status.submitted=worker->submitted_frames;
+  status.analyzed=worker->analyzed_frames;
+ }
+ vita2d_start_drawing();
+ vita2d_clear_screen();
+ ui_qr_view_draw(has_preview?preview:NULL,&status);
+ vita2d_end_drawing();
+ vita2d_wait_rendering_done();
+ vita2d_swap_buffers();
 }
 
 int ui_qr_scan_https_url(char *out, size_t out_size) {
 	if (!out || out_size < 2) return -1;
 	out[0] = '\0';
 	g_last_error[0] = '\0';
+	draw_scanner(NULL, 0, NULL);
 	vita2d_texture *preview = NULL;
 	QrDecodeWorker *worker = NULL;
 	int camera_open = 0;
@@ -553,7 +529,7 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 		UiTouchEvent touch;
 		unsigned touch_flags=ui_touch_poll(&touch);
 		if((touch_flags&UI_TOUCH_EVENT_TAP) &&
-		   ui_touch_hit_rect(touch.x,touch.y,488,454,454,52))pressed|=SCE_CTRL_CIRCLE;
+		   ui_touch_hit_rect(touch.x,touch.y,UI_QR_CANCEL_X,UI_QR_CANCEL_Y,UI_QR_CANCEL_W,UI_QR_CANCEL_H))pressed|=SCE_CTRL_CIRCLE;
 		if (pressed & SCE_CTRL_CIRCLE) { result = 0; break; }
 		/* The worker publishes result with a barrier. Check it before another
 		 * blocking camera read, so a successful decode cannot be delayed or

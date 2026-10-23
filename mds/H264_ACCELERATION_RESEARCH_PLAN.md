@@ -1,5 +1,7 @@
 # H.264 acceleration: design and outcome
 
+> Historical design/research evidence. Current release: [1.4.1](../docs/releases/1.4.1.md); current checks: [validation](../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 ## Outcome
 
 VitaMediaDeck uses the complete public `h264_vita` backend carried by wiliwili's

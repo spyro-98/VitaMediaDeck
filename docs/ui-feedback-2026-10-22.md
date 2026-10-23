@@ -1,5 +1,7 @@
 # Correzioni dal feedback console — 22 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Pacchetto: `build/ui-fixes-20261022/VitaMediaDeck.vpk`.
 SHA-256: `0d82faeaed1d968f48b90f2579932c3ae137d5d728dc2809eda40c59eb46fe3a`.
 

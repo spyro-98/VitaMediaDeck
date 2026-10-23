@@ -23,8 +23,8 @@ int main(void){
  reduced=1;now++;ui_focus_motion_tick(&m,18,62,166,40);assert(m.x==18&&m.height==40);
  reduced=0;now+=1000000;ui_focus_motion_tick(&m,14,177,396,79);assert(m.x==14&&m.y==177);
  now=0;ui_focus_motion_tick(&m,50,50,50,50);assert(m.x==50);
- ui_focus_outline_draw(&m);assert(draws==4);
- ui_focus_motion_reset(&m);ui_focus_outline_draw(&m);assert(draws==4);
+ ui_focus_outline_draw(&m);assert(draws==14);
+ ui_focus_motion_reset(&m);ui_focus_outline_draw(&m);assert(draws==14);
  for(int top=62;top<=118;top+=4)for(int bottom=448;bottom<=544;bottom++) {
   UiMediaGridLayout g=ui_media_grid_layout(top,bottom);
   assert(g.rows==2&&g.card_h>=120&&g.thumb_h>0);
@@ -43,5 +43,5 @@ int main(void){
   if(cover&&mode==VT_AUDIO_LAYOUT_LEFT)assert(l.cover_x+l.cover_size<l.text_x);
   if(cover&&mode==VT_AUDIO_LAYOUT_RIGHT)assert(l.text_x+l.text_width<l.cover_x);
  }
- puts("Crossfade focus: finite settling, rapid retarget, reduced motion, resume, four-draw budget unclipped grid borders, equal rows and audio geometry passed");
+ puts("Crossfade focus: finite settling, rapid retarget, reduced motion, resume, bounded glow budget unclipped grid borders, equal rows and audio geometry passed");
 }

@@ -356,6 +356,13 @@ static void draw_summary_row(vita2d_font *font, const char *label,
 	                  UI_FONT_SMALL, fitted);
 }
 
+static UiPageView sources_page(int top,int count) {
+ return ui_theme_page(UI_SCENE_SOURCES,"servers","saved",top,count,1,source_render_rows(),SOURCE_ROW_H);
+}
+static UiThemeRect sources_item_rect(int index,int top) {
+ return ui_theme_page_rect(UI_SCENE_SOURCES,(UiThemeRect){SOURCE_LIST_X,
+  SOURCE_LIST_Y+(index-top)*SOURCE_ROW_H,SOURCE_LIST_W,SOURCE_ROW_H-8});
+}
 static void draw_sources(const VtNetworkSource *sources, int count,
 	                     int selected, int top, int remove_confirm,
 	                     UiFocusMotion *focus_motion,
@@ -399,9 +406,10 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		int viewport_bottom = network_viewport_bottom();
 		vita2d_set_clip_rectangle(0, SOURCE_LIST_Y, 628, viewport_bottom);
 		vita2d_enable_clipping();
-		for (int i = top; i < count && i < top + source_render_rows(); i++) {
-			int y = SOURCE_LIST_Y + (i - top) * SOURCE_ROW_H;
-			ui_panel(SOURCE_LIST_X, y, SOURCE_LIST_W, SOURCE_ROW_H - 8,
+        UiPageView page=sources_page(top,count);
+        for(int i=page.first;i<page.end;i++) {
+            UiThemeRect rect=sources_item_rect(i,top);int y=rect.y;
+			ui_panel(rect.x, y, SOURCE_LIST_W, SOURCE_ROW_H - 8,
 			         VT_THEME_SURFACE,
 			         sources[i].protocol == VT_NETWORK_SFTP ? VT_THEME_BLUE_LIGHT
 			         : sources[i].protocol == VT_NETWORK_JELLYFIN ? VT_THEME_COLD
@@ -410,7 +418,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			if (body) {
 				char name[128];
 				clip(body, UI_FONT_BODY, sources[i].name, name, sizeof(name), 410);
-				ui_font_draw_text(body, SOURCE_LIST_X + 22, y + 23,
+				ui_font_draw_text(body, rect.x + 22, y + 23,
 				                  VT_THEME_TEXT, UI_FONT_BODY, name);
 			}
 			if (small) {
@@ -421,9 +429,9 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 				char fitted_endpoint[192];
 				clip(small, UI_FONT_SMALL, endpoint, fitted_endpoint,
 				     sizeof(fitted_endpoint), SOURCE_LIST_W - width - 76);
-				ui_font_draw_text(small, SOURCE_LIST_X + 22, y + 44,
+				ui_font_draw_text(small, rect.x + 22, y + 44,
 				                  VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted_endpoint);
-				ui_font_draw_text(small, SOURCE_LIST_X + SOURCE_LIST_W - width - 18,
+				ui_font_draw_text(small, rect.x + SOURCE_LIST_W - width - 18,
 				                  y + 32, VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, protocol);
 			}
 		}
@@ -462,6 +470,11 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		ui_action_button(642, 466, 272, 38, VT_THEME_SURFACE_RAISED,
 		                 "Triangle", vt_i18n_str(VT_STR_NETWORK_EDIT), 0);
 	}
+    if(page_has_focus&&count&&focus_motion){
+        UiThemeRect rect=sources_item_rect(selected,top);
+        ui_focus_motion_tick(focus_motion,rect.x,rect.y,rect.w,rect.h);
+    }
+    ui_theme_page_finish(UI_SCENE_SOURCES,SOURCE_LIST_X,SOURCE_LIST_Y,SOURCE_LIST_W,network_viewport_bottom());
 	if(page_has_focus && count && focus_motion) ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,sceKernelGetProcessTimeWide(),SOURCE_LIST_Y,network_viewport_bottom());
 	/* Persistent playback stays below every modal layer. */
 	ui_mini_player_draw();
@@ -778,6 +791,23 @@ static int show_jellyfin_metadata(const VtNetworkSource *source,
 	}
 }
 
+static UiPageView remote_page(const VtNetworkSource *source,const char *path,int top,int count,int grid) {
+    int columns=grid?BROWSER_GRID_COLS:1;
+    UiThemeHomeLayout layout=ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),grid);
+    int slots=ui_theme_id()==VT_UI_THEME_LEGACY?(grid?browser_grid_render_rows()*columns:render_rows()):layout.rows;
+    float step=ui_theme_id()==VT_UI_THEME_LEGACY?(grid?BROWSER_GRID_CARD_H+BROWSER_GRID_GAP_Y:ROW_H):layout.step;
+    return ui_theme_page(UI_SCENE_BROWSER,source->host,path,grid?top*columns:top,count,columns,slots,step);
+}
+static UiThemeRect remote_item_rect(int index,int top,int grid) {
+    int columns=grid?BROWSER_GRID_COLS:1,first=grid?top*columns:top;
+    if(ui_theme_id()!=VT_UI_THEME_LEGACY)
+        return ui_theme_browser_rect(ui_theme_id(),index-first,network_viewport_bottom(),grid);
+    UiThemeRect r=grid?(UiThemeRect){LIST_X+index%columns*(BROWSER_GRID_CARD_W+BROWSER_GRID_GAP_X),
+        LIST_Y+(index/columns-top)*(BROWSER_GRID_CARD_H+BROWSER_GRID_GAP_Y),BROWSER_GRID_CARD_W,BROWSER_GRID_CARD_H}:
+        (UiThemeRect){LIST_X,LIST_Y+(index-top)*ROW_H,LIST_W,ROW_H-6};
+    return ui_theme_page_rect(UI_SCENE_BROWSER,r);
+}
+
 static void draw_browser(const VtNetworkSource *source, const char *path,
 	                     const VtNetworkCredential *credential,
 	                     const VtNetworkEntry *entries, int count,
@@ -820,6 +850,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		ui_font_draw_text(small, LIST_X + LIST_W - hint_width - 18, 91,
 		                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, hint);
 	}
+    UiPageView page=remote_page(source,path,top,count,grid_mode);
 	if (!count) {
 		ui_panel(220, 202, 520, 132, VT_THEME_SURFACE,
 		         VT_THEME_BLUE_LIGHT, 0);
@@ -832,8 +863,8 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
   int bottom=network_viewport_bottom();UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),bottom,grid_mode);
   int first=grid_mode?top*l.columns:top;
   vita2d_set_clip_rectangle(0,LIST_Y,960,bottom);vita2d_enable_clipping();
-  for(int slot=0;slot<l.rows&&first+slot<count;slot++) {
-   int i=first+slot;const VtNetworkEntry *entry=&entries[i];
+  for(int i=page.first;i<page.end;i++) {
+   int slot=i-first;const VtNetworkEntry *entry=&entries[i];
    vita2d_texture *preview=(entry->is_video||entry->is_audio||entry->is_image)?
       vt_video_thumbnail_get_remote_priority(source,credential,entry->path,entry->size,
         thumbnail_viewport_priority(i,selected,first,first+l.rows)):NULL;
@@ -843,12 +874,13 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
   }
   vita2d_disable_clipping();
 	} else if (!grid_mode) {
+        int list_x=LIST_X+(int)roundf(page.dx);
 		int viewport_bottom = network_viewport_bottom();
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int visible_limit = top + visible_rows();
-		for (int i = top; i < count && i < top + render_rows(); i++) {
-			int y = LIST_Y + (i - top) * ROW_H;
+		for (int i = page.first; i < page.end; i++) {
+			int y = LIST_Y + (i - top) * ROW_H + (int)roundf(page.dy);
 			const VtNetworkEntry *entry = &entries[i];
 			vita2d_texture *preview = (entry->is_video || entry->is_audio || entry->is_image)
 			                        ? vt_video_thumbnail_get_remote_priority(
@@ -856,24 +888,24 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			                              thumbnail_viewport_priority(
 			                                  i, selected, top, visible_limit))
 			                        : NULL;
-			ui_panel(LIST_X, y, LIST_W, ROW_H - 6,
+			ui_panel(list_x, y, LIST_W, ROW_H - 6,
 			         VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
 			         : (entry->is_video || entry->is_audio || entry->is_image)
 			             ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER,
 			         0);
 			if (preview) {
-				vita2d_draw_rectangle(LIST_X + 9, y + 6, 70, 40,
+				vita2d_draw_rectangle(list_x + 9, y + 6, 70, 40,
 				                      VT_THEME_MEDIA_BACKDROP);
-				draw_video_preview(preview, LIST_X + 9, y + 6, 70, 40);
-				vita2d_draw_rectangle(LIST_X + 9, y + 44, 70, 2,
+				draw_video_preview(preview, list_x + 9, y + 6, 70, 40);
+				vita2d_draw_rectangle(list_x + 9, y + 44, 70, 2,
 				                      VT_THEME_COLD);
 			}
 			if (body) {
 				char title[192];
 				clip(body, UI_FONT_BODY, personal_entry_title(source,entry), title, sizeof(title),
 				     preview ? 520 : 600);
-				ui_font_draw_text(body, LIST_X + (preview ? 94 : 22), y + 33,
+				ui_font_draw_text(body, list_x + (preview ? 94 : 22), y + 33,
 				                  VT_THEME_TEXT,
 				                  UI_FONT_BODY, title);
 			}
@@ -881,7 +913,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 				char detail[64];
 				format_browser_entry_detail(source, entry, detail, sizeof(detail));
 				int width = ui_font_text_width(small, UI_FONT_SMALL, detail);
-				ui_font_draw_text(small, LIST_X + LIST_W - width - 18, y + 31,
+				ui_font_draw_text(small, list_x + LIST_W - width - 18, y + 31,
 				                  VT_THEME_TEXT_MUTED, UI_FONT_SMALL, detail);
 			}
 		}
@@ -891,14 +923,13 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int first = top * BROWSER_GRID_COLS;
-		int limit = (top + browser_grid_render_rows()) * BROWSER_GRID_COLS;
 		int visible_limit =
 		    (top + browser_grid_visible_rows()) * BROWSER_GRID_COLS;
-		for (int i = first; i < count && i < limit; i++) {
+		for (int i = page.first; i < page.end; i++) {
 			int col = i % BROWSER_GRID_COLS;
 			int row = i / BROWSER_GRID_COLS - top;
-			int x = LIST_X + col * (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X);
-			int y = LIST_Y + row * (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y);
+			int x = LIST_X + col * (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X) + (int)roundf(page.dx);
+			int y = LIST_Y + row * (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y) + (int)roundf(page.dy);
 			const VtNetworkEntry *entry = &entries[i];
 			vita2d_texture *preview = (entry->is_video || entry->is_audio || entry->is_image)
 			                        ? vt_video_thumbnail_get_remote_priority(
@@ -945,6 +976,11 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		}
 		vita2d_disable_clipping();
 	}
+    ui_theme_page_finish(UI_SCENE_BROWSER,LIST_X,LIST_Y,LIST_W,network_viewport_bottom());
+    if(count && !right_open) {
+        UiThemeRect r=remote_item_rect(selected,top,grid_mode);
+        ui_focus_motion_tick(focus_motion,r.x,r.y,r.w,r.h);
+    }
 	if(count && focus_motion && !right_open && !ui_mini_player_input_locked() &&
      (!sidebar || (!sidebar->open && sidebar->animation<=.01f)))
   ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,
@@ -1741,7 +1777,6 @@ static int browse_source(const VtNetworkSource *source,
 				grid_mode = !grid_mode;
 				vt_preferences_set_file_browser_grid(grid_mode);
 				top = 0;
-				ui_focus_motion_reset(&focus_motion);
 			}
 			if (right_cursor == 1 && (pressed & SCE_CTRL_CROSS)) {
 				right_open = 0;
@@ -1777,24 +1812,14 @@ static int browse_source(const VtNetworkSource *source,
 			if (selected >= count) selected = count - 1;
 		}
 		ui_theme_scene_begin(UI_SCENE_BROWSER,path);
-		if ((touch_flags & UI_TOUCH_EVENT_TAP) && count > 0) {
-			int slots = grid_mode ? browser_grid_render_rows() * BROWSER_GRID_COLS
-			                      : render_rows();
-			int first = grid_mode ? top * BROWSER_GRID_COLS : top;
-			for (int slot = 0; slot < slots && first + slot < count; slot++) {
-				int hit = grid_mode
-				        ? ui_touch_hit_rect(touch.x, touch.y,
-				              LIST_X + (slot % BROWSER_GRID_COLS) *
-				                       (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X),
-				              LIST_Y + (slot / BROWSER_GRID_COLS) *
-				                       (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y),
-				              BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H)
-				        : ui_touch_hit_rect(touch.x, touch.y, LIST_X,
-				              LIST_Y + slot * ROW_H, LIST_W, ROW_H - 6);
-				if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeRect rr=ui_theme_browser_rect(ui_theme_id(),slot,network_viewport_bottom(),grid_mode);hit=ui_touch_hit_rect(touch.x,touch.y,rr.x,rr.y,rr.w,rr.h);}
+		if ((touch_flags & UI_TOUCH_EVENT_TAP) && count && touch.y>=LIST_Y && touch.y<network_viewport_bottom()) {
+			UiPageView visible=remote_page(source,path,top,count,grid_mode);
+            for (int i=visible.first;i<visible.end;i++) {
+                UiThemeRect r=remote_item_rect(i,top,grid_mode);
+                int hit=ui_touch_hit_rect(touch.x,touch.y,r.x,r.y,r.w,r.h);
 				if (!hit)
 					continue;
-				selected = first + slot;
+				selected = i;
 				pressed |= SCE_CTRL_CROSS;
 				break;
 			}
@@ -1819,7 +1844,6 @@ static int browse_source(const VtNetworkSource *source,
 				metadata_path[0] = '\0';
 				vt_video_thumbnail_suspend();
 				vt_video_thumbnail_resume();
-				ui_focus_motion_reset(&focus_motion);
 			}
 			network_resync_input(&previous, &nav_repeat);
 			continue;
@@ -1853,29 +1877,13 @@ static int browse_source(const VtNetworkSource *source,
 			if (row < top) top = row;
 			if (row >= top + browser_grid_visible_rows())
 				top = row - browser_grid_visible_rows() + 1;
-			if (count > 0 && ui_theme_id()==VT_UI_THEME_LEGACY) {
-				int column = selected % BROWSER_GRID_COLS;
-				ui_focus_motion_tick(
-				    &focus_motion,
-				    LIST_X + column * (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X),
-				    LIST_Y + (row - top) * (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y),
-				    BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H);
-			}
 		} else {
 			if ((nav & SCE_CTRL_UP) && selected > 0) selected--;
 			if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
 			if (selected < top) top = selected;
 			if (selected >= top + visible_rows()) top = selected - visible_rows() + 1;
-			if (count > 0 && ui_theme_id()==VT_UI_THEME_LEGACY)
-				ui_focus_motion_tick(&focus_motion, LIST_X,
-				                     LIST_Y + (selected - top) * ROW_H,
-				                     LIST_W, ROW_H - 6);
 		}
-		if(count>0 && ui_theme_id()!=VT_UI_THEME_LEGACY){
-            int first=grid_mode?top*BROWSER_GRID_COLS:top;
-            UiThemeRect rr=ui_theme_browser_rect(ui_theme_id(),selected-first,network_viewport_bottom(),grid_mode);
-            ui_focus_motion_tick(&focus_motion,rr.x,rr.y,rr.w,rr.h);
-        }
+
 		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
 			VtNetworkEntry *entry = &entries[selected];
 			if (entry->is_directory) {
@@ -2154,16 +2162,13 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				if (selected >= count) selected = count - 1;
 			}
 					if ((touch_flags & UI_TOUCH_EVENT_TAP) && count > 0) {
-				for (int slot = 0; slot < source_render_rows() &&
-				                       top + slot < count; slot++) {
-					if (!ui_touch_hit_rect(touch.x, touch.y, SOURCE_LIST_X,
-					                       SOURCE_LIST_Y + slot * SOURCE_ROW_H,
-					                       SOURCE_LIST_W, SOURCE_ROW_H - 8))
-						continue;
-					selected = top + slot;
-					pressed |= SCE_CTRL_CROSS;
-					break;
-				}
+                UiPageView page=sources_page(top,count);
+                for(int index=page.first;index<page.end;index++) {
+                    UiThemeRect rect=sources_item_rect(index,top);
+                    if(touch.y<SOURCE_LIST_Y||touch.y>=network_viewport_bottom()||
+                       !ui_touch_hit_rect(touch.x,touch.y,rect.x,rect.y,rect.w,rect.h))continue;
+                    selected=index;pressed|=SCE_CTRL_CROSS;break;
+                }
 				if (ui_touch_hit_rect(touch.x, touch.y, 642, 420, 272, 38))
 					pressed |= SCE_CTRL_CROSS;
 				if (ui_touch_hit_rect(touch.x, touch.y, 642, 466, 272, 38))
@@ -2177,10 +2182,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 			if (selected < top) top = selected;
 			if (selected >= top + source_visible_rows())
 				top = selected - source_visible_rows() + 1;
-			if (count > 0)
-				ui_focus_motion_tick(&focus_motion, SOURCE_LIST_X,
-				                     SOURCE_LIST_Y + (selected - top) * SOURCE_ROW_H,
-				                     SOURCE_LIST_W, SOURCE_ROW_H - 8);
+
 			if (pressed & SCE_CTRL_START) {
 				int download_result = download_direct_url(NULL);
 				if (download_result >= UI_LOADING_DOWNLOAD_SECTION_BASE)

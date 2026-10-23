@@ -20,6 +20,7 @@
 #include "ui/sections_sidebar.h"
 #include "ui/text_input.h"
 #include "ui/theme.h"
+#include "ui/theme_scene.h"
 #include "ui/touch.h"
 #define DESTINATION_MAX_FOLDERS 96
 
@@ -57,6 +58,13 @@ static int destination_read_folders(const char *path,
 	return count;
 }
 
+static UiPageView destination_page(const char *path,int top,int count) {
+ return ui_theme_page(UI_SCENE_PICKER,"destination",path,top,count,1,DESTINATION_ROWS,DESTINATION_STEP);
+}
+static UiThemeRect destination_item_rect(int index,int top) {
+ return ui_theme_page_rect(UI_SCENE_PICKER,(UiThemeRect){UI_CONTENT_X,
+  DESTINATION_Y+(index-top)*DESTINATION_STEP,UI_CONTENT_W,54});
+}
 static void draw_destination_picker(const char *path, char names[][128],
 	                                int count, int selected, int top, UiFocusMotion *motion) {
 	vita2d_start_drawing();
@@ -84,19 +92,23 @@ static void draw_destination_picker(const char *path, char names[][128],
 		if (body) ui_font_draw_text(body, 94, 232, VT_THEME_TEXT, UI_FONT_BODY,
 		                             vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
 	} else {
-		for (int i = top; i < count && i < top + DESTINATION_ROWS; i++) {
-			int y = DESTINATION_Y + (i - top) * DESTINATION_STEP;
+        UiPageView page=destination_page(path,top,count);
+        vita2d_set_clip_rectangle(0,DESTINATION_Y-4,960,484);vita2d_enable_clipping();
+        for (int i=page.first;i<page.end;i++) {
+            UiThemeRect rect=destination_item_rect(i,top);int y=rect.y;
 			int focused = i == selected;
-			ui_panel(UI_CONTENT_X, y, UI_CONTENT_W, 54,
+			ui_panel(rect.x, y, UI_CONTENT_W, 54,
 			         VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
-			if (focused)ui_focus_motion_tick(motion,UI_CONTENT_X,y,UI_CONTENT_W,54);
+			if (focused)ui_focus_motion_tick(motion,rect.x,y,UI_CONTENT_W,54);
 			if (body) {
 				char fitted[128];
 				ui_font_fit_text(body, UI_FONT_BODY, names[i], fitted, sizeof(fitted), UI_CONTENT_W - 32);
-				ui_font_draw_text(body, 34, y + 35, VT_THEME_TEXT, UI_FONT_BODY, fitted);
+				ui_font_draw_text(body, rect.x+16, y + 35, VT_THEME_TEXT, UI_FONT_BODY, fitted);
 			}
 		}
-		ui_focus_outline_draw(motion);
+        vita2d_disable_clipping();
+        ui_focus_glow_draw(motion->x,motion->y,motion->width,motion->height,0,DESTINATION_Y,484);
+        ui_theme_page_finish(UI_SCENE_PICKER,UI_CONTENT_X,DESTINATION_Y,UI_CONTENT_W,484);
 	}
 	ui_action_button(18, 490, 302, 46, VT_THEME_BLUE_BRIGHT, "Start",
 	                 vt_i18n_str(VT_STR_NETWORK_USE_THIS_FOLDER), 0);
@@ -119,7 +131,7 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 	char names[DESTINATION_MAX_FOLDERS][128];
 	SceCtrlData previous;
 	UiNavRepeat nav_repeat;
-	int selected = 0, top = 0;
+	int selected = 0, top = 0, count=-1, folders_dirty=1;
 	UiFocusMotion motion={0};
 	/* Opening the picker is read-only. Prefer the system downloads directory
 	 * when it exists, but never create it (or any other folder) implicitly. */
@@ -140,7 +152,10 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	ui_nav_repeat_reset(&nav_repeat);
 	for (;;) {
-		int count = destination_read_folders(path, names, DESTINATION_MAX_FOLDERS);
+        if(folders_dirty){
+            count=destination_read_folders(path,names,DESTINATION_MAX_FOLDERS);
+            folders_dirty=0;
+        }
 		if (count < 0) {
 			ui_message_show(vt_i18n_str(VT_STR_NETWORK_FOLDER_CREATE_FAILED), path, 2600);
 			return 0;
@@ -162,11 +177,14 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 		UiTouchEvent touch;
 		unsigned flags = ui_touch_poll(&touch);
 		if (flags & UI_TOUCH_EVENT_TAP) {
-			for (int i = top; i < count && i < top + DESTINATION_ROWS; i++)
-				if (ui_touch_hit_rect(touch.x, touch.y, UI_CONTENT_X, DESTINATION_Y + (i - top) * DESTINATION_STEP, UI_CONTENT_W, 54)) {
+            UiPageView page=destination_page(path,top,count);
+            for(int i=page.first;i<page.end;i++) {
+                UiThemeRect rect=destination_item_rect(i,top);
+                if(touch.y>=DESTINATION_Y&&touch.y<484&&ui_touch_hit_rect(touch.x,touch.y,rect.x,rect.y,rect.w,rect.h)) {
 					selected = i;
 					pressed |= SCE_CTRL_CROSS;
 				}
+            }
 			if (ui_touch_hit_rect(touch.x, touch.y, 18, 490, 302, 46)) pressed |= SCE_CTRL_START;
 			if (ui_touch_hit_rect(touch.x, touch.y, 329, 490, 302, 46)) pressed |= SCE_CTRL_TRIANGLE;
 			if (ui_touch_hit_rect(touch.x, touch.y, 640, 490, 302, 46)) pressed |= SCE_CTRL_CIRCLE;
@@ -181,7 +199,7 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 			char next[512];
 			if (destination_join(path, names[selected], next, sizeof(next)) == 0) {
 				snprintf(path, sizeof(path), "%s", next);
-				selected = top = 0;
+				selected = top = 0;folders_dirty=1;
 			}
 		}
 		if (pressed & SCE_CTRL_TRIANGLE) {
@@ -194,6 +212,7 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 					ui_message_show(vt_i18n_str(VT_STR_NETWORK_FOLDER_CREATE_FAILED),
 					                name, 2600);
 			}
+            folders_dirty=1;
 			ui_touch_reset();
 			sceCtrlPeekBufferPositive(0, &previous, 1);
 			ui_nav_repeat_reset(&nav_repeat);
@@ -204,7 +223,7 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 				return 0;
 			}
 			destination_parent(path);
-			selected = top = 0;
+			selected = top = 0;folders_dirty=1;
 		}
 		sceKernelDelayThread(16 * 1000);
 	}

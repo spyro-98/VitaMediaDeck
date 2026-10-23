@@ -46,7 +46,8 @@ reavplayer-source.commit=abff24a21ffec3e57fc1cd3b1d17dc26666251b0
 vita-media-player-module.commit=0b5e7c933196227f955588c806c51b0b66c10654
 reavplayer-module.sha256=8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850
 
-# Local component revisions used by VitaMediaDeck 1.4.0 standard.
-vita-hw-decoder.commit=cb38fa8efd8fb59eee79f9e296daca8359a3ebf3
-vita-sw-decoder.commit=15709b12a9ecdab0541da15ffa052e373fe1c34e
+# Local component revisions used by VitaMediaDeck 1.4.1 standard.
+# HW/SW changes from 1.4.0 are documentation only; runtime ABI remains 2.0.0.
+vita-hw-decoder.commit=cd3ee51ca2c1072a57ac85878f50d646a864679e
+vita-sw-decoder.commit=f895684f2bfa2f20b815ebc8121d3880d2160230
 vita-https.commit=a67dc3154ae38158283a53e54d9baea56c61948d

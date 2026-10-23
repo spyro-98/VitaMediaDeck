@@ -1,5 +1,7 @@
 # Background audio on PlayStation Vita
 
+> Historical design/research evidence. Current release: [1.4.1](../../docs/releases/1.4.1.md); current checks: [validation](../../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 ## Public API path
 
 VitaSDK exposes two complementary mechanisms:

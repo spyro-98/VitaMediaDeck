@@ -1,5 +1,7 @@
 # IPTV favourites, availability and crash investigation
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 ## Controls and scope
 
 During IPTV playback, tap the Favourite button in the HUD or press Square to

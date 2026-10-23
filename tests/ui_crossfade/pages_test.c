@@ -39,6 +39,7 @@ void vita2d_draw_fill_circle(float x,float y,float r,unsigned c){for(int dy=-(in
 void ui_subtitle_draw(const char *text,float x,float y,float w,float h){(void)text;ui_text_line(x+12,y+h-18,w-24,"Subtitle renderer substituted on host",VT_THEME_TEXT,UI_FONT_SMALL);}
 int main(int argc,char **argv) {
  CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));
+ FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));
  for(language=0;language<2;language++)for(int mini=0;mini<2;mini++){
   mini_top=mini?544-UI_MINI_PLAYER_HEIGHT:544;
   for(int tab=0;tab<TAB_COUNT;tab++)for(int owner=0;owner<2;owner++){
@@ -77,13 +78,30 @@ int main(int argc,char **argv) {
  CHECK(theme_prepares==VT_UI_THEME_COUNT);theme_write_failure=1;
  CHECK(apply_row(TAB_INTERFACE,4,1)<0&&ui_theme_id()==VT_UI_THEME_LEGACY&&theme_prepares==VT_UI_THEME_COUNT);
  theme_write_failure=0;
- for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mini=0;mini<2;mini++){
-  ui_theme_apply(theme);mini_top=mini?472:544;
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mini=0;mini<2;mini++)for(int tab=0;tab<TAB_COUNT;tab++){
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;mini_top=mini?472:544;
   UiSectionsSidebar sidebar;ui_sections_sidebar_init(&sidebar,UI_SECTION_SETTINGS);
-  UiFocusMotion focus={0};ui_focus_motion_tick(&focus,18,118+4*64,924,56);
-  frame=0;draw_screen(TAB_INTERFACE,4,0,&focus,&sidebar);
-  char name[96];snprintf(name,sizeof(name),"theme-settings-%d-%s%s",theme,language?"it":"en",mini?"-mini":"");png(name);
+  int cursor=tab==TAB_INTERFACE?4:0;SettingRow rows[9];
+  int first=first_visible_row(cursor,rows_for_tab(tab,rows),visible_rows_for_tab(tab));
+  UiFocusMotion focus={0};ui_focus_motion_tick(&focus,ROW_X,ROW_Y+(cursor-first)*ROW_STEP,
+   tab==TAB_SUBTITLES?SUBTITLE_ROW_W:ROW_W,ROW_H);
+  frame=0;draw_screen(tab,cursor,0,&focus,&sidebar);
+  char name[96];snprintf(name,sizeof(name),"theme-settings-%d-%d-%s%s",theme,tab,language?"it":"en",mini?"-mini":"");png(name);
+ }
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++) {
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;mini_top=544;host_reduced_motion=1;
+  frame=0;capture_frame=0;script_count=2;input_script[0]=0;input_script[1]=SCE_CTRL_CIRCLE;
+  CHECK(ui_about_screen(0)==UI_SECTION_NONE);memcpy(pixels,first_pixels,sizeof(pixels));
+  char name[80];snprintf(name,sizeof(name),"theme-about-%d-%d",theme,language);png(name);
+  frame=0;CHECK(ui_controls_guide_run(vt_i18n_str(VT_STR_SECTIONS_GUIDE),vt_i18n_str(VT_STR_SETTINGS_CONTROLS_REFERENCE_IT))==UI_SECTION_NONE);
+  memcpy(pixels,first_pixels,sizeof(pixels));snprintf(name,sizeof(name),"theme-guide-%d-%d",theme,language);png(name);
+  frame=0;CHECK(ui_text_reader_run("Description","Podcast episode details.\nA second paragraph.")==UI_SECTION_NONE);
+  frame=0;CHECK(ui_text_reader_run_tabbed("About","Licenses","Third-party notices\nLicense text.")==UI_SECTION_NONE);
+  frame=0;CHECK(ui_local_media_actions(&item)==0);memcpy(pixels,first_pixels,sizeof(pixels));
+  snprintf(name,sizeof(name),"theme-actions-%d-%d",theme,language);png(name);
+  frame=0;input_script[1]=SCE_CTRL_CROSS;CHECK(!ui_local_media_confirm_delete(&item));
+  memcpy(pixels,first_pixels,sizeof(pixels));snprintf(name,sizeof(name),"theme-delete-%d-%d",theme,language);png(name);
  }
  ui_theme_apply(VT_UI_THEME_LEGACY);
- FT_Done_Face(face);FT_Done_FreeType(ft);printf("Crossfade native settings/guide/about/actions: %u checks passed\n",checks);
+ FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);printf("Crossfade native settings/guide/about/actions: %u checks passed\n",checks);
 }

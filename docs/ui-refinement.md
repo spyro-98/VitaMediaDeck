@@ -1,5 +1,7 @@
 # Native UI and IPTV refinement — 1.3.0 preview
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 ## Approved Crossfade implementation — 7 September 2026
 
 The approved review now drives native code, not only the browser prototype.

@@ -44,6 +44,7 @@ static void screen(int theme,int menu){
  }
  if(menu){UiSectionsSidebar side;ui_sections_sidebar_init(&side,UI_SECTION_ONLINE_AUDIO);side.open=1;side.animation=1;ui_sections_sidebar_draw(&side);}
 }
+#ifndef VMD_CHROME_HELPERS_ONLY
 int main(int argc,char **argv){
  CHECK(argc==3);output=argv[2];
  char storage[512];snprintf(storage,sizeof(storage),"%s/storage.XXXXXX",output);CHECK(mkdtemp(storage));CHECK(!chdir(storage));
@@ -71,3 +72,5 @@ int main(int argc,char **argv){
  }
  FT_Done_Face(face);FT_Done_FreeType(ft);printf("Production theme chrome: %u checks, 7 themes, IT/EN, 12h/24h, live activities, unknown status and command decks passed.\n",checks);return 0;
 }
+
+#endif

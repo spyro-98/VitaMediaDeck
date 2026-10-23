@@ -1,5 +1,7 @@
 # Temi dopo le prove sulla console
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Decisione utente: conservare Legacy, Ghost Mesh, Deck 90 e Signal; rifare i tre
 restanti senza cambiare gli ID persistiti. Nessuna nuova sezione navigabile.
 

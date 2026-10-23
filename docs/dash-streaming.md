@@ -1,5 +1,7 @@
 # DASH streaming preview
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Available on `feature/iptv`, from **L1 → IPTV**. `.mpd` links automatically
 select DASH, including links imported from M3U lists, scanned by QR or saved
 as favourite channels. For extensionless URLs, select DASH using Triangle.

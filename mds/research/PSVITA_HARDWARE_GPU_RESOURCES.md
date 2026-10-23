@@ -1,5 +1,7 @@
 # PlayStation Vita hardware and GPU resource dossier
 
+> Historical design/research evidence. Current release: [1.4.1](../../docs/releases/1.4.1.md); current checks: [validation](../../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 Related outcome: [H.264 acceleration research](../H264_ACCELERATION_RESEARCH_PLAN.md).
 
 ## How to use this document

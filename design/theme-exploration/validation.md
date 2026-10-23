@@ -1,5 +1,7 @@
 # Design validation — 7 September 2026
 
+> Historical design/research evidence. Current release: [1.4.1](../../docs/releases/1.4.1.md); current checks: [validation](../../docs/VALIDATION.md). Proposals and old measurements below are not new implementation or console proof.
+
 Scope: browser drafts only. This is not a native app, decoder, camera or console test.
 
 - `node --check` passes for both atlas and motion scripts.

@@ -1,12 +1,25 @@
 # VitaMediaDeck development status
 
-## Current direction
+## Current release: 1.4.1 / APP_VER 01.05
 
-VitaMediaDeck is being developed as a local and authenticated-network media player.
-The application starts in Local Media and exposes only Local Media, Network
-Sources, Settings, and About from the shared sidebar.
+Standard integrates seven themes, personal media, online audio/IPTV, cached
+browsing, MP4/subtitle seek corrections, continuous list/menu transitions and
+theme coverage through QR, editors, logs and loading. L1 exposes content,
+services, tools and active player/download actions. See the
+[release record](../docs/releases/1.4.1.md), [specification](PROJECT_SPECIFICATION.md)
+and [validation guide](../docs/VALIDATION.md) for current scope.
 
-## Completed in the current development branch
+Decoder documentation was synchronized with their unchanged 2.0.0 ABI. Native
+Release/LTO, host UI suites and archive/provenance checks remain distinct from
+physical-console acceptance. Earlier tests and performance records below are
+chronological evidence, not fresh measurements of 1.4.1.
+
+## Historical foundation milestone
+
+The original local/network-only phase is retained below. Later releases added
+explicit downloads, public radio/podcast discovery, IPTV, Navidrome and Immich.
+
+## Completed during the local/network foundation phase
 
 - Removed online catalogue, search, channel, subscription, favorite, download,
   extraction, and conversion code from the application target.
@@ -118,7 +131,7 @@ Sources, Settings, and About from the shared sidebar.
 - Reduced normal settings and application navigation to the new product scope.
 - Added reproducible libssh2 and FFmpeg Vita dependency builders.
 
-## Validation completed locally
+## Foundation validation completed locally (historical)
 
 - Release compilation reaches the final Vita executable.
 - The reusable static player target builds with Cortex-A9/NEON optimizations.
@@ -131,7 +144,7 @@ Sources, Settings, and About from the shared sidebar.
 Local compilation does not prove network compatibility or decoder lifecycle on
 the physical console. Those tests remain mandatory.
 
-## Hardware validation still required
+## Foundation hardware validation checklist (historical)
 
 1. WebDAV Basic/Digest authentication against at least two HTTPS servers.
 2. Failure on an invalid CA, hostname mismatch, plain HTTP endpoint, missing
@@ -156,7 +169,7 @@ the physical console. Those tests remain mandatory.
 13. Stop and reopen multiple local and remote videos, verify distinct resume
     points, completion cleanup, and the conditional R1 restart action.
 
-## Near-term work
+## Foundation follow-up list (historical; see current release above)
 
 - Complete on-device server matrix testing and improve protocol error details.
 - Add touch/held-repeat parity to the Network Sources editor/browser.

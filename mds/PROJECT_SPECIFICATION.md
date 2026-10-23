@@ -1,173 +1,106 @@
 # VitaMediaDeck project specification
 
-## Product definition
+Current application: **1.4.1**, Vita APP_VER **01.05**, TITLE_ID `VMDK00001`.
+See [release notes](../docs/releases/1.4.1.md) and [validation](../docs/VALIDATION.md).
 
-VitaMediaDeck is a native media client for homebrew-enabled PlayStation Vita
-systems. It plays user-provided local media and streams user-authorized video
-from Jellyfin or authenticated WebDAV, SFTP, and SMB servers. Jellyfin is the
-only supported media-server provider; file transports require no companion
-service.
+## Product and scope
+
+A native media client for homebrew-enabled PlayStation Vita. It browses local
+video, audio and image libraries; Jellyfin video; verified HTTPS WebDAV; pinned
+SFTP; authenticated SMB2/3; Navidrome music and Immich photos. Radio Browser,
+public podcast directories/RSS, HTTP(S)/QR downloads and compatible HLS/DASH
+IPTV are integrated. Catalogues do not grant rights to a provider's media.
+
+Seven selectable themes: Legacy (default), Ghost Mesh, Deck 90, Signal,
+Aperture, Relay and Mosaic. New themes have native GXM geometry/materials,
+independent layouts and shared theme coverage; Legacy retains its own shell.
+Home ordering persists per theme. List/page/menu motion uses continuous bounded
+transforms rather than replaying each item's entrance. Reduced motion is honored.
 
 ## Product principles
 
-1. **The user chooses the source.** VitaMediaDeck browses only local storage and
-   explicitly configured servers.
-2. **Authentication is explicit.** Remote sources require a username and a
-   password. Jellyfin returns a session-only access token, while SFTP
-   additionally requires host-key confirmation.
-3. **Passwords are ephemeral by default.** Secrets never enter `sources.bin`,
-   logs, or media history. An explicit opt-in stores them unencrypted in the
-   separately advertised `network/passwords.txt` file.
-4. **Protocol and decoder ownership remain separate.** A transport produces
-   independent seekable byte cursors; the player owns demux, decode, timing,
-   rendering, and teardown.
-5. **Hardware acceleration is preferred, not assumed.** The complete public
-   H.264 hardware backend is used when compatible, with software H.264 kept as
-   a fallback.
-6. **No media acquisition or export.** VitaMediaDeck neither downloads, extracts,
-   converts, uploads, nor copies remote media.
-7. **No private platform APIs.** Production code uses redistributable source
-   and public VitaSDK interfaces.
+1. Sources and service connections are chosen explicitly by the user.
+2. Network protocols own byte transport; decoders own demux/decode/timing.
+3. Hardware-first Auto selection belongs to the app. HW/SW-only choices remain
+   explicit, and cancellation never becomes an excuse to reopen another backend.
+4. Credentials are ephemeral by default. The optional plaintext credential file
+   is clearly disclosed and removable; Jellyfin access tokens remain memory-only.
+5. Downloads are explicit local copies. There is no server-side transcode,
+   protected-media acquisition, cloud account or credential synchronization.
+6. Source, dependency provenance, license texts and validation limits ship with
+   release documentation. Redistributable public VitaSDK interfaces are used.
 
-## In scope
+## Media contract
 
-- Indexed local video and music library.
-- Local rename and delete actions with explicit UI confirmation.
-- MP3 metadata/artwork and full-screen music playback.
-- Authenticated WebDAV browsing over verified HTTPS.
-- Authenticated SFTP browsing with SHA-256 host-key pinning.
-- Authenticated SMB2/SMB3 browsing.
-- Authenticated Jellyfin video-library browsing, server posters, and seekable
-  direct play over verified HTTPS.
-- Seekable remote H.264 playback with optional AAC audio.
-- Per-video local and authenticated-remote playback resume history.
-- Local and remote video-cell previews from artwork, embedded covers, or a
-  representative frame fallback.
-- Protocol-neutral reusable hardware player module.
-- English and Italian application catalogues.
-- Opt-in disk diagnostics; in-memory diagnostics remain available while the app
-  runs.
+- H.264 with optional compatible AAC in MOV/MP4 or Matroska. A file extension
+  does not add HEVC/AV1/DRM support. MP4 duration falls back to finite A/V stream
+  timing when container timing is unavailable; seek requires a seekable source.
+- File decoders use independent fresh video/audio cursors, with optional app-owned
+  subtitle and thumbnail cursors. The 2.x factory adds cooperative cancellation
+  and non-owning abort; it does not permit shared mutable cursor offsets.
+- Separate experimental live API: bounded forward-only MPEG-TS, H.264/AAC, two
+  identical starting cursors, shared origin. The app remuxes compatible HLS/DASH
+  and owns playlist windows, reconnect and transport. Segmented seek is unavailable.
+- Hardware decoder samples NV12/P2 direct surfaces; software defaults to copied
+  NV12/P2, three workers for seekable media and one for forward-only input.
+  Planar P3 remains opt-in; unsupported CPU zero-copy is disabled.
+- Owner fences GXM before render completion/restart or surface release. Late
+  pictures and compressed reference dependencies are handled separately.
+- Embedded text subtitles and provider subtitles are app-owned. Seek preserves
+  selection and starts a fresh asynchronous subtitle request at the landed time.
+- Eight-grain PCM queue with a dedicated AudioOut consumer; track switches keep
+  position, pause and volume, and roll back failures when recovery is possible.
+- Local and seekable remote video resume/mini-player preserve position and track
+  selection. Live IPTV mini-player handoff remains unsupported.
+- Local audio and supported radio/podcasts use fullscreen and persistent mini-player
+  controls. Supported formats and image limits are detailed in the main README.
 
-## Out of scope
+## Browsing, services and trust
 
-- Public-media discovery or third-party catalogue integration.
-- Remote media download, export, extraction, transcoding, or upload.
-- Credential synchronization, cloud accounts, or a hosted VitaMediaDeck service.
-- DRM, decryption, access-control bypasses, or protected media workflows.
-- Anonymous/guest remote sources.
-- Jellyfin transcoding, HLS, live TV, music libraries, and server discovery.
-- A custom H.264 codec or undocumented firmware decoder interface.
+| Source | Authentication / transport | Scope |
+| --- | --- | --- |
+| Jellyfin | username/password; session-only token; HTTPS or explicit LAN HTTP | video libraries, metadata/art, direct Range play |
+| WebDAV | verified HTTPS; credentials | PROPFIND, seekable Range reads, download |
+| SFTP | password and confirmed SHA-256 host key | browse/read/seek/download |
+| SMB2/3 | authenticated share; no guest fallback | browse/read/positioned I/O/download |
+| Navidrome | Subsonic-compatible credentials | albums/songs/artwork, music playback |
+| Immich | API key | libraries/assets/thumbnails and image viewing |
+| Radio / podcast | public directories and explicit user URLs | discovery, favourites, playback and podcast download |
+| IPTV / direct links | user-provided HTTP(S) URLs | compatible clear streams, lists and explicit downloads |
 
-## Supported source contract
+TLS verification cannot be disabled. Explicit LAN HTTP is unencrypted. Sensitive
+URL paths/tokens must not enter diagnostic logs. User-saved IPTV URLs can contain
+credentials and are local plaintext records, not encrypted secret storage.
+See [security](../SECURITY.md) and [personal-media setup](../docs/personal-media-2026-10-23.md).
 
-The reusable player consumes a `VitaHwStreamFactory`. Every `open` call returns
-a new handle containing:
+Folder-first and flattened views use cached metadata/thumbnails, bounded
+background work, restored folder stacks and shared draw/touch coordinates. Radio
+and podcast page changes show cached data before background refresh. Destination
+folders are enumerated only on entry/path change/mkdir. No per-frame directory scan.
 
-- a blocking `read` operation;
-- `SEEK_SET`, `SEEK_CUR`, and `SEEK_END` support;
-- exact source size;
-- an idempotent close operation;
-- independent cursor state.
+## Storage, input and presentation
 
-Multiple handles may exist concurrently for the same file because video, the
-selected audio stream, an explicitly requested subtitle stream, and asynchronous
-cover extraction demux independently. Selectable-track metadata is copied from
-the already-open video demux instead of opening a separate discovery handle. A
-backend must return a fresh cursor for every `open` and must not share mutable
-offsets between handles.
+App data lives under `ux0:data/VitaMediaDeck`: local indexes, non-secret source
+definitions, optional `network/passwords.txt`, history, settings, favourites,
+thumbnail caches and diagnostics. Standard native log: `session_standard.txt`;
+explicit test IDs select `session_<id>.txt` and a matching test bubble. Logs
+are opt-in on disk and can contain personal paths; redact before sharing.
 
-## Remote protocol requirements
+English/Italian UI; exact-size Inter and Deck 90 mono font, system PGF fallback
+for CJK. Subtitle font/color/size/width/rows/position are configurable. The QR
+camera crop is shared with the decoder and unobscured by themed decoration.
+The app backdrop is themed; native IME keys are controlled by Vita OS.
 
-### Jellyfin
+## Limits and release evidence
 
-- Verified HTTPS with public-CA validation or an explicitly confirmed SPKI pin,
-  plus explicit unencrypted HTTP for LAN servers using the standard 8096 port.
-- Username/password authentication through the Jellyfin API.
-- Access token and user identifier retained only for the running session.
-- Video-library browsing and Primary-image cover retrieval.
-- Original-file direct play with authenticated byte ranges; no HLS or server
-  transcoding in the current provider.
-- HTTP mode is visibly marked unencrypted because credentials, tokens,
-  metadata, and media travel in clear text.
+No Apple Music/Spotify account playback, YouTube/InnerTube client, protected DRM,
+server transcoding, media upload or undocumented firmware decoder interface.
+IPTV/provider compatibility is limited by codec, access and transport support.
 
-### WebDAV
-
-- HTTPS only.
-- CA chain and hostname validation enabled.
-- Username/password authentication.
-- `PROPFIND` for browsing.
-- Actual `206 Partial Content` response to a byte-range probe.
-
-### SFTP
-
-- Password authentication.
-- Server SHA-256 fingerprint shown and explicitly confirmed before first use.
-- Saved fingerprint must match every later session.
-- 64-bit stat, read, and seek support.
-
-### SMB
-
-- SMB2/SMB3 authenticated share.
-- No guest fallback.
-- Signing/encryption depend on server negotiation and should be required by the
-  server on untrusted networks.
-- Standard SMB port in the current backend.
-
-## Playback architecture
-
-- FFmpeg MOV/MP4 and Matroska demux on custom AVIO cursors.
-- H.264 video with runtime selection across all embedded AAC audio tracks.
-- Embedded SubRip, ASS/SSA, WebVTT, and MP4 timed-text discovery, background
-  demux, styled rendering, and runtime Off/track selection.
-- UTF-8 subtitle layout wraps at codepoint boundaries (including text without
-  spaces), limits cues to one through four lines, and never splits a multibyte
-  character when truncating with an ellipsis.
-- Western and Cyrillic UI/subtitle runs use exact-size Inter Medium or SemiBold;
-  Japanese, Chinese, and Korean runs use their native PS Vita system PGFs. The
-  fully native system-font option remains available for all runs.
-- Subtitle settings persist font, foreground/background colors, size, maximum
-  width, minimum/maximum lines, and vertical position with V1/V2 settings-file
-  migration into the checksummed V3 record.
-- User-selectable decoder policy: Auto (`h264_vita` preferred with FFmpeg
-  software fallback), HW H.264 only, or SW FFmpeg only.
-- Hardware AAC decode for the reusable video player.
-- NV12 CDRAM surfaces presented directly through GXM/vita2d.
-- The selected audio track's PTS as master clock.
-- Bounded PTS reorder window and late-frame recovery.
-- Cooperative cancellation and deterministic thread joins.
-- Shared VitaTube player gestures: short Start hands supported local media to
-  the mini-player, a 900 ms Start hold toggles OLED ECO mode without stopping
-  playback, and Select immediately locks/unlocks player input.
-- Local and authenticated-remote video mini-player restoration preserves
-  position plus the selected audio and subtitle track. The compact player
-  reopens through the same HW/SW decoder stack and publishes its live video
-  surface; it does not route video through the narrower legacy audio player.
-- A bounded software-only thumbnail worker prefers embedded MJPEG/PNG cover
-  streams, rejects almost-black or near-uniform results, otherwise seeks to a
-  representative H.264 frame, and caches only checked RGB565 pixels. The
-  selected cell preempts obsolete viewport requests. Local sidecar artwork
-  remains the first choice, with failed loads held in a short negative cache.
-- Local paths and non-secret remote endpoint/path fields produce stable,
-  distinct history IDs. Credentials are excluded. A recovered session exposes
-  an R1 **Start from beginning** action that clears its saved point.
-
-## Storage
-
-- `local_media.idx`: bounded on-disk local index, maximum 65,536 records.
-- `network/sources.bin`: maximum 32 non-secret source definitions.
-- `network/passwords.txt`: optional plaintext passwords, disabled by default.
-- `playback_history.bin`: local and remote resume positions.
-- `settings.bin`: application preferences.
-- `session_log.txt`: written only when persistent diagnostics are enabled.
-
-## Release gates
-
-- Release build and VPK archive validation succeed in CI.
-- No old discovery/acquisition code or documentation remains in the public
-  repository.
-- Passwords are never logged and are serialized only after the explicit
-  plaintext-storage opt-in.
-- HTTPS, SFTP fingerprint mismatch, authentication failure, cancellation, seek,
-  EOF, and reconnect paths are tested on physical hardware.
-- Repeated local and remote sessions close without leaked workers, sockets,
-  decoder surfaces, or audio ports.
+Host suites, static checks, native compilation and VPK audits are distinct from
+physical-console acceptance. Earlier PlayerFix logs and user feedback support
+MP4/subtitle seek fixes and HW 720p30 at reported CPU 333 with bus/GPU 222 MHz.
+They do not prove all files, 720p60, battery savings or sustained SW 720p30.
+The standard app still requests 444/222/222/111 MHz when app clock control is
+selected; PSVshell mode remains external. Current 1.4.1 packaging is not a new
+physical run or a published GitHub release.

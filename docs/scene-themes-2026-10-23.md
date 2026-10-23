@@ -1,5 +1,7 @@
 # Sei interfacce spaziali — 23 ottobre 2026
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Il renderer nuovo riguarda i sei temi non Legacy. Non cambia la risoluzione nativa
 960×544. Legacy mantiene palette, geometrie e controlli precedenti; le anteprime
 host della sua Home/barra di stato e del suo L1 risultano identiche al pacchetto

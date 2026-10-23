@@ -9,7 +9,7 @@
 #define VT_BUILD_NAME "VitaMediaDeck"
 #endif
 #ifndef VT_BUILD_VERSION
-#define VT_BUILD_VERSION "1.4.0"
+#define VT_BUILD_VERSION "1.4.1"
 #endif
 #ifndef VT_BUILD_LOG_FILE
 #define VT_BUILD_LOG_FILE "session_log.txt"

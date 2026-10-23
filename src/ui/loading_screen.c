@@ -23,6 +23,7 @@
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
 #include "ui/theme.h"
+#include "ui/theme_home.h"
 #include "ui/touch.h"
 
 #define SCREEN_WIDTH  960
@@ -336,14 +337,16 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 	}
 
 	vita2d_draw_rectangle(0,0,960,544,VT_THEME_MEDIA_BACKDROP);
+	if(ui_theme_id()!=VT_UI_THEME_LEGACY)ui_theme_fx_background(VT_THEME_MEDIA_BACKDROP);
 	/* Top band integrated into the player: three layers give a slight
 	 * gradient toward the canvas without extra textures or shaders. */
 	vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, 74, RGBA8(0, 0, 0, 220));
 	vita2d_draw_rectangle(0, 74, SCREEN_WIDTH, 24, RGBA8(0, 0, 0, 132));
 	vita2d_draw_rectangle(0, 98, SCREEN_WIDTH, 18, RGBA8(0, 0, 0, 62));
 	vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, 3, COLOR_ACCENT);
-	draw_clipped_line(body, 32, 45, 760, UI_FONT_BODY, COLOR_TEXT, title);
-	draw_clipped_line(small, 32, 72, 760, UI_FONT_SMALL, COLOR_MUTED, channel);
+	draw_clipped_line(body, 32, 45, 680, UI_FONT_BODY, COLOR_TEXT, title);
+	draw_clipped_line(small, 32, 72, 680, UI_FONT_SMALL, COLOR_MUTED, channel);
+	ui_brand_draw_status_indicators();
 
 	ui_draw_spinner(480.0f, 252.0f, now_us);
 	if (small) {
@@ -761,14 +764,15 @@ static void message_show_internal(const char *message, const char *detail,
 	 * visual continuity. Successful operations use a check instead of the
 	 * error scene's warning mark. */
 	vita2d_draw_rectangle(451.0f, 197.0f, 58.0f, 58.0f, state_color);
+	unsigned int badge_ink = ui_contrast_bw(state_color);
 	if (success) {
-		vita2d_draw_line(465.0f, 226.0f, 476.0f, 238.0f, COLOR_BG);
-		vita2d_draw_line(476.0f, 238.0f, 498.0f, 213.0f, COLOR_BG);
-		vita2d_draw_line(465.0f, 227.0f, 476.0f, 239.0f, COLOR_BG);
-		vita2d_draw_line(476.0f, 239.0f, 498.0f, 214.0f, COLOR_BG);
+		vita2d_draw_line(465.0f, 226.0f, 476.0f, 238.0f, badge_ink);
+		vita2d_draw_line(476.0f, 238.0f, 498.0f, 213.0f, badge_ink);
+		vita2d_draw_line(465.0f, 227.0f, 476.0f, 239.0f, badge_ink);
+		vita2d_draw_line(476.0f, 239.0f, 498.0f, 214.0f, badge_ink);
 	} else {
-		vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, COLOR_TEXT);
-		vita2d_draw_rectangle(478.0f, 237.0f, 4.0f, 4.0f, COLOR_TEXT);
+		vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, badge_ink);
+		vita2d_draw_rectangle(478.0f, 237.0f, 4.0f, 4.0f, badge_ink);
 	}
 	draw_centered_text(312, COLOR_TEXT, UI_FONT_DISPLAY,
 	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_ERROR_MESSAGE));

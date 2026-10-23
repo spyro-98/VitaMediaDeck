@@ -43,7 +43,7 @@ static int progress(void *ctx,curl_off_t t,curl_off_t n,curl_off_t ut,curl_off_t
 int vita_https_perform(VitaHttpsClient *client,const VitaHttpsRequest *r,VitaHttpsResponse *s) {
     (void)client;CURL *c=curl_easy_init();if(!c)return -1;
     curl_easy_setopt(c,CURLOPT_URL,r->url);
-    curl_easy_setopt(c,CURLOPT_USERAGENT,"VitaMediaDeck/1.4.0-host-smoke");
+    curl_easy_setopt(c,CURLOPT_USERAGENT,"VitaMediaDeck/1.4.1-host-smoke");
     curl_easy_setopt(c,CURLOPT_FOLLOWLOCATION,1L);
     curl_easy_setopt(c,CURLOPT_PROTOCOLS_STR,"http,https");
     curl_easy_setopt(c,CURLOPT_REDIR_PROTOCOLS_STR,!strncmp(r->url,"https://",8)?"https":"http,https");

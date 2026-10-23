@@ -1,5 +1,7 @@
 # IPTV branch: compatibility contract
 
+> Dated implementation/research record. Integrated status: [VitaMediaDeck 1.4.1](releases/1.4.1.md); [validation guide](VALIDATION.md). Build IDs, figures and pending checks below describe the recorded snapshot. External research links were not revalidated for this patch release.
+
 Status: first integrated **experimental playback preview** on `feature/iptv`.
 The IPTV section opens the HLS source through a forward-only session adapter
 and separate opt-in HW/SW live APIs. Native build and host validation pass;

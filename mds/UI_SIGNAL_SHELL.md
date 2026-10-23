@@ -1,7 +1,9 @@
 # Spectral Reassembly UI direction
 
-VitaMediaDeck's original **Signal / Shell** system has evolved into **Spectral
-Reassembly**. It is a code-native interpretation of the color, particle
+This document describes the **Legacy** visual grammar retained in 1.4.1.
+The six other themes are defined in the [theme inventory](../docs/theme-coverage-2026-10-23.md).
+The newer theme named **Signal** is a distinct light interface, not a synonym for
+this original **Signal / Shell → Spectral Reassembly** design. It is a code-native interpretation of the color, particle
 material, optical depth, and holographic restraint in the three selected
 *Ghost in the Shell* concept references and the
 [Pushing Pixels interview with Stylow](https://www.pushing-pixels.org/2019/04/19/the-art-and-craft-of-screen-graphics-interview-with-stylow.html).

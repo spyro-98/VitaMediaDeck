@@ -65,7 +65,7 @@ static int fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     char checked[VT_IPTV_URL_MAX];
     if (vt_iptv_resolve_url(url, url, checked, sizeof(checked))) return VT_IPTV_INVALID;
     if (cancel && *cancel) return VT_IPTV_CANCELLED;
-    VitaHttpsClientConfig config = {.user_agent = "VitaMediaDeck/1.4.0", .allow_http = 1,
+    VitaHttpsClientConfig config = {.user_agent = "VitaMediaDeck/1.4.1", .allow_http = 1,
         .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
     if(options && options->user_agent[0]) {
         size_t n=strnlen(options->user_agent,sizeof(options->user_agent));

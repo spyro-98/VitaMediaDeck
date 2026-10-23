@@ -1,5 +1,7 @@
 # Home rail regression checks
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 Compile from the repository root on macOS:
 
 ```sh

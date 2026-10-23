@@ -1,5 +1,7 @@
 # Browser return and seek preview regressions
 
+Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
+
 ```sh
 VMD_HOST_FFMPEG=/path/to/configured/ffmpeg bash tests/player_feedback/run-host-tests.sh
 ```
