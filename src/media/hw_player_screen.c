@@ -438,13 +438,15 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			if (small) {
 				char shortcuts[192];
 				ui_font_fit_text(small, UI_FONT_SMALL,
-				                 live ? vt_i18n_str(live == 2 ? VT_STR_IPTV_VOD_HINT : VT_STR_IPTV_PLAYER_HINT) : vt_i18n_str(source->allow_minimize
+				                 live ? vt_i18n_str(vt_preferences_player_swap_shoulders() ? VT_STR_PLAYER_SWAPPED_SHORTCUTS_HINT : live == 2 ? VT_STR_IPTV_VOD_HINT : VT_STR_IPTV_PLAYER_HINT) : vt_i18n_str(source->allow_minimize
 				                     ? VT_STR_PLAYER_SHORTCUTS_HINT
 				                     : VT_STR_PLAYER_REMOTE_SHORTCUTS_HINT), shortcuts,
 				                 sizeof(shortcuts), 400);
-				ui_font_draw_text(small, 292, 91,
+				ui_font_draw_text(small, 292, 73,
 				                  fade_color(VT_THEME_COLD_LIGHT, hud_opacity),
 				                  UI_FONT_SMALL, shortcuts);
+                ui_text_line(292,94,400,vt_i18n_str(VT_STR_PLAYER_INPUT_LOCK_HINT),
+                    fade_color(VT_THEME_COLD_LIGHT,hud_opacity),UI_FONT_SMALL);
 			}
         if(ui_theme_id()==VT_UI_THEME_LEGACY){
 		vita2d_draw_rectangle(0, 390, SCREEN_WIDTH, 30,

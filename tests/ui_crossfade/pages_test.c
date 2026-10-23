@@ -16,7 +16,10 @@ int vt_preferences_interface_theme(void){return ui_theme_id();}
 int vt_preferences_set_interface_theme(int theme){(void)theme;settings_writes++;return theme_write_failure?-1:0;}
 void ui_runtime_prepare_theme(void){theme_prepares++;}
 PREF(video_decoder,0) PREF(fill_screen,0) PREF(loop_enabled,0)
-PREF(music_keep_display_awake,1) PREF(player_swap_shoulders,0)
+PREF(music_keep_display_awake,1)
+static int guide_swapped;
+int vt_preferences_player_swap_shoulders(void){return guide_swapped;}
+int vt_preferences_set_player_swap_shoulders(int n){guide_swapped=n;settings_writes++;return 0;}
 PREF(language,1) PREF(player_status_always_visible,0) PREF(clock_source,1)
 PREF(disk_logs_enabled,0) PREF(remember_network_passwords,0)
 PREF(subtitle_font,0) PREF(subtitle_text_color,0) PREF(subtitle_border_color,0)
@@ -58,6 +61,48 @@ int main(int argc,char **argv) {
   frame=0;capture_frame=0;CHECK(ui_about_screen(0)==UI_SECTION_NONE);
   memcpy(pixels,first_pixels,sizeof(pixels));snprintf(name,sizeof(name),"about-%s%s",language?"it":"en",mini?"-mini":"");png(name);
  }
+ /* Guide and on-screen hints must agree with each theme and saved mapping. */
+ for(language=0;language<2;language++)for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  GuideChapter chapters[8];const char *guide=vt_i18n_str(VT_STR_SETTINGS_CONTROLS_REFERENCE_IT);
+  CHECK(guide_chapters(guide,chapters,8)==7);
+  CHECK(!strcmp(chapters[1].title,vt_i18n_str(VT_STR_GUIDE_HOME_HEADING)));
+  CHECK(!strcmp(chapters[5].title,vt_i18n_str(VT_STR_GUIDE_PLAYER_HEADING)));
+  char content[8192];CHECK(!guide_chapter_content(&chapters[1],content,sizeof(content)));
+  CHECK(strstr(content,ui_theme_name(theme))==content);
+  CHECK(strstr(content,ui_theme_home_controls_hint(1))!=NULL);
+  CHECK(strstr(content,ui_theme_home_controls_hint(0))!=NULL);
+  CHECK(guide_chapter_content(&chapters[1],content,8)<0);
+  for(int swap=0;swap<2;swap++){
+   guide_swapped=swap;CHECK(!guide_chapter_content(&chapters[5],content,sizeof(content)));
+   CHECK(strstr(content,vt_i18n_str(swap?VT_STR_GUIDE_MAPPING_SWAPPED:VT_STR_GUIDE_MAPPING_DEFAULT))==content);
+  }
+  for(int focused=0;focused<2;focused++){
+   int x=ui_theme_home_layout(theme,536).x;
+   int width=theme==VT_UI_THEME_GHOST_MESH?388:theme==VT_UI_THEME_APERTURE?868:
+    (theme==VT_UI_THEME_RELAY||theme==VT_UI_THEME_MOSAIC?804:942)-x;
+   CHECK(ui_font_text_width(ui_runtime_font(UI_FONT_SMALL),UI_FONT_SMALL,ui_theme_home_controls_hint(focused))<=width);
+  }
+  const VtStringId panel_hints[]={VT_STR_PLAYER_PANEL_HINT,VT_STR_MUSIC_PLAYER_PANEL_HINT};
+  for(size_t h=0;h<sizeof(panel_hints)/sizeof(panel_hints[0]);h++)
+   CHECK(ui_font_text_width(ui_runtime_font(UI_FONT_SMALL),UI_FONT_SMALL,vt_i18n_str(panel_hints[h]))<=374);
+  const VtStringId hud_hints[]={VT_STR_PLAYER_SHORTCUTS_HINT,VT_STR_PLAYER_REMOTE_SHORTCUTS_HINT,
+   VT_STR_PLAYER_INPUT_LOCK_HINT,VT_STR_PLAYER_SWAPPED_SHORTCUTS_HINT,VT_STR_IPTV_PLAYER_HINT,VT_STR_IPTV_VOD_HINT};
+  for(size_t h=0;h<sizeof(hud_hints)/sizeof(hud_hints[0]);h++)
+   CHECK(ui_font_text_width(ui_runtime_font(UI_FONT_SMALL),UI_FONT_SMALL,vt_i18n_str(hud_hints[h]))<=400);
+  CHECK(ui_font_text_width(ui_runtime_font(UI_FONT_SMALL),UI_FONT_SMALL,vt_i18n_str(VT_STR_IMAGE_VIEWER_TOUCH_HINT))<=250);
+  CHECK(ui_font_text_width(ui_runtime_font(UI_FONT_SMALL),UI_FONT_SMALL,vt_i18n_str(VT_STR_IMAGE_VIEWER_HARDWARE_HINT))<=640);
+  for(int mini=0;mini<2;mini++){
+   mini_top=mini?478:544;script_count=12;memset(input_script,0,sizeof(input_script));
+   input_script[1]=SCE_CTRL_DOWN;input_script[3]=SCE_CTRL_RIGHT;
+   input_script[5]=SCE_CTRL_DOWN;input_script[7]=SCE_CTRL_DOWN;
+   input_script[9]=SCE_CTRL_LEFT;input_script[11]=SCE_CTRL_CIRCLE;
+   frame=0;capture_frame=8;CHECK(ui_controls_guide_run(vt_i18n_str(VT_STR_SECTIONS_GUIDE),guide)==UI_SECTION_NONE);
+   memcpy(pixels,first_pixels,sizeof(pixels));char name[80];
+   snprintf(name,sizeof(name),"guide-home-%d-%d%s",theme,language,mini?"-mini":"");png(name);
+  }
+ }
+ guide_swapped=0;ui_theme_apply(VT_UI_THEME_LEGACY);face=inter;mini_top=544;
  /* Cross on a tab only enters its rows; it must not also toggle a setting. */
  frame=0;script_count=3;input_script[0]=0;input_script[1]=SCE_CTRL_CROSS;input_script[2]=SCE_CTRL_CIRCLE;
  CHECK(ui_settings_screen()==UI_SECTION_NONE && settings_writes==0);

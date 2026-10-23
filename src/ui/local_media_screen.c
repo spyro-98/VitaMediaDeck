@@ -1065,7 +1065,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
    if(!art&&item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)ui_theme_home_service(pos-top,viewport_bottom,item->source);
   }
   vita2d_disable_clipping();
-  ui_theme_home_footer(media_location_label(current),viewport_bottom);
+  ui_theme_home_footer_with_focus(media_location_label(current),viewport_bottom,focus_tabs);
   ui_theme_home_position(selected,count,viewport_bottom);
  }else if (count == 0) {
 		ui_panel(208, 202, 544, 140, VT_THEME_SURFACE,

@@ -492,15 +492,36 @@ void ui_theme_home_service(int slot,int bottom,int service){
  vita2d_draw_rectangle(x,y,size,size,VT_THEME_BG);
  ui_theme_service_icon(x+size*.12f,y+size*.12f,size*.76f,size*.76f,service);
 }
-void ui_theme_home_footer(const char *path,int bottom){
+const char *ui_theme_home_controls_hint(int sections_focused){
+ static const VtStringId hints[VT_UI_THEME_COUNT][2]={
+  {VT_STR_HOME_HELP_TOP_CONTENT,VT_STR_HOME_HELP_LEGACY_TABS},
+  {VT_STR_HOME_GHOST_CONTENT_HINT,VT_STR_HOME_GHOST_WHEEL_HINT},
+  {VT_STR_HOME_HELP_DECK_CONTENT,VT_STR_HOME_HELP_SIDE_TABS},
+  {VT_STR_HOME_HELP_TOP_CONTENT,VT_STR_HOME_HELP_TOP_TABS},
+  {VT_STR_HOME_HELP_APERTURE_CONTENT,VT_STR_HOME_HELP_APERTURE_TABS},
+  {VT_STR_HOME_HELP_RELAY_CONTENT,VT_STR_HOME_HELP_SIDE_TABS},
+  {VT_STR_HOME_HELP_MOSAIC_CONTENT,VT_STR_HOME_HELP_TOP_TABS}
+ };
+ return vt_i18n_str(hints[ui_theme_id()][!!sections_focused]);
+}
+void ui_theme_home_footer_with_focus(const char *path,int bottom,int sections_focused){
  UiThemeHomeLayout l=ui_theme_home_layout(ui_theme_id(),bottom);
+ const char *hint=ui_theme_home_controls_hint(sections_focused);
  if(ui_theme_id()==VT_UI_THEME_GHOST_MESH){
   ui_text_line(l.x,bottom-26,l.w,vt_i18n_str(VT_STR_HOME_GHOST_WHEEL_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
-  ui_text_line(l.x,bottom-8,l.w,vt_i18n_str(VT_STR_HOME_GHOST_CONTENT_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
-  return;
+  ui_text_line(l.x,bottom-8,l.w,ui_theme_home_controls_hint(0),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+ }else if(ui_theme_id()==VT_UI_THEME_APERTURE){
+  ui_text_line(l.x,408,868,hint,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+ }else{
+  /* The full free rail spans columns; a Mosaic card's width is not the footer. */
+  int width=942-l.x;
+  ui_text_line(l.x,bottom-26,width,path?path:"",VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+  int hint_width=(ui_theme_id()==VT_UI_THEME_RELAY||ui_theme_id()==VT_UI_THEME_MOSAIC?804:942)-l.x;
+  ui_text_line(l.x,bottom-8,hint_width,hint,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  }
- int y=ui_theme_id()==VT_UI_THEME_APERTURE?408:bottom-10;
- ui_text_line(l.x,y,l.w,path?path:"",VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+}
+void ui_theme_home_footer(const char *path,int bottom){
+ ui_theme_home_footer_with_focus(path,bottom,0);
 }
 UiThemeHomeNav ui_theme_home_navigation(int theme,int focused,int count,unsigned nav,unsigned rail_nav){
  UiThemeHomeNav result={rail_nav,nav,focused};

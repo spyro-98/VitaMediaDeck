@@ -11,6 +11,10 @@
 | R1 | Open the context or information sidebar where available. |
 | Touch | Activate supported visible controls. |
 
+With the mini-player visible in browsers, Start restores it and Select belongs
+to its held input-lock gesture; brief Select does not reach the page. Use available
+R1 actions or stop the mini-player before using those page shortcuts.
+
 An open sidebar owns navigation before the underlying screen. Circle closes the
 active panel before leaving its page. While resumable playback is running, the
 sidebar adds **Active player** above Home; selecting it restores the full player.
@@ -23,12 +27,20 @@ never transfers the left stick to the wheel. A held sector does not select again
 on a screen change; close modal menus and return the right stick to neutral
 before selecting a new sector.
 
-Deck 90 uses Up/Down for its section sidebar, Right/X to enter content and Left
-to return. Relay uses a two-column section matrix. Mosaic uses a three-column
-section matrix and a two-column content area. Aperture places sections below
-its preview/content split; Up enters content. X enters content in all themes.
-Legacy retains its original compact carousel and radio/podcast tabs. Playback
-controls below are independent of the Home theme.
+| Theme | Section selection | Content / return |
+| --- | --- | --- |
+| Legacy | Up from first result row, then left/right on top tabs | Down enters; Up from first row returns |
+| Ghost Mesh | Right stick selects wheel | Left stick/D-pad owns content at all times; X opens |
+| Deck 90 | Up/down on left menu | Right/X enters; Left returns |
+| Signal | Left/right on top tabs | Down/X enters; Up from first row returns |
+| Aperture | Left/right on bottom tabs | Up/X enters; Down from last entry returns |
+| Relay | Up/down on side menu | Right/X enters; Left from grid's left edge returns |
+| Mosaic | Left/right on top tabs | Down/X enters; left/right covers, Down/Up pages; Up from first page returns |
+
+These are D-pad directions; the left stick follows navigation. Reordering Home
+positions changes which section occupies a slot, not these gestures. The
+Home footer describes the currently focused menu/results. Player mappings
+below remain independent from the Home theme.
 
 ## Radio, podcasts and IPTV
 
@@ -166,9 +178,13 @@ so this also works with opaque Jellyfin item identifiers.
 | Right stick vertically | Change volume. |
 | Short Start (release before 900 ms) | Minimize supported local video into the shared mini-player. |
 | Hold Start (900 ms) | Toggle OLED ECO mode while playback and audio continue. |
-| Select | Immediately lock or unlock player input. |
+| Hold Select (900 ms) | Lock or unlock player input; a short press does not lock. |
 | Touch video | Show or hide the player HUD. |
 | Touch/drag timeline | Seek to a position. |
+
+In the guide, the Player chapter shows the currently saved panel/seek mapping.
+In the R1 playback panel, up/down selects a row, left/right prepares the audio
+or subtitle choice, Cross applies it and Circle closes the panel.
 
 The R1 playback panel also selects the active AAC audio track and text subtitle
 track. Jellyfin external SRT/ASS/SSA/WebVTT sidecars are fetched through the
@@ -232,7 +248,7 @@ it is disabled by default.
 | Right stick vertically | Change volume. |
 | Short Start | Minimize into the shared mini-player. |
 | Hold Start (900 ms) | Toggle OLED ECO mode while audio continues. |
-| Select | Immediately lock or unlock player input. |
+| Hold Select (900 ms) | Lock or unlock player input; a short press does not lock. |
 | Circle | Stop full-screen playback. |
 | Start in mini-player | Restore the active local media fullscreen. |
 | Tap mini-player title | Restore the full music or video player. |
@@ -247,7 +263,7 @@ use separate positions so the lock never covers the OLED ECO label.
 
 Open the dedicated section with L1. Cross connects, Square adds a server,
 Triangle edits, and two R1 presses remove a local connection. Circle returns;
-Select remains available for mini-player input lock. Navidrome uses the existing
+Hold Select for 900 ms to lock/unlock mini-player input. Navidrome uses the existing
 music-player controls; Immich uses the existing image-viewer controls.
 See [setup and console checks](../docs/personal-media-2026-10-23.md).
 
@@ -275,3 +291,12 @@ status. All seven themes frame the same unobscured 444x444 preview.
 URL, search, username and password prompts use themed app chrome behind the
 native Vita IME. Key layout and native keyboard appearance belong to Vita OS.
 Reduced motion preserves static focus while freezing decorative animation.
+
+## Guide navigation and translated hints
+
+L1 → Controls guide or Settings → Controls opens the same bilingual reference.
+Up/down selects one of seven chapters; Right/Cross focuses text, up/down scrolls,
+Left returns to the index and Circle exits. Home and Player chapters prepend
+the actual theme/mapping. Guide footer labels follow the current focus; R1 is
+not a guide-navigation action. Key badges consistently use X and O; Square and
+Triangle names are localized. See [follow-up evidence](../docs/controls-guide-2026-10-23.md).

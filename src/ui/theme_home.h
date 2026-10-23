@@ -21,6 +21,8 @@ void ui_theme_home_row(int slot,int ordinal,const char *name,const char *detail,
 void ui_theme_home_row_art(int slot,int ordinal,const char *name,const char *detail,int selected,int focused,int bottom,vita2d_texture *art,const char *placeholder);
 void ui_theme_home_preview(vita2d_texture *texture,const char *label,int bottom,int service);
 void ui_theme_home_footer(const char *path,int bottom);
+void ui_theme_home_footer_with_focus(const char *path,int bottom,int sections_focused);
+const char *ui_theme_home_controls_hint(int sections_focused);
 void ui_theme_home_position(int selected,int count,int bottom);
 void ui_theme_home_service(int slot,int bottom,int service);
 typedef struct { unsigned tabs,content; int focused; } UiThemeHomeNav;

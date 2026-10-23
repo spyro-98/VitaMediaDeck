@@ -247,7 +247,7 @@ int ui_home_tabs_configure(void){
   }
   ui_focus_motion_tick(&motion,66,120+selected*46,828,42);ui_focus_outline_draw(&motion);
   ui_action_button(66,454,390,44,VT_THEME_SURFACE,"X",vt_i18n_str(VT_STR_ONLINE_SAVE),0);
-  ui_action_button(504,454,390,44,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_UI_BACK),0);
+  ui_action_button(504,454,390,44,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
   vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();sceKernelDelayThread(16000);
  }reveal();ui_touch_reset();return result;
 }
