@@ -48,18 +48,13 @@ typedef struct VtSubtitleCue {
 struct VtSubtitleReader {
 	VtDecoderStreamFactory factory;
 	VtMediaInput input;
-	void *input_factory_opaque;
 	void (*input_abort)(void *opaque);
 	void *input_abort_opaque;
 	volatile int input_io_active;
 	volatile int input_poisoned;
-	int (*input_factory_open)(void *opaque, VtDecoderStreamHandle *out);
-	int (*input_factory_open_cancelable)(void *opaque,
-	                                     VtDecoderStreamHandle *out,
-	                                     volatile int *cancel_flag);
 	volatile int cancel;
 	/* This flag is private to the subtitle cursor. A newer serial interrupts the
-	 * current open/read, then the sole worker clears it before reusing that same
+	 * current open/read, then the sole worker clears it before opening the next
 	 * cursor; the live decoder's stop flag is never borrowed or reset. */
 	volatile int operation_cancel;
 	volatile int request_lock;
@@ -666,8 +661,7 @@ static int subtitle_seek_stream(AVFormatContext *format, int stream_index,
 	return av_seek_frame(format, stream_index, target, AVSEEK_FLAG_BACKWARD);
 }
 
-static int subtitle_seek(VtMediaInput *input, int subtitle_stream,
-	                     int clock_stream, uint64_t position_ms) {
+static int subtitle_seek(VtMediaInput *input, int clock_stream, uint64_t position_ms) {
 	if (!input || !input->format) return AVERROR(EINVAL);
 	/* Always hop through one stable, dense video timeline. A bounded preroll
 	 * recovers a subtitle cue that began shortly before the target; there is no
@@ -792,9 +786,6 @@ static void subtitle_input_discard(VtSubtitleReader *reader) {
 	reader->input_poisoned = 0;
 	subtitle_request_unlock(reader);
 	media_input_close(&reader->input);
-	reader->input_factory_open = NULL;
-	reader->input_factory_open_cancelable = NULL;
-	reader->input_factory_opaque = NULL;
 }
 
 static void subtitle_publish_input_abort(VtSubtitleReader *reader) {
@@ -976,44 +967,20 @@ static int subtitle_worker(SceSize args, void *argp) {
 				continue;
 			}
 
-			subtitle_request_lock(reader);
-			int input_poisoned = reader->input_poisoned;
-			subtitle_request_unlock(reader);
-			int reuse_input = !input_poisoned && reader->input.format &&
-			    reader->input_factory_open == requested_factory.open &&
-			    reader->input_factory_open_cancelable ==
-			        requested_factory.open_cancelable &&
-			    reader->input_factory_opaque == requested_factory.opaque;
-			int ret = 0;
-			uint64_t stage_started = sceKernelGetProcessTimeWide();
-			if (!reuse_input) {
-				subtitle_input_discard(reader);
-				log_printf("subtitle: open serial=%u stream=%d\n",
-				           requested_serial, requested_stream);
-				ret = media_input_open(&reader->input, &requested_factory,
-				                       &reader->operation_cancel,
-				                       &reader->switch_serial,
-				                       requested_serial, requested_stream, reader);
-				if (ret >= 0) {
-					reader->input_factory_open = requested_factory.open;
-					reader->input_factory_open_cancelable =
-					    requested_factory.open_cancelable;
-					reader->input_factory_opaque = requested_factory.opaque;
-				}
-			} else {
-				reader->input.cancel = &reader->operation_cancel;
-				reader->input.request_serial = &reader->switch_serial;
-				reader->input.operation_serial = requested_serial;
-				reader->input.format->interrupt_callback.opaque = &reader->input;
-				/* A cooperative serial interrupt does not poison the cursor. Clear
-				 * transient AVIO error/EOF state before the mandatory reposition so
-				 * local and responsive remote inputs avoid reconnecting. */
-				if (reader->input.avio) {
-					reader->input.avio->error = 0;
-					reader->input.avio->eof_reached = 0;
-				}
-				avformat_flush(reader->input.format);
-			}
+
+            /* A new selection/position owns a fresh subtitle demux cursor.
+             * A successful indexed seek is insufficient: MOV fragments and
+             * interrupted Matroska parsers can retain stale per-track state.
+             * This is asynchronous on the already reserved worker; neither
+             * video/audio nor the user's selected track is restarted here. */
+            subtitle_input_discard(reader);
+            int ret = 0;
+            uint64_t stage_started = sceKernelGetProcessTimeWide();
+            log_printf("subtitle: open serial=%u stream=%d\n", requested_serial, requested_stream);
+            ret = media_input_open(&reader->input, &requested_factory,
+                                   &reader->operation_cancel, &reader->switch_serial,
+                                   requested_serial, requested_stream, reader);
+
 			uint64_t open_elapsed = sceKernelGetProcessTimeWide() - stage_started;
 			if (reader->cancel) break;
 			if (requested_serial != reader->switch_serial) {
@@ -1032,9 +999,9 @@ static int subtitle_worker(SceSize args, void *argp) {
 				                                  requested_stream, clock_stream);
 			}
 			stage_started = sceKernelGetProcessTimeWide();
-			if (ret >= 0 && (reuse_input || requested_position > 0)) {
+			if (ret >= 0 && requested_position > SUBTITLE_SEEK_PREROLL_MS) {
 				subtitle_input_io_begin(reader);
-				ret = subtitle_seek(&reader->input, requested_stream, clock_stream,
+				ret = subtitle_seek(&reader->input, clock_stream,
 				                    requested_position);
 				subtitle_input_io_end(reader);
 			}
@@ -1082,14 +1049,22 @@ static int subtitle_worker(SceSize args, void *argp) {
 		int ret = av_read_frame(reader->input.format, packet);
 		subtitle_input_io_end(reader);
 		/* A cancel-aware source can still return one buffered packet while a newer
-		 * request is being published. Reuse is safe after a cooperative interruption
-		 * and reposition; a destructive socket abort explicitly poisons the cursor. */
+		 * request is published. Never publish that packet to the new timeline. */
 		if (reader->switch_serial != reader->applied_serial) {
 			av_packet_unref(packet);
 			subtitle_request_lock(reader);
 			int poisoned = reader->input_poisoned;
 			subtitle_request_unlock(reader);
-			if (poisoned) subtitle_input_discard(reader);
+            /* A cooperative read cancellation may permanently invalidate the
+             * transport or leave a partial demux element, even without abort().
+             * Release a failed cursor now. The next request opens its own
+             * demux asynchronously while preserving the track selection. */
+            if (poisoned || ret < 0 ||
+                (reader->input.avio && reader->input.avio->error < 0)) {
+                log_printf("subtitle: interrupted cursor discarded for serial=%u\n",
+                           reader->switch_serial);
+                subtitle_input_discard(reader);
+            }
 			continue;
 		}
 		if (ret < 0) {
@@ -1238,9 +1213,6 @@ static void subtitle_reader_stop(VtSubtitleReader *reader, int close_input) {
 	reader->clock_stream_index = -1;
 	reader->eof = 0;
 	reader->error = 0;
-	reader->input_factory_open = NULL;
-	reader->input_factory_open_cancelable = NULL;
-	reader->input_factory_opaque = NULL;
 	reader->input_abort = NULL;
 	reader->input_abort_opaque = NULL;
 	reader->input_io_active = 0;

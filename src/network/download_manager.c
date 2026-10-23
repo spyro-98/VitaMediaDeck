@@ -15,6 +15,7 @@
 
 #include "app_paths.h"
 #include "common/text_log.h"
+#include "media/podcast_metadata.h"
 
 #define DOWNLOAD_ROOT "ux0:download"
 #define DOWNLOAD_BUFFER_SIZE (64 * 1024)
@@ -277,6 +278,7 @@ static int make_destination(VtDownloadJob *job, const char *value,
 		SceIoStat stat;
 		memset(&stat, 0, sizeof(stat));
 		if (sceIoGetstat(candidate, &stat) >= 0) continue;
+		if (!vt_podcast_destination_available(candidate)) continue;
 		snprintf(job->destination, sizeof(job->destination), "%s", candidate);
 		publish_metadata(job, filename, candidate);
 		int written = snprintf(part, part_size, "%s.part", candidate);
@@ -423,7 +425,7 @@ static int download_url(VtDownloadJob *job) {
 	/* Plain HTTP is an explicit direct-download choice. vita-https still keeps
 	 * HTTPS verification enabled and forbids HTTPS-to-HTTP redirect downgrades. */
 	config.allow_http = 1;
-	config.user_agent = "VitaMediaDeck/1.3.0";
+	config.user_agent = "VitaMediaDeck/1.4.0";
 	/* Downloads are bounded by cancellation and the low-speed watchdog, not the
 	 * generic request API's 20-second wall-clock timeout. LONG_MAX is roughly
 	 * 24 days on Vita and leaves genuinely stalled transfers detectable. */
@@ -543,6 +545,28 @@ int vt_download_run(void *opaque) {
 	           job->direct_url ? job->destination_directory : job->destination,
 	           job->direct_url ? "(deferred until response headers)" : part);
 	int result = job->direct_url ? download_url(job) : download_network(job, part);
+	if (result == 0 && job->podcast.kind == VT_ONLINE_EPISODE) {
+		VtPodcastMetadata metadata = {0};
+		snprintf(metadata.title,sizeof(metadata.title),"%s",job->podcast.title);
+		snprintf(metadata.author,sizeof(metadata.author),"%s",job->podcast.author);
+		snprintf(metadata.show,sizeof(metadata.show),"%s",job->podcast_show);
+		snprintf(metadata.description,sizeof(metadata.description),"%s",job->podcast.description);
+		metadata.duration_ms=job->podcast.duration_ms;
+		snprintf(metadata.published_date,sizeof(metadata.published_date),"%s",job->podcast.published_date);
+		int cover_result = 0;
+		keep_awake(job);
+		if (job->podcast.artwork_url[0]) {
+			cover_result = wait_if_paused(job) < 0 ? -1 :
+			    vt_online_fetch_cover(&job->podcast, &job->cancel);
+		}
+		int metadata_result = vt_podcast_metadata_save(job->destination, &metadata,
+		    strcmp(job->podcast.artwork_path,"-") ? job->podcast.artwork_path : "", &job->cancel);
+		keep_awake(job);
+		if (cover_result < 0 || metadata_result != 0)
+			snprintf(job->detail,sizeof(job->detail),"Audio saved; podcast metadata or cover could not be saved");
+		log_printf("podcast download extras: metadata=%d cover=%d cancelled=%d\n",
+		    metadata_result,cover_result,job->cancel);
+	}
 	uint64_t progress_current = 0, progress_total = 0;
 	vt_download_progress_snapshot(job, &progress_current, &progress_total);
 	log_printf("download end: type=%s result=0x%08X current=%llu total=%llu paused=%d cancel=%d detail=%s\n",

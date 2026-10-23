@@ -1,6 +1,8 @@
 #include <vita2d.h>
 #define UI_FONT_SMALL 16
 #define UI_FONT_BODY 20
+#define UI_FONT_DISPLAY 28
+#define UI_FONT_HERO 48
 vita2d_font *ui_runtime_font(unsigned);
 int ui_font_text_width(vita2d_font*,unsigned,const char*);
 int ui_font_fit_text(vita2d_font*,unsigned,const char*,char*,size_t,int);

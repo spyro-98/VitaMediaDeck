@@ -3,6 +3,7 @@
 #include "network/iptv_manifest.h"
 
 typedef struct VtIptvSource VtIptvSource;
+typedef struct { char user_agent[VT_IPTV_USER_AGENT_MAX]; } VtIptvHttpOptions;
 typedef struct {
     uint64_t generation, sequence, discontinuity;
     size_t offset;
@@ -13,17 +14,38 @@ typedef struct {
 typedef int (*VtIptvFetch)(void *ctx, const char *url, size_t limit,
     unsigned char **data, size_t *size, char *effective, size_t effective_capacity,
     volatile int *cancel);
+typedef int (*VtIptvFetchRange)(void *ctx, const char *url, uint64_t offset,
+    size_t length, unsigned char **data, size_t *size, char *effective,
+    size_t effective_capacity, volatile int *cancel);
+typedef struct VtIptvSourceConfig VtIptvSourceConfig;
+/* Optional app-side transport/remux producer. open/next run on the producer
+ * thread; close runs after it is joined. next returns malloc-owned MPEG-TS chunks.
+ * The common source still owns cancellation, backpressure and A/V cursors. */
 typedef struct {
+    void *(*open)(const char *url, const VtIptvSourceConfig *config);
+    int (*next)(void *ctx, uint64_t now_ms, volatile int *cancel,
+                unsigned char **data, size_t *size, int *finite, uint64_t *duration_ms);
+    void (*close)(void *ctx);
+    void (*audio_info)(void *ctx, uint32_t *sample_rate, uint32_t *channels);
+} VtIptvProducer;
+struct VtIptvSourceConfig {
     size_t buffer_limit, segment_limit;
     uint32_t bandwidth_limit, width_limit, height_limit;
     VtIptvFetch fetch;
     void *fetch_ctx;
-} VtIptvSourceConfig;
+    VtIptvProducer producer; /* All-zero retains the original HLS path. */
+    unsigned startup_segments; /* Zero preserves one-chunk startup. */
+    VtIptvFetchRange fetch_range; /* Optional verified exact HTTP byte ranges. */
+};
 typedef struct {
     uint64_t first_sequence, next_sequence, generation;
     size_t buffered_bytes;
     unsigned buffered_segments, consecutive_failures;
     int terminal, last_error;
+    int finite;
+    uint64_t duration_ms;
+    uint32_t audio_sample_rate, audio_channels;
+    int startup_ready; /* Target reached, cache full, or buffered short VOD. */
 } VtIptvSourceStatus;
 
 /* Defaults: 12 MiB compressed cache, 4 MiB/segment, 4 Mbps and 1280x720 variant
@@ -53,4 +75,7 @@ int vt_iptv_source_read(VtIptvSource *source, VtIptvCursor *cursor,
 int vt_iptv_http_fetch(void *ctx, const char *url, size_t limit,
     unsigned char **data, size_t *size, char *effective, size_t effective_capacity,
     volatile int *cancel);
+int vt_iptv_http_fetch_range(void *ctx, const char *url, uint64_t offset,
+    size_t length, unsigned char **data, size_t *size, char *effective,
+    size_t effective_capacity, volatile int *cancel);
 #endif

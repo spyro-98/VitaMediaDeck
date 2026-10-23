@@ -1,0 +1,20 @@
+--- a/libavformat/hls.c
++++ b/libavformat/hls.c
+@@ -666,6 +666,17 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
+     else
+         proto_name = avio_find_protocol_name(url);
+ 
++    /* VitaMediaDeck supplies verified, bounded HTTP through io_open. There
++     * is deliberately no FFmpeg network protocol in this build. Recognize
++     * only HTTP(S) for that explicit custom-IO path; all existing URL checks
++     * below remain active. crypto+ is decrypted by the same IO owner. */
++    if (!proto_name && (s->flags & AVFMT_FLAG_CUSTOM_IO)) {
++        const char *transport = av_strstart(url, "crypto+", NULL) ? url + 7 : url;
++        if (av_strstart(transport, "https://", NULL))
++            proto_name = "https";
++        else if (av_strstart(transport, "http://", NULL))
++            proto_name = "http";
++    }
+     if (!proto_name)
+         return AVERROR_INVALIDDATA;
+ 

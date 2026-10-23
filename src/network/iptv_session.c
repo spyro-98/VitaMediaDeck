@@ -63,7 +63,7 @@ static void *produce(void *opaque) {
     VtIptvSession *s = opaque;
     while (!load_flag(&s->cancelled)) {
         int result = vt_iptv_source_poll(s->source, now_ms());
-        if (result < 0) {
+        if (result < 0 || result == VT_IPTV_DISCONTINUITY || result == VT_IPTV_LAGGED) {
             if (result != VT_IPTV_CANCELLED) signal_event(s, result);
             break;
         }

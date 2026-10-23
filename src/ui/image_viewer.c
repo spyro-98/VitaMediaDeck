@@ -1,4 +1,5 @@
 #include "ui/image_viewer.h"
+#include "ui/image_view_controls.h"
 
 #include <math.h>
 #include <pthread.h>
@@ -21,6 +22,7 @@
 #include "ui/mini_player.h"
 #include "ui/sections_sidebar.h"
 #include "ui/theme.h"
+#include "ui/theme_scene.h"
 #include "ui/touch.h"
 
 #define VIEWPORT_X 0.0f
@@ -29,7 +31,6 @@
 #define VIEWPORT_H 544.0f
 #define VIEWPORT_CX (VIEWPORT_X + VIEWPORT_W * .5f)
 #define VIEWPORT_CY (VIEWPORT_Y + VIEWPORT_H * .5f)
-#define PI_F 3.14159265358979323846f
 #define IMAGE_VIEWER_MAX_EDGE 960U
 #define IMAGE_DETAIL_TILE_EDGE 1024U
 #define IMAGE_DETAIL_MIN_ZOOM 1.25f
@@ -44,13 +45,7 @@ typedef struct {
 	char error[160];
 } ImageLoadTask;
 
-typedef struct {
-	float zoom;
-	float pan_x;
-	float pan_y;
-	float rotation;
-	UiTouchPoints previous_touch;
-} ImageViewState;
+typedef UiImageViewState ImageViewState;
 
 typedef struct {
 	char path[IMAGE_DETAIL_PATH_MAX];
@@ -103,10 +98,6 @@ static void *image_detail_worker_main(void *opaque) {
 	return NULL;
 }
 
-static float clamp_float(float value, float low, float high) {
-	return value < low ? low : value > high ? high : value;
-}
-
 static unsigned fade_color(unsigned color, float opacity) {
 	if (opacity <= 0.0f) return color & 0x00ffffffU;
 	if (opacity >= 1.0f) return color;
@@ -122,19 +113,9 @@ static float approach(float value, float target, float rate,
 	       (1.0f - expf(-rate * delta_seconds));
 }
 
-static float normalized_angle_delta(float value) {
-	while (value > PI_F) value -= PI_F * 2.0f;
-	while (value < -PI_F) value += PI_F * 2.0f;
-	return value;
-}
-
-static float fit_scale(vita2d_texture *texture) {
-	float width = (float)vita2d_texture_get_width(texture);
-	float height = (float)vita2d_texture_get_height(texture);
-	if (width <= 0.0f || height <= 0.0f) return 1.0f;
-	float x = VIEWPORT_W / width;
-	float y = VIEWPORT_H / height;
-	return x < y ? x : y;
+static float fit_scale(vita2d_texture *texture, const ImageViewState *state) {
+ return ui_image_fit(vita2d_texture_get_width(texture),
+                     vita2d_texture_get_height(texture),state->rotation);
 }
 
 static void native_detail_free(ImageNativeDetail *detail) {
@@ -149,7 +130,7 @@ static void native_detail_center(const ImageViewState *state,
 	                              float *source_x, float *source_y) {
 	if (!state || !proxy || !info || !source_x || !source_y) return;
 	float proxy_width = (float)vita2d_texture_get_width(proxy);
-	float scale = fit_scale(proxy) * state->zoom * proxy_width /
+	float scale = fit_scale(proxy, state) * state->zoom * proxy_width /
 	              (float)info->source_width;
 	if (scale <= 0.0001f) { *source_x = *source_y = 0.0f; return; }
 	float screen_x = -state->pan_x;
@@ -277,79 +258,19 @@ static void native_detail_pump(ImageDetailWorker *worker,
 	           (unsigned long long)elapsed_ms);
 }
 
-static void clamp_pan(ImageViewState *state, vita2d_texture *texture) {
-	float scale = fit_scale(texture) * state->zoom;
-	float width = (float)vita2d_texture_get_width(texture) * scale;
-	float height = (float)vita2d_texture_get_height(texture) * scale;
-	float cosine = fabsf(cosf(state->rotation));
-	float sine = fabsf(sinf(state->rotation));
-	float half_width = (width * cosine + height * sine) * .5f;
-	float half_height = (width * sine + height * cosine) * .5f;
-	/* Always keep at least a 48 px strip recoverable on screen, while allowing
-	 * the user to inspect every edge of a zoomed/rotated proxy. */
-	float limit_x = half_width + VIEWPORT_W * .5f - 48.0f;
-	float limit_y = half_height + VIEWPORT_H * .5f - 48.0f;
-	if (half_width <= VIEWPORT_W * .5f) limit_x = 0.0f;
-	if (half_height <= VIEWPORT_H * .5f) limit_y = 0.0f;
-	state->pan_x = clamp_float(state->pan_x, -limit_x, limit_x);
-	state->pan_y = clamp_float(state->pan_y, -limit_y, limit_y);
-}
-
 static void change_zoom(ImageViewState *state, vita2d_texture *texture,
-	                    float factor, float anchor_x, float anchor_y) {
-	float old_zoom = state->zoom;
-	state->zoom = clamp_float(state->zoom * factor, .2f, 8.0f);
-	float applied = state->zoom / old_zoom;
-	/* Keep the point beneath the fingers visually anchored during pinch. */
-	state->pan_x = anchor_x - VIEWPORT_CX -
-	               (anchor_x - VIEWPORT_CX - state->pan_x) * applied;
-	state->pan_y = anchor_y - VIEWPORT_CY -
-	               (anchor_y - VIEWPORT_CY - state->pan_y) * applied;
-	clamp_pan(state, texture);
-}
-
-static void handle_touch(ImageViewState *state, vita2d_texture *texture) {
-	UiTouchPoints touch;
-	ui_touch_peek_points(&touch);
-	if (touch.count == 1 && state->previous_touch.count == 1 &&
-	    touch.id[0] == state->previous_touch.id[0]) {
-		state->pan_x += touch.x[0] - state->previous_touch.x[0];
-		state->pan_y += touch.y[0] - state->previous_touch.y[0];
-		clamp_pan(state, texture);
-	} else if (touch.count >= 2 && state->previous_touch.count >= 2) {
-		float old_dx = (float)(state->previous_touch.x[1] - state->previous_touch.x[0]);
-		float old_dy = (float)(state->previous_touch.y[1] - state->previous_touch.y[0]);
-		float new_dx = (float)(touch.x[1] - touch.x[0]);
-		float new_dy = (float)(touch.y[1] - touch.y[0]);
-		float old_distance = sqrtf(old_dx * old_dx + old_dy * old_dy);
-		float new_distance = sqrtf(new_dx * new_dx + new_dy * new_dy);
-		float old_mid_x = (state->previous_touch.x[0] +
-		                   state->previous_touch.x[1]) * .5f;
-		float old_mid_y = (state->previous_touch.y[0] +
-		                   state->previous_touch.y[1]) * .5f;
-		float new_mid_x = (touch.x[0] + touch.x[1]) * .5f;
-		float new_mid_y = (touch.y[0] + touch.y[1]) * .5f;
-		state->pan_x += new_mid_x - old_mid_x;
-		state->pan_y += new_mid_y - old_mid_y;
-		if (old_distance > 8.0f && new_distance > 8.0f)
-			change_zoom(state, texture, new_distance / old_distance,
-			            new_mid_x, new_mid_y);
-		state->rotation += normalized_angle_delta(
-		    atan2f(new_dy, new_dx) - atan2f(old_dy, old_dx));
-		state->rotation = normalized_angle_delta(state->rotation);
-		clamp_pan(state, texture);
-	}
-	state->previous_touch = touch;
+                         float factor, float x, float y) {
+ ui_image_zoom(state,vita2d_texture_get_width(texture),
+               vita2d_texture_get_height(texture),factor,x,y);
 }
 
 static void draw_image_info_panel(float animation, const VtImageInfo *info,
 	                              const ImageViewState *state) {
 	if (animation <= .01f || !info || !state) return;
-	const float width = 340.0f;
+	const float width = 430.0f;
 	float x = 960.0f - width * animation;
 	vita2d_draw_rectangle(x, 0, width, 544, VT_THEME_BG_SOFT);
-	vita2d_draw_rectangle(x, 0, 3, 544, VT_THEME_SPECTRAL);
-	vita2d_draw_rectangle(x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
+	vita2d_draw_rectangle(x, 0, 1, 544, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (body)
@@ -379,10 +300,10 @@ static void draw_image_info_panel(float animation, const VtImageInfo *info,
 		ui_panel(x + 20, y, width - 40, 60, VT_THEME_SURFACE,
 		         VT_THEME_BORDER_DIM, 0);
 		if (!small) continue;
-		ui_font_draw_text(small, x + 38, y + 24, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text(small, x + 38, y + 37, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, labels[i]);
 		int value_width = ui_font_text_width(small, UI_FONT_SMALL, values[i]);
-		ui_font_draw_text(small, x + width - value_width - 38, y + 49,
+		ui_font_draw_text(small, x + width - value_width - 38, y + 37,
 		                  VT_THEME_COLD_LIGHT, UI_FONT_SMALL, values[i]);
 	}
 }
@@ -393,7 +314,7 @@ static void draw_native_detail(const ImageNativeDetail *detail,
 	                            const ImageViewState *state) {
 	if (!detail || !detail->texture || !proxy || !info || !state ||
 	    !info->source_width || !info->source_height) return;
-	float source_scale = fit_scale(proxy) * state->zoom *
+	float source_scale = fit_scale(proxy, state) * state->zoom *
 	                     (float)vita2d_texture_get_width(proxy) /
 	                     (float)info->source_width;
 	float image_x = ((float)detail->source_x + detail->width * .5f -
@@ -416,6 +337,8 @@ static void draw_viewer(vita2d_texture *texture, const VtImageInfo *info,
 	                    float right_animation) {
 	vita2d_start_drawing();
 	vita2d_clear_screen();
+	const unsigned *theme_before=ui_theme_media_begin();
+	vita2d_draw_rectangle(0,0,960,544,VT_THEME_MEDIA_BACKDROP);
 	ui_chrome_background(VT_THEME_BG, VT_THEME_SPECTRAL);
 	vita2d_draw_rectangle(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_W, VIEWPORT_H,
 	                      VT_THEME_MEDIA_BACKDROP);
@@ -423,7 +346,7 @@ static void draw_viewer(vita2d_texture *texture, const VtImageInfo *info,
 	                          (int)(VIEWPORT_X + VIEWPORT_W),
 	                          (int)(VIEWPORT_Y + VIEWPORT_H));
 	vita2d_enable_clipping();
-	float scale = fit_scale(texture) * state->zoom;
+	float scale = fit_scale(texture, state) * state->zoom;
 	vita2d_draw_texture_scale_rotate_hotspot(
 	    texture, VIEWPORT_CX + state->pan_x, VIEWPORT_CY + state->pan_y,
 	    scale, scale, state->rotation,
@@ -433,19 +356,17 @@ static void draw_viewer(vita2d_texture *texture, const VtImageInfo *info,
 	vita2d_disable_clipping();
 	/* A compact gallery rail keeps metadata separate from the image itself and
 	 * fades completely for an unobstructed image view. */
-	vita2d_draw_rectangle(0, 0, 960, 48,
+	vita2d_draw_rectangle(0, 0, 960, 54,
 	                      fade_color(VT_THEME_GLASS_A(238), hud_opacity));
-	vita2d_draw_rectangle(0, 47, 960, 1,
+	vita2d_draw_rectangle(0, 435, 960, 1,
 	                      fade_color(VT_THEME_SPECTRAL, hud_opacity));
-	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	if (body) {
-		char fitted[256];
-		ui_font_fit_text(body, UI_FONT_BODY, title ? title : "", fitted,
-		                 sizeof(fitted), 470);
-		ui_font_draw_text(body, 28, 31, fade_color(VT_THEME_TEXT, hud_opacity),
-		                  UI_FONT_BODY, fitted);
-	}
+	ui_brand_draw_player_breadcrumbs(vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_IMAGES),
+	                                 NULL, title, hud_opacity);
+	vita2d_draw_rectangle(0,436,960,108,fade_color(VT_THEME_GLASS_A(238),hud_opacity));
+ ui_theme_scene_begin(UI_SCENE_IMAGE,title);
+ ui_theme_scene_model(UI_SCENE_IMAGE,840,467,54,hud_opacity*.7f,0);
+ ui_text_line(18,470,580,title,fade_color(VT_THEME_TEXT,hud_opacity),UI_FONT_BODY);
 	if (small && info) {
 		char details[192];
 		char file_size[32];
@@ -454,7 +375,7 @@ static void draw_viewer(vita2d_texture *texture, const VtImageInfo *info,
 		         info->format, info->source_width, info->source_height,
 		         file_size, state->zoom * 100.0f);
 		int width = ui_font_text_width(small, UI_FONT_SMALL, details);
-		ui_font_draw_text(small, 932 - width, 29,
+		ui_font_draw_text(small, 942 - width, 494,
 		                  fade_color(VT_THEME_TEXT_MUTED, hud_opacity),
 		                  UI_FONT_SMALL, details);
 	}
@@ -481,6 +402,7 @@ static void draw_viewer(vita2d_texture *texture, const VtImageInfo *info,
 	draw_image_info_panel(right_animation, info, state);
 	if (sidebar && sidebar->animation > .01f)
 		ui_sections_sidebar_draw(sidebar);
+	ui_theme_media_end(theme_before);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
@@ -530,11 +452,14 @@ int ui_image_viewer_show(const char *path, const char *title) {
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
 	int result = 0;
 	ui_touch_reset();
-	SceCtrlData controls, previous;
+	SceCtrlData controls = { .lx = 128, .ly = 128 }, previous;
 	memset(&previous, 0, sizeof(previous));
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	for (;;) {
+		/* Failed reads must not repeat the preceding movement indefinitely. */
+		memset(&controls,0,sizeof(controls));
+		controls.lx=controls.ly=128;
 		sceCtrlPeekBufferPositive(0, &controls, 1);
 		unsigned int pressed = controls.buttons & ~previous.buttons;
 		previous = controls;
@@ -578,7 +503,7 @@ int ui_image_viewer_show(const char *path, const char *title) {
 			if (touched != UI_SECTION_NONE) section = touched;
 			touch_flags = UI_TOUCH_EVENT_NONE;
 		} else if (right_open) {
-			if ((touch_flags & UI_TOUCH_EVENT_TAP) && touch.x < 620)
+			if ((touch_flags & UI_TOUCH_EVENT_TAP) && touch.x < 530)
 				right_open = 0;
 			if (pressed & SCE_CTRL_CIRCLE) right_open = 0;
 			pressed = 0;
@@ -605,38 +530,18 @@ int ui_image_viewer_show(const char *path, const char *title) {
 		if (!panels_open && (pressed & SCE_CTRL_CROSS)) {
 			change_zoom(&state, task.texture, .8f, VIEWPORT_CX, VIEWPORT_CY);
 		}
-		if (!panels_open && (pressed & SCE_CTRL_SQUARE)) {
-			state.rotation = normalized_angle_delta(state.rotation + PI_F * .5f);
-			clamp_pan(&state, task.texture);
-		}
-		float analog_x = fabsf((float)controls.lx - 128.0f) > 20.0f
-		               ? ((float)controls.lx - 128.0f) / 16.0f : 0.0f;
-		float analog_y = fabsf((float)controls.ly - 128.0f) > 20.0f
-		               ? ((float)controls.ly - 128.0f) / 16.0f : 0.0f;
-		int detail_motion = analog_x != 0.0f || analog_y != 0.0f ||
-		                    touch_points.count > 0 || (controls.buttons &
-		                    (SCE_CTRL_LEFT | SCE_CTRL_RIGHT |
-		                     SCE_CTRL_UP | SCE_CTRL_DOWN));
-		/* Navigation is intentionally inverted: the left controls move the
-		 * viewport across the image, as if dragging the canvas beneath it. */
-		if (!panels_open) {
-			state.pan_x -= analog_x;
-			state.pan_y -= analog_y;
-			if (controls.buttons & SCE_CTRL_LEFT) state.pan_x += 7.0f;
-			if (controls.buttons & SCE_CTRL_RIGHT) state.pan_x -= 7.0f;
-			if (controls.buttons & SCE_CTRL_UP) state.pan_y += 7.0f;
-			if (controls.buttons & SCE_CTRL_DOWN) state.pan_y -= 7.0f;
-		}
-		float right_x = (float)controls.rx - 128.0f;
-		if (fabsf(right_x) > 28.0f) detail_motion = 1;
-		if (!panels_open && fabsf(right_x) > 28.0f)
-			state.rotation += right_x / 18000.0f;
-		state.rotation = normalized_angle_delta(state.rotation);
-		if (!panels_open) {
-			handle_touch(&state, task.texture);
+		float image_width=vita2d_texture_get_width(task.texture);
+		float image_height=vita2d_texture_get_height(task.texture);
+		if (!panels_open && (pressed & SCE_CTRL_SQUARE))
+			ui_image_rotate(&state,image_width,image_height);
+		int detail_motion=0;
+		if (!panels_open && !reset_view) {
+			detail_motion=ui_image_pan(&state,image_width,image_height,
+			    controls.lx,controls.ly,controls.buttons,delta_seconds);
+			ui_image_touch(&state,image_width,image_height,&touch_points);
+			detail_motion|=touch_points.count>0;
 			if (touch_flags & UI_TOUCH_EVENT_TAP) hud_visible = !hud_visible;
-		}
-		clamp_pan(&state, task.texture);
+		} else state.previous_touch.count=0;
 		/* After a pinch or after panning comes to rest, refresh only when the
 		 * current source point has left the cached native tile. */
 		if (!panels_open && !detail_motion)

@@ -14,7 +14,9 @@ typedef enum {
 } VtLocalMediaType;
 
 typedef enum {
-	VT_LOCAL_MEDIA_SOURCE_FILE = 0
+	VT_LOCAL_MEDIA_SOURCE_FILE = 0,
+	VT_LOCAL_MEDIA_SOURCE_NAVIDROME = 1,
+	VT_LOCAL_MEDIA_SOURCE_IMMICH = 2
 } VtLocalMediaSource;
 
 typedef struct {

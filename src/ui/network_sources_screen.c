@@ -1,5 +1,6 @@
 #include "ui/network_sources_screen.h"
 #include "ui/qr_scanner.h"
+#include "ui/personal_media_screen.h"
 #include "ui/folder_picker.h"
 
 #include "app_paths.h"
@@ -22,6 +23,8 @@
 #include "network/download_manager.h"
 #include "settings/preferences.h"
 #include "ui/brand.h"
+#include "ui/layout.h"
+#include "ui/media_grid_layout.h"
 #include "ui/components.h"
 #include "ui/focus_glow.h"
 #include "ui/format.h"
@@ -31,22 +34,23 @@
 #include "ui/sections_sidebar.h"
 #include "ui/text_input.h"
 #include "ui/theme.h"
+#include "ui/theme_scene.h"
 #include "ui/touch.h"
 
-#define LIST_X 66
-#define LIST_Y 112
-#define LIST_W 828
-#define ROW_H 58
-#define VISIBLE_ROWS 7
-#define SOURCE_LIST_X 46
-#define SOURCE_LIST_Y 126
-#define SOURCE_LIST_W 568
-#define SOURCE_ROW_H 62
-#define BROWSER_GRID_COLS 4
-#define BROWSER_GRID_CARD_W 198
-#define BROWSER_GRID_CARD_H 154
-#define BROWSER_GRID_GAP_X 12
-#define BROWSER_GRID_GAP_Y 10
+#define LIST_X UI_CONTENT_X
+#define LIST_Y 106
+#define LIST_W UI_CONTENT_W
+#define ROW_H 54
+#define VISIBLE_ROWS 8
+#define SOURCE_LIST_X UI_CONTENT_X
+#define SOURCE_LIST_Y 118
+#define SOURCE_LIST_W 604
+#define SOURCE_ROW_H 58
+#define BROWSER_GRID_COLS (ui_theme_id()==VT_UI_THEME_LEGACY?UI_GRID_COLS:ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),1).columns)
+#define BROWSER_GRID_CARD_W UI_GRID_CARD_W
+#define BROWSER_GRID_CARD_H (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).card_h)
+#define BROWSER_GRID_GAP_X 9
+#define BROWSER_GRID_GAP_Y 8
 #define NETWORK_BROWSER_MAX_DEPTH 24
 #define NETWORK_DIRECTORY_CACHE_SLOTS 6
 #define NETWORK_DIRECTORY_CACHE_TTL_US (10ULL * 60ULL * 1000ULL * 1000ULL)
@@ -168,10 +172,11 @@ static void network_browser_breadcrumb(const NetworkBrowserResume *resume,
 
 static int network_viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
-	return mini_top < 532 ? mini_top : 532;
+	return mini_top < UI_CONTENT_BOTTOM ? mini_top : UI_CONTENT_BOTTOM;
 }
 
 static int visible_rows(void) {
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY)return ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),0).rows;
 	int rows = (network_viewport_bottom() - LIST_Y + 6) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -179,6 +184,7 @@ static int visible_rows(void) {
 }
 
 static int render_rows(void) {
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY)return ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),0).rows;
 	int rows = (network_viewport_bottom() - LIST_Y + ROW_H - 1) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -186,19 +192,13 @@ static int render_rows(void) {
 }
 
 static int browser_grid_visible_rows(void) {
-	int step = BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y;
-	int rows = (network_viewport_bottom() - LIST_Y + BROWSER_GRID_GAP_Y) / step;
-	if (rows < 1) rows = 1;
-	if (rows > 2) rows = 2;
-	return rows;
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),1);return l.rows/l.columns;}
+ return ui_media_grid_layout(LIST_Y, network_viewport_bottom()).rows;
 }
 
 static int browser_grid_render_rows(void) {
-	int step = BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y;
-	int rows = (network_viewport_bottom() - LIST_Y + step - 1) / step;
-	if (rows < 1) rows = 1;
-	if (rows > 3) rows = 3;
-	return rows;
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),1);return l.rows/l.columns;}
+ return ui_media_grid_layout(LIST_Y, network_viewport_bottom()).rows;
 }
 
 static int thumbnail_viewport_priority(int index, int selected,
@@ -216,7 +216,7 @@ static int thumbnail_viewport_priority(int index, int selected,
 static int source_visible_rows(void) {
 	int rows = (network_viewport_bottom() - SOURCE_LIST_Y + 8) / SOURCE_ROW_H;
 	if (rows < 1) rows = 1;
-	if (rows > 6) rows = 6;
+	if (rows > 7) rows = 7;
 	return rows;
 }
 
@@ -224,7 +224,7 @@ static int source_render_rows(void) {
 	int rows = (network_viewport_bottom() - SOURCE_LIST_Y + SOURCE_ROW_H - 1) /
 	           SOURCE_ROW_H;
 	if (rows < 1) rows = 1;
-	if (rows > 6) rows = 6;
+	if (rows > 7) rows = 7;
 	return rows;
 }
 
@@ -349,9 +349,8 @@ static void draw_summary_row(vita2d_font *font, const char *label,
 	                         const char *value, int baseline) {
 	if (!font) return;
 	char fitted[128];
-	clip(font, UI_FONT_SMALL, value, fitted, sizeof(fitted), 128);
-	ui_font_draw_text(font, 666, baseline, VT_THEME_TEXT_MUTED,
-	                  UI_FONT_SMALL, label);
+	clip(font, UI_FONT_SMALL, value, fitted, sizeof(fitted), 124);
+	ui_text_line(658,baseline,96,label,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 	int width = ui_font_text_width(font, UI_FONT_SMALL, fitted);
 	ui_font_draw_text(font, 892 - width, baseline, VT_THEME_TEXT,
 	                  UI_FONT_SMALL, fitted);
@@ -359,7 +358,7 @@ static void draw_summary_row(vita2d_font *font, const char *label,
 
 static void draw_sources(const VtNetworkSource *sources, int count,
 	                     int selected, int top, int remove_confirm,
-	                     const UiFocusMotion *focus_motion,
+	                     UiFocusMotion *focus_motion,
 	                     UiSectionsSidebar *sidebar) {
 	ui_mini_player_pump();
 	vita2d_start_drawing();
@@ -398,14 +397,6 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		                              vt_i18n_str(VT_STR_NETWORK_EMPTY_DETAIL));
 	} else {
 		int viewport_bottom = network_viewport_bottom();
-		if (page_has_focus)
-			ui_focus_glow_draw(focus_motion ? focus_motion->x : SOURCE_LIST_X,
-			                   focus_motion ? focus_motion->y
-			                                : SOURCE_LIST_Y + (selected - top) * SOURCE_ROW_H,
-			                   focus_motion ? focus_motion->width : SOURCE_LIST_W,
-			                   focus_motion ? focus_motion->height : SOURCE_ROW_H - 8,
-			                   sceKernelGetProcessTimeWide(), SOURCE_LIST_Y,
-			                   viewport_bottom);
 		vita2d_set_clip_rectangle(0, SOURCE_LIST_Y, 628, viewport_bottom);
 		vita2d_enable_clipping();
 		for (int i = top; i < count && i < top + source_render_rows(); i++) {
@@ -419,7 +410,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			if (body) {
 				char name[128];
 				clip(body, UI_FONT_BODY, sources[i].name, name, sizeof(name), 410);
-				ui_font_draw_text(body, SOURCE_LIST_X + 22, y + 29,
+				ui_font_draw_text(body, SOURCE_LIST_X + 22, y + 23,
 				                  VT_THEME_TEXT, UI_FONT_BODY, name);
 			}
 			if (small) {
@@ -430,7 +421,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 				char fitted_endpoint[192];
 				clip(small, UI_FONT_SMALL, endpoint, fitted_endpoint,
 				     sizeof(fitted_endpoint), SOURCE_LIST_W - width - 76);
-				ui_font_draw_text(small, SOURCE_LIST_X + 22, y + 49,
+				ui_font_draw_text(small, SOURCE_LIST_X + 22, y + 44,
 				                  VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted_endpoint);
 				ui_font_draw_text(small, SOURCE_LIST_X + SOURCE_LIST_W - width - 18,
 				                  y + 32, VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, protocol);
@@ -440,12 +431,6 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		const VtNetworkSource *source = &sources[selected];
 		ui_panel(642, 250, 272, 158, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_BLUE_LIGHT, 0);
-		vita2d_draw_rectangle(654, 268, 2, 122,
-		                      VT_THEME_SIGNAL_DIM);
-		for (int node = 0; node < 4; node++)
-			vita2d_draw_rectangle(651, 279 + node * 25, 8, 8,
-			                      node == 0 ? VT_THEME_SIGNAL_LIGHT
-			                                : VT_THEME_SIGNAL_DIM);
 		if (small) {
 			ui_font_draw_text(small, 666, 276, VT_THEME_BLUE_LIGHT, UI_FONT_SMALL,
 			                  vt_i18n_str(VT_STR_NETWORK_CONNECTION));
@@ -460,11 +445,11 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 			                     ? vt_i18n_str(source->host_key_sha256[0]
 			                           ? VT_STR_NETWORK_HOST_KEY_PINNED
 			                           : VT_STR_NETWORK_HOST_KEY_UNVERIFIED)
-			                     : source->protocol == VT_NETWORK_JELLYFIN &&
+			                     : source->protocol >= VT_NETWORK_JELLYFIN &&
 			                       !vt_network_jellyfin_uses_https(source)
 			                           ? vt_i18n_str(VT_STR_NETWORK_HTTP_UNENCRYPTED)
 			                     : (source->protocol == VT_NETWORK_WEBDAV ||
-			                        source->protocol == VT_NETWORK_JELLYFIN)
+			                        source->protocol >= VT_NETWORK_JELLYFIN)
 			                           ? vt_i18n_str(source->tls_public_key_sha256[0]
 			                                 ? VT_STR_NETWORK_TLS_PINNED
 			                                 : VT_STR_NETWORK_TLS_CA_VERIFIED)
@@ -477,6 +462,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		ui_action_button(642, 466, 272, 38, VT_THEME_SURFACE_RAISED,
 		                 "Triangle", vt_i18n_str(VT_STR_NETWORK_EDIT), 0);
 	}
+	if(page_has_focus && count && focus_motion) ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,sceKernelGetProcessTimeWide(),SOURCE_LIST_Y,network_viewport_bottom());
 	/* Persistent playback stays below every modal layer. */
 	ui_mini_player_draw();
 	if (remove_confirm) {
@@ -490,9 +476,9 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 		                              UI_FONT_SMALL,
 		                              vt_i18n_str(VT_STR_NETWORK_REMOVE_DETAIL));
 		ui_action_button(236, 294, 226, 48, VT_THEME_SURFACE,
-		                 "Circle", vt_i18n_str(VT_STR_NETWORK_CANCEL), 0);
+		                 "Cross", vt_i18n_str(VT_STR_NETWORK_CANCEL), remove_confirm==1);
 		ui_action_button(480, 294, 244, 48, VT_THEME_DANGER,
-		                 "Cross", vt_i18n_str(VT_STR_NETWORK_REMOVE), 1);
+		                 "Cross", vt_i18n_str(VT_STR_NETWORK_REMOVE), remove_confirm==2);
 	}
 	if (sidebar && sidebar->animation > .01f)
 		ui_sections_sidebar_draw(sidebar);
@@ -590,6 +576,20 @@ static void format_browser_entry_detail(const VtNetworkSource *source,
 		return;
 	}
 	ui_format_file_size(entry->size, out, out_size);
+}
+
+static const char *personal_entry_title(const VtNetworkSource *source,const VtNetworkEntry *entry) {
+ if(source->protocol!=VT_NETWORK_NAVIDROME && source->protocol!=VT_NETWORK_IMMICH)return entry->name;
+ int italian=vt_i18n_current_language()==VT_LANG_IT;
+ if(entry->is_directory==2)return italian?"Pagina successiva":"Next page";
+ const char *path=entry->path;
+ if(!strcmp(path,"albums:0"))return "Album";
+ if(!strcmp(path,"artists:0"))return italian?"Artisti":"Artists";
+ if(!strcmp(path,"playlists:0"))return "Playlist";
+ if(!strcmp(path,"photos:1"))return italian?"Tutte le foto":"All photos";
+ if(!strcmp(path,"collections:0"))return "Album";
+ if(!strcmp(path,"favorites:1"))return italian?"Preferiti":"Favorites";
+ return entry->name;
 }
 
 static int draw_metadata_chip(vita2d_font *font, int x, int y,
@@ -782,7 +782,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 	                     const VtNetworkCredential *credential,
 	                     const VtNetworkEntry *entries, int count,
 	                     int selected, int top, int grid_mode,
-	                     const UiFocusMotion *focus_motion,
+	                     UiFocusMotion *focus_motion,
 	                     int right_open, int right_cursor,
 	                     const UiSectionsSidebar *sidebar) {
 	ui_mini_player_pump();
@@ -790,31 +790,24 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
-	ui_brand_draw_header_placeholder(NULL, source->name);
+	ui_brand_draw_breadcrumbs(vt_i18n_str(VT_STR_NETWORK_TITLE), source->name, path);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	char breadcrumb[192];
-	snprintf(breadcrumb, sizeof(breadcrumb), "%s / %s", source->name,
-	         path && path[0] ? path : "");
-	ui_panel(LIST_X, 68, LIST_W, 34, VT_THEME_SURFACE_RAISED,
-	         VT_THEME_BLUE_LIGHT, 0);
-	vita2d_draw_rectangle(LIST_X + 12, 78, 3, 14, VT_THEME_SIGNAL);
 	if (small) {
-		char fitted_breadcrumb[192];
-		clip(small, UI_FONT_SMALL, breadcrumb, fitted_breadcrumb,
-		     sizeof(fitted_breadcrumb), LIST_W - 190);
-		ui_font_draw_text(small, LIST_X + 26, 91, VT_THEME_TEXT_MUTED,
-		                  UI_FONT_SMALL, fitted_breadcrumb);
+		char count_text[32];
+		snprintf(count_text, sizeof(count_text), "%d", count);
+		ui_font_draw_text(small, LIST_X + 8, 89, VT_THEME_TEXT_MUTED,
+		                  UI_FONT_SMALL, count_text);
 		const char *view_hint = grid_mode
 		                        ? vt_i18n_str(VT_STR_NETWORK_VIEW_GRID)
 		                        : vt_i18n_str(VT_STR_NETWORK_VIEW_LIST);
 		char hint[160];
-		if (source->protocol == VT_NETWORK_JELLYFIN && selected >= 0 &&
+		if ((source->protocol == VT_NETWORK_JELLYFIN || source->protocol == VT_NETWORK_NAVIDROME || source->protocol == VT_NETWORK_IMMICH) && selected >= 0 &&
 		    selected < count && entries[selected].is_video)
 			snprintf(hint, sizeof(hint), "Triangle %s   Square %s   R1 %s",
 			         vt_i18n_str(VT_STR_NETWORK_INFO),
 			         vt_i18n_str(VT_STR_NETWORK_REFRESH), view_hint);
-		else if (source->protocol != VT_NETWORK_JELLYFIN && selected >= 0 &&
+		else if (source->protocol < VT_NETWORK_JELLYFIN && selected >= 0 &&
 		         selected < count && !entries[selected].is_directory)
 			snprintf(hint, sizeof(hint), "Triangle %s   Square %s   R1 %s",
 			         vt_i18n_str(VT_STR_NETWORK_DOWNLOAD),
@@ -834,23 +827,30 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			                             UI_FONT_BODY, vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
 		if (small) ui_font_draw_text(small, 280, 290, VT_THEME_TEXT,
 			                              UI_FONT_SMALL, vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER_DETAIL));
+	} else if(ui_theme_id()!=VT_UI_THEME_LEGACY) {
+  ui_theme_scene_begin(UI_SCENE_BROWSER,path);
+  int bottom=network_viewport_bottom();UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),bottom,grid_mode);
+  int first=grid_mode?top*l.columns:top;
+  vita2d_set_clip_rectangle(0,LIST_Y,960,bottom);vita2d_enable_clipping();
+  for(int slot=0;slot<l.rows&&first+slot<count;slot++) {
+   int i=first+slot;const VtNetworkEntry *entry=&entries[i];
+   vita2d_texture *preview=(entry->is_video||entry->is_audio||entry->is_image)?
+      vt_video_thumbnail_get_remote_priority(source,credential,entry->path,entry->size,
+        thumbnail_viewport_priority(i,selected,first,first+l.rows)):NULL;
+   char detail[64];format_browser_entry_detail(source,entry,detail,sizeof(detail));
+   UiThemeRect tile=ui_theme_browser_rect(ui_theme_id(),slot,bottom,grid_mode);
+   ui_theme_browser_tile(UI_SCENE_BROWSER,tile,slot,i==selected,preview,personal_entry_title(source,entry),detail,entry->is_directory);
+  }
+  vita2d_disable_clipping();
 	} else if (!grid_mode) {
 		int viewport_bottom = network_viewport_bottom();
-		if (!ui_mini_player_input_locked())
-			ui_focus_glow_draw(focus_motion ? focus_motion->x : LIST_X,
-		                   focus_motion ? focus_motion->y
-		                                : LIST_Y + (selected - top) * ROW_H,
-		                   focus_motion ? focus_motion->width : LIST_W,
-		                   focus_motion ? focus_motion->height : ROW_H - 6,
-		                   sceKernelGetProcessTimeWide(),
-		                   LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int visible_limit = top + visible_rows();
 		for (int i = top; i < count && i < top + render_rows(); i++) {
 			int y = LIST_Y + (i - top) * ROW_H;
 			const VtNetworkEntry *entry = &entries[i];
-			vita2d_texture *preview = entry->is_video
+			vita2d_texture *preview = (entry->is_video || entry->is_audio || entry->is_image)
 			                        ? vt_video_thumbnail_get_remote_priority(
 			                              source, credential, entry->path, entry->size,
 			                              thumbnail_viewport_priority(
@@ -859,7 +859,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			ui_panel(LIST_X, y, LIST_W, ROW_H - 6,
 			         VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
-			         : (entry->is_video || entry->is_audio)
+			         : (entry->is_video || entry->is_audio || entry->is_image)
 			             ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER,
 			         0);
 			if (preview) {
@@ -871,7 +871,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			}
 			if (body) {
 				char title[192];
-				clip(body, UI_FONT_BODY, entry->name, title, sizeof(title),
+				clip(body, UI_FONT_BODY, personal_entry_title(source,entry), title, sizeof(title),
 				     preview ? 520 : 600);
 				ui_font_draw_text(body, LIST_X + (preview ? 94 : 22), y + 33,
 				                  VT_THEME_TEXT,
@@ -888,12 +888,6 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		vita2d_disable_clipping();
 	} else {
 		int viewport_bottom = network_viewport_bottom();
-		if (!ui_mini_player_input_locked())
-			ui_focus_glow_draw(focus_motion ? focus_motion->x : LIST_X,
-			                   focus_motion ? focus_motion->y : LIST_Y,
-			                   focus_motion ? focus_motion->width : BROWSER_GRID_CARD_W,
-			                   focus_motion ? focus_motion->height : BROWSER_GRID_CARD_H,
-			                   sceKernelGetProcessTimeWide(), LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int first = top * BROWSER_GRID_COLS;
@@ -906,7 +900,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			int x = LIST_X + col * (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X);
 			int y = LIST_Y + row * (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y);
 			const VtNetworkEntry *entry = &entries[i];
-			vita2d_texture *preview = entry->is_video
+			vita2d_texture *preview = (entry->is_video || entry->is_audio || entry->is_image)
 			                        ? vt_video_thumbnail_get_remote_priority(
 			                              source, credential, entry->path, entry->size,
 			                              thumbnail_viewport_priority(
@@ -915,47 +909,51 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			ui_panel(x, y, BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H,
 			         VT_THEME_SURFACE,
 			         entry->is_directory ? VT_THEME_BLUE_LIGHT
-			         : (entry->is_video || entry->is_audio)
+			         : (entry->is_video || entry->is_audio || entry->is_image)
 			             ? VT_THEME_BLUE_BRIGHT : VT_THEME_BORDER,
 			         0);
 			if (preview) {
 				vita2d_draw_rectangle(x + 6, y + 6,
-				                      BROWSER_GRID_CARD_W - 12, 96,
+				                      BROWSER_GRID_CARD_W - 12, (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).thumb_h),
 				                      VT_THEME_MEDIA_BACKDROP);
 				draw_video_preview(preview, x + 6, y + 6,
-				                   BROWSER_GRID_CARD_W - 12, 96);
-				vita2d_draw_rectangle(x + 6, y + 100,
+				                   BROWSER_GRID_CARD_W - 12, (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).thumb_h));
+				vita2d_draw_rectangle(x + 6, y + (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).thumb_h) + 4,
 				                      BROWSER_GRID_CARD_W - 12, 2,
 				                      VT_THEME_COLD);
 			} else {
-				draw_browser_icon(entry, x + 30, y + 2);
+				draw_browser_icon(entry, x + (BROWSER_GRID_CARD_W - 136) / 2,
+                    y + 6 + (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).thumb_h - 108) / 2);
 			}
-			if (entry->is_video) {
+			if (entry->is_video || entry->is_audio || entry->is_image) {
 				char history_id[16];
 				vt_network_media_history_id(source, entry->path, history_id);
-				ui_watched_progress(history_id, x + 6, y + 96,
+				ui_watched_progress(history_id, x + 6, y + (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).thumb_h) + 2,
 				                    BROWSER_GRID_CARD_W - 12);
 			}
 			if (small) {
 				char title[128];
 				clip(small, UI_FONT_SMALL, entry->name, title, sizeof(title),
 				     BROWSER_GRID_CARD_W - 24);
-				ui_font_draw_text(small, x + 12, y + 126, VT_THEME_TEXT,
+				ui_font_draw_text(small, x + 12, y + (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).title_y), VT_THEME_TEXT,
 				                  UI_FONT_SMALL, title);
 				char detail[64];
 				format_browser_entry_detail(source, entry, detail, sizeof(detail));
-				ui_font_draw_text(small, x + 12, y + 148, VT_THEME_TEXT_MUTED,
+				ui_font_draw_text(small, x + 12, y + (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).detail_y), VT_THEME_TEXT_MUTED,
 				                  UI_FONT_SMALL, detail);
 			}
 		}
 		vita2d_disable_clipping();
 	}
+	if(count && focus_motion && !right_open && !ui_mini_player_input_locked() &&
+     (!sidebar || (!sidebar->open && sidebar->animation<=.01f)))
+  ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,
+                    sceKernelGetProcessTimeWide(),LIST_Y,network_viewport_bottom());
 	ui_mini_player_draw();
 	if (right_open) {
-		const int panel_x = 620;
-		vita2d_draw_rectangle(panel_x, 0, 340, 544, VT_THEME_BG_SOFT);
-		vita2d_draw_rectangle(panel_x, 0, 3, 544, VT_THEME_SPECTRAL);
-		vita2d_draw_rectangle(panel_x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
+		const int panel_x = 530;
+		vita2d_draw_rectangle(panel_x, 0, 430, 544, VT_THEME_BG_SOFT);
+		vita2d_draw_rectangle(panel_x, 0, 1, 544, VT_THEME_BORDER);
 		if (body) ui_font_draw_text(body, panel_x + 30, 92, VT_THEME_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_NETWORK_VIEW_TITLE));
@@ -970,15 +968,14 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		};
 		for (int i = 0; i < 2; i++) {
 			int y = 124 + i * 62;
-			if (i == right_cursor)
-				ui_panel(panel_x + 18, y, 298, 52,
-				         VT_THEME_SURFACE_FOCUS, VT_THEME_BLUE_LIGHT, 0);
-			ui_action_button(panel_x + 22, y, 294, 52,
-			                 i == right_cursor ? VT_THEME_SURFACE_FOCUS
-			                                     : VT_THEME_SURFACE,
-			                 i == 0 ? "Left/Right" : "Cross", actions[i],
-			                 i == right_cursor);
+			ui_action_button(panel_x + 22, y, 384, 52,
+			                 VT_THEME_SURFACE,
+			                 i == 0 ? "Left/Right" : "Cross", actions[i],0);
 		}
+        if(focus_motion) {
+         ui_focus_motion_tick(focus_motion,panel_x+22,124+right_cursor*62,384,52);
+         ui_focus_outline_draw(focus_motion);
+        }
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
@@ -1014,6 +1011,7 @@ static int confirm_trust_value(const char *title, const char *value) {
 	memset(&controls, 0, sizeof(controls));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	ui_touch_reset();
+	int accept=0;
 	for (;;) {
 		ui_mini_player_pump();
 		vita2d_start_drawing();
@@ -1037,9 +1035,9 @@ static int confirm_trust_value(const char *title, const char *value) {
 			             vt_i18n_str(VT_STR_NETWORK_TRUST_INSTRUCTION),
 			             82, 334, 796, 22, 2, VT_THEME_WARNING);
 		ui_action_button(54, 420, 250, 46, VT_THEME_SURFACE,
-		                 "Circle", vt_i18n_str(VT_STR_NETWORK_CANCEL), 0);
+		                 "Cross", vt_i18n_str(VT_STR_NETWORK_CANCEL), !accept);
 		ui_action_button(618, 420, 288, 46, VT_THEME_BLUE_BRIGHT,
-		                 "Cross", vt_i18n_str(VT_STR_NETWORK_TRUST_ACCEPT), 1);
+		                 "Cross", vt_i18n_str(VT_STR_NETWORK_TRUST_ACCEPT), accept);
 		ui_mini_player_draw();
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
@@ -1052,14 +1050,17 @@ static int confirm_trust_value(const char *title, const char *value) {
 		UiTouchEvent touch;
 		unsigned touch_flags = ui_touch_poll(&touch);
 		if (ui_mini_player_handle_touch(touch_flags, &touch)) touch_flags = 0;
-		if (ui_mini_player_input_locked()) pressed = 0;
+		if (ui_mini_player_input_locked()) { pressed = 0; touch_flags = 0; }
+        if(pressed&SCE_CTRL_LEFT)accept=0;
+        if(pressed&SCE_CTRL_RIGHT)accept=1;
 		if (touch_flags & UI_TOUCH_EVENT_TAP) {
 			if (ui_touch_hit_rect(touch.x, touch.y, 54, 420, 250, 46))
 				pressed |= SCE_CTRL_CIRCLE;
-			else if (ui_touch_hit_rect(touch.x, touch.y, 618, 420, 288, 46))
-				pressed |= SCE_CTRL_CROSS;
+			else if (ui_touch_hit_rect(touch.x, touch.y, 618, 420, 288, 46)) {
+                accept=1; pressed |= SCE_CTRL_CROSS;
+            }
 		}
-		if (pressed & SCE_CTRL_CROSS) return 1;
+		if (pressed & SCE_CTRL_CROSS) return accept;
 		if (pressed & SCE_CTRL_CIRCLE) return 0;
 		sceKernelDelayThread(1000);
 	}
@@ -1141,7 +1142,7 @@ static void persist_remembered_credentials(
 
 static int source_valid(const VtNetworkSource *source) {
 	return source && source->name[0] && source->host[0] &&
-	       source->username[0] &&
+	       (source->username[0] || source->protocol == VT_NETWORK_IMMICH) &&
 	       (source->protocol != VT_NETWORK_SMB || source->share[0]);
 }
 
@@ -1165,7 +1166,7 @@ static int editor_fields(VtNetworkProtocol protocol, EditorField fields[9]) {
 	fields[count++] = EDITOR_PORT;
 	if (protocol == VT_NETWORK_SMB) fields[count++] = EDITOR_SHARE;
 	fields[count++] = EDITOR_ROOT;
-	fields[count++] = EDITOR_USERNAME;
+	if (protocol != VT_NETWORK_IMMICH) fields[count++] = EDITOR_USERNAME;
 	fields[count++] = EDITOR_PASSWORD;
 	if (protocol == VT_NETWORK_SMB) fields[count++] = EDITOR_DOMAIN;
 	return count;
@@ -1236,15 +1237,16 @@ static void editor_change_protocol(VtNetworkSource *draft,
 	                               VtNetworkCredential *credential,
 	                               int direction) {
 	int protocol = (int)draft->protocol + direction;
-	if (protocol < VT_NETWORK_WEBDAV) protocol = VT_NETWORK_JELLYFIN;
-	if (protocol > VT_NETWORK_JELLYFIN) protocol = VT_NETWORK_WEBDAV;
+	if (protocol < VT_NETWORK_WEBDAV) protocol = VT_NETWORK_IMMICH;
+	if (protocol > VT_NETWORK_IMMICH) protocol = VT_NETWORK_WEBDAV;
 	draft->protocol = (VtNetworkProtocol)protocol;
 	clear_transport_trust(draft);
 	clear_provider_session(credential);
 	if (draft->protocol == VT_NETWORK_WEBDAV) draft->port = 443;
 	else if (draft->protocol == VT_NETWORK_SFTP) draft->port = 22;
 	else if (draft->protocol == VT_NETWORK_SMB) draft->port = 445;
-	else draft->port = 8096;
+	else if (draft->protocol == VT_NETWORK_JELLYFIN) draft->port = 8096;
+	else draft->port = 443;
 }
 
 static void editor_edit_field(VtNetworkSource *draft,
@@ -1287,7 +1289,7 @@ static void editor_edit_field(VtNetworkSource *draft,
 	else if (field == EDITOR_PASSWORD && credential) {
 		char next[VT_NETWORK_SECRET_MAX];
 		int result = ui_text_input_secure(
-		    vt_i18n_str(VT_STR_NETWORK_PASSWORD_PROMPT), credential->password,
+		    vt_i18n_str(draft->protocol == VT_NETWORK_IMMICH ? VT_STR_NETWORK_API_KEY_PROMPT : VT_STR_NETWORK_PASSWORD_PROMPT), credential->password,
 		    next, sizeof(next));
 		if (result > 0) {
 			secure_zero(credential->password, sizeof(credential->password));
@@ -1324,11 +1326,11 @@ static int source_editor(VtNetworkSource *source,
 		int field_count = editor_fields(draft.protocol, fields);
 		if (cursor > field_count) cursor = field_count;
 		if (cursor < field_count)
-			ui_focus_motion_tick(&focus_motion, 304,
-			                     editor_field_y(field_count, cursor), 622,
+			ui_focus_motion_tick(&focus_motion, 18,
+			                     editor_field_y(field_count, cursor), 604,
 			                     editor_field_height(field_count));
 		else
-			ui_focus_motion_tick(&focus_motion, 304, 420, 622, 46);
+			ui_focus_motion_tick(&focus_motion, 18, 420, 604, 46);
 		ui_mini_player_pump();
 		vita2d_start_drawing();
 		vita2d_clear_screen();
@@ -1337,9 +1339,9 @@ static int source_editor(VtNetworkSource *source,
 		    ? VT_STR_NETWORK_ADD_TITLE : VT_STR_NETWORK_EDIT_TITLE));
 		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		ui_panel(34, 82, 244, 382, VT_THEME_SURFACE_RAISED,
+		ui_panel(642, 82, 300, 384, VT_THEME_SURFACE_RAISED,
 		         VT_THEME_BLUE_LIGHT, 0);
-		if (body) ui_font_draw_text(body, 58, 126, VT_THEME_TEXT, UI_FONT_BODY,
+		if (body) ui_font_draw_text(body, 666, 126, VT_THEME_TEXT, UI_FONT_BODY,
 		                            vt_network_protocol_name(draft.protocol));
 		if (small) {
 			const char *detail = vt_i18n_str(draft.protocol == VT_NETWORK_WEBDAV
@@ -1348,7 +1350,9 @@ static int source_editor(VtNetworkSource *source,
 			          ? VT_STR_NETWORK_PROTOCOL_SFTP_DETAIL
 			    : draft.protocol == VT_NETWORK_SMB
 			          ? VT_STR_NETWORK_PROTOCOL_SMB_DETAIL
-			          : VT_STR_NETWORK_PROTOCOL_JELLYFIN_DETAIL);
+			          : draft.protocol == VT_NETWORK_NAVIDROME ? VT_STR_NETWORK_PROTOCOL_NAVIDROME_DETAIL
+                    : draft.protocol == VT_NETWORK_IMMICH ? VT_STR_NETWORK_PROTOCOL_IMMICH_DETAIL
+                    : VT_STR_NETWORK_PROTOCOL_JELLYFIN_DETAIL);
 			const char *security = vt_i18n_str(draft.protocol == VT_NETWORK_WEBDAV
 			    ? VT_STR_NETWORK_WEBDAV_SECURITY
 			    : draft.protocol == VT_NETWORK_SFTP
@@ -1356,41 +1360,37 @@ static int source_editor(VtNetworkSource *source,
 			    : draft.protocol == VT_NETWORK_SMB
 			          ? VT_STR_NETWORK_SMB_SECURITY
 			    : vt_network_jellyfin_uses_https(&draft)
-			          ? VT_STR_NETWORK_JELLYFIN_SECURITY
+			          ? (draft.protocol == VT_NETWORK_NAVIDROME || draft.protocol == VT_NETWORK_IMMICH ? VT_STR_NETWORK_PROVIDER_HTTPS_SECURITY : VT_STR_NETWORK_JELLYFIN_SECURITY)
 			          : VT_STR_NETWORK_JELLYFIN_HTTP_SECURITY);
-			draw_wrapped(small, UI_FONT_SMALL, detail, 58, 158, 188, 20, 2,
+			draw_wrapped(small, UI_FONT_SMALL, detail, 666, 166, 252, 20, 2,
 			             VT_THEME_TEXT);
-			vita2d_draw_rectangle(58, 194, 188, 1, VT_THEME_BORDER);
-			draw_wrapped(small, UI_FONT_SMALL, security, 58, 222, 188, 20, 2,
+			vita2d_draw_rectangle(666, 194, 252, 1, VT_THEME_BORDER);
+			draw_wrapped(small, UI_FONT_SMALL, security, 666, 222, 252, 20, 2,
 			             VT_THEME_TEXT);
 			draw_wrapped(small, UI_FONT_SMALL,
-			             vt_i18n_str(VT_STR_NETWORK_SESSION_PASSWORD),
-			             58, 274, 188, 20, 2, VT_THEME_TEXT);
+			             vt_i18n_str(draft.protocol == VT_NETWORK_IMMICH ? VT_STR_NETWORK_SESSION_API_KEY : VT_STR_NETWORK_SESSION_PASSWORD),
+			             666, 274, 252, 20, 2, VT_THEME_TEXT);
 			draw_wrapped(small, UI_FONT_SMALL,
 			             vt_i18n_str(VT_STR_NETWORK_PASSWORD_NOT_SAVED),
-			             58, 322, 188, 20, 2, VT_THEME_TEXT);
-			vita2d_draw_rectangle(58, 354, 188, 1, VT_THEME_BORDER);
+			             666, 322, 252, 20, 2, VT_THEME_TEXT);
+			vita2d_draw_rectangle(666, 354, 252, 1, VT_THEME_BORDER);
 			draw_wrapped(small, UI_FONT_SMALL, vt_i18n_str(source_valid(&draft)
 			                 ? VT_STR_NETWORK_READY_SAVE
 			                 : draft.protocol == VT_NETWORK_SMB
 			                       ? VT_STR_NETWORK_REQUIRED_SMB
 			                       : VT_STR_NETWORK_REQUIRED_WEBDAV),
-			             58, 378, 188, 20, 2,
+			             666, 378, 252, 20, 2,
 			             source_valid(&draft) ? VT_THEME_SUCCESS : VT_THEME_WARNING);
 		}
-		ui_action_button(54, 406, 204, 42, VT_THEME_SURFACE,
+		ui_action_button(654, 420, 276, 46, VT_THEME_SURFACE,
 		                 "Circle", vt_i18n_str(VT_STR_NETWORK_CANCEL), 0);
-		if (!ui_mini_player_input_locked())
-			ui_focus_glow_draw(focus_motion.x, focus_motion.y,
-			                   focus_motion.width, focus_motion.height,
-			                   sceKernelGetProcessTimeWide(), 64, 476);
 		for (int i = 0; i < field_count; i++) {
 			int y = editor_field_y(field_count, i);
 			int height = editor_field_height(field_count);
-			ui_panel(304, y, 622, height, VT_THEME_SURFACE,
+			ui_panel(18, y, 604, height, VT_THEME_SURFACE,
 			         VT_THEME_BLUE_BRIGHT, 0);
-			if (small) ui_font_draw_text(small, 322, y + height - 14, VT_THEME_TEXT,
-			                             UI_FONT_SMALL, editor_field_label(fields[i]));
+			if (small) ui_font_draw_text(small, 36, y + height - 14, VT_THEME_TEXT,
+			                             UI_FONT_SMALL, (draft.protocol == VT_NETWORK_IMMICH && fields[i] == EDITOR_PASSWORD) ? "API key" : editor_field_label(fields[i]));
 			char port[16];
 			const char *raw_value = editor_field_value(&draft, credential,
 			                                                fields[i], port);
@@ -1400,12 +1400,12 @@ static int source_editor(VtNetworkSource *source,
 				                  ? raw_value : vt_i18n_str(VT_STR_NETWORK_NOT_SET);
 				clip(body, UI_FONT_BODY, shown, value, sizeof(value), 350);
 				int width = ui_font_text_width(body, UI_FONT_BODY, value);
-				ui_font_draw_text(body, 904 - width, y + height - 11,
+				ui_font_draw_text(body, 600 - width, y + height - 11,
 				                  raw_value[0] ? VT_THEME_TEXT : VT_THEME_TEXT_FAINT,
 				                  UI_FONT_BODY, value);
 			}
 		}
-		ui_action_button(304, 420, 622, 46,
+		ui_action_button(18, 420, 604, 46,
 			                 source_valid(&draft) ? VT_THEME_BLUE_BRIGHT
 			                                      : VT_THEME_SURFACE,
 		                 "Cross", source_valid(&draft)
@@ -1413,6 +1413,7 @@ static int source_editor(VtNetworkSource *source,
 		                                               : VT_STR_NETWORK_SAVE_CHANGES)
 		                     : vt_i18n_str(VT_STR_NETWORK_COMPLETE_REQUIRED),
 			                 0);
+		if(!ui_mini_player_input_locked())ui_focus_outline_draw(&focus_motion);
 		ui_mini_player_draw();
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
@@ -1434,8 +1435,8 @@ static int source_editor(VtNetworkSource *source,
 		if (touch_flags & UI_TOUCH_EVENT_TAP) {
 			int touched_field = -1;
 			for (int row = 0; row < field_count; row++) {
-				if (ui_touch_hit_rect(touch.x, touch.y, 304,
-				                      editor_field_y(field_count, row), 622,
+				if (ui_touch_hit_rect(touch.x, touch.y, 18,
+				                      editor_field_y(field_count, row), 604,
 				                      editor_field_height(field_count))) {
 					touched_field = row;
 					break;
@@ -1445,10 +1446,10 @@ static int source_editor(VtNetworkSource *source,
 				cursor = touched_field;
 				pressed |= fields[touched_field] == EDITOR_PROTOCOL
 				         ? SCE_CTRL_RIGHT : SCE_CTRL_CROSS;
-			} else if (ui_touch_hit_rect(touch.x, touch.y, 304, 420, 622, 46)) {
+			} else if (ui_touch_hit_rect(touch.x, touch.y, 18, 420, 604, 46)) {
 				cursor = field_count;
 				pressed |= SCE_CTRL_CROSS;
-			} else if (ui_touch_hit_rect(touch.x, touch.y, 54, 406, 204, 42)) {
+			} else if (ui_touch_hit_rect(touch.x, touch.y, 654, 420, 276, 46)) {
 				pressed |= SCE_CTRL_CIRCLE;
 			}
 		}
@@ -1546,7 +1547,7 @@ static int load_jellyfin_metadata(const VtNetworkSource *source,
 static int prepare_https_trust(VtNetworkSource *source,
 	                           const VtNetworkCredential *credential) {
 	if ((source->protocol != VT_NETWORK_WEBDAV &&
-	     source->protocol != VT_NETWORK_JELLYFIN) ||
+	     source->protocol != VT_NETWORK_JELLYFIN && source->protocol != VT_NETWORK_NAVIDROME && source->protocol != VT_NETWORK_IMMICH) ||
 	    source->tls_public_key_sha256[0]) return 0;
 	if (source->protocol == VT_NETWORK_JELLYFIN &&
 	    !vt_network_jellyfin_uses_https(source)) return 0;
@@ -1568,10 +1569,10 @@ static int prepare_https_trust(VtNetworkSource *source,
 
 static int prepare_provider_session(const VtNetworkSource *source,
 	                                VtNetworkCredential *credential) {
-	if (!source || source->protocol != VT_NETWORK_JELLYFIN) return 0;
+	if (!source || (source->protocol != VT_NETWORK_JELLYFIN && source->protocol != VT_NETWORK_NAVIDROME && source->protocol != VT_NETWORK_IMMICH)) return 0;
 	PrepareSourceTask task = { source, credential, -1, { 0 } };
 	int ret = ui_loading_run(
-	    vt_i18n_str(VT_STR_NETWORK_AUTHENTICATING_JELLYFIN),
+	    vt_network_protocol_name(source->protocol),
 	    prepare_source_task, &task, NULL, NULL, NULL);
 	if (ret < 0 || task.result < 0) {
 		if (task.result != VT_NETWORK_TLS_TRUST_REQUIRED)
@@ -1640,7 +1641,7 @@ static int browse_source(const VtNetworkSource *source,
 	int grid_mode = vt_preferences_file_browser_grid();
 	int right_open = 0, right_cursor = 0;
 	UiSectionsSidebar sidebar;
-	ui_sections_sidebar_init(&sidebar, UI_SECTION_NETWORK);
+	ui_sections_sidebar_init(&sidebar, source->protocol == VT_NETWORK_NAVIDROME ? UI_SECTION_NAVIDROME : source->protocol == VT_NETWORK_IMMICH ? UI_SECTION_IMMICH : UI_SECTION_NETWORK);
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
 	VtJellyfinMetadata metadata_cache;
@@ -1723,12 +1724,12 @@ static int browse_source(const VtNetworkSource *source,
 		if (right_open) {
 			if (touch_flags & UI_TOUCH_EVENT_TAP) {
 				for (int i = 0; i < 2; i++)
-					if (ui_touch_hit_rect(touch.x, touch.y, 642, 124 + i * 62,
-					                      294, 52)) {
+					if (ui_touch_hit_rect(touch.x, touch.y, 552, 124 + i * 62,
+					                      384, 52)) {
 						right_cursor = i;
 						pressed |= SCE_CTRL_CROSS;
 					}
-				if (touch.x < 620) pressed |= SCE_CTRL_CIRCLE;
+				if (touch.x < 530) pressed |= SCE_CTRL_CIRCLE;
 			}
 			unsigned int right_nav = ui_nav_repeat_update(
 			    &right_repeat, pressed, controls.buttons, controls.lx, controls.ly,
@@ -1775,6 +1776,7 @@ static int browse_source(const VtNetworkSource *source,
 			if (selected < 0) selected = 0;
 			if (selected >= count) selected = count - 1;
 		}
+		ui_theme_scene_begin(UI_SCENE_BROWSER,path);
 		if ((touch_flags & UI_TOUCH_EVENT_TAP) && count > 0) {
 			int slots = grid_mode ? browser_grid_render_rows() * BROWSER_GRID_COLS
 			                      : render_rows();
@@ -1789,6 +1791,7 @@ static int browse_source(const VtNetworkSource *source,
 				              BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H)
 				        : ui_touch_hit_rect(touch.x, touch.y, LIST_X,
 				              LIST_Y + slot * ROW_H, LIST_W, ROW_H - 6);
+				if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeRect rr=ui_theme_browser_rect(ui_theme_id(),slot,network_viewport_bottom(),grid_mode);hit=ui_touch_hit_rect(touch.x,touch.y,rr.x,rr.y,rr.w,rr.h);}
 				if (!hit)
 					continue;
 				selected = first + slot;
@@ -1850,7 +1853,7 @@ static int browse_source(const VtNetworkSource *source,
 			if (row < top) top = row;
 			if (row >= top + browser_grid_visible_rows())
 				top = row - browser_grid_visible_rows() + 1;
-			if (count > 0) {
+			if (count > 0 && ui_theme_id()==VT_UI_THEME_LEGACY) {
 				int column = selected % BROWSER_GRID_COLS;
 				ui_focus_motion_tick(
 				    &focus_motion,
@@ -1863,15 +1866,20 @@ static int browse_source(const VtNetworkSource *source,
 			if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
 			if (selected < top) top = selected;
 			if (selected >= top + visible_rows()) top = selected - visible_rows() + 1;
-			if (count > 0)
+			if (count > 0 && ui_theme_id()==VT_UI_THEME_LEGACY)
 				ui_focus_motion_tick(&focus_motion, LIST_X,
 				                     LIST_Y + (selected - top) * ROW_H,
 				                     LIST_W, ROW_H - 6);
 		}
+		if(count>0 && ui_theme_id()!=VT_UI_THEME_LEGACY){
+            int first=grid_mode?top*BROWSER_GRID_COLS:top;
+            UiThemeRect rr=ui_theme_browser_rect(ui_theme_id(),selected-first,network_viewport_bottom(),grid_mode);
+            ui_focus_motion_tick(&focus_motion,rr.x,rr.y,rr.w,rr.h);
+        }
 		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
 			VtNetworkEntry *entry = &entries[selected];
 			if (entry->is_directory) {
-				if (navigation->depth + 1 >= NETWORK_BROWSER_MAX_DEPTH) {
+				if (entry->is_directory != 2 && navigation->depth + 1 >= NETWORK_BROWSER_MAX_DEPTH) {
 					ui_message_show(vt_i18n_str(VT_STR_NETWORK_READ_FAILED),
 					                vt_i18n_str(VT_STR_NETWORK_READ_FAILED), 2200);
 					network_resync_input(&previous, &nav_repeat);
@@ -1879,12 +1887,13 @@ static int browse_source(const VtNetworkSource *source,
 				}
 				navigation->selected[navigation->depth] = selected;
 				navigation->top[navigation->depth] = top;
+				int continuation = entry->is_directory == 2;
 				char next_path[VT_NETWORK_PATH_MAX];
 				char folder_name[sizeof(entry->name)];
 				snprintf(next_path, sizeof(next_path), "%s", entry->path);
-				snprintf(folder_name, sizeof(folder_name), "%s", entry->name);
+				snprintf(folder_name, sizeof(folder_name), "%s", continuation ? navigation->labels[navigation->depth] : personal_entry_title(source,entry));
 				if (load_directory(source, credential, next_path, entries, &count, 0) == 0) {
-					navigation->depth++;
+					if (!continuation) navigation->depth++;
 					snprintf(navigation->paths[navigation->depth],
 					         sizeof(navigation->paths[navigation->depth]), "%s", next_path);
 					snprintf(navigation->labels[navigation->depth],
@@ -1896,6 +1905,16 @@ static int browse_source(const VtNetworkSource *source,
 					vt_video_thumbnail_resume();
 				}
 				network_resync_input(&previous, &nav_repeat);
+				continue;
+			} else if (entry->is_audio || entry->is_image) {
+				int result = ui_personal_media_open(source, credential, entry, entries, count, selected);
+				vt_video_thumbnail_suspend(); vt_video_thumbnail_resume();
+				network_resync_input(&previous, &nav_repeat);
+				if (result >= UI_NETWORK_ACTION_SECTION_BASE) {
+                    navigation->source=*source;navigation->credential=*credential;
+                    navigation->selected[navigation->depth]=selected;navigation->top[navigation->depth]=top;
+                    navigation->valid=1;vt_video_thumbnail_suspend();free(entries);return result;
+                }
 				continue;
 			} else if (entry->is_video) {
 				if (source->protocol == VT_NETWORK_JELLYFIN &&
@@ -1928,7 +1947,7 @@ static int browse_source(const VtNetworkSource *source,
 			}
 		}
 		if ((pressed & SCE_CTRL_TRIANGLE) && count > 0 &&
-		    source->protocol != VT_NETWORK_JELLYFIN &&
+		    source->protocol < VT_NETWORK_JELLYFIN &&
 		    !entries[selected].is_directory) {
 			VtDownloadJob job;
 			vt_download_job_init_network(&job, source, credential,
@@ -2034,12 +2053,18 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 		int confirmation_owned_frame = remove_confirm;
 		int sidebar_owned_frame = 0;
 		if (remove_confirm) {
+            if(pressed&SCE_CTRL_LEFT)remove_confirm=1;
+            if(pressed&SCE_CTRL_RIGHT)remove_confirm=2;
 			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
 			    ui_touch_hit_rect(touch.x, touch.y, 236, 294, 226, 48))
 				pressed |= SCE_CTRL_CIRCLE;
 			if ((touch_flags & UI_TOUCH_EVENT_TAP) &&
-			    ui_touch_hit_rect(touch.x, touch.y, 480, 294, 244, 48))
-				pressed |= SCE_CTRL_CROSS;
+			    ui_touch_hit_rect(touch.x, touch.y, 480, 294, 244, 48)) {
+                remove_confirm=2; pressed |= SCE_CTRL_CROSS;
+            }
+            if((pressed&SCE_CTRL_CROSS) && remove_confirm==1) {
+                pressed &= ~SCE_CTRL_CROSS; pressed |= SCE_CTRL_CIRCLE;
+            }
 			if ((pressed & SCE_CTRL_CROSS) && count > 0) {
 				int removed_index = selected;
 				VtNetworkSource removed = sources[removed_index];
@@ -2128,7 +2153,7 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 				if (selected < 0) selected = 0;
 				if (selected >= count) selected = count - 1;
 			}
-			if ((touch_flags & UI_TOUCH_EVENT_TAP) && count > 0) {
+					if ((touch_flags & UI_TOUCH_EVENT_TAP) && count > 0) {
 				for (int slot = 0; slot < source_render_rows() &&
 				                       top + slot < count; slot++) {
 					if (!ui_touch_hit_rect(touch.x, touch.y, SOURCE_LIST_X,
@@ -2301,4 +2326,22 @@ int ui_network_sources_screen(UiNetworkSelection *selection) {
 		             &focus_motion, &sidebar);
 		sceKernelDelayThread(1000);
 	}
+}
+
+int ui_network_browse_personal(VtNetworkSource *s, VtNetworkCredential *c) {
+ int ret=prepare_provider_session(s,c);
+ if(ret == VT_NETWORK_TLS_TRUST_REQUIRED) {
+  int trust=prepare_https_trust(s,c);
+  if(trust<0)return trust;
+  ret=prepare_provider_session(s,c);
+ }
+ if(ret<0)return ret;
+ network_directory_cache_clear();
+ return browse_source(s,c,NULL,g_browser_resume.valid && network_source_matches(s,&g_browser_resume.source));
+}
+
+int ui_network_personal_resume_credential(const VtNetworkSource *s,VtNetworkCredential *c) {
+ if(!s||!c||!g_browser_resume.valid||!network_source_matches(s,&g_browser_resume.source))return 0;
+ if(!c->password[0])*c=g_browser_resume.credential;
+ return c->password[0]!=0;
 }

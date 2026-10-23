@@ -8,6 +8,10 @@
 #include <vita2d.h>
 #include "i18n/i18n.h"
 #include "ui/brand.h"
+#include "ui/layout.h"
+#define DESTINATION_ROWS 6
+#define DESTINATION_Y 126
+#define DESTINATION_STEP 58
 #include "ui/components.h"
 #include "ui/focus_glow.h"
 #include "ui/loading_screen.h"
@@ -54,53 +58,51 @@ static int destination_read_folders(const char *path,
 }
 
 static void draw_destination_picker(const char *path, char names[][128],
-	                                int count, int selected, int top) {
+	                                int count, int selected, int top, UiFocusMotion *motion) {
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_LIGHT);
-	ui_brand_draw_header_placeholder(NULL,
-	                                 vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE));
+	ui_brand_draw_path(vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE), path);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	/* This page deliberately avoids a second scene heading and explanatory copy:
 	 * the top bar already names the task, while the action buttons describe the
 	 * available operations. The label and path each own a full-width row. */
-	ui_panel(66, 76, 828, 62, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
+	ui_panel(UI_CONTENT_X, 62, UI_CONTENT_W, 56, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
 	if (small) {
 		char fitted_path[512];
 		const char *label = vt_i18n_str(VT_STR_NETWORK_CURRENT_DESTINATION);
-		ui_font_draw_text(small, 84, 100, VT_THEME_SIGNAL_LIGHT,
+		ui_font_draw_text(small, 32, 84, VT_THEME_SIGNAL_LIGHT,
 		                  UI_FONT_SMALL, label);
 		ui_font_fit_text(small, UI_FONT_SMALL, path, fitted_path,
-		                 sizeof(fitted_path), 792);
-		ui_font_draw_text(small, 84, 128, VT_THEME_TEXT,
+		                 sizeof(fitted_path), UI_CONTENT_W - 28);
+		ui_font_draw_text(small, 32, 109, VT_THEME_TEXT,
 		                  UI_FONT_SMALL, fitted_path);
 	}
 	if (!count) {
-		ui_panel(66, 152, 828, 256, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
+		ui_panel(UI_CONTENT_X, DESTINATION_Y, UI_CONTENT_W, 344, VT_THEME_SURFACE, VT_THEME_BLUE_LIGHT, 0);
 		if (body) ui_font_draw_text(body, 94, 232, VT_THEME_TEXT, UI_FONT_BODY,
 		                             vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
 	} else {
-		for (int i = top; i < count && i < top + 4; i++) {
-			int y = 152 + (i - top) * 64;
+		for (int i = top; i < count && i < top + DESTINATION_ROWS; i++) {
+			int y = DESTINATION_Y + (i - top) * DESTINATION_STEP;
 			int focused = i == selected;
-			ui_panel(66, y, 828, 58,
-			         focused ? VT_THEME_SURFACE_FOCUS : VT_THEME_SURFACE,
-			         focused ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BLUE_LIGHT, 0);
-			if (focused) {
-				vita2d_draw_rectangle(66, y, 6, 58, VT_THEME_SPECTRAL);
-				vita2d_draw_rectangle(72, y, 2, 58, VT_THEME_SIGNAL_BRIGHT);
-				vita2d_draw_rectangle(66, y, 828, 3, VT_THEME_SIGNAL_LIGHT);
+			ui_panel(UI_CONTENT_X, y, UI_CONTENT_W, 54,
+			         VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
+			if (focused)ui_focus_motion_tick(motion,UI_CONTENT_X,y,UI_CONTENT_W,54);
+			if (body) {
+				char fitted[128];
+				ui_font_fit_text(body, UI_FONT_BODY, names[i], fitted, sizeof(fitted), UI_CONTENT_W - 32);
+				ui_font_draw_text(body, 34, y + 35, VT_THEME_TEXT, UI_FONT_BODY, fitted);
 			}
-			if (body) ui_font_draw_text(body, 92, y + 38, VT_THEME_TEXT,
-			                             UI_FONT_BODY, names[i]);
 		}
+		ui_focus_outline_draw(motion);
 	}
-	ui_action_button(66, 468, 250, 42, VT_THEME_BLUE_BRIGHT, "Start",
+	ui_action_button(18, 490, 302, 46, VT_THEME_BLUE_BRIGHT, "Start",
 	                 vt_i18n_str(VT_STR_NETWORK_USE_THIS_FOLDER), 0);
-	ui_action_button(350, 468, 250, 42, VT_THEME_SURFACE_RAISED, "Triangle",
+	ui_action_button(329, 490, 302, 46, VT_THEME_SURFACE_RAISED, "Triangle",
 	                 vt_i18n_str(VT_STR_NETWORK_NEW_FOLDER), 0);
-	ui_action_button(634, 468, 260, 42, VT_THEME_SURFACE, "Circle",
+	ui_action_button(640, 490, 302, 46, VT_THEME_SURFACE, "Circle",
 	                 strchr(path, ':') && !strchr(path, ':')[1] ? vt_i18n_str(VT_STR_NETWORK_CANCEL) : "Up", 0);
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
@@ -118,6 +120,7 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 	SceCtrlData previous;
 	UiNavRepeat nav_repeat;
 	int selected = 0, top = 0;
+	UiFocusMotion motion={0};
 	/* Opening the picker is read-only. Prefer the system downloads directory
 	 * when it exists, but never create it (or any other folder) implicitly. */
 	SceUID downloads_dir = sceIoDopen("ux0:download");
@@ -144,9 +147,9 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 		}
 		if (selected >= count) selected = count > 0 ? count - 1 : 0;
 		if (top > selected) top = selected;
-		if (selected >= top + 4) top = selected - 3;
+		if (selected >= top + DESTINATION_ROWS) top = selected - DESTINATION_ROWS + 1;
 		ui_mini_player_pump();
-		draw_destination_picker(path, names, count, selected, top);
+		draw_destination_picker(path, names, count, selected, top, &motion);
 		SceCtrlData controls;
 		sceCtrlPeekBufferPositive(0, &controls, 1);
 		unsigned pressed = controls.buttons & ~previous.buttons;
@@ -159,14 +162,14 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 		UiTouchEvent touch;
 		unsigned flags = ui_touch_poll(&touch);
 		if (flags & UI_TOUCH_EVENT_TAP) {
-			for (int i = top; i < count && i < top + 4; i++)
-				if (ui_touch_hit_rect(touch.x, touch.y, 66, 152 + (i - top) * 64, 828, 58)) {
+			for (int i = top; i < count && i < top + DESTINATION_ROWS; i++)
+				if (ui_touch_hit_rect(touch.x, touch.y, UI_CONTENT_X, DESTINATION_Y + (i - top) * DESTINATION_STEP, UI_CONTENT_W, 54)) {
 					selected = i;
 					pressed |= SCE_CTRL_CROSS;
 				}
-			if (ui_touch_hit_rect(touch.x, touch.y, 66, 468, 250, 42)) pressed |= SCE_CTRL_START;
-			if (ui_touch_hit_rect(touch.x, touch.y, 350, 468, 250, 42)) pressed |= SCE_CTRL_TRIANGLE;
-			if (ui_touch_hit_rect(touch.x, touch.y, 634, 468, 260, 42)) pressed |= SCE_CTRL_CIRCLE;
+			if (ui_touch_hit_rect(touch.x, touch.y, 18, 490, 302, 46)) pressed |= SCE_CTRL_START;
+			if (ui_touch_hit_rect(touch.x, touch.y, 329, 490, 302, 46)) pressed |= SCE_CTRL_TRIANGLE;
+			if (ui_touch_hit_rect(touch.x, touch.y, 640, 490, 302, 46)) pressed |= SCE_CTRL_CIRCLE;
 		}
 		if (pressed & SCE_CTRL_START) {
 			if (strlen(path) >= out_size) return 0;

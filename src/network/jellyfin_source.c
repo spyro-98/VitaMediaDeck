@@ -1,4 +1,5 @@
 #include "network/network_internal.h"
+#include "network/personal_media.h"
 
 #include "common/text_log.h"
 
@@ -21,7 +22,7 @@
 #define JELLYFIN_PREFETCH_THREAD_CREATE_PRIORITY  0x10000100
 #define JELLYFIN_PREFETCH_THREAD_RUNTIME_PRIORITY 0xB0
 #define JELLYFIN_PREFETCH_THREAD_STACK            0x20000
-#define JELLYFIN_CLIENT_VERSION "1.3.0"
+#define JELLYFIN_CLIENT_VERSION "1.4.0"
 #define JELLYFIN_DEVICE_ID "VMDK00001"
 
 typedef struct {
@@ -47,7 +48,7 @@ enum {
 
 typedef struct {
 	VitaHttpsClient *client;
-	char url[2048];
+	char url[3072];
 	char access_token[VT_NETWORK_TOKEN_MAX];
 	volatile int *cancel;
 	uint64_t size;
@@ -160,10 +161,10 @@ static int append_url_path(char *url, size_t size, const char *path) {
 }
 
 int vt_network_jellyfin_uses_https(const VtNetworkSource *source) {
-	if (!source || source->protocol != VT_NETWORK_JELLYFIN) return 0;
+	if (!source) return 0;
 	if (!strncmp(source->host, "https://", 8)) return 1;
 	if (!strncmp(source->host, "http://", 7)) return 0;
-	return source->port != 8096;
+	return source->protocol != VT_NETWORK_JELLYFIN || source->port != 8096;
 }
 
 static int jellyfin_base_url(const VtNetworkSource *source,
@@ -238,7 +239,7 @@ static int authorization_header(const char *token, char *out, size_t out_size) {
 static void jellyfin_client_config(const VtNetworkSource *source,
 	                               VitaHttpsClientConfig *config) {
 	memset(config, 0, sizeof(*config));
-	config->user_agent = "VitaMediaDeck/1.3.0";
+	config->user_agent = "VitaMediaDeck/1.4.0";
 	config->connect_timeout_ms = 5000;
 	config->request_timeout_ms = 12000;
 	config->low_speed_bytes_per_second = 1024;
@@ -688,7 +689,9 @@ int vt_jellyfin_probe_public_key(const VtNetworkSource *source,
 	if (!source || !pin || !pin_size) return -1;
 	if (!vt_network_jellyfin_uses_https(source)) return -1;
 	char url[2048];
-	if (jellyfin_url(source, "System/Info/Public", NULL, url, sizeof(url)) < 0)
+	if ((source->protocol == VT_NETWORK_JELLYFIN
+	     ? jellyfin_url(source, "System/Info/Public", NULL, url, sizeof(url))
+	     : vt_personal_base_url(source, url, sizeof(url))) < 0)
 		return -1;
 	VitaHttpsClientConfig config;
 	jellyfin_client_config(source, &config);
@@ -769,7 +772,7 @@ static int jellyfin_stream_fetch_slot(JellyfinStream *stream,
 	                         sizeof(authorization)) < 0) return -1;
 	snprintf(range, sizeof(range), "Range: bytes=%llu-%llu",
 	         (unsigned long long)start, (unsigned long long)end);
-	const char *headers[] = { authorization, range, NULL };
+	const char *headers[] = { range, stream->access_token[0] ? authorization : NULL, NULL };
 	JellyfinBuffer output = {
 		.data = slot->data,
 		.capacity = JELLYFIN_CACHE_CHUNK,
@@ -784,7 +787,9 @@ static int jellyfin_stream_fetch_slot(JellyfinStream *stream,
 		.cancel_flag = &stream->worker_cancel
 	};
 	VitaHttpsResponse response = { 0 };
-	int result = vita_https_perform(stream->client, &request, &response);
+	int result = stream->access_token[0]
+	    ? vita_https_perform(stream->client, &request, &response)
+	    : vita_https_perform_no_redirects(stream->client, &request, &response);
 	if (response.status_code == 401 || response.status_code == 403)
 		return VT_NETWORK_AUTH_FAILED;
 	if (result < 0 || response.status_code != 206 ||
@@ -1012,6 +1017,7 @@ static void jellyfin_stream_close(void *opaque) {
 		__sync_bool_compare_and_swap(stream->telemetry_owner,
 		                             (uintptr_t)stream, (uintptr_t)0);
 	secure_zero(stream->access_token, sizeof(stream->access_token));
+	secure_zero(stream->url, sizeof(stream->url));
 	free(stream->cache);
 	free(stream);
 }
@@ -1114,20 +1120,10 @@ int vt_jellyfin_open_subtitle_stream(
 	return 0;
 }
 
-int vt_jellyfin_open_stream(const VtNetworkSource *source,
-	                        const VtNetworkCredential *credential,
-	                        const char *path, VtDecoderStreamHandle *out,
-	                        volatile int *cancel_flag,
-	                        VtNetworkBufferTelemetry *telemetry,
-	                        volatile uintptr_t *telemetry_owner) {
-	if (!source || !credential || !path || !out ||
-	    !credential->access_token[0]) return VT_NETWORK_AUTH_FAILED;
-	char item_id[VT_NETWORK_USER_ID_MAX];
-	if (item_id_from_path(path, item_id) < 0 || !item_id[0]) return -1;
-	char endpoint[128];
-	int endpoint_size = snprintf(endpoint, sizeof(endpoint),
-	                             "Videos/%s/stream", item_id);
-	if (endpoint_size < 0 || (size_t)endpoint_size >= sizeof(endpoint)) return -1;
+static int range_stream_open(const VtNetworkSource *source, const char *target,
+ const char *token, VtDecoderStreamHandle *out, volatile int *cancel_flag,
+ VtNetworkBufferTelemetry *telemetry, volatile uintptr_t *telemetry_owner) {
+    if(!source||!target||!*target||!out)return -1;
 	JellyfinStream *stream = calloc(1, sizeof(*stream));
 	if (!stream) return -1;
 	stream->worker_thid = -1;
@@ -1139,15 +1135,14 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 		stream->telemetry_owner = telemetry_owner;
 	}
 	stream->cache = malloc(JELLYFIN_RANGE_CACHE);
-	if (!stream->cache || jellyfin_url(source, endpoint, "static=true",
-	                                  stream->url, sizeof(stream->url)) < 0) {
+	if (!stream->cache || snprintf(stream->url, sizeof(stream->url), "%s", target) >= (int)sizeof(stream->url)) {
 		jellyfin_stream_close(stream);
 		return -1;
 	}
 	for (int i = 0; i < JELLYFIN_CACHE_SLOTS; i++)
 		stream->slots[i].data = stream->cache + i * JELLYFIN_CACHE_CHUNK;
 	snprintf(stream->access_token, sizeof(stream->access_token), "%s",
-	         credential->access_token);
+	         token ? token : "");
 	VitaHttpsClientConfig config;
 	jellyfin_client_config(source, &config);
 	config.request_timeout_ms = 12000;
@@ -1162,7 +1157,7 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 		jellyfin_stream_close(stream);
 		return -1;
 	}
-	const char *headers[] = { authorization, NULL };
+	const char *headers[] = { token ? authorization : NULL, NULL };
 	VitaHttpsRequest request = {
 		.method = "HEAD",
 		.url = stream->url,
@@ -1170,11 +1165,13 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 		.cancel_flag = cancel_flag
 	};
 	VitaHttpsResponse response = { 0 };
-	int result = vita_https_perform(stream->client, &request, &response);
+	int result = stream->access_token[0]
+	    ? vita_https_perform(stream->client, &request, &response)
+	    : vita_https_perform_no_redirects(stream->client, &request, &response);
 	if (response.status_code == 401 || response.status_code == 403)
 		result = VT_NETWORK_AUTH_FAILED;
 	else if (result < 0) result = transport_result(result);
-	else if (response.content_length <= 0) result = VT_NETWORK_RANGE_UNSUPPORTED;
+	else if (response.status_code < 200 || response.status_code >= 300 || response.content_length <= 0) result = VT_NETWORK_RANGE_UNSUPPORTED;
 	if (result < 0) {
 		jellyfin_stream_close(stream);
 		return result;
@@ -1208,4 +1205,21 @@ int vt_jellyfin_open_stream(const VtNetworkSource *source,
 	out->close = jellyfin_stream_close;
 	out->size = (int64_t)stream->size;
 	return 0;
+}
+
+int vt_authenticated_range_stream(const VtNetworkSource *source, const char *url,
+ VtDecoderStreamHandle *out, volatile int *cancel, VtNetworkBufferTelemetry *telemetry,
+ volatile uintptr_t *owner) {
+ return range_stream_open(source, url, NULL, out, cancel, telemetry, owner);
+}
+int vt_jellyfin_open_stream(const VtNetworkSource *source,
+ const VtNetworkCredential *credential, const char *path,
+ VtDecoderStreamHandle *out, volatile int *cancel,
+ VtNetworkBufferTelemetry *telemetry, volatile uintptr_t *owner) {
+ if (!source || !credential || !path || !out || !credential->access_token[0]) return VT_NETWORK_AUTH_FAILED;
+ char id[VT_NETWORK_USER_ID_MAX], endpoint[128], url[2048];
+ if(item_id_from_path(path,id)<0 || !id[0])return -1;
+ snprintf(endpoint,sizeof(endpoint),"Videos/%s/stream",id);
+ if(jellyfin_url(source,endpoint,"static=true",url,sizeof(url))<0)return -1;
+ return range_stream_open(source,url,credential->access_token,out,cancel,telemetry,owner);
 }

@@ -48,7 +48,7 @@ static size_t utf8_character_length(const char *text) {
 	return length;
 }
 
-static void index_text(vita2d_font *font, const char *text) {
+static void index_text(vita2d_font *font, const char *text, int max_width) {
 	g_reader_line_count = 0;
 	if (!font || !text) return;
 	int offset = 0;
@@ -71,7 +71,7 @@ static void index_text(vita2d_font *font, const char *text) {
 			measured_length += (int)char_length;
 			measured[measured_length] = '\0';
 			if (text[offset] == ' ') last_space = offset;
-			if (ui_font_text_width(font, UI_FONT_SMALL, measured) > TEXT_READER_WIDTH) {
+			if (ui_font_text_width(font, UI_FONT_SMALL, measured) > max_width) {
 				if (last_space >= begin) offset = last_space;
 				break;
 			}
@@ -86,28 +86,10 @@ static void index_text(vita2d_font *font, const char *text) {
 	}
 }
 
-static void draw_reader_tabs(vita2d_font *font, const char *parent_title,
-	                         const char *title) {
-	const char *labels[2] = { parent_title, title };
-	for (int i = 0; i < 2; i++) {
-		int x = TEXT_READER_TAB_X + i * (TEXT_READER_TAB_W + TEXT_READER_TAB_GAP);
-		ui_panel(x, TEXT_READER_TAB_Y, TEXT_READER_TAB_W,
-		         TEXT_READER_TAB_H,
-		         i == 1 ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE,
-		         i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
-		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-		if (small) {
-			char index[4];
-			snprintf(index, sizeof(index), "%02d", i + 1);
-			ui_font_draw_text(small, x + 12, TEXT_READER_TAB_Y + 28,
-			                  i == 1 ? VT_THEME_SIGNAL_LIGHT : VT_THEME_TEXT_FAINT,
-			                  UI_FONT_SMALL, index);
-		}
-		if (font && labels[i])
-			ui_font_draw_text(font, x + 46, TEXT_READER_TAB_Y + 29,
-			                  i == 1 ? VT_THEME_TEXT : VT_THEME_TEXT_MUTED,
-			                  UI_FONT_BODY, labels[i]);
-	}
+static void draw_reader_tabs(vita2d_font *font, const char *parent_title, const char *title) {
+ (void)font;
+ ui_tab(TEXT_READER_TAB_X,TEXT_READER_TAB_Y,TEXT_READER_TAB_W,TEXT_READER_TAB_H,parent_title,0);
+ ui_tab(TEXT_READER_TAB_X+TEXT_READER_TAB_W+TEXT_READER_TAB_GAP,TEXT_READER_TAB_Y,TEXT_READER_TAB_W,TEXT_READER_TAB_H,title,1);
 }
 
 static void draw_reader(const char *parent_title, const char *title,
@@ -122,7 +104,7 @@ static void draw_reader(const char *parent_title, const char *title,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
-	ui_brand_draw_header(NULL);
+	ui_brand_draw_breadcrumbs(parent_title, NULL, title);
 	if (tabbed)
 		draw_reader_tabs(body, parent_title, title);
 	else if (body)
@@ -172,7 +154,7 @@ static int text_reader_run_internal(const char *parent_title, const char *title,
 	                                const char *text) {
 	if (!text || !text[0]) return UI_SECTION_NONE;
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	index_text(small, text);
+	index_text(small, text, TEXT_READER_WIDTH);
 	if (g_reader_line_count <= 0) return UI_SECTION_NONE;
 	int tabbed = parent_title && parent_title[0];
 	int visible_lines = tabbed ? TEXT_READER_TABBED_VISIBLE_LINES
@@ -262,6 +244,122 @@ static int text_reader_run_internal(const char *parent_title, const char *title,
 
 int ui_text_reader_run(const char *title, const char *text) {
 	return text_reader_run_internal(NULL, title, text);
+}
+
+typedef struct {
+ char title[64];
+ const char *body;
+ size_t length;
+} GuideChapter;
+
+/* Only standalone uppercase headings are navigation. The instructional prose
+ * remains the localized source of truth, not another set of copied bindings. */
+static int guide_chapters(const char *text, GuideChapter *chapters, int capacity) {
+ int count=0;
+ for(const char *p=text; p && *p;) {
+  const char *end=strchr(p,'\n');
+  if(!end)break;
+  size_t length=(size_t)(end-p);
+  int heading=length>0 && length<sizeof(chapters[0].title) && end[1]=='\n';
+  for(size_t i=0;heading && i<length;i++)
+   if(!((p[i]>='A' && p[i]<='Z') || p[i]==' ' || p[i]=='/'))heading=0;
+  if(heading && (p==text || (p-text>=2 && p[-2]=='\n'))) {
+   if(count==capacity)return 0;
+   if(count)chapters[count-1].length=(size_t)(p-chapters[count-1].body);
+   memcpy(chapters[count].title,p,length);chapters[count].title[length]=0;
+   chapters[count].body=end+2;chapters[count].length=0;count++;
+  }
+  p=end+1;
+ }
+ if(count)chapters[count-1].length=strlen(chapters[count-1].body);
+ return count;
+}
+
+int ui_controls_guide_run(const char *title, const char *text) {
+ if(!text || !*text)return UI_SECTION_NONE;
+ GuideChapter chapters[8];int count=guide_chapters(text,chapters,8);
+ char content[8192];
+ if(!count)return ui_text_reader_run(title,text);
+ for(int i=0;i<count;i++)if(chapters[i].length>=sizeof(content))
+  return ui_text_reader_run(title,text);
+ int cursor=0,loaded=-1,first=0,content_focus=0;
+ UiFocusMotion focus={0};UiNavRepeat repeat={0};UiSectionsSidebar sidebar;
+ ui_sections_sidebar_init(&sidebar,UI_SECTION_GUIDE);
+ SceCtrlData previous={0};sceCtrlPeekBufferPositive(0,&previous,1);
+ ui_touch_reset();
+ for(;;) {
+  ui_mini_player_pump();
+  SceCtrlData controls={0};sceCtrlPeekBufferPositive(0,&controls,1);
+  unsigned pressed=controls.buttons & ~previous.buttons;previous=controls;
+  ui_mini_player_handle_buttons(&pressed);
+  UiTouchEvent touch;unsigned flags=ui_touch_poll(&touch);
+  if(ui_mini_player_input_locked()) {
+   pressed=flags=controls.buttons=0;controls.lx=controls.ly=128;
+  } else if(ui_brand_sections_hit(flags,touch.x,touch.y)) {
+   pressed|=SCE_CTRL_LTRIGGER;flags=0;
+  }
+  int was_open=sidebar.open;
+  int section=ui_sections_sidebar_handle_buttons(&sidebar,&pressed,controls.buttons,controls.ly);
+  if(was_open || sidebar.open) {
+   int touched=ui_sections_sidebar_handle_touch(&sidebar,flags,touch.x,touch.y);
+   if(touched!=UI_SECTION_NONE)section=touched;
+   flags=0;
+  } else if(sidebar.animation<=.01f && ui_mini_player_handle_touch(flags,&touch))flags=0;
+  ui_sections_sidebar_tick(&sidebar);
+  if(section!=UI_SECTION_NONE){ui_touch_reset();return section;}
+  int owns=!was_open && !sidebar.open && sidebar.animation<=.01f && !ui_mini_player_input_locked();
+  int visible=(ui_mini_player_top()-154)/TEXT_READER_LINE_HEIGHT;
+  if(visible<1)visible=1;
+  if(owns) {
+   if(pressed&SCE_CTRL_CIRCLE){ui_touch_reset();return UI_SECTION_NONE;}
+   unsigned nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,
+                                    SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+   if(nav&SCE_CTRL_LEFT)content_focus=0;
+   if((nav&SCE_CTRL_RIGHT) || (pressed&SCE_CTRL_CROSS))content_focus=1;
+   if(nav&SCE_CTRL_UP){if(content_focus)first--;else if(cursor>0)cursor--;}
+   if(nav&SCE_CTRL_DOWN){if(content_focus)first++;else if(cursor+1<count)cursor++;}
+   if(flags&UI_TOUCH_EVENT_TAP) {
+    for(int i=0;i<count;i++)if(ui_touch_hit_rect(touch.x,touch.y,18,62+i*52,264,44)){
+     cursor=i;content_focus=0;
+    }
+    if(touch.x>=298 && touch.y>=62 && touch.y<ui_mini_player_top()-36)content_focus=1;
+   }
+   if(content_focus && (flags&UI_TOUCH_EVENT_UP) && !(flags&UI_TOUCH_EVENT_TAP))
+    first+=(touch.down_y-touch.y)/TEXT_READER_LINE_HEIGHT;
+  } else ui_nav_repeat_reset(&repeat);
+  if(cursor!=loaded) {
+   memcpy(content,chapters[cursor].body,chapters[cursor].length);
+   content[chapters[cursor].length]=0;
+   index_text(ui_runtime_font(UI_FONT_SMALL),content,604);loaded=cursor;first=0;
+  }
+  int max_first=g_reader_line_count>visible?g_reader_line_count-visible:0;
+  if(first<0)first=0;
+  if(first>max_first)first=max_first;
+  vita2d_start_drawing();vita2d_clear_screen();
+  ui_chrome_background(VT_THEME_BG,VT_THEME_SIGNAL);
+  ui_brand_draw_breadcrumbs(title,NULL,chapters[cursor].title);
+  for(int i=0;i<count;i++)ui_tab(18,62+i*52,264,44,chapters[i].title,i==cursor);
+  int panel_height=ui_mini_player_top()-106;
+  ui_panel(298,62,644,panel_height,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+  ui_text_line(318,94,604,chapters[cursor].title,VT_THEME_TEXT,UI_FONT_BODY);
+  for(int i=0;i<visible && first+i<g_reader_line_count;i++) {
+   TextReaderLine line=g_reader_lines[first+i];char rendered[512];
+   int n=line.length;if(n>511)n=511;
+   memcpy(rendered,content+line.offset,n);rendered[n]=0;
+   ui_text_line(318,128+i*24,604,rendered,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+  }
+  if(owns) {
+   ui_focus_motion_tick(&focus,content_focus?298:18,content_focus?62:62+cursor*52,
+                        content_focus?644:264,content_focus?panel_height:44);
+   ui_focus_outline_draw(&focus);
+  }
+  ui_scroll_rail(934,112,panel_height-58,first,visible,g_reader_line_count);
+  ui_footer(ui_mini_player_top(),"L1  /  R1    •    ← →    •    ↑ ↓","Circle");
+  ui_mini_player_draw();
+  if(sidebar.animation>.01f)ui_sections_sidebar_draw(&sidebar);
+  vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();
+  sceKernelDelayThread(16000);
+ }
 }
 
 int ui_text_reader_run_tabbed(const char *parent_title, const char *title,

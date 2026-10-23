@@ -30,9 +30,9 @@ void vt_performance_begin_video(VtPerformanceClockGuard *guard,
 		arm_ret = scePowerSetArmClockFrequency(VT_VIDEO_DEFAULT_ARM_MHZ);
 		guard->changed_arm_clock = arm_ret >= 0;
 	}
-	/* VitaMediaDeck's deterministic profile is the same at every selectable quality:
-	 * CPU 444, ES4/GPU 222, BUS 222, XBAR 111 MHz. This avoids a session
-	 * silently inheriting a slower firmware clock merely because it is 30 fps. */
+    /* Ownership remains explicit. The stock-clock experiment uses
+     * 333/166/166/111; the normal build preserves 444/222/222/111.
+     * These are fixed measurement baselines, not an adaptive governor. */
 	if (guard->app_owns_clocks) {
 		if (guard->previous_bus_mhz > 0 && guard->previous_bus_mhz != VT_720P60_BUS_MHZ) {
 			bus_ret = scePowerSetBusClockFrequency(VT_720P60_BUS_MHZ);
@@ -47,14 +47,18 @@ void vt_performance_begin_video(VtPerformanceClockGuard *guard,
 			guard->changed_xbar_clock = xbar_ret >= 0;
 		}
 	}
-	log_printf("video clocks: profile=%s highfps=%d ARM %d->%d ret=%08X BUS %d->%d ret=%08X GPU %d->%d ret=%08X XBAR %d->%d ret=%08X",
+	log_printf("video clocks: profile=%s highfps=%d ARM %d->%d ret=%08X BUS %d->%d ret=%08X GPU %d->%d ret=%08X XBAR %d->%d ret=%08X requested_ARM=%d requested_BUS=%d requested_GPU=%d requested_XBAR=%d",
 	           guard->app_owns_clocks ? "APP_FIXED" : "PSVSHELL",
 	           guard->high_fps_profile,
 	           guard->previous_arm_mhz,
 	           scePowerGetArmClockFrequency(), (unsigned)arm_ret,
 	           guard->previous_bus_mhz, scePowerGetBusClockFrequency(), (unsigned)bus_ret,
 	           guard->previous_gpu_mhz, scePowerGetGpuClockFrequency(), (unsigned)gpu_ret,
-	           guard->previous_xbar_mhz, scePowerGetGpuXbarClockFrequency(), (unsigned)xbar_ret);
+	           guard->previous_xbar_mhz, scePowerGetGpuXbarClockFrequency(), (unsigned)xbar_ret,
+               guard->app_owns_clocks ? VT_VIDEO_DEFAULT_ARM_MHZ : guard->previous_arm_mhz,
+               guard->app_owns_clocks ? VT_720P60_BUS_MHZ : guard->previous_bus_mhz,
+               guard->app_owns_clocks ? VT_720P60_GPU_MHZ : guard->previous_gpu_mhz,
+               guard->app_owns_clocks ? VT_720P60_XBAR_MHZ : guard->previous_xbar_mhz);
 }
 
 void vt_performance_end_video(VtPerformanceClockGuard *guard) {

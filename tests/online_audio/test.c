@@ -19,7 +19,7 @@ void log_printf(const char *format, ...) { (void)format; }
 static unsigned muted, pause_test, cancel_test;
 static int disconnect_test;
 static int icy_test;
-static int recover_test;
+static int recover_test,feed_cover_test;
 static unsigned metadata_seen;
 static void metadata(void *ctx,const char *station,const char *title) {
     (void)ctx;CHECK(!strcmp(station,"Station"));
@@ -30,13 +30,14 @@ static volatile int cancelled, paused;
 static char *mp3; static size_t mp3_size;
 static const char *fixture;
 static char last_url[1024];
-static int stream_closed;
+static int stream_closed, stream_opened;
 static int fake_read(void *ctx,void *data,size_t size){CHECK(ctx==(void*)2);memset(data,42,size);return (int)size;}
 static int64_t fake_seek(void *ctx,int64_t offset,int whence){CHECK(ctx==(void*)2 && whence==SEEK_SET);return offset;}
 static void fake_close(void *ctx){CHECK(ctx==(void*)2);stream_closed++;}
 int vita_https_open_range_stream(VitaHttpsClient *client,const char *url,volatile int *cancel,VitaHttpsStream *out) {
     CHECK(client==(void*)1 && !strcmp(url,"https://example.org/podcast.mp3"));
-    if(cancel&&*cancel)return -1;
+    stream_opened++;
+    if(cancel&&__atomic_load_n(cancel,__ATOMIC_ACQUIRE))return -1;
     *out=(VitaHttpsStream){.opaque=(void*)2,.read=fake_read,.seek=fake_seek,.close=fake_close,.size=12345};return 0;
 }
 uint64_t sceKernelGetProcessTimeWide(void) { return tick += 1000; }
@@ -58,6 +59,10 @@ int vita_https_perform(VitaHttpsClient *c,const VitaHttpsRequest *r,VitaHttpsRes
     (void)c; calls++; memset(s,0,sizeof(*s)); s->status_code=200;
     snprintf(last_url,sizeof(last_url),"%s",r->url);
     if(*r->cancel_flag)return -1;
+    if(feed_cover_test) {
+        const char *body=strstr(r->url,"feed.xml")?"<rss><channel><image><url>podcast.png</url></image></channel></rss>":"\x89PNG\r\n\x1a\n";
+        return r->write(body,strlen(body),r->write_opaque)==strlen(body)?0:-1;
+    }
     if(recover_test) {
         const char *body=strstr(r->url,"byuuid")?"[{\"favicon\":\"https://example.org/recovered.png\",\"tags\":\"news talk\"}]":"\x89PNG\r\n\x1a\n";
         return r->write(body,strlen(body),r->write_opaque)==strlen(body)?0:-1;
@@ -102,11 +107,32 @@ static void feed_test(void) {
     CHECK(!vt_online_parse_feed(good,strlen(good),"https://example.org/feed.xml",q));
     CHECK(q->count==1 && !strcmp(q->items[0].title,"Episode & one"));
     CHECK(!strcmp(q->items[0].url,"https://example.org/one.mp3"));
-    const char *details="<rss xmlns:itunes='http://www.itunes.com/dtds/podcast-1.0.dtd'><channel><itunes:author>Author</itunes:author><itunes:image href='https://example.org/cover.png'/><item><description>&lt;p&gt;Description&lt;/p&gt;</description><enclosure url='one.mp3'/></item></channel></rss>";
+    const char *details="<rss xmlns:itunes='http://www.itunes.com/dtds/podcast-1.0.dtd'><channel><itunes:author>Author</itunes:author><itunes:image href='https://example.org/cover.png'/><item><description>&lt;p&gt;Description&lt;/p&gt;</description><itunes:duration>1:02:03</itunes:duration><enclosure url='one.mp3'/></item><title>Late show title</title></channel></rss>";
     CHECK(!vt_online_parse_feed(details,strlen(details),"https://example.org/feed",q));
     CHECK(!strcmp(q->items[0].author,"Author"));CHECK(!strcmp(q->items[0].description,"Description"));
     CHECK(!strcmp(q->items[0].artwork_url,"https://example.org/cover.png"));
+    CHECK(!strcmp(q->items[0].show_title,"Late show title")&&q->items[0].duration_ms==3723000);
+    const char *durations[]={"42"," 02:03 ","1:02:03","1:99","1:2:3:4","-1","abc","99999999999999999"};
+    const uint64_t expected[]={42000,123000,3723000,0,0,0,0,0};
+    for(unsigned i=0;i<sizeof(expected)/sizeof(*expected);i++) {
+        char feed[512];snprintf(feed,sizeof(feed),"<rss><channel><item><duration>%s</duration><enclosure url='one.mp3'/></item></channel></rss>",durations[i]);
+        CHECK(!vt_online_parse_feed(feed,strlen(feed),"https://example.org/feed",q));
+        CHECK(q->count==1&&q->items[0].duration_ms==expected[i]);
+    }
     const char *bad[]={"broken","<feed/>","<!DOCTYPE rss [<!ENTITY x SYSTEM 'file:///etc/passwd'>]><rss><channel><item><title>&x;</title></item></channel></rss>","<!DOCTYPE rss SYSTEM 'https://example.org/evil'><rss><channel/></rss>"};
+    const char *dates[]={"Mon, 07 Sep 2026 23:30:00 -0700","7 sep 2026 12:00:00 GMT",
+        "2026-09-07T00:10:00+1200","29 Feb 2024 00:00:00 GMT","29 Feb 2025",
+        "31 Apr 2026","garbage","","01 Jan 2040","07 Sep 20260"};
+    const char *calendar[]={"2026-09-07","2026-09-07","2026-09-07","2024-02-29",
+        "","","","","2040-01-01",""};
+    for(unsigned i=0;i<sizeof(dates)/sizeof(*dates);i++) {
+        char feed[512];snprintf(feed,sizeof(feed),"<rss><channel><item><pubDate>%s</pubDate><enclosure url='one.mp3'/></item></channel></rss>",dates[i]);
+        CHECK(!vt_online_parse_feed(feed,strlen(feed),"https://example.org/feed",q));
+        CHECK(q->count==1&&!strcmp(q->items[0].published_date,calendar[i]));
+    }
+    const char *dc="<rss xmlns:dc='http://purl.org/dc/elements/1.1/'><channel><item><dc:date>2026-09-07</dc:date><enclosure url='one.mp3'/></item></channel></rss>";
+    CHECK(!vt_online_parse_feed(dc,strlen(dc),"https://example.org/feed",q));
+    CHECK(!strcmp(q->items[0].published_date,"2026-09-07"));
     for(unsigned i=0;i<4;i++) CHECK(vt_online_parse_feed(bad[i],strlen(bad[i]),"https://example.org/",q)<0);
     CHECK(vt_online_parse_feed("",VT_ONLINE_FEED_LIMIT+1,"https://example.org/",q)<0);
     char large[16000]="<rss><channel>";
@@ -171,6 +197,9 @@ static void saved_test(void) {
     CHECK(!strcmp(loaded[0].artwork_url,item.artwork_url));
     fixture="\x89PNG\r\n\x1a\n";CHECK(!vt_online_fetch_cover(&item,&cancelled));CHECK(strstr(item.artwork_path,".png"));
     unsigned requests=calls;CHECK(!vt_online_fetch_cover(&item,&cancelled)&&requests==calls);fixture=NULL;
+    VtOnlineItem feed={.kind=VT_ONLINE_FEED,.url="https://example.org/feed.xml"};
+    feed_cover_test=1;CHECK(!vt_online_fetch_cover(&feed,&cancelled));feed_cover_test=0;
+    CHECK(!strcmp(feed.artwork_url,"https://example.org/podcast.png")&&feed.artwork_path[0]);
     FILE *f=fopen("ux0:data/VitaMediaDeck/online-audio.json","wb"); CHECK(f); fputs("broken",f); fclose(f);
     CHECK(vt_online_save(&item)<0); CHECK(vt_online_load_saved(loaded,64)<0);
     unlink("ux0:data/VitaMediaDeck/online-audio.json");
@@ -230,7 +259,8 @@ int main(int argc,char **argv) {
     VtDecoderStreamFactory factory;VtDecoderStreamHandle handle;
     vt_http_audio_stream_factory("file:///bad",&factory);CHECK(factory.open(factory.opaque,&handle)<0);
     vt_http_audio_stream_factory("https://example.org/podcast.mp3",&factory);
-    cancelled=1;CHECK(factory.open_cancelable(factory.opaque,&handle,&cancelled)<0);cancelled=0;
+    cancelled=1;CHECK(factory.open_cancelable(factory.opaque,&handle,&cancelled)<0);
+    CHECK(!stream_opened && !stream_closed && !handle.opaque);cancelled=0;
     CHECK(!factory.open_cancelable(factory.opaque,&handle,&cancelled));CHECK(handle.size==12345);
     char bytes[8];CHECK(handle.read(handle.opaque,bytes,sizeof(bytes))==8&&bytes[0]==42);
     CHECK(handle.seek(handle.opaque,100,SEEK_SET)==100);handle.close(handle.opaque);CHECK(stream_closed==1);
@@ -238,7 +268,7 @@ int main(int argc,char **argv) {
     for(unsigned i=0;i<6;i++) {
         chunk=chunks[i]; cancelled=paused=outputs=muted=calls=last_position=0;
         pause_test=i==3; cancel_test=i==4;
-        VtLiveAudioConfig config={"https://example.org/live",&cancelled,&paused,update,NULL};
+        VtLiveAudioConfig config={.url="https://example.org/live",.cancel=&cancelled,.paused=&paused,.update=update};
         vt_live_audio_run(&config);
         CHECK(calls==(pause_test?2:1) && leases==0 && opened==released);
         CHECK(cancel_test?outputs==25:outputs>=85);
@@ -253,7 +283,7 @@ int main(int argc,char **argv) {
     icy_test=0;
     cancelled=paused=outputs=muted=calls=last_position=0;
     pause_test=cancel_test=0;disconnect_test=1;
-    VtLiveAudioConfig config={"https://example.org/live",&cancelled,&paused,update,NULL};
+    VtLiveAudioConfig config={.url="https://example.org/live",.cancel=&cancelled,.paused=&paused,.update=update};
     CHECK(vt_live_audio_run(&config)<0);
     CHECK(calls==3 && outputs==258 && leases==0 && opened==released);
     fixture="<html>Not an MP3 stream</html>";calls=outputs=0;

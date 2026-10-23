@@ -14,6 +14,7 @@
 #include "media/background_playback.h"
 #include "media/hw_player_screen.h"
 #include "media/video_thumbnail.h"
+#include "media/podcast_metadata.h"
 #include "network/download_manager.h"
 #include "network/network_source.h"
 #include "settings/preferences.h"
@@ -30,6 +31,7 @@
 #include "ui/online_audio_screen.h"
 #include "ui/iptv_screen.h"
 #include "ui/network_sources_screen.h"
+#include "ui/personal_media_screen.h"
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
 #include "ui/settings_screen.h"
@@ -148,6 +150,9 @@ static int rename_local_media(VtLocalMediaItem *item) {
 	if (sceIoGetstat(target, &collision) >= 0) return -1;
 	int ret = sceIoRename(item->path, target);
 	if (ret < 0) return ret;
+	if (vt_podcast_companions_move(item->path,target) < 0) {
+		sceIoRename(target,item->path);return -1;
+	}
 	ui_local_files_cache_invalidate();
 	if (item->type == VT_LOCAL_MEDIA_IMAGE) return 0;
 	static const char *const suffixes[] = {
@@ -169,6 +174,8 @@ static int delete_local_media(const VtLocalMediaItem *item) {
 		return -1;
 	int ret = sceIoRemove(item->path);
 	if (ret < 0) return ret;
+	if (vt_podcast_companions_remove(item->path) < 0)
+		log_printf("podcast companion cleanup failed\n");
 	ui_local_files_cache_invalidate();
 	/* A matching basename does not establish ownership of another image or
 	 * subtitle. Delete exactly the file named in the confirmation. */
@@ -207,6 +214,9 @@ static int move_local_media(VtLocalMediaItem *item) {
 	if (sceIoGetstat(target, &status) >= 0) return -1;
 	int ret = sceIoRename(item->path, target);
 	if (ret < 0) return ret;
+	if (vt_podcast_companions_move(item->path,target) < 0) {
+		sceIoRename(target,item->path);return -1;
+	}
 	ui_local_files_cache_invalidate();
 	return 0;
 }
@@ -255,7 +265,10 @@ static int run_local_audio_session(VtLocalMediaItem item, int prepare_first,
 			int ret = vt_background_playback_prepare_local(
 			    item.path, id, item.name, item.artist,
 			    item.artwork_path[0] ? item.artwork_path : NULL, item.duration_ms);
-			if (ret == 0) ret = vt_background_playback_activate(0);
+			uint64_t resume = 0;
+			if (ret == 0 && (strstr(item.path, ":podcast/") || strstr(item.path, ":podcasts/")))
+				resume = vt_background_playback_set_podcast_history(item.path);
+			if (ret == 0) ret = vt_background_playback_activate(resume);
 			if (ret < 0) {
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
 				                vt_i18n_str(VT_STR_MAIN_AUDIO_OPEN_FAILED), 2800);
@@ -623,6 +636,7 @@ static int browse_local(void) {
 				folder_root[0] = '\0';
 				continue;
 			}
+			if (ui_home_tab()==HOME_PODCAST) ui_home_podcast_set_offline(0);
 			return UI_SECTION_LOCAL_MEDIA;
 		}
 		if (action == UI_LOCAL_MEDIA_ACTION_BROWSE_FILES) {
@@ -779,6 +793,7 @@ static int run_application(void) {
 		}
 		if (section == UI_SECTION_PLAYER) {
 			int action = vt_background_playback_resume_fullscreen();
+			ui_sections_take_requested();
 			section = action >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
 			          action < VT_HW_PLAYER_ACTION_SECTION_BASE +
 			                   UI_SECTION_ACTION_COUNT
@@ -793,6 +808,8 @@ static int run_application(void) {
 				                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 				section = UI_SECTION_LOCAL_MEDIA;
 			} else section = browse_network();
+		} else if (section == UI_SECTION_NAVIDROME || section == UI_SECTION_IMMICH) {
+			section = ui_personal_media_screen(section == UI_SECTION_NAVIDROME ? VT_NETWORK_NAVIDROME : VT_NETWORK_IMMICH);
 		} else if (section == UI_SECTION_SETTINGS) {
 			int next = ui_settings_screen();
 			section = next == UI_SECTION_NONE ? UI_SECTION_LOCAL_MEDIA : next;
@@ -820,6 +837,9 @@ int main(int argc, char *argv[]) {
 	(void)argc;
 	(void)argv;
 	log_init();
+    log_printf("build: id=%s bubble=%s version=%s sw_upload=%s log=%s",
+               VT_BUILD_TEST_ID, VT_BUILD_NAME, VT_BUILD_VERSION,
+               VT_BUILD_SW_UPLOAD, VITAMEDIADECK_SESSION_LOG_PATH);
 	g_startup_started_us = sceKernelGetProcessTimeWide();
 	uint64_t stage_started_us = g_startup_started_us;
 	vt_preferences_init();
@@ -863,6 +883,7 @@ int main(int argc, char *argv[]) {
 	run_application();
 	vt_video_thumbnail_shutdown();
 	vt_background_playback_shutdown();
+	ui_personal_media_shutdown();
 	ui_mini_player_shutdown();
 	vt_download_background_shutdown();
 	vt_network_shutdown();

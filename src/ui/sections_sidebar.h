@@ -11,6 +11,8 @@ enum {
 	UI_SECTION_SETTINGS,
 	UI_SECTION_GUIDE,
 	UI_SECTION_INFO,
+	UI_SECTION_NAVIDROME,
+	UI_SECTION_IMMICH,
 	UI_SECTION_COUNT
 };
 
@@ -18,6 +20,8 @@ enum {
 #define UI_SECTION_PLAYER UI_SECTION_COUNT
 #define UI_SECTION_DOWNLOAD (UI_SECTION_COUNT + 1)
 #define UI_SECTION_ACTION_COUNT (UI_SECTION_COUNT + 2)
+/* Only the audio player enables/consumes these local presentation actions. */
+#define UI_SECTION_AUDIO_LAYOUT_BASE (UI_SECTION_ACTION_COUNT)
 
 typedef struct {
 	int open;
@@ -30,6 +34,7 @@ typedef struct {
 	unsigned int repeat_button;
 	uint64_t repeat_next_us;
 	uint64_t animation_last_us;
+	int audio_layout_available, audio_layout_page, audio_layout_cursor, audio_layout_selected;
 } UiSectionsSidebar;
 
 /* Shared directional repeat for screens that accept both the d-pad and the
@@ -47,6 +52,10 @@ unsigned int ui_nav_repeat_update(UiNavRepeat *repeat,
 	                              unsigned char analog_x,
 	                              unsigned char analog_y,
 	                              unsigned int allowed_directions);
+
+/* UI-thread navigation requested by a resumed audio player. Consumed once. */
+void ui_sections_request(int section);
+int ui_sections_take_requested(void);
 
 void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active);
 

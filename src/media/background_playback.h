@@ -27,6 +27,7 @@ typedef struct {
 	int error;
 	int is_video;
 	int is_live;
+	int is_podcast;
 	/* User intent, including while buffering or a pause is pending. */
 	int paused;
 	uint32_t activation_serial;
@@ -50,6 +51,9 @@ typedef int (*VtBackgroundFullscreenResume)(uint64_t position_ms, void *ctx);
 void vt_background_playback_init(void);
 int vt_background_playback_prepare_radio(const char *url, const char *title);
 int vt_background_playback_prepare_podcast(const char *url, const char *title);
+/* UI-thread only, after prepare and before activate. Returns stored resume. */
+uint64_t vt_background_playback_set_podcast_history(const char *episode_identity);
+void vt_background_playback_checkpoint(void);
 void vt_background_playback_set_audio_details(const char *author, const char *artwork);
 
 /* Opens a file already stored on the console. The service never performs
@@ -76,6 +80,8 @@ int vt_background_playback_prepare_remote_video(
 	const char *location,
 	uint64_t duration_ms,
 	int audio_track);
+
+int vt_background_playback_prepare_remote_audio(const VtNetworkSource *, const VtNetworkCredential *, const char *, const char *, const char *, uint64_t);
 
 int vt_background_playback_prepared(void);
 int vt_background_playback_activate(uint64_t start_position_ms);

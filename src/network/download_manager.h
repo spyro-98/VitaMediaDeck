@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "network/network_source.h"
+#include "network/online_audio.h"
 
 /* Transfers first use a sibling .part file and only publish the final name
  * after a successful flush, so an interrupted transfer never looks complete
@@ -31,6 +32,9 @@ typedef struct {
 	int direct_url;
 	int background;
 	uint64_t keep_awake_last_us;
+	/* Owned by the background job; RSS data survives leaving its screen. */
+	VtOnlineItem podcast;
+	char podcast_show[160];
 } VtDownloadJob;
 
 typedef enum {

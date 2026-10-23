@@ -23,6 +23,10 @@ typedef struct {
 	uint32_t expected_width;
 	uint32_t expected_height;
 	int expected_fps;
+	/* Optional app-owned favourite action. Query is allocation/IO-free;
+	 * toggle returns the new state or a negative persistence error. */
+	int (*favorite)(void *ctx, int toggle);
+	void *favorite_ctx;
 } VtHwPlayerScreenSource;
 
 /* A player can hand navigation back to the application's shared sections

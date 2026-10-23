@@ -129,8 +129,9 @@ int vt_preferences_language(void);
  * only after the disk commit succeeds. */
 int vt_preferences_set_language(int language);
 
-/* Shared Finder-style layout for local and remote folder browsers. Grid is
- * the default for both; switching either browser also changes the other. */
+/* Shared local/remote browser choice, independently remembered per theme.
+ * Legacy and Ghost Mesh default to grid; Deck 90 and Signal to directory lists.
+ * Existing Legacy browser preferences are preserved. */
 int vt_preferences_file_browser_grid(void);
 int vt_preferences_set_file_browser_grid(int enabled);
 
@@ -165,6 +166,9 @@ int vt_preferences_set_music_keep_display_awake(int enabled);
 /* Full-screen music animation palette. */
 int vt_preferences_music_theme(void);
 int vt_preferences_set_music_theme(int theme);
+enum { VT_AUDIO_LAYOUT_CENTER, VT_AUDIO_LAYOUT_LEFT, VT_AUDIO_LAYOUT_RIGHT };
+int vt_preferences_audio_layout(void);
+int vt_preferences_set_audio_layout(int layout);
 
 /* Decoder used for newly opened video sessions. */
 int vt_preferences_video_decoder(void);
@@ -176,6 +180,13 @@ int vt_preferences_loop_enabled(void);
 int vt_preferences_set_loop_enabled(int enabled);
 int vt_preferences_fill_screen(void);
 int vt_preferences_set_fill_screen(int enabled);
+
+/* Stable interface theme values; zero preserves the current UI on upgrades. */
+enum { VT_UI_THEME_LEGACY, VT_UI_THEME_GHOST_MESH, VT_UI_THEME_DECK_90,
+       VT_UI_THEME_SIGNAL, VT_UI_THEME_APERTURE, VT_UI_THEME_RELAY,
+       VT_UI_THEME_MOSAIC, VT_UI_THEME_COUNT };
+int vt_preferences_interface_theme(void);
+int vt_preferences_set_interface_theme(int theme);
 
 /* UI motion preference. */
 int vt_preferences_reduce_motion(void);

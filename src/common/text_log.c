@@ -57,11 +57,18 @@ static void log_append(const char *text) {
 }
 
 void log_printf(const char *format, ...) {
-	char buf[LOG_LINE_MAX];
+	char buf[LOG_LINE_MAX + 1];
 	va_list args;
 	va_start(args, format);
-	vsnprintf(buf, sizeof(buf), format, args);
+	vsnprintf(buf, LOG_LINE_MAX, format, args);
 	va_end(args);
+    /* Each call is one diagnostic record. Library and application producers
+     * previously concatenated records when a caller omitted its newline. */
+    size_t length = strlen(buf);
+    if (length && buf[length - 1] != '\n') {
+        buf[length++] = '\n';
+        buf[length] = '\0';
+    }
 
 	psvDebugScreenPuts(buf);
 	log_lock();

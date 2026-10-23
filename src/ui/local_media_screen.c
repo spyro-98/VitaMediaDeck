@@ -1,4 +1,6 @@
 #include "ui/local_media_screen.h"
+#include "ui/home_services.h"
+#include "ui/local_catalog_summary.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -21,6 +23,8 @@
 #include "media/music_metadata.h"
 #include "media/video_thumbnail.h"
 #include "ui/brand.h"
+#include "ui/layout.h"
+#include "ui/media_grid_layout.h"
 #include "ui/home_tabs.h"
 #include "ui/online_audio_screen.h"
 #include "ui/components.h"
@@ -31,6 +35,7 @@
 #include "ui/runtime.h"
 #include "ui/sections_sidebar.h"
 #include "ui/theme.h"
+#include "ui/theme_home.h"
 #include "ui/touch.h"
 
 #define LOCAL_MAX_ITEMS 65536
@@ -46,27 +51,29 @@
 #define LOCAL_GROUP_IMAGE_TEMP "ux0:data/VitaMediaDeck/local_image.tmp"
 #define LOCAL_SCAN_VIDEO_AUDIO 3U
 #define LOCAL_SCAN_IMAGE 4U
-#define LIST_X 52
-#define LIST_Y 122
-#define LIST_W 856
-#define ROW_H 52
-#define VISIBLE_ROWS 7
+#define HOME_LAYOUT (ui_theme_home_layout(ui_theme_id(),local_viewport_bottom()))
+#define LIST_X (HOME_LAYOUT.x)
+#define LIST_Y (HOME_LAYOUT.y)
+#define LIST_W (HOME_LAYOUT.w)
+#define ROW_H (HOME_LAYOUT.step)
+#define VISIBLE_ROWS 8
 #define GRID_COLS 3
-#define GRID_CARD_W 276
-#define GRID_CARD_H 200
-#define GRID_GAP_X 16
+#define GRID_CARD_W UI_GRID_CARD_W
+#define GRID_CARD_H (ui_media_grid_layout(LIST_Y, local_viewport_bottom()).card_h)
+#define GRID_GAP_X 9
 #define GRID_GAP_Y 8
-#define GRID_THUMB_H 148
+#define GRID_THUMB_H (ui_media_grid_layout(LIST_Y, local_viewport_bottom()).thumb_h)
 #define TAB_X 392
 #define TAB_W 126
 #define TAB_STEP 132
 
 static int local_viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
-	return mini_top < 532 ? mini_top : 532;
+	return mini_top < UI_CONTENT_BOTTOM ? mini_top : UI_CONTENT_BOTTOM;
 }
 
 static int local_list_visible_rows(void) {
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY)return HOME_LAYOUT.rows;
 	int rows = (local_viewport_bottom() - LIST_Y + 6) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -74,6 +81,7 @@ static int local_list_visible_rows(void) {
 }
 
 static int local_list_render_rows(void) {
+ if(ui_theme_id()!=VT_UI_THEME_LEGACY)return HOME_LAYOUT.rows;
 	int rows = (local_viewport_bottom() - LIST_Y + ROW_H - 1) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -81,19 +89,11 @@ static int local_list_render_rows(void) {
 }
 
 static int local_grid_visible_rows(void) {
-	int step = GRID_CARD_H + GRID_GAP_Y;
-	int rows = (local_viewport_bottom() - LIST_Y + GRID_GAP_Y) / step;
-	if (rows < 1) rows = 1;
-	if (rows > 2) rows = 2;
-	return rows;
+ return ui_media_grid_layout(LIST_Y, local_viewport_bottom()).rows;
 }
 
 static int local_grid_render_rows(void) {
-	int step = GRID_CARD_H + GRID_GAP_Y;
-	int rows = (local_viewport_bottom() - LIST_Y + step - 1) / step;
-	if (rows < 1) rows = 1;
-	if (rows > 2) rows = 2;
-	return rows;
+ return ui_media_grid_layout(LIST_Y, local_viewport_bottom()).rows;
 }
 
 static int grid_top_for_selection(int selected) {
@@ -130,13 +130,14 @@ static LocalMediaIndexHeader g_index;
 static int g_page_filter = -1;
 static int g_page_start = -1;
 static int g_page_count;
-static int g_catalog_dirty;
+static int g_catalog_dirty, g_index_ready;
+static unsigned g_catalog_generation;
 static int g_resume_actions;
 static int g_saved_filter, g_saved_selected, g_saved_top;
 static int g_saved_storage, g_saved_sort;
 
 void ui_local_media_cache_invalidate(void) {
-	g_catalog_dirty = 1;
+	g_catalog_dirty = 1;g_catalog_generation++;
 }
 
 #define LOCAL_ROOT_COUNT 16
@@ -152,12 +153,7 @@ typedef struct {
 	uint32_t visible_count;
 } LocalMediaRoot;
 
-typedef struct {
-	uint32_t counts[3];
-	uint64_t sizes[3];
-	char preview_path[3][VT_LOCAL_MEDIA_PATH_MAX];
-	uint64_t preview_size[3];
-} LocalRootCacheEntry;
+typedef UiLocalRootSummary LocalRootCacheEntry;
 
 typedef struct {
 	unsigned char magic[8];
@@ -170,6 +166,9 @@ static LocalMediaRoot g_roots[LOCAL_ROOT_COUNT];
 static int g_root_view[LOCAL_ROOT_COUNT];
 static int g_root_view_count;
 static int g_root_sort_mode;
+static int g_roots_ready;
+/* Scanner-owned until its done flag is published; never read it while scanning. */
+static LocalRootCache g_scanned_roots;
 
 static const struct {
 	const char *path;
@@ -209,6 +208,7 @@ static int item_root_index(const char *path) {
 }
 
 static void root_catalog_reset(void) {
+    g_roots_ready=0;
 	memset(g_roots, 0, sizeof(g_roots));
 	for (int i = 0; i < LOCAL_ROOT_COUNT; i++) {
 		g_roots[i].path = g_root_specs[i].path;
@@ -286,67 +286,12 @@ static void root_cache_save(void) {
 }
 
 static int build_root_catalog(void) {
-	uint64_t started_us = sceKernelGetProcessTimeWide();
-	root_catalog_reset();
-	if (root_cache_load() == 0) {
-		log_printf("local root cache: hit total=%u load=%llu ms",
-		           g_index.total_count,
-		           (unsigned long long)((sceKernelGetProcessTimeWide() -
-		                                started_us) / 1000ULL));
-		return 0;
-	}
-	SceUID fd = sceIoOpen(LOCAL_INDEX_PATH, SCE_O_RDONLY, 0);
-	if (fd < 0) return fd;
-	if (sceIoLseek(fd, sizeof(LocalMediaIndexHeader), SCE_SEEK_SET) < 0) {
-		sceIoClose(fd);
-		return -1;
-	}
-	for (uint32_t record = 0; record < g_index.total_count; record++) {
-		VtLocalMediaItem item_storage;
-		unsigned char *destination = (unsigned char *)&item_storage;
-		size_t received = 0;
-		while (received < sizeof(item_storage)) {
-			int bytes = sceIoRead(fd, destination + received,
-			                       sizeof(item_storage) - received);
-			if (bytes <= 0) {
-				sceIoClose(fd);
-				return bytes < 0 ? bytes : -1;
-			}
-			received += (size_t)bytes;
-		}
-		VtLocalMediaItem *item = &item_storage;
-		int root_index = item_root_index(item->path);
-		int type_index = (int)item->type - 1;
-		if (root_index < 0 || type_index < 0 || type_index >= 3) continue;
-		LocalMediaRoot *root = &g_roots[root_index];
-		root->counts[type_index]++;
-		root->sizes[type_index] += item->size;
-		if (!root->preview_path[type_index][0]) {
-			const char *preview = item->artwork_path[0]
-			                    ? item->artwork_path
-			                    : item->type == VT_LOCAL_MEDIA_IMAGE
-			                          ? item->path : NULL;
-			if (preview) {
-				snprintf(root->preview_path[type_index],
-				         sizeof(root->preview_path[type_index]), "%.*s",
-				         (int)sizeof(root->preview_path[type_index]) - 1, preview);
-				root->preview_size[type_index] = item->artwork_path[0]
-				                               ? item->artwork_size : item->size;
-			} else if (item->type == VT_LOCAL_MEDIA_VIDEO) {
-				snprintf(root->preview_path[type_index],
-				         sizeof(root->preview_path[type_index]), "%.*s",
-				         (int)sizeof(root->preview_path[type_index]) - 1, item->path);
-				root->preview_size[type_index] = item->size;
-			}
-		}
-	}
-	sceIoClose(fd);
-	root_cache_save();
-	log_printf("local root cache: rebuilt total=%u load=%llu ms",
-	           g_index.total_count,
-	           (unsigned long long)((sceKernelGetProcessTimeWide() -
-	                                started_us) / 1000ULL));
-	return 0;
+    if(g_roots_ready)return 0;
+    root_catalog_reset();
+    if(root_cache_load()==0){g_roots_ready=1;return 0;}
+    /* Missing summaries are rebuilt by the scanner, never by blocking entry
+     * into Images on a full linear walk through the cached media index. */
+    return -1;
 }
 
 static int root_view_compare(const void *left, const void *right) {
@@ -419,6 +364,7 @@ typedef struct {
 	volatile int done;
 	int result;
 	LocalMediaIndexHeader index;
+    unsigned generation;
 } LocalMediaScanJob;
 
 static LocalMediaScanJob g_scan_job = { .thid = -1 };
@@ -426,6 +372,7 @@ static LocalMediaScanJob g_scan_job = { .thid = -1 };
 static int ends_with_ci(const char *name, const char *suffix);
 
 static int local_media_leave(int action) {
+ ui_home_tabs_set_expanded(0);
 	vt_video_thumbnail_suspend();
 	return action;
 }
@@ -494,7 +441,9 @@ static int write_record(SceUID fd, const VtLocalMediaItem *item) {
 		if (n <= 0) return n < 0 ? n : -1;
 		done += (size_t)n;
 	}
-	return 0;
+    int root_index=item_root_index(item->path);
+    if(root_index>=0)ui_local_summary_add(&g_scanned_roots.roots[root_index],item);
+    return 0;
 }
 
 static void finish_external_item(VtLocalMediaItem *item) {
@@ -557,7 +506,8 @@ static void finish_external_item(VtLocalMediaItem *item) {
 				snprintf(item->artist, sizeof(item->artist), "%s", metadata.artist);
 			if (metadata.album[0])
 				snprintf(item->album, sizeof(item->album), "%s", metadata.album);
-			if (!item->artwork_path[0] && metadata.artwork_path[0]) {
+			if (metadata.artwork_path[0] && (!item->artwork_path[0] ||
+			    strstr(metadata.artwork_path,".podcast."))) {
 				snprintf(item->artwork_path, sizeof(item->artwork_path), "%s",
 				         metadata.artwork_path);
 				SceIoStat artwork_stat;
@@ -647,6 +597,7 @@ static int copy_file_records(SceUID out_fd, const char *path) {
 
 static int scan_media(LocalMediaIndexHeader *result_index) {
 	if (!result_index) return -1;
+    memset(&g_scanned_roots,0,sizeof(g_scanned_roots));
 	LocalMediaIndexHeader index;
 	memset(&index, 0, sizeof(index));
 	sceIoMkdir("ux0:data/VitaMediaDeck", 0777);
@@ -744,10 +695,6 @@ static int scan_media(LocalMediaIndexHeader *result_index) {
 	return ret;
 }
 
-static int scan_media_task(void *ctx) {
-	return scan_media((LocalMediaIndexHeader *)ctx);
-}
-
 static int local_index_load(LocalMediaIndexHeader *out) {
 	if (!out) return -1;
 	SceIoStat stat;
@@ -785,7 +732,15 @@ static int local_index_publish(const LocalMediaIndexHeader *index) {
 	}
 	sceIoRemove(LOCAL_INDEX_BACKUP);
 	__sync_synchronize();
-	g_index = *index;
+	g_index = *index;g_index_ready=1;
+    root_catalog_reset();
+    for(int i=0;i<LOCAL_ROOT_COUNT;i++) {
+        memcpy(g_roots[i].counts,g_scanned_roots.roots[i].counts,sizeof(g_roots[i].counts));
+        memcpy(g_roots[i].sizes,g_scanned_roots.roots[i].sizes,sizeof(g_roots[i].sizes));
+        memcpy(g_roots[i].preview_path,g_scanned_roots.roots[i].preview_path,sizeof(g_roots[i].preview_path));
+        memcpy(g_roots[i].preview_size,g_scanned_roots.roots[i].preview_size,sizeof(g_roots[i].preview_size));
+    }
+    g_roots_ready=1;root_cache_save();
 	g_page_filter = g_page_start = -1;
 	g_page_count = 0;
 	return 0;
@@ -800,10 +755,14 @@ static int local_scan_thread(SceSize args, void *argp) {
 	return sceKernelExitThread(0);
 }
 
-static int local_scan_start(void) {
+static uint64_t g_scan_started_us;
+static int local_scan_start(int force) {
 	if (g_scan_job.thid >= 0) return 0;
+    uint64_t now=sceKernelGetProcessTimeWide();
+    if(!force&&g_scan_started_us&&now-g_scan_started_us<60000000ULL)return 0;
+    g_scan_started_us=now;
 	memset(&g_scan_job, 0, sizeof(g_scan_job));
-	g_scan_job.self = &g_scan_job;
+	g_scan_job.self = &g_scan_job;g_scan_job.generation=g_catalog_generation;
 	g_scan_job.thid = sceKernelCreateThread(
 	    "VitaMediaDeckMediaScan", local_scan_thread, 0x10000100,
 	    LOCAL_SCAN_THREAD_STACK, 0, 0, NULL);
@@ -823,22 +782,12 @@ static int local_scan_finish(void) {
 	sceKernelWaitThreadEnd(g_scan_job.thid, NULL, NULL);
 	sceKernelDeleteThread(g_scan_job.thid);
 	g_scan_job.thid = -1;
-	int ret = g_scan_job.result == 0
-	        ? local_index_publish(&g_scan_job.index) : g_scan_job.result;
-	if (ret == 0) sceIoRemove(LOCAL_ROOT_CACHE_PATH);
+	int stale=g_scan_job.generation!=g_catalog_generation;
+    int ret=!stale&&g_scan_job.result==0?local_index_publish(&g_scan_job.index):-1;
+    if(ret==0)g_catalog_dirty=0;
 	if (ret < 0) sceIoRemove(LOCAL_INDEX_TEMP);
+    if(stale)local_scan_start(1);
 	return ret == 0 ? 1 : -1;
-}
-
-/* A scan started before a file operation may still contain the old path.
- * Retire it before rebuilding, keeping the loading UI responsive throughout. */
-static int local_mutation_rescan(void *ctx) {
-	if (g_scan_job.thid >= 0) {
-		sceKernelWaitThreadEnd(g_scan_job.thid, NULL, NULL);
-		sceKernelDeleteThread(g_scan_job.thid);
-		g_scan_job.thid = -1;
-	}
-	return scan_media((LocalMediaIndexHeader *)ctx);
 }
 
 static int filtered_count(int filter) {
@@ -892,13 +841,18 @@ static int filtered_index(int filter, int position) {
 }
 
 static int screen_count(int filter, int flattened) {
-	return flattened ? filtered_count(filter) : g_root_view_count;
+	return home_provider_count(filter)+(flattened ? filtered_count(filter) : g_root_view_count);
 }
 
 static const VtLocalMediaItem *screen_item(int filter, int position,
 	                                       int flattened,
 	                                       LocalMediaRoot **root_out) {
 	if (root_out) *root_out = NULL;
+    int locals=flattened?filtered_count(filter):g_root_view_count;
+    int provider=home_provider_position(filter,position,locals);
+    if(provider>=0)return home_provider_item(filter,provider);
+    position=home_local_position(filter,position,locals);
+    if(position<0)return NULL;
 	if (flattened) {
 		int slot = filtered_index(filter, position);
 		return slot >= 0 ? &g_items[slot] : NULL;
@@ -956,7 +910,8 @@ static void clip_text(vita2d_font *font, unsigned int size, const char *text,
 }
 
 static const char *media_origin_label(const VtLocalMediaItem *item) {
-	(void)item;
+    if(item && item->source==VT_LOCAL_MEDIA_SOURCE_NAVIDROME)return "Navidrome";
+    if(item && item->source==VT_LOCAL_MEDIA_SOURCE_IMMICH)return "Immich";
 	return vt_i18n_str(VT_STR_LOCAL_MEDIA_ORIGIN_LOCAL);
 }
 
@@ -986,6 +941,7 @@ static uint64_t media_preview_size(const VtLocalMediaItem *item,
 }
 
 static const char *media_type_name(const VtLocalMediaItem *item) {
+    if(item && item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)return "Server";
 	if (!item || item->is_directory)
 		return vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_FOLDER);
 	if (item->type == VT_LOCAL_MEDIA_VIDEO)
@@ -993,6 +949,15 @@ static const char *media_type_name(const VtLocalMediaItem *item) {
 	if (item->type == VT_LOCAL_MEDIA_AUDIO)
 		return vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_AUDIO);
 	return vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_IMAGES);
+}
+
+static const char *media_location_label(const VtLocalMediaItem *item) {
+    if (!item) return "";
+    if (item->source == VT_LOCAL_MEDIA_SOURCE_NAVIDROME)
+        return vt_i18n_str(VT_STR_HOME_NAVIDROME_DETAIL);
+    if (item->source == VT_LOCAL_MEDIA_SOURCE_IMMICH)
+        return vt_i18n_str(VT_STR_HOME_IMMICH_DETAIL);
+    return item->path;
 }
 
 static int draw_media_badge(vita2d_font *font, const char *label,
@@ -1007,10 +972,10 @@ static int draw_media_badge(vita2d_font *font, const char *label,
 }
 
 static void tick_right_drawer(int open, int cursor, float *animation,
-	                          float *focus, uint64_t *last_tick_us) {
+	                          float *focus, uint64_t *last_tick_us, UiFocusMotion *motion) {
 	if (!animation || !focus || !last_tick_us) return;
 	float animation_target = open ? 1.0f : 0.0f;
-	float focus_target = (float)cursor;
+
 	uint64_t now = sceKernelGetProcessTimeWide();
 	uint64_t elapsed = *last_tick_us && now > *last_tick_us
 	                 ? now - *last_tick_us : 16667ULL;
@@ -1018,14 +983,16 @@ static void tick_right_drawer(int open, int cursor, float *animation,
 	*last_tick_us = now;
 	if (vt_preferences_reduce_motion()) {
 		*animation = animation_target;
-		*focus = focus_target;
+
 	} else {
 		float animation_alpha = (float)elapsed /
 		                        (60000.0f + (float)elapsed);
-		float focus_alpha = (float)elapsed / (50000.0f + (float)elapsed);
+
 		*animation += (animation_target - *animation) * animation_alpha;
-		*focus += (focus_target - *focus) * focus_alpha;
+
 	}
+	ui_focus_motion_tick(motion,0,(float)cursor,1,1);
+	*focus=motion->y;
 	if (!open && *animation < 0.025f) *animation = 0.0f;
 }
 
@@ -1033,26 +1000,54 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	                    int right_open, int right_cursor, float right_animation,
 	                    float right_focus, int focus_tabs,
 	                    int storage_filter, int sort_mode, int flattened,
-	                    const UiFocusMotion *focus_motion,
+	                    UiFocusMotion *focus_motion,
 	                    const UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	ui_mini_player_pump();
+	vt_video_thumbnail_resume();
 	vt_video_thumbnail_pump();
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
 	ui_brand_set_loading(g_scan_job.thid >= 0 && !g_scan_job.done);
-	ui_brand_draw_header(NULL);
+	if(ui_theme_id()==VT_UI_THEME_LEGACY)ui_brand_draw_home_header();
+	else ui_brand_draw_header(NULL);
 	int page_has_focus = !ui_mini_player_input_locked() &&
 	                     right_animation <= 0.01f &&
 	                     (!sidebar || (!sidebar->open &&
 	                                  sidebar->animation <= 0.01f));
 	int content_has_focus = page_has_focus && !focus_tabs;
-	ui_home_tabs_draw(page_has_focus && focus_tabs);
+	ui_home_tabs_set_expanded(1);
+	ui_home_tabs_draw_with_focus(page_has_focus && focus_tabs, focus_motion);
 	int count = screen_count(filter, flattened);
 	int viewport_bottom = local_viewport_bottom();
-	if (count == 0) {
+	if(ui_theme_id()!=VT_UI_THEME_LEGACY){
+  const VtLocalMediaItem *current=count?screen_item(filter,selected,flattened,NULL):NULL;
+  ui_theme_home_heading(ui_home_tab_label(),media_location_label(current),viewport_bottom);
+  if(ui_theme_id()==VT_UI_THEME_APERTURE){
+   const char *preview=current?media_preview_path(current):NULL;
+   uint64_t size=current?media_preview_size(current,preview):0;
+   vita2d_texture *art=preview?(vt_image_supported_path(preview)?
+       vt_image_thumbnail_get_priority(preview,size,100):vt_video_thumbnail_get_priority(preview,size,100)):NULL;
+   ui_theme_home_preview(art,current?current->name:NULL,viewport_bottom,current?current->source:0);
+  }
+  if(!count)ui_text_line(LIST_X,LIST_Y+26,LIST_W,vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY),VT_THEME_TEXT_MUTED,UI_FONT_BODY);
+  for(int pos=top;pos<count&&pos<top+local_list_visible_rows();pos++){
+   LocalMediaRoot *root=NULL;const VtLocalMediaItem *item=screen_item(filter,pos,flattened,&root);
+   if(!item)continue;
+   char detail[160],size[32];ui_format_file_size(item->size,size,sizeof(size));
+   if(item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)snprintf(detail,sizeof(detail),"%s",vt_i18n_str(item->source==VT_LOCAL_MEDIA_SOURCE_NAVIDROME?VT_STR_HOME_NAVIDROME_DETAIL:VT_STR_HOME_IMMICH_DETAIL));
+   else if(root)snprintf(detail,sizeof(detail),vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_DETAILS),root->visible_count,size);
+   else snprintf(detail,sizeof(detail),"%s - %s",media_type_name(item),size);
+   const char *preview=media_preview_path(item);uint64_t preview_size=media_preview_size(item,preview);
+   vita2d_texture *art=preview?(vt_image_supported_path(preview)?vt_image_thumbnail_get_priority(preview,preview_size,pos==selected?100:60):vt_video_thumbnail_get_priority(preview,preview_size,pos==selected?100:60)):NULL;
+   ui_theme_home_row_art(pos-top,pos,item->name,detail,pos==selected,content_has_focus,viewport_bottom,art,item->is_directory?"DIR":"...");
+   if(!art&&item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)ui_theme_home_service(pos-top,viewport_bottom,item->source);
+  }
+  ui_theme_home_footer(media_location_label(current),viewport_bottom);
+  ui_theme_home_position(selected,count,viewport_bottom);
+ }else if (count == 0) {
 		ui_panel(208, 202, 544, 140, VT_THEME_SURFACE,
 		         VT_THEME_BLUE_LIGHT, 0);
 		if (body) ui_font_draw_text(body, 244, 254, VT_THEME_TEXT,
@@ -1062,12 +1057,6 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		                                UI_FONT_SMALL,
 		                                vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY_DETAIL));
 	} else if (!grid_mode) {
-		if (content_has_focus)
-			ui_focus_glow_draw(focus_motion ? focus_motion->x : LIST_X,
-			                   focus_motion ? focus_motion->y : LIST_Y + (selected - top) * ROW_H,
-			                   focus_motion ? focus_motion->width : LIST_W,
-			                   focus_motion ? focus_motion->height : ROW_H - 6,
-			                   sceKernelGetProcessTimeWide(), LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int visible_limit = top + local_list_visible_rows();
@@ -1110,7 +1099,8 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				draw_media_badge(small, format, badge_x, row_y + 11,
 				                 media_accent(item));
 				char size_text[32];
-				ui_format_file_size(item->size, size_text, sizeof(size_text));
+				if(item->source==VT_LOCAL_MEDIA_SOURCE_FILE)ui_format_file_size(item->size, size_text, sizeof(size_text));
+                else size_text[0]=0;
 				int size_width = ui_font_text_width(small, UI_FONT_SMALL, size_text);
 				ui_font_draw_text(small, LIST_X + LIST_W - 12 - size_width,
 				                  row_y + 30, VT_THEME_TEXT_MUTED,
@@ -1122,12 +1112,6 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		const int cols = GRID_COLS;
 		int first_row = top;
 		int viewport_bottom = local_viewport_bottom();
-		if (content_has_focus)
-			ui_focus_glow_draw(focus_motion ? focus_motion->x : LIST_X - 2,
-			                   focus_motion ? focus_motion->y : LIST_Y - 2,
-			                   focus_motion ? focus_motion->width : GRID_CARD_W + 4,
-			                   focus_motion ? focus_motion->height : GRID_CARD_H + 4,
-			                   sceKernelGetProcessTimeWide(), LIST_Y, viewport_bottom);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int visible_grid_rows = local_grid_render_rows();
@@ -1159,11 +1143,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			                      VT_THEME_MEDIA_BACKDROP);
 			if (art)
 				draw_artwork_cover(art, x + 6, y + 6, GRID_CARD_W - 12, GRID_THUMB_H);
-			else {
-				vita2d_draw_rectangle(x + 54, y + 50, 92, 18, VT_THEME_BLUE_LIGHT);
-				vita2d_draw_rectangle(x + 38, y + 66, 198, 70, VT_THEME_BLUE);
-				vita2d_draw_rectangle(x + 38, y + 66, 198, 4, VT_THEME_BLUE_BRIGHT);
-			}
+            else if(item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)
+                ui_theme_service_icon(x+(GRID_CARD_W-136)*.5f,y+6+(GRID_THUMB_H-108)*.5f,136,108,item->source);
+            else ui_folder_icon(x+(GRID_CARD_W-136)*.5f,y+6+(GRID_THUMB_H-108)*.5f);
 			if (!root && item->type == VT_LOCAL_MEDIA_VIDEO) {
 				char history_id[16];
 				vt_playback_history_local_id(item->path, history_id);
@@ -1182,11 +1164,12 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				                 media_accent(item));
 				char title[128];
 				clip_text(small, UI_FONT_SMALL, item->name, title, GRID_CARD_W - 26);
-				ui_font_draw_text(small, x + 13, y + 174, VT_THEME_TEXT,
+				ui_font_draw_text(small, x + 13, y + (ui_media_grid_layout(LIST_Y, local_viewport_bottom()).title_y), VT_THEME_TEXT,
 				                  UI_FONT_SMALL, title);
 				char detail[128];
 				char size_text[32];
-				ui_format_file_size(item->size, size_text, sizeof(size_text));
+				if(item->source==VT_LOCAL_MEDIA_SOURCE_FILE)ui_format_file_size(item->size, size_text, sizeof(size_text));
+                else size_text[0]=0;
 				if (root)
 					snprintf(detail, sizeof(detail),
 					         vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_DETAILS),
@@ -1196,7 +1179,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 					         media_type_name(item), size_text);
 				char clipped_detail[128];
 				clip_text(small, UI_FONT_SMALL, detail, clipped_detail, GRID_CARD_W - 26);
-				ui_font_draw_text(small, x + 13, y + 195, VT_THEME_TEXT_MUTED,
+				ui_font_draw_text(small, x + 13, y + (ui_media_grid_layout(LIST_Y, local_viewport_bottom()).detail_y), VT_THEME_TEXT_MUTED,
 				                  UI_FONT_SMALL, clipped_detail);
 			}
 		}
@@ -1204,14 +1187,16 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	}
 	/* Draw persistent playback first so modal drawers and confirmations remain
 	 * true full-height layers above it. */
+	if(content_has_focus && count && focus_motion)
+		ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,
+		    sceKernelGetProcessTimeWide(),LIST_Y,viewport_bottom);
 	ui_mini_player_draw();
 	if (right_animation > 0.01f) {
 		/* Modal drawers cover the complete display edge, including the brand bar.
 		 * This prevents the panel from reading as a detached card. */
-		float panel_x = 960.0f - 340.0f * right_animation;
-		vita2d_draw_rectangle(panel_x, 0, 340, 544, VT_THEME_BG_SOFT);
-		vita2d_draw_rectangle(panel_x, 0, 3, 544, VT_THEME_SPECTRAL);
-		vita2d_draw_rectangle(panel_x + 4, 0, 1, 544, VT_THEME_SIGNAL_BRIGHT);
+		float panel_x = 960.0f - 430.0f * right_animation;
+		vita2d_draw_rectangle(panel_x, 0, 430, 544, VT_THEME_BG_SOFT);
+		vita2d_draw_rectangle(panel_x, 0, 1, 544, VT_THEME_BORDER);
 		if (body) ui_font_draw_text(body, (int)panel_x + 30, 92, VT_THEME_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
@@ -1227,7 +1212,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		                                : VT_STR_LOCAL_MEDIA_FOLDER_HIERARCHY));
 		const char *actions[6];
 		int action_count = 0;
-		actions[action_count++] = vt_i18n_str(
+		if(ui_theme_id()==VT_UI_THEME_LEGACY)actions[action_count++] = vt_i18n_str(
 		    grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_LIST
 		              : VT_STR_LOCAL_MEDIA_VIEW_GRID);
 		/* Storage and sort operate on the folder catalogue. In flattened mode the
@@ -1240,22 +1225,18 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		actions[action_count++] = navigation_action;
 		actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_BROWSE_FILES);
 		actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_REFRESH);
-		if (flattened && screen_count(filter, flattened) > 0)
+		if (flattened && screen_item(filter,selected,flattened,NULL) &&
+            screen_item(filter,selected,flattened,NULL)->source==VT_LOCAL_MEDIA_SOURCE_FILE)
 			actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTIONS);
-		if (right_open) {
-			float marker_y = 124.0f + right_focus * 62.0f;
-			ui_panel(panel_x + 18, marker_y, 298, 52,
-			         VT_THEME_SURFACE_FOCUS, VT_THEME_BLUE_LIGHT, 0);
-		}
 		for (int i = 0; i < action_count; i++) {
 			int ay = 124 + i * 62;
-			ui_action_button((int)panel_x + 22, ay, 294, 52,
-			                 i == right_cursor ? VT_THEME_SURFACE_FOCUS
-			                                     : VT_THEME_SURFACE,
-			                 i < (flattened ? 2 : 4) ? "Left/Right" : "Cross",
+			ui_action_button((int)panel_x + 22, ay, 384, 52,
+			                 VT_THEME_SURFACE,
+			                 i+(ui_theme_id()!=VT_UI_THEME_LEGACY) < (flattened ? 2 : 4) ? "Left/Right" : "Cross",
 			                 actions[i],
-			                 i == right_cursor);
+			                 0);
 		}
+		if(right_open){UiFocusMotion focus={.x=panel_x+22,.y=124+right_focus*62,.width=384,.height=52,.initialized=1};ui_focus_outline_draw(&focus);}
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
@@ -1267,31 +1248,13 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 	uint64_t navigation_started_us = sceKernelGetProcessTimeWide();
 	vt_video_thumbnail_resume();
-	if (g_catalog_dirty) {
-		LocalMediaIndexHeader fresh = {0};
-		int result = ui_loading_run(vt_i18n_str(VT_STR_LOCAL_MEDIA_REFRESH),
-		    local_mutation_rescan, &fresh, NULL, NULL, NULL);
-		if (result == 0 && local_index_publish(&fresh) == 0) {
-			sceIoRemove(LOCAL_ROOT_CACHE_PATH);
-			g_catalog_dirty = 0;
-		}
-	}
-	int refreshed = local_scan_finish();
-	LocalMediaIndexHeader cached;
-	if (local_index_load(&cached) == 0) {
-		g_index = cached;
-		g_page_filter = g_page_start = -1;
-		g_page_count = 0;
-		/* The previous catalog is immediately usable. Refresh a temporary index
-		 * in the background and publish it only when complete. */
-		if (refreshed == 0) local_scan_start();
-	} else if (g_scan_job.thid < 0) {
-		LocalMediaIndexHeader initial;
-		memset(&initial, 0, sizeof(initial));
-		int ret = ui_loading_run(vt_i18n_str(VT_STR_LOCAL_MEDIA_TITLE),
-		                         scan_media_task, &initial, NULL, NULL, NULL);
-		if (ret == 0) local_index_publish(&initial);
-	}
+    if(!g_index_ready) {
+        LocalMediaIndexHeader cached;
+        if(local_index_load(&cached)==0){g_index=cached;g_index_ready=1;}
+    }
+    /* The first frame uses the in-memory/disk snapshot. A cold install shows
+     * its Home while indexing; returning from podcast never opens a loader. */
+    local_scan_start(g_catalog_dirty);
 	build_root_catalog();
 	int filter = ui_home_tab_filter(), selected = 0, top = 0;
 	int storage_filter = 0, sort_mode = 0;
@@ -1316,6 +1279,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 	int image_grid = 1;
 	int right_open = 0, right_cursor = 0, focus_tabs = 1;
 	float right_animation = 0.0f, right_focus = 0.0f;
+	UiFocusMotion right_motion={0};
 	uint64_t right_motion_tick_us = 0;
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
@@ -1347,10 +1311,12 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			pressed |= SCE_CTRL_LTRIGGER;
 			flags = UI_TOUCH_EVENT_NONE;
 		}
+		ui_home_tabs_set_expanded(1);
 		int grid_mode = filter == 0 ? library_grid
 		              : filter == 2 ? vt_preferences_local_music_grid()
 		              : filter == 3 ? image_grid
 		                            : vt_preferences_local_video_grid();
+		if(ui_theme_id()!=VT_UI_THEME_LEGACY)grid_mode=0;
 		ui_mini_player_handle_buttons(&pressed);
 		if (ui_mini_player_input_locked()) {
 			pressed = 0;
@@ -1395,15 +1361,17 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			pressed &= ~SCE_CTRL_RTRIGGER;
 		}
 		if (right_open) {
-			float panel_x = 960.0f - 340.0f * right_animation;
-			int file_selected = flattened && screen_count(filter, flattened) > 0;
-			int drawer_row_count = flattened ? (file_selected ? 5 : 4) : 6;
+			float panel_x = 960.0f - 430.0f * right_animation;
+			const VtLocalMediaItem *focused_item=screen_item(filter,selected,flattened,NULL);
+            int file_selected=flattened && focused_item && focused_item->source==VT_LOCAL_MEDIA_SOURCE_FILE && !focused_item->is_directory;
+			int themed_home=ui_theme_id()!=VT_UI_THEME_LEGACY;
+			int drawer_row_count = (flattened ? (file_selected ? 5 : 4) : 6)-themed_home;
 			if (right_cursor >= drawer_row_count) right_cursor = drawer_row_count - 1;
 			if (flags & UI_TOUCH_EVENT_TAP) {
 				int touched_row = -1;
 				for (int i = 0; i < drawer_row_count; i++) {
 					if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
-					                      124 + i * 62, 294, 52)) {
+					                      124 + i * 62, 384, 52)) {
 						touched_row = i;
 						break;
 					}
@@ -1430,11 +1398,12 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if ((drawer_nav & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
 			if ((drawer_nav & SCE_CTRL_DOWN) &&
 			    right_cursor + 1 < drawer_row_count) right_cursor++;
+			int action_cursor=right_cursor+themed_home;
 			int drawer_action = flattened
-			                  ? (right_cursor == 0 ? 0
-			                     : right_cursor == 1 ? 3
-			                     : right_cursor + 2)
-			                  : right_cursor;
+			                  ? (action_cursor == 0 ? 0
+			                     : action_cursor == 1 ? 3
+			                     : action_cursor + 2)
+			                  : action_cursor;
 			if (drawer_action == 0 &&
 			    (horizontal_step ||
 			     (pressed & SCE_CTRL_CROSS))) {
@@ -1471,7 +1440,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if ((pressed & SCE_CTRL_CROSS) && drawer_action == 4)
 				return local_media_leave(UI_LOCAL_MEDIA_ACTION_BROWSE_FILES);
 			if ((pressed & SCE_CTRL_CROSS) && drawer_action == 5) {
-				local_scan_start();
+				local_scan_start(1);
 				right_open = 0;
 			}
 			if (file_selected && drawer_action == 6 && (pressed & SCE_CTRL_CROSS)) {
@@ -1494,7 +1463,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		}
 		if (!right_open) right_horizontal_latch = 0;
 		tick_right_drawer(right_open, right_cursor, &right_animation,
-		                  &right_focus, &right_motion_tick_us);
+		                  &right_focus, &right_motion_tick_us, &right_motion);
 		if ((!sidebar.open && sidebar.animation > 0.01f) ||
 		    (!right_open && right_animation > 0.01f)) {
 			ui_touch_reset();
@@ -1509,23 +1478,32 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			ui_nav_repeat_reset(&page_repeat);
 		}
 		int old_filter = filter;
-		unsigned int nav = ui_nav_repeat_update(
-		    &page_repeat, pressed, overlay_owns_input ? 0 : ctrl.buttons,
-		    overlay_owns_input ? 128 : ctrl.lx,
-		    overlay_owns_input ? 128 : ctrl.ly,
-		    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
-		int tab_touch = flags && touch.down_y >= 68 && touch.down_y < 108;
-		unsigned tab_nav=ui_home_tabs_navigation(pressed,focus_tabs&&!overlay_owns_input?ctrl.buttons:0,
-		    focus_tabs&&!overlay_owns_input?ctrl.lx:128,128);
-		if (ui_home_tabs_input(tab_nav, flags, &touch, focus_tabs)) {
-			focus_tabs = 1;
-			if (ui_home_tab_online()) {
-				ui_online_audio_set_home(1);
-				return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE + UI_SECTION_ONLINE_AUDIO);
-			}
-			filter = ui_home_tab_filter();
-		}
-		if (tab_touch) flags = 0;
+		unsigned int nav=0;int changed_tab=0;
+  int tab_touch=flags&&ui_home_tabs_touch_hit(&touch);
+  if(ui_theme_id()!=VT_UI_THEME_LEGACY){
+   UiHomeControlSample input={.pressed=pressed,.held=ctrl.buttons,.touch_flags=flags,
+    .lx=ctrl.lx,.ly=ctrl.ly,.rx=ctrl.rx,.ry=ctrl.ry,.selected=selected,
+    .count=screen_count(filter,flattened),.bottom=local_viewport_bottom(),
+    .focus_sections=focus_tabs,.blocked=overlay_owns_input,.touch=&touch};
+   UiHomeControlResult result=ui_home_controls_update(&input);
+   pressed=result.pressed;nav=result.content_nav;focus_tabs=result.focus_sections;changed_tab=result.sections_changed;
+  }else{
+   nav=ui_nav_repeat_update(&page_repeat,pressed,overlay_owns_input?0:ctrl.buttons,
+      overlay_owns_input?128:ctrl.lx,overlay_owns_input?128:ctrl.ly,
+      SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+   unsigned tab_nav=ui_home_tabs_navigation(pressed,focus_tabs&&!overlay_owns_input?ctrl.buttons:0,
+       focus_tabs&&!overlay_owns_input?ctrl.lx:128,128);
+   changed_tab=ui_home_tabs_input(tab_nav,flags,&touch,focus_tabs);
+   if(changed_tab)focus_tabs=1;
+  }
+  if(changed_tab){
+   if(ui_home_tab_online()){
+    ui_online_audio_set_home(1);
+    return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+UI_SECTION_ONLINE_AUDIO);
+   }
+   filter=ui_home_tab_filter();
+  }
+  if(tab_touch)flags=0;
 		if (old_filter != filter) {
 			rebuild_root_view(filter, storage_filter, sort_mode);
 			selected = top = 0;
@@ -1536,17 +1514,19 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			          : filter == 2 ? vt_preferences_local_music_grid()
 			          : filter == 3 ? image_grid
 			                        : vt_preferences_local_video_grid();
+			if(ui_theme_id()!=VT_UI_THEME_LEGACY)grid_mode=0;
 		}
 		int count = screen_count(filter, flattened);
 		/* An empty result set has no page item that can own focus. Keep the
 		 * selector on the filters instead of leaving an invisible focus target. */
-		if (count == 0) focus_tabs = 1;
-		if (!focus_tabs && (nav & SCE_CTRL_UP) &&
+		if (count == 0 && ui_theme_id()!=VT_UI_THEME_GHOST_MESH) focus_tabs = 1;
+		if (ui_theme_id()==VT_UI_THEME_LEGACY && !focus_tabs && (nav & SCE_CTRL_UP) &&
 		    (selected < (grid_mode ? 3 : 1))) {
 			focus_tabs = 1;
 			nav &= ~SCE_CTRL_UP;
 		}
-		if (count > 0 && focus_tabs && (nav & SCE_CTRL_DOWN)) {
+
+		if (ui_theme_id()==VT_UI_THEME_LEGACY && count > 0 && focus_tabs && (nav & SCE_CTRL_DOWN)) {
 			focus_tabs = 0;
 			nav &= ~SCE_CTRL_DOWN;
 		}
@@ -1556,10 +1536,15 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if ((nav & SCE_CTRL_UP) && selected >= 3) selected -= 3;
 			if ((nav & SCE_CTRL_DOWN) && selected + 3 < count) selected += 3;
 		} else if (!focus_tabs) {
-			if ((nav & SCE_CTRL_UP) && selected > 0) selected--;
-			if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
+   int columns=ui_theme_id()==VT_UI_THEME_LEGACY?1:HOME_LAYOUT.columns;
+   if((nav&SCE_CTRL_UP)&&selected>=columns)selected-=columns;
+   if((nav&SCE_CTRL_DOWN)&&selected+columns<count)selected+=columns;
+   if((nav&SCE_CTRL_LEFT)&&selected%columns)selected--;
+   if((nav&SCE_CTRL_RIGHT)&&selected%columns+1<columns&&selected+1<count)selected++;
 		}
-		if (!grid_mode) {
+		if(ui_theme_id()!=VT_UI_THEME_LEGACY){
+   top=ui_theme_home_top(ui_theme_id(),selected,top,local_viewport_bottom());
+  }else if (!grid_mode) {
 			int visible = local_list_visible_rows();
 			if (selected < top) top = selected;
 			if (selected >= top + visible) top = selected - visible + 1;
@@ -1568,30 +1553,34 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		}
 		/* Animate the selector itself instead of delaying input: the new item is
 		 * immediately actionable while the signal rim glides across the grid. */
-		if (focus_tabs) {
-			int tab_x = 42;
-			ui_focus_motion_tick(&focus_motion, tab_x - 3, 65, TAB_W + 6, 44);
-		} else if (grid_mode) {
+		if(!focus_tabs&&ui_theme_id()!=VT_UI_THEME_LEGACY){
+   UiThemeRect target=ui_theme_home_item_rect(ui_theme_id(),selected-top,local_viewport_bottom());
+   ui_focus_motion_tick(&focus_motion,target.x,target.y,target.w,target.h);
+  }else if (!focus_tabs && grid_mode) {
 			int row = selected / GRID_COLS - top;
 			int column = selected % GRID_COLS;
 			ui_focus_motion_tick(&focus_motion,
-			                     LIST_X + column * (GRID_CARD_W + GRID_GAP_X) - 2,
-			                     LIST_Y + row * (GRID_CARD_H + GRID_GAP_Y) - 2,
-			                     GRID_CARD_W + 4, GRID_CARD_H + 4);
-		} else {
+			                     LIST_X + column * (GRID_CARD_W + GRID_GAP_X),
+			                     LIST_Y + row * (GRID_CARD_H + GRID_GAP_Y),
+			                     GRID_CARD_W, GRID_CARD_H);
+		} else if (!focus_tabs) {
 			ui_focus_motion_tick(&focus_motion, LIST_X,
 			                     LIST_Y + (selected - top) * ROW_H,
 			                     LIST_W, ROW_H - 6);
 		}
 		if (!focus_tabs && (pressed & SCE_CTRL_CROSS) && count > 0) {
 			const VtLocalMediaItem *item = screen_item(filter, selected, flattened, NULL);
-			if (item && selected_out) *selected_out = *item;
+			if(home_provider_section(item)!=UI_SECTION_NONE)
+                return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+home_provider_section(item));
+            if (item && selected_out) *selected_out = *item;
 			if (item)
 				return local_media_leave(flattened ? UI_LOCAL_MEDIA_ACTION_PLAY
 				                                   : UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER);
 		}
-		if (pressed & SCE_CTRL_CIRCLE)
-			return local_media_leave(UI_LOCAL_MEDIA_ACTION_BACK);
+		if(pressed&SCE_CTRL_CIRCLE){
+   if(ui_theme_id()!=VT_UI_THEME_LEGACY&&!focus_tabs){focus_tabs=1;pressed&=~SCE_CTRL_CIRCLE;}
+   else return local_media_leave(UI_LOCAL_MEDIA_ACTION_BACK);
+  }
 		if ((flags & UI_TOUCH_EVENT_UP) && !(flags & UI_TOUCH_EVENT_TAP) &&
 		    !focus_tabs && count > 0) {
 			int dy = touch.y - touch.down_y;
@@ -1600,7 +1589,9 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			else if (dy > 36) selected -= step;
 			if (selected < 0) selected = 0;
 			if (selected >= count) selected = count - 1;
-			if (!grid_mode) {
+			if(ui_theme_id()!=VT_UI_THEME_LEGACY){
+    top=ui_theme_home_top(ui_theme_id(),selected,top,local_viewport_bottom());
+   }else if (!grid_mode) {
 				int visible = local_list_visible_rows();
 				if (selected < top) top = selected;
 				if (selected >= top + visible)
@@ -1612,7 +1603,9 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			for (int slot = 0; slot < touch_slots; slot++) {
 				int pos = grid_mode ? top * 3 + slot : top + slot;
 				if (pos >= count) break;
-				int hit = grid_mode
+				UiThemeRect themed=ui_theme_home_item_rect(ui_theme_id(),slot,local_viewport_bottom());
+    int hit=ui_theme_id()!=VT_UI_THEME_LEGACY?
+        ui_touch_hit_rect(touch.x,touch.y,themed.x,themed.y,themed.w,themed.h):grid_mode
 					        ? ui_touch_hit_rect(touch.x, touch.y,
 					              LIST_X + (slot % GRID_COLS) * (GRID_CARD_W + GRID_GAP_X),
 					              LIST_Y + (slot / GRID_COLS) * (GRID_CARD_H + GRID_GAP_Y),
@@ -1622,7 +1615,9 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 				if (hit) {
 					selected = pos;
 					const VtLocalMediaItem *item = screen_item(filter, selected, flattened, NULL);
-					if (item && selected_out) *selected_out = *item;
+					if(home_provider_section(item)!=UI_SECTION_NONE)
+                return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+home_provider_section(item));
+            if (item && selected_out) *selected_out = *item;
 					if (item)
 						return local_media_leave(flattened ? UI_LOCAL_MEDIA_ACTION_PLAY
 						                                   : UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER);

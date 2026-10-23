@@ -10,3 +10,7 @@ logmirror/
 *.mp4
 *.psp2dmp
 .DS_Store
+
+# Generated Python bytecode, not release sources.
+__pycache__/
+*.py[cod]

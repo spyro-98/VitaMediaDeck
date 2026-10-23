@@ -28,6 +28,9 @@ int ui_runtime_is_ready(void);
 #define UI_FONT_SMALL   16
 #define UI_FONT_BODY    20
 #define UI_FONT_DISPLAY 28
+#define UI_FONT_HERO 48
+/* Prepare fonts outside the draw pass when applying a theme. */
+void ui_runtime_prepare_theme(void);
 #define UI_FONT_SUBTITLE_LARGE 32
 #define UI_FONT_SUBTITLE_MEDIUM_LARGE 26
 #define UI_FONT_SUBTITLE_EXTRA_LARGE 40

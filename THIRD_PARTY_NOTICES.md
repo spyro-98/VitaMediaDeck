@@ -11,6 +11,12 @@ patch from wiliwili commit `88e5876bea9502d06f46a8656e3530684d3aaf7d`.
 The selected FFmpeg configuration is LGPL-2.1-or-later; wiliwili is
 GPL-3.0. `tools/build-ffmpeg-vita-hw.sh` records and verifies the exact inputs
 and installs the FFmpeg LGPL text for inclusion in the VPK.
+The app also applies `tools/ffmpeg-hls-custom-io.patch`: its explicit custom-IO
+HLS path recognizes HTTP(S) without enabling FFmpeg networking. Resource fetching,
+TLS verification and AES-CBC IO remain owned by the app; FFmpeg provides HLS
+demuxing/sample-AES handling and MPEG-TS remuxing. The exact patched tree is
+included in the builder's redistributable source archive. Decoder interfaces
+are unchanged.
 
 - https://github.com/FFmpeg/FFmpeg
 - https://github.com/xfangfang/wiliwili
@@ -87,3 +93,17 @@ their respective owners. VitaMediaDeck is an independent homebrew project.
 The repository and VPK do not include Sony console photographs, system
 software, keys or proprietary SDK files. The application name and original
 artwork do not imply endorsement by Sony or any media platform.
+
+Country navigation flags are rasterized from the public-domain national-symbol
+SVG collection at https://github.com/hampusborgos/country-flags. See
+`assets/flags/NOTICE.md` (bundled as `licenses/Country-flags.txt`) for provenance
+and the distinction between copyright and restrictions on national-symbol use.
+
+## IBM Plex Mono
+
+IBM Plex Mono Regular is bundled under SIL Open Font License 1.1.
+Source: https://github.com/IBM/plex, commit `017181e320cd0bea18f798d9ceb27a11c885c618`,
+`packages/plex-mono/fonts/complete/ttf/IBMPlexMono-Regular.ttf`.
+The license is in `assets/fonts/IBM-Plex-OFL.txt`, packaged as
+`licenses/IBM-Plex-OFL.txt`. This font is used by the Deck 90 interface;
+subtitle font selection remains independent.

@@ -1,142 +1,80 @@
 #include "ui/focus_glow.h"
-
-#include <math.h>
-
+#include <string.h>
 #include <psp2/kernel/processmgr.h>
 #include <vita2d.h>
-
 #include "settings/preferences.h"
 #include "ui/theme.h"
+#include "ui/theme_home.h"
+#include "ui/media_grid_layout.h"
 
 void ui_focus_motion_reset(UiFocusMotion *motion) {
-	if (!motion) return;
-	motion->x = motion->y = motion->width = motion->height = 0.0f;
-	motion->last_tick_us = 0;
-	motion->initialized = 0;
+	if (motion) memset(motion, 0, sizeof(*motion));
 }
 
-void ui_focus_motion_tick(UiFocusMotion *motion, float x, float y,
-	                      float width, float height) {
-	if (!motion) return;
+void ui_focus_motion_tick(UiFocusMotion *m, float x, float y, float w, float h) {
+	if (!m) return;
 	uint64_t now = sceKernelGetProcessTimeWide();
-	if (!motion->initialized || vt_preferences_reduce_motion()) {
-		motion->x = x;
-		motion->y = y;
-		motion->width = width;
-		motion->height = height;
-		motion->last_tick_us = now;
-		motion->initialized = 1;
-		return;
-	}
-	float delta_seconds = motion->last_tick_us
-	                    ? (float)(now - motion->last_tick_us) / 1000000.0f
-	                    : 1.0f / 60.0f;
-	motion->last_tick_us = now;
-	if (delta_seconds < 0.0f) delta_seconds = 0.0f;
-	if (delta_seconds > 0.05f) delta_seconds = 0.05f;
-	/* A calmer 250 ms settle makes grid motion readable without delaying input. */
-	float blend = 1.0f - expf(-12.0f * delta_seconds);
-	motion->x += (x - motion->x) * blend;
-	motion->y += (y - motion->y) * blend;
-	motion->width += (width - motion->width) * blend;
-	motion->height += (height - motion->height) * blend;
-}
-
-static unsigned int halo_color(int layer, int alpha) {
-	if (alpha < 0) alpha = 0;
-	if (alpha > 255) alpha = 255;
-	if (layer == 0) return RGBA8(8, 48, 69, alpha);
-	if (layer == 1) return RGBA8(78, 163, 180, alpha);
-	return RGBA8(203, 239, 243, alpha);
-}
-
-void ui_focus_glow_draw(float x, float y, float width, float height,
-	                    uint64_t now_us, int viewport_top,
-	                    int viewport_bottom) {
-	if (width <= 0.0f || height <= 0.0f || viewport_bottom <= viewport_top)
-		return;
-	int reduced_motion = vt_preferences_reduce_motion();
-	float pulse = 0.72f;
-	if (!reduced_motion) {
-		float phase = (float)((now_us / 1000ULL) % 5200ULL) / 5200.0f;
-		pulse = 0.78f + 0.12f * (0.5f + 0.5f * sinf(phase * 6.2831853f));
-	}
-
-	int clip_left = (int)x - 24;
-	int clip_right = (int)(x + width) + 24;
-	if (clip_left < 0) clip_left = 0;
-	if (clip_right > 960) clip_right = 960;
-	vita2d_set_clip_rectangle(clip_left, viewport_top, clip_right,
-	                          viewport_bottom);
-	vita2d_enable_clipping();
-
-	/* The bloom sits behind content; cards cover its centre and leave a compact
-	 * spectral reassembly field around the focused object. */
-	float cx = x + width * 0.5f;
-	float cy = y + height * 0.5f;
-	float radius = height * 0.5f + 19.0f;
-	for (int layer = 0; layer < 3; layer++) {
-		float r = radius - (float)layer * 8.0f;
-		int alpha = (int)((10 + layer * 9) * pulse);
-		vita2d_draw_fill_circle(cx, cy, r, VT_THEME_HALO_A(alpha));
-	}
-
-	static const int spread[3] = { 14, 8, 3 };
-	static const int base_alpha[3] = { 32, 62, 118 };
-	for (int layer = 0; layer < 3; layer++) {
-		int s = spread[layer];
-		vita2d_draw_rectangle(x - s, y - s, width + s * 2.0f,
-		                      height + s * 2.0f,
-		                      halo_color(layer,
-		                          (int)(base_alpha[layer] * pulse)));
-	}
-
-	/* Ice-white rails provide the primary selection contrast; oxidized amber
-	 * survives only as a short lower telemetry trace. */
-	unsigned int rail = VT_THEME_SPECTRAL_A((int)(255.0f * pulse));
-	vita2d_draw_rectangle(x - 5.0f, y - 5.0f, width + 10.0f, 4.0f, rail);
-	vita2d_draw_rectangle(x - 5.0f, y + height + 1.0f, width + 10.0f, 4.0f, rail);
-	/* A continuous leading rail remains unmistakable even when the focused
-	 * cell itself is bright artwork or a similarly coloured folder tile. */
-	vita2d_draw_rectangle(x - 5.0f, y - 5.0f, 5.0f, height + 10.0f, rail);
-	vita2d_draw_rectangle(x + width + 1.0f, y - 5.0f,
-	                      2.0f, height + 10.0f, VT_THEME_SIGNAL_A(224));
-	vita2d_draw_rectangle(x + width * 0.18f, y + height + 1.0f,
-	                      width * 0.34f, 2.0f,
-	                      VT_THEME_WARM_A((int)(150.0f * pulse)));
-	/* Cold centre ticks read as machine acquisition. */
-	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y - 7.0f,
-	                      20.0f, 2.0f, VT_THEME_COLD_A((int)(176.0f * pulse)));
-	vita2d_draw_rectangle(x + width * 0.5f - 10.0f, y + height + 5.0f,
-	                      20.0f, 2.0f, VT_THEME_COLD_A((int)(112.0f * pulse)));
-	/* Fine deterministic fragments materialize around all four edges. Motion is
-	 * a short local drift rather than a continuous neon pulse, and freezes when
-	 * Reduce motion is enabled. */
-	unsigned int phase = reduced_motion
-	                   ? 0U : (unsigned int)((now_us / 150000ULL) % 97ULL);
-	for (unsigned int dot = 0; dot < 18U; dot++) {
-		uint32_t seed = 0x9E3779B9U * (dot + 23U);
-		seed ^= seed >> 16;
-		float along = (float)((seed >> 8) % 1000U) / 1000.0f;
-		float offset = 6.0f + (float)(seed % 15U);
-		float drift = reduced_motion ? 0.0f
-		            : (float)((phase * (1U + dot % 3U) + seed) % 11U) - 5.0f;
-		float px, py;
-		switch (seed & 3U) {
-			case 0: px = x + along * width + drift; py = y - offset; break;
-			case 1: px = x + width + offset; py = y + along * height + drift; break;
-			case 2: px = x + along * width - drift; py = y + height + offset; break;
-			default: px = x - offset; py = y + along * height - drift; break;
+	float next[4] = {x,y,w,h};
+	if (!m->initialized || vt_preferences_reduce_motion() || now < m->last_tick_us ||
+	    now - m->last_tick_us > 250000ULL) {
+		m->x=x; m->y=y; m->width=w; m->height=h;
+		memcpy(m->target,next,sizeof(next));
+		memcpy(m->from,next,sizeof(next));
+		m->transition_us=now; m->initialized=1;
+	} else {
+		/* Retarget the presented rectangle, never queue inputs or ease selection.
+		 * Finite cubic settle: no allocations, trig, textures or idle particles. */
+		float t=(float)(now-m->transition_us)/120000.0f;
+		if(t>1) t=1;
+		float inverse=1-t, a=1-inverse*inverse*inverse;
+		m->x=m->from[0]+(m->target[0]-m->from[0])*a;
+		m->y=m->from[1]+(m->target[1]-m->from[1])*a;
+		m->width=m->from[2]+(m->target[2]-m->from[2])*a;
+		m->height=m->from[3]+(m->target[3]-m->from[3])*a;
+		if (memcmp(next,m->target,sizeof(next))) {
+			m->from[0]=m->x; m->from[1]=m->y;
+			m->from[2]=m->width; m->from[3]=m->height;
+			memcpy(m->target,next,sizeof(next)); m->transition_us=now;
 		}
-		unsigned int alpha = 86U + seed % 104U;
-		unsigned int color = dot % 13U == 0U ? VT_THEME_WARM_A(alpha)
-		                   : dot % 5U == 0U ? VT_THEME_SIGNAL_A(alpha)
-		                   : dot % 4U == 0U ? VT_THEME_COLD_A(alpha)
-		                                     : VT_THEME_SPECTRAL_A(alpha);
-		float size = dot % 7U == 0U ? 3.0f : dot % 3U == 0U ? 2.0f : 1.0f;
-		vita2d_draw_rectangle(px, py, size, size, color);
-		if (dot % 8U == 0U)
-			vita2d_draw_line(px, py, cx, cy, VT_THEME_SPECTRAL_A(18));
 	}
+	m->last_tick_us=now;
+}
+
+void ui_theme_fx_focus(float x,float y,float w,float h) {
+ if(ui_theme_id()==VT_UI_THEME_LEGACY)return;
+ for(int i=3;i>=1;i--){
+  unsigned color=(VT_THEME_FOCUS&0xffffffU)|((unsigned)(72/i)<<24);
+  float left=x-i,top=y-i,width=w+i*2,height=h+i*2;
+  vita2d_draw_rectangle(left,top,width,1,color);vita2d_draw_rectangle(left,top+height-1,width,1,color);
+  vita2d_draw_rectangle(left,top,1,height,color);vita2d_draw_rectangle(left+width-1,top,1,height,color);
+ }
+ float phase=vt_preferences_reduce_motion()?0.0f:(float)(sceKernelGetProcessTimeWide()%2800000ULL)/2800000.0f;
+ float length=w<80?w*.4f:32;
+ vita2d_draw_rectangle(x+phase*(w-length),y-1,length,3,VT_THEME_FOCUS);
+}
+
+void ui_focus_outline_draw(const UiFocusMotion *m) {
+	if(!m || !m->initialized || m->width<=0 || m->height<=0) return;
+	float x=m->x,y=m->y,w=m->width,h=m->height;
+    ui_theme_fx_focus(x,y,w,h);
+	vita2d_draw_rectangle(x,y,w,2,VT_THEME_FOCUS);
+	vita2d_draw_rectangle(x,y+h-2,w,2,VT_THEME_FOCUS);
+	vita2d_draw_rectangle(x,y,3,h,VT_THEME_FOCUS);
+	vita2d_draw_rectangle(x+w-2,y,2,h,VT_THEME_FOCUS);
+}
+
+void ui_focus_glow_draw(float x,float y,float w,float h,uint64_t now,
+	int top,int bottom) {
+	(void)now;
+	if(w<=0 || h<=0 || bottom<=top) return;
+	/* The focus sits outside the card. Its upper edge belongs to the safe
+	 * gutter above the content, not to the clipped poster area. */
+	int clip_top=top-UI_MEDIA_GRID_FOCUS_OUTSET;
+	if(clip_top<0)clip_top=0;
+	vita2d_set_clip_rectangle(0,clip_top,960,bottom);vita2d_enable_clipping();
+	/* External frame above grid artwork; no full-card translucent overdraw. */
+	UiFocusMotion m={.x=x-UI_MEDIA_GRID_FOCUS_OUTSET,.y=y-UI_MEDIA_GRID_FOCUS_OUTSET,
+        .width=w+2*UI_MEDIA_GRID_FOCUS_OUTSET,.height=h+2*UI_MEDIA_GRID_FOCUS_OUTSET,.initialized=1};
+	ui_focus_outline_draw(&m);
 	vita2d_disable_clipping();
 }

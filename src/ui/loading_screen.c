@@ -165,28 +165,6 @@ static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 	 * a GXM fault. */
 }
 
-static void draw_acquisition_frame(float center_x, float center_y,
-	                               float half_width, float half_height,
-	                               unsigned int opacity) {
-	unsigned int signal = VT_THEME_SIGNAL_A(opacity);
-	unsigned int spectral = VT_THEME_SPECTRAL_A(opacity);
-	unsigned int dim = VT_THEME_COLD_A(opacity / 4U);
-	const float mark = 24.0f;
-	const float thickness = 2.0f;
-	float left = center_x - half_width, right = center_x + half_width;
-	float top = center_y - half_height, bottom = center_y + half_height;
-	vita2d_draw_line(left, center_y, right, center_y, dim);
-	vita2d_draw_line(center_x, top, center_x, bottom, dim);
-	vita2d_draw_rectangle(left, top, mark, thickness, spectral);
-	vita2d_draw_rectangle(left, top, thickness, mark, spectral);
-	vita2d_draw_rectangle(right - mark, top, mark, thickness, signal);
-	vita2d_draw_rectangle(right - thickness, top, thickness, mark, signal);
-	vita2d_draw_rectangle(left, bottom - thickness, mark, thickness, signal);
-	vita2d_draw_rectangle(left, bottom - mark, thickness, mark, signal);
-	vita2d_draw_rectangle(right - mark, bottom - thickness, mark, thickness, spectral);
-	vita2d_draw_rectangle(right - thickness, bottom - mark, thickness, mark, spectral);
-}
-
 static void draw_loading_frame(const char *query, const char *message,
 	                           const volatile long *progress_current,
 	                           const volatile long *progress_total,
@@ -206,15 +184,17 @@ static void draw_loading_frame(const char *query, const char *message,
 	ui_brand_set_loading(download_controls ? 0 : 1);
 	ui_brand_set_download_progress_hidden(download_controls);
 	ui_chrome_background(COLOR_BG, COLOR_ACCENT);
-	ui_brand_draw_header(query);
+	if (download_controls)
+		ui_brand_draw_breadcrumbs(vt_i18n_str(VT_STR_SECTIONS_DOWNLOAD), NULL, download_title);
+	else ui_brand_draw_header(query);
 	ui_brand_set_download_progress_hidden(0);
 
-	/* Loading is a signal-acquisition scene, not an overlaid dialog. */
-	if (!download_controls)
-		draw_acquisition_frame(480.0f, 246.0f, 184.0f, 106.0f, 152U);
-	vita2d_draw_rectangle(476, 242, 8, 8, VT_THEME_SIGNAL_DIM);
-	ui_draw_spinner(480.0f, 246.0f, now);
-	draw_centered_text(330, COLOR_TEXT, UI_FONT_DISPLAY,
+	/* Status, title and measured progress have independent, uncluttered rails. */
+	if (download_controls && paused) {
+		vita2d_draw_rectangle(465,226,10,36,VT_THEME_WARNING);
+		vita2d_draw_rectangle(485,226,10,36,VT_THEME_WARNING);
+	} else ui_draw_spinner(480.0f, 246.0f, now);
+	draw_centered_text(download_controls ? 306 : 330, COLOR_TEXT, UI_FONT_DISPLAY,
 	                   download_controls && paused
 	                       ? vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_PAUSED)
 	                       : message ? message
@@ -222,9 +202,7 @@ static void draw_loading_frame(const char *query, const char *message,
 	if (download_controls && download_title && download_title[0]) {
 		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 		if (small)
-			ui_font_draw_text_centered(small, SCREEN_WIDTH / 2, 362,
-			                           SCREEN_WIDTH - 160, COLOR_BUFFER,
-			                           UI_FONT_SMALL, download_title);
+			ui_text_line(42, 145, 876, download_title, COLOR_TEXT, UI_FONT_BODY);
 	}
 
 	uint64_t current = 0, total = 0;
@@ -239,7 +217,7 @@ static void draw_loading_frame(const char *query, const char *message,
 	double bytes_per_second = download_controls
 	                        ? update_download_rate(rate_state, current, now, paused)
 	                        : 0.0;
-	float bar_x = 180.0f, bar_y = 390.0f, bar_w = 600.0f, bar_h = 6.0f;
+	float bar_x = 42.0f, bar_y = 366.0f, bar_w = 876.0f, bar_h = 8.0f;
 	if (download_controls)
 		vita2d_draw_rectangle(bar_x, bar_y, bar_w, bar_h, COLOR_TRACK);
 	if (total > 0) {
@@ -265,13 +243,13 @@ static void draw_loading_frame(const char *query, const char *message,
 			} else {
 				snprintf(timing, sizeof(timing), "--/s   ETA --");
 			}
-			draw_centered_text(442, COLOR_MUTED, UI_FONT_SMALL, timing);
+			if (!paused) draw_centered_text(442, COLOR_MUTED, UI_FONT_SMALL, timing);
 		}
 	} else if (download_controls) {
 		/* Chunked responses and servers that reject HEAD still expose useful live
 		 * byte progress. The moving segment explicitly means total size unknown. */
 		float segment_w = 112.0f;
-		float phase = vt_preferences_reduce_motion()
+		float phase = (paused || vt_preferences_reduce_motion())
 		            ? 0.5f : (float)(now % 1400000ULL) / 1400000.0f;
 		float segment_x = bar_x - segment_w + phase * (bar_w + segment_w);
 		float left = segment_x < bar_x ? bar_x : segment_x;
@@ -293,7 +271,7 @@ static void draw_loading_frame(const char *query, const char *message,
 			} else {
 				snprintf(timing, sizeof(timing), "--/s   ETA --");
 			}
-			draw_centered_text(442, COLOR_MUTED, UI_FONT_SMALL, timing);
+			if (!paused) draw_centered_text(442, COLOR_MUTED, UI_FONT_SMALL, timing);
 		}
 	}
 	if (download_controls) {
@@ -333,6 +311,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 	                        const volatile long *progress_current,
 	                        const volatile long *progress_total,
 	                        uint64_t now_us) {
+	const unsigned *theme_before=ui_theme_media_begin();
 	const char *title = info && info->title && info->title[0] ? info->title
 	                   : vt_i18n_str(VT_STR_LOADING_DEFAULT_TITLE);
 	const char *channel = info && info->channel ? info->channel : "";
@@ -341,13 +320,28 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 
+	if (info && info->draw_backdrop) {
+		info->draw_backdrop(info->backdrop_ctx);
+		/* Keep the last frame visible; acquire the new position with a compact
+		 * scrim instead of replacing the canvas with a black loading page. */
+		vita2d_draw_rectangle(330, 204, 300, 152, RGBA8(0, 0, 0, 170));
+		ui_draw_spinner(480.0f, 252.0f, now_us);
+		if (small) ui_font_draw_text_centered(small,480,324,268,COLOR_TEXT,
+		    UI_FONT_SMALL,status);
+		if (info->cancellable && small)
+			ui_font_draw_text_centered(small,480,426,864,COLOR_MUTED,
+			    UI_FONT_SMALL,vt_i18n_str(VT_STR_LOADING_PLAYER_CANCEL_HINT));
+		ui_theme_media_end(theme_before);
+		return;
+	}
+
+	vita2d_draw_rectangle(0,0,960,544,VT_THEME_MEDIA_BACKDROP);
 	/* Top band integrated into the player: three layers give a slight
 	 * gradient toward the canvas without extra textures or shaders. */
 	vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, 74, RGBA8(0, 0, 0, 220));
 	vita2d_draw_rectangle(0, 74, SCREEN_WIDTH, 24, RGBA8(0, 0, 0, 132));
 	vita2d_draw_rectangle(0, 98, SCREEN_WIDTH, 18, RGBA8(0, 0, 0, 62));
 	vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, 3, COLOR_ACCENT);
-	draw_acquisition_frame(480.0f, 252.0f, 176.0f, 104.0f, 132U);
 	draw_clipped_line(body, 32, 45, 760, UI_FONT_BODY, COLOR_TEXT, title);
 	draw_clipped_line(small, 32, 72, 760, UI_FONT_SMALL, COLOR_MUTED, channel);
 
@@ -416,6 +410,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 			                       (int)(frac * 100.0f));
 		}
 	}
+ ui_theme_media_end(theme_before);
 }
 
 void ui_draw_spinner(float center_x, float center_y, uint64_t now_us) {
@@ -681,7 +676,7 @@ int ui_loading_monitor_background_download(void) {
 			if (status.state == VT_DOWNLOAD_BACKGROUND_COMPLETE)
 				ui_message_show_success(
 				    vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_COMPLETE),
-				    status.destination, 2600);
+				    status.detail[0] ? status.detail : status.destination, 2600);
 			else if (status.state == VT_DOWNLOAD_BACKGROUND_ABORTED)
 				ui_message_show(vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORTED),
 				                status.destination, 2400);
@@ -765,7 +760,6 @@ static void message_show_internal(const char *message, const char *detail,
 	/* Status stays a full acquisition page: no modal box breaks the app's
 	 * visual continuity. Successful operations use a check instead of the
 	 * error scene's warning mark. */
-	draw_acquisition_frame(480.0f, 226.0f, 112.0f, 72.0f, 112U);
 	vita2d_draw_rectangle(451.0f, 197.0f, 58.0f, 58.0f, state_color);
 	if (success) {
 		vita2d_draw_line(465.0f, 226.0f, 476.0f, 238.0f, COLOR_BG);

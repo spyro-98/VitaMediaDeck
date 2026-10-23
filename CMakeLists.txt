@@ -19,7 +19,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(vitamediadeck VERSION 1.3.0 LANGUAGES C)
+project(vitamediadeck VERSION 1.4.0 LANGUAGES C)
 
 ## Complete public hardware-decoder backend from wiliwili's FFmpeg-vita
 ## patch.  This is deliberately a whole FFmpeg codec implementation, not the
@@ -201,9 +201,9 @@ set(VITA_APP_NAME "VitaMediaDeck")
 # TITLEID must contain exactly nine characters.
 set(VITA_TITLEID  "VMDK00001")
 
-# Vita package metadata uses the mandatory ##.## form. APP_VER 01.03 is the
-# platform representation of the human-facing 1.3.0 release name.
-set(VITA_VERSION  "01.03")
+# Vita package metadata uses the mandatory ##.## form. APP_VER 01.04 is the
+# platform representation of the human-facing 1.4.0 release name.
+set(VITA_VERSION  "01.04")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -245,10 +245,15 @@ target_compile_options(vita_https PRIVATE $<$<CONFIG:Release>:-O3>)
 add_library(vitamediadeck_iptv_source STATIC
   src/network/iptv_manifest.c src/network/iptv_source.c src/network/iptv_http.c
   src/network/iptv_session.c)
+target_sources(vitamediadeck_iptv_source PRIVATE src/network/iptv_catalog.c
+  src/network/dash_manifest.c src/network/dash_source.c
+  src/network/hls_manifest.c src/network/hls_source.c src/network/iptv_probe.c)
+target_include_directories(vitamediadeck_iptv_source PRIVATE "${VITAMEDIADECK_FFMPEG_ROOT}/include")
 target_compile_options(vitamediadeck_iptv_source PRIVATE
   -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
   -ffunction-sections -fdata-sections $<$<CONFIG:Release>:-O3>)
-target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps xml2 pthread m)
+target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps xml2 pthread m
+  vitamediadeck_avformat vitamediadeck_avcodec vitamediadeck_avutil)
 
 add_executable(${PROJECT_NAME}
   src/ui/iptv_screen.c
@@ -262,13 +267,20 @@ add_executable(${PROJECT_NAME}
   src/network/sftp_source.c
   src/network/smb_source.c
   src/network/jellyfin_source.c
+  src/network/personal_media.c
+  src/ui/personal_media_screen.c
   src/network/download_manager.c
   src/media/background_playback.c
   src/media/live_audio.c
   src/network/online_audio.c
+  src/network/artwork_cache.c
+  src/network/iptv_saved.c
   src/network/http_audio_stream.c
   src/ui/online_audio_screen.c
   src/ui/home_tabs.c
+  src/ui/theme.c
+  src/ui/theme_home.c
+  src/ui/theme_scene.c
   src/media/audio_volume.c
   src/media/avplayer_init.c
   src/media/media_tracks.c
@@ -277,6 +289,7 @@ add_executable(${PROJECT_NAME}
   src/media/hw_player_screen.c
   src/media/image_loader.c
   src/media/music_metadata.c
+  src/media/podcast_metadata.c
   src/history/playback_history.c
   src/settings/preferences.c
   src/system/background_audio.c
@@ -289,6 +302,7 @@ add_executable(${PROJECT_NAME}
   src/ui/subtitle.c
   src/ui/focus_glow.c
   src/ui/brand.c
+  src/ui/breadcrumbs.c
   src/ui/touch.c
   src/ui/text_input.c
   src/ui/loading_screen.c
@@ -312,6 +326,49 @@ add_executable(${PROJECT_NAME}
 # Keep the final application and the vendored FFmpeg LTO objects in one link-
 # time optimization unit. GCC treats -O4 exactly like -O3; -O3 is the highest
 # distinct standard optimization level and is already selected by Release.
+set(VITAMEDIADECK_VIDEO_CLOCK_PROFILE "performance" CACHE STRING "Video clock baseline: performance or stock")
+set_property(CACHE VITAMEDIADECK_VIDEO_CLOCK_PROFILE PROPERTY STRINGS performance stock)
+if(VITAMEDIADECK_VIDEO_CLOCK_PROFILE STREQUAL "stock")
+  target_compile_definitions(${PROJECT_NAME} PRIVATE VT_VIDEO_STOCK_CLOCKS=1)
+elseif(NOT VITAMEDIADECK_VIDEO_CLOCK_PROFILE STREQUAL "performance")
+  message(FATAL_ERROR "VITAMEDIADECK_VIDEO_CLOCK_PROFILE must be performance or stock")
+endif()
+
+# Every test package carries the same identity in SFO, startup log and file.
+# Explicit labels also distinguish functional tests which share clock/format.
+set(VITAMEDIADECK_TEST_ID "" CACHE STRING "Test build identity, letters/digits/_/-; empty derives from profile")
+set(VMD_EFFECTIVE_TEST_ID "${VITAMEDIADECK_TEST_ID}")
+if(VMD_EFFECTIVE_TEST_ID STREQUAL "")
+  set(VMD_EFFECTIVE_TEST_ID "standard")
+  if(VITAMEDIADECK_VIDEO_CLOCK_PROFILE STREQUAL "stock")
+    set(VMD_EFFECTIVE_TEST_ID "stock333")
+  endif()
+  if(VITA_SW_DECODER_PLANAR_UPLOAD)
+    set(VMD_EFFECTIVE_TEST_ID "${VMD_EFFECTIVE_TEST_ID}-planar")
+  endif()
+  if(NOT VITA_SW_DECODER_CPU_THREADS STREQUAL "3" OR NOT VITA_HW_DECODER_CPU_THREADS STREQUAL "3")
+    set(VMD_EFFECTIVE_TEST_ID "${VMD_EFFECTIVE_TEST_ID}-t${VITA_HW_DECODER_CPU_THREADS}${VITA_SW_DECODER_CPU_THREADS}")
+  endif()
+endif()
+string(LENGTH "${VMD_EFFECTIVE_TEST_ID}" VMD_TEST_ID_LENGTH)
+if(NOT VMD_EFFECTIVE_TEST_ID MATCHES "^[A-Za-z0-9][A-Za-z0-9_-]*$" OR VMD_TEST_ID_LENGTH GREATER 32)
+  message(FATAL_ERROR "VITAMEDIADECK_TEST_ID must contain 1..32 letters/digits/_/- and start with a letter or digit")
+endif()
+if(NOT VMD_EFFECTIVE_TEST_ID STREQUAL "standard")
+  set(VITA_APP_NAME "VMD ${VMD_EFFECTIVE_TEST_ID}")
+endif()
+set(VMD_SW_UPLOAD "NV12_P2")
+if(VITA_SW_DECODER_PLANAR_UPLOAD)
+  set(VMD_SW_UPLOAD "YUV420_P3")
+endif()
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+  VT_BUILD_TEST_ID="${VMD_EFFECTIVE_TEST_ID}"
+  VT_BUILD_NAME="${VITA_APP_NAME}"
+  VT_BUILD_VERSION="${PROJECT_VERSION}"
+  VT_BUILD_LOG_FILE="session_${VMD_EFFECTIVE_TEST_ID}.txt"
+  VT_BUILD_SW_UPLOAD="${VMD_SW_UPLOAD}")
+message(STATUS "VMD build identity: ${VMD_EFFECTIVE_TEST_ID}; bubble: ${VITA_APP_NAME}; software upload: ${VMD_SW_UPLOAD}")
+
 target_compile_options(${PROJECT_NAME} PRIVATE
   -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
   -ffunction-sections -fdata-sections)
@@ -423,13 +480,29 @@ endif()
 
 # Installable homebrew package containing the SELF and application resources.
 set(VITAMEDIADECK_VPK_NAME "VitaMediaDeck.vpk")
+file(GLOB VMD_COUNTRY_FLAGS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/flags/*.png")
+find_program(VMD_HOST_PYTHON NAMES python3 NO_CMAKE_FIND_ROOT_PATH)
+if(NOT VMD_HOST_PYTHON)
+  message(FATAL_ERROR "Python 3 is required to package country flags")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VMD_COUNTRY_FLAGS} tools/pack-flags.py)
+execute_process(COMMAND "${VMD_HOST_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/pack-flags.py"
+  "${CMAKE_CURRENT_SOURCE_DIR}/assets/flags" "${CMAKE_CURRENT_BINARY_DIR}/flags.pack"
+  RESULT_VARIABLE VMD_FLAG_PACK_RESULT)
+if(NOT VMD_FLAG_PACK_RESULT EQUAL 0)
+  message(FATAL_ERROR "Failed to build the indexed country-flag resource")
+endif()
 vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/flags.pack" flags.pack
+  FILE assets/flags/NOTICE.md licenses/Country-flags.txt
   FILE sce_sys/icon0.png sce_sys/icon0.png
   FILE assets/fonts/Inter-Medium.ttf fonts/Inter-Medium.ttf
   FILE assets/fonts/Inter-SemiBold.ttf fonts/Inter-SemiBold.ttf
   FILE assets/fonts/Inter-OFL.txt licenses/Inter-OFL.txt
+  FILE assets/fonts/IBMPlexMono-Regular.ttf fonts/IBMPlexMono-Regular.ttf
+  FILE assets/fonts/IBM-Plex-OFL.txt licenses/IBM-Plex-OFL.txt
   FILE LICENSE licenses/VitaMediaDeck-GPLv3.txt
   FILE THIRD_PARTY_NOTICES.md licenses/THIRD_PARTY_NOTICES.md
   FILE release/VitaMediaDeck.spdx licenses/VitaMediaDeck.spdx
