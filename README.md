@@ -74,6 +74,11 @@ servers, direct links and QR downloads, and **Radio/Podcast** to discover and
 save stations/shows. Radio Home shows favourites. The single **Podcast** tab
 has an Online favourites column and an Offline folder-navigation column.
 
+Podcast resume points now use an independent low-priority saver: a 56-byte
+checkpoint roughly every 15 seconds, with pause/suspend requests and recovery
+from incomplete writes. Playback/render loops do not perform checkpoint I/O.
+See [podcast resume changes and Vita checks](docs/podcast-resume-2026-10-24.md).
+
 See [online audio and navigation](docs/online-audio-preview.md) for supported
 formats, controls, limits and validation status.
 See the [22 October quality review and Vita checklist](docs/quality-audit-2026-10-22.md)

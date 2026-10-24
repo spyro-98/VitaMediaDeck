@@ -431,7 +431,6 @@ void ui_mini_player_draw(void) {
 }
 
 void ui_mini_player_pump(void) {
-	vt_background_playback_checkpoint();
 	/* Every page calls pump before beginning the next vita2d frame, therefore
 	 * the preceding wait_rendering_done has already retired the AvPlayer surface
 	 * submitted by draw(). */

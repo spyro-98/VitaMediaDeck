@@ -55,6 +55,12 @@ Fixtures are synthetic; do not add credentials, copyrighted media or raw console
 logs to Git. Host HW fixtures substitute the hardware decoder; passing does not
 mean the Mac exercised SceVideodec.
 
+Podcast resume regressions: `bash tests/podcast_resume/run-host-tests.sh`
+checks the production persistence/worker, restart and failure recovery, write
+budget, plus the production MP3 function with real CBR/VBR decoding. See the
+[suite boundaries](../tests/podcast_resume/README.md) and
+[console checklist](podcast-resume-2026-10-24.md).
+
 ## Native standard release
 
 Use the [toolchain guide](../mds/setup/TOOLCHAIN_SETUP.md) and

@@ -7,6 +7,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Podcast resume and lightweight checkpoints](podcast-resume-2026-10-24.md): restart/suspend recovery, storage budget and device checks.
+
 - [Dedicated Jellyfin provider](jellyfin-provider-2026-10-24.md): L1 order, saved servers and video-browser return in all seven themes.
 
 - [Provider navigation and favourite removal](provider-navigation-2026-10-24.md): all seven themes, saved-state consistency and provider controls.
@@ -101,3 +103,5 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [tools/local_streaming/README.md](../tools/local_streaming/README.md) | Current reference, policy or build instructions |
 | [docs/controls-guide-2026-10-23.md](controls-guide-2026-10-23.md) | Current controls clarification following the 1.4.1 standard snapshot |
 | [docs/jellyfin-provider-2026-10-24.md](jellyfin-provider-2026-10-24.md) | Dedicated Jellyfin L1 provider and validation limits |
+| [docs/podcast-resume-2026-10-24.md](podcast-resume-2026-10-24.md) | Podcast checkpoint reliability, I/O budget and acceptance limits |
+| [tests/podcast_resume/README.md](../tests/podcast_resume/README.md) | Persistence/worker/real MP3 resume host regressions |

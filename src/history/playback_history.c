@@ -203,15 +203,21 @@ int vt_playback_history_progress(const char *video_id, uint64_t *position_ms,
 	return 1;
 }
 
-int vt_playback_history_update(const char *video_id, uint64_t position_ms,
+uint64_t vt_playback_history_order(const char *video_id) {
+	int index=find_index(video_id);
+	return index>=0?g_disk.records[index].order:0;
+}
+static int history_update(const char *video_id, uint64_t position_ms,
 	                           uint64_t duration_ms) {
 	if (!valid_id(video_id)) return -1;
 	int index = find_index(video_id);
+	if(!duration_ms && index>=0)duration_ms=g_disk.records[index].duration_ms;
 	/* Keep a completed marker for cover progress, while position() continues to
 	 * suppress resume near the end. Older databases simply have no such marker. */
-	if (duration_ms && position_ms + VT_RESUME_END_GUARD_MS >= duration_ms)
+	if (duration_ms && (position_ms >= duration_ms ||
+	    (duration_ms > VT_RESUME_END_GUARD_MS && position_ms >= duration_ms - VT_RESUME_END_GUARD_MS)))
 		position_ms = duration_ms;
-	int keep = position_ms >= VT_RESUME_MIN_MS;
+	int keep = position_ms >= VT_RESUME_MIN_MS || !strncmp(video_id,"podcs",5);
 	if (!keep) {
 		if (index < 0) return 0;
 		for (int i = index + 1; i < g_count; i++)
@@ -234,4 +240,12 @@ int vt_playback_history_update(const char *video_id, uint64_t position_ms,
 	}
 	g_disk.records[0] = record;
 	return save_database();
+}
+
+int vt_playback_history_update(const char *video_id,uint64_t position_ms,uint64_t duration_ms) {
+    VtPlaybackHistoryDisk previous=g_disk;
+    int count=g_count;uint64_t order=g_next_order;
+    int ret=history_update(video_id,position_ms,duration_ms);
+    if(ret<0){g_disk=previous;g_count=count;g_next_order=order;}
+    return ret;
 }
