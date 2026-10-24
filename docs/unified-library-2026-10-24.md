@@ -10,27 +10,17 @@ ABI are unchanged.
 
 ## Home and playback continuity
 
-**Home → Library** is now the common entry point for local media, Jellyfin video,
-Navidrome music, Immich photos, IPTV, radio and podcasts. **R1** cycles Continue,
-History and Sources. **Triangle** opens global search. The six existing Home
-categories and each theme's saved order remain available. Sources opens the
-existing provider browser/connection management, including Network files.
+The **Home** tab is an integrated dashboard: resume takes priority, alongside
+saved connections, real favourites and recent activity. These components remain
+visible together; **R1/Square** cycles the selected component's items and
+**Triangle** opens global search. Source/history actions open full collections.
+R1 or backing out of those collections returns to the composed Home. Saved
+connections open their actual server browser with existing credentials/trust.
 
-Continue contains unfinished seekable audio/video with a known playback point.
-History also contains completed items, live stations/channels and viewed images.
-Live media reopens the live source; it has no invented persistent seek position.
-Immich history reopens the selected asset; it is not a video bookmark. Selecting
-the item already owned by the mini-player restores that session and its tracks.
-Returning from a player retains the Home query, folder/feed and focused identity.
-
-A shared metadata registry uses provider, stable server/account fingerprint and
-opaque media identity. Server display names and list positions do not identify an
-account. Jellyfin item ids are canonical across folder/search paths; RSS episodes
-retain the existing feed/GUID bookmark key even if an enclosure URL changes.
-Legacy file/podcast/video bookmarks are imported when their metadata is found.
-Metadata refreshes cannot overwrite the active playback alias or a newer rewind.
-No synchronization writes are sent to provider servers: this is console-local
-state shared by the application's entry points, not cross-device cloud sync.
+The later [dashboard/LTO report](home-dashboard-lto-2026-10-24.md) supersedes the
+initial Continue/History/Sources view cycle and the all-theme L1 scrolling model.
+The local registry, journal, provider search and playback semantics below remain
+applicable. Original dated evidence below describes its original source snapshot.
 
 ## Search and caching
 
@@ -159,8 +149,9 @@ Recorded host results (library suites refreshed for search-1024; unchanged provi
 
 ## Acceptance on PS Vita / real servers
 
-1. Enter Library in every theme. Use R1 for Continue/History/Sources, Triangle for
-   search, Square for provider filtering and each theme's established navigation.
+1. Enter Home in every theme. Check resume, connections, favourites and recent
+   activity together. Use R1/Square inside a component and Triangle for search;
+   Square filters providers only inside search. Check each theme's navigation.
    Check Ghost's right stick, Aperture with a mini-player, clipping and text sizes.
 2. Play a local MP4/MKV, local music, Jellyfin video, Navidrome track and online/
    downloaded podcast for over 30 seconds. Seek/pause, switch sources, return,

@@ -305,7 +305,10 @@ UiHomeControlResult ui_home_controls_update(const UiHomeControlSample *s){
       theme==VT_UI_THEME_DECK_90?(nav&SCE_CTRL_LEFT):
       theme==VT_UI_THEME_APERTURE?((nav&SCE_CTRL_DOWN)&&s->selected+columns>=s->count):
       ((nav&SCE_CTRL_UP)&&s->selected<columns);
-  if(leave){out.focus_sections=1;out.content_nav=0;}
+  if (leave && !s->geometric_content) {
+      out.focus_sections = 1;
+      out.content_nav = 0;
+  }
  }
  if(s->touch_flags&UI_TOUCH_EVENT_TAP){
   if(ui_home_tabs_touch_hit(s->touch)){

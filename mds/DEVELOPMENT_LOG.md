@@ -211,3 +211,14 @@ Configurazione esplicita `VITAMEDIADECK_TEST_ID=standard`; bolla VitaMediaDeck e
 session_standard.txt. Aggiornati note di rilascio, guida build e documentazione;
 il bundle standard contiene sorgenti, manifest/hash e provenienza delle verifiche.
 La nuova identità di pacchetto non rappresenta una prova fisica aggiuntiva.
+
+
+## 2026-10-24 — Home integrata, menu fissi e completamento LTO
+
+Sostituito il ciclo di elenchi della Home con una composizione unica: ripresa
+prioritaria, server salvati ad apertura diretta, preferiti reali e cronologia
+secondaria. Componenti con geometrie/anteprime contestuali ai temi, focus spaziale
+animato e cache aggiornata dai worker. Le liste L1 Legacy/Deck 90/Aperture scorrono;
+Ghost/Signal/Relay/Mosaic mostrano tutto in ruota/griglia fissa. LTO esteso ai cinque
+target posseduti dall'app e archivi generati con gcc-ar/gcc-ranlib. Guida, README
+e note di rilascio allineati. Consegna nel solo VPK standard 1.4.1.

@@ -18,6 +18,7 @@ typedef struct {
  unsigned pressed,held,touch_flags;
  unsigned char lx,ly,rx,ry;
  int selected,count,bottom,focus_sections,blocked;
+ int geometric_content; /* dashboard performs spatial edge navigation itself */
  const UiTouchEvent *touch;
 } UiHomeControlSample;
 typedef struct {unsigned pressed,content_nav;int focus_sections,sections_changed;} UiHomeControlResult;

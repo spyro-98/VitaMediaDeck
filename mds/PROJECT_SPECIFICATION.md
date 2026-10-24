@@ -107,7 +107,8 @@ physical run or a published GitHub release.
 
 ## Unified local activity and cross-provider search (2026-10-24)
 
-Home Library now shares Continue, History and Sources across the existing provider
+The integrated Home prioritizes resume, saved connections, favourites and recent
+activity in one composition across the existing provider
 entry points. Global search publishes cache-first, provider-grouped results using
 a bounded cancelable worker pool. Playback metadata and confirmed checkpoints
 share stable local identities; the old history/podcast checkpoint formats remain

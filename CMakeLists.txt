@@ -189,6 +189,14 @@ endif()
 option(VITAMEDIADECK_ENABLE_LTO
   "Enable link-time optimization for production Vita builds" ON)
 
+# Every app-owned static target must use the compiler-matched archive plugin.
+# This stays local to the application build; standalone package defaults remain
+# independent, and already-built FFmpeg LTO archives use this same GCC version.
+if(VITAMEDIADECK_ENABLE_LTO)
+  set(CMAKE_AR "${CMAKE_C_COMPILER_AR}")
+  set(CMAKE_RANLIB "${CMAKE_C_COMPILER_RANLIB}")
+endif()
+
 ## Load VitaSDK's packaging macros after project(). The verified module name is
 ## vita.cmake, not VitaSDK.cmake.
 include("${VITASDK}/share/vita.cmake" REQUIRED)
@@ -294,6 +302,7 @@ add_executable(${PROJECT_NAME}
   src/library/catalog.c
   src/library/search.c
   src/ui/library_screen.c
+  src/ui/home_dashboard.c
   src/history/playback_history.c
   src/media/podcast_resume.c
   src/settings/preferences.c
@@ -384,7 +393,10 @@ target_link_options(${PROJECT_NAME} PRIVATE
 set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/tools/vita-sce-metadata.ld")
 if(VITAMEDIADECK_ENABLE_LTO)
-  target_compile_options(${PROJECT_NAME} PRIVATE -flto=4 -fuse-linker-plugin)
+  foreach(vmd_lto_target IN ITEMS ${PROJECT_NAME} vita_hw_decoder vita_sw_decoder
+                                   vita_https vitamediadeck_iptv_source)
+    target_compile_options(${vmd_lto_target} PRIVATE -flto=4 -fuse-linker-plugin)
+  endforeach()
   target_link_options(${PROJECT_NAME} PRIVATE -flto=4 -fuse-linker-plugin)
 endif()
 

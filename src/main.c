@@ -768,6 +768,35 @@ static int browse_local(void) {
 				}
 				continue;
 			}
+			if (action == UI_LIBRARY_CONNECT) {
+				if (!g_network_ready) {
+					ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
+					                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
+					continue;
+				}
+				VtNetworkSource source;
+				VtNetworkCredential credential = {0};
+				int resolved = vt_library_source(&chosen, &source, &credential);
+				if (resolved >= 0)
+					for (;;) {
+						UiNetworkSelection selection = {0};
+						int opened = ui_network_browse_saved(&source, &credential, &selection);
+						if (opened >= UI_NETWORK_ACTION_SECTION_BASE) {
+							memset(&credential, 0, sizeof(credential));
+							return opened - UI_NETWORK_ACTION_SECTION_BASE;
+						}
+						if (opened != UI_NETWORK_ACTION_PLAY)
+							break;
+						int next = play_remote_selection(selection);
+						memset(&selection.credential, 0, sizeof(selection.credential));
+						if (next != UI_SECTION_NONE) {
+							memset(&credential, 0, sizeof(credential));
+							return next;
+						}
+					}
+				memset(&credential, 0, sizeof(credential));
+				continue;
+			}
 			if (action != UI_LIBRARY_PLAY)
 				continue;
 			if (vt_background_playback_library_matches(chosen.id))

@@ -61,8 +61,9 @@ budget, plus the production MP3 function with real CBR/VBR decoding. See the
 [suite boundaries](../tests/podcast_resume/README.md) and
 [console checklist](podcast-resume-2026-10-24.md).
 
-`run-game-ui.sh` also runs the scrolling L1 fixture across all seven themes,
-IT/EN, reduced motion and player/download combinations. See
+`run-game-ui.sh` also checks scrolling vertical L1 lists (Legacy/Deck 90/Aperture)
+and fixed, spatial wheel/grids (Ghost/Signal/Relay/Mosaic), across IT/EN, reduced
+motion and player/download combinations. See
 [scrolling coverage and console checks](l1-scroll-2026-10-24.md).
 
 ## Native standard release
@@ -142,3 +143,14 @@ Verify bubble VitaMediaDeck and log `session_standard.txt`, SFO 01.05/VMDK00001,
 CRC, SELF equality and dependency/license audit. Existing runtime evidence remains
 in the validation logs; changing the package identity does not establish another
 physical-console test.
+
+
+## Integrated Home and complete app LTO — 2026-10-24
+
+See the [dashboard/LTO report](home-dashboard-lto-2026-10-24.md). Refresh library
+host/UI and L1 game-UI suites; assert one composed dashboard, real favourites,
+direct saved-server routing, stable focus, complete visibility/reachability and
+zero scroll in fixed decks. Verify all five app-owned targets contain GCC LTO
+objects and use gcc-ar/gcc-ranlib, with the same GCC as FFmpeg. Native symbol,
+SFO/SELF/CRC/license checks supplement host tests; console performance and real
+server credentials still need physical acceptance.

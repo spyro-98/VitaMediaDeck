@@ -7,7 +7,7 @@
 | D-pad / left stick | Move focus or scroll the active list. |
 | Cross | Open or confirm the selected item. |
 | Circle | Close the active view or return. |
-| L1 | Open or close Sections. Up/down selects and scrolls its contents. |
+| L1 | Open or close Sections. Vertical lists scroll; fixed wheels/grids use spatial navigation. |
 | R1 | Open the context or information sidebar where available. |
 | Touch | Activate supported visible controls. |
 
@@ -19,21 +19,32 @@ An open sidebar owns navigation before the underlying screen. Circle closes the
 active panel before leaving its page. While resumable playback is running, the
 sidebar adds **Active player** above Home; selecting it restores the full player.
 
-## Unified Library and global search
+## Integrated Home and global search
 
-In **Home → Library**, R1 cycles Continue, History and Sources. Triangle opens a
-single search for titles, artists, albums, shows and channels. Square cycles the
-provider filter in search results. Cross opens the focused media, artist/album
-folder or podcast feed. Circle returns from a folder/feed; from search it returns
-to Continue. Touch the view heading to change the Library view. Source entries
-open the existing provider/connection manager; Local files opens the local browser.
-The six category tabs retain the theme-specific controls below.
+The **Home** tab presents unfinished media, saved connections, favourites and
+recent activity together. The larger resume widget has priority; sources/history
+are secondary actions. No R1 cycle replaces the Home with another list.
 
-Cached results appear immediately, then providers refresh independently. The
-focused media remains the same while results arrive. Returning from its player
-retains query/folder/focus. Search shows up to 24 results per provider: refine a
-broad query or open that provider to browse everything. Live entries reopen live;
-image history reopens the asset. Resume state is shared locally, not cloud-synced.
+| Control | Home dashboard |
+| --- | --- |
+| D-pad / left stick | Move spatially between components. |
+| Cross | Play/open the focused item or saved connection. |
+| R1 / Square | Next / previous item within that component, keeping Home visible. |
+| Triangle | Search across providers. |
+| Circle | Focus the category tabs; Ghost's right stick keeps controlling its wheel. |
+| Touch | Open a component; individual favourite cover previews open that item. |
+
+Explore sources and History open full collections. In those detail pages and
+search, **R1 returns Home**; Circle goes up a folder/feed and then returns Home.
+Square filters providers only in global search. Search keeps cached results and
+progressive refresh, focused identity and the existing 24-result/provider limit.
+Saved connections open their actual browser through native authentication/trust;
+source credentials never enter the dashboard's model or artwork labels.
+
+Only **Legacy, Deck 90 and Aperture** have scrolling vertical L1 menus, including
+dragging and footer arrows. **Ghost Mesh, Signal, Relay and Mosaic** keep every
+section visible in a fixed wheel/grid: directions follow geometric positions,
+and dragging does not scroll them. The audio layout subpage retains its controls.
 
 ## Theme-specific Home controls
 

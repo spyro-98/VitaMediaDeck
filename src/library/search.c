@@ -73,6 +73,8 @@ static int worker_indices[WORKERS];
 static VtLibrarySearchStatus status;
 static VtLibraryItem live[VT_LIBRARY_RESULTS];
 static int live_count, scoped;
+static VtLibraryItem home_favourites[VT_LIBRARY_HOME_FAVOURITES];
+static int home_favourite_count;
 static char text[129];
 static VtLibraryItem scope;
 /* Workers assemble snapshots in reusable storage. The UI only copies the published
@@ -93,6 +95,9 @@ static void publish(Job *j, const VtLibraryItem *item) {
     pthread_mutex_lock(&search_mutex);
     if (j->generation == generation && !stopping) {
         vt_library_cache(item);
+        for (int i = 0; i < home_favourite_count; i++)
+            if (!strcmp(home_favourites[i].id, item->id))
+                home_favourites[i] = *item;
         int exists = 0;
         for (int i = 0; i < live_count; i++)
             if (!strcmp(live[i].id, item->id)) {
@@ -159,15 +164,25 @@ static int process(Job *j) {
     if (j->type == 1) {
         VtOnlineItem *saved = calloc(VT_ONLINE_MAX, sizeof(*saved));
         VtIptvCatalog *tv = calloc(1, sizeof(*tv));
-        if (!saved || !tv) {
+        VtLibraryItem *home = calloc(VT_LIBRARY_HOME_FAVOURITES, sizeof(*home));
+        int home_count = 0, per_provider[VT_LIBRARY_PROVIDER_COUNT] = {0};
+        if (!saved || !tv || !home) {
             free(saved);
             free(tv);
+            free(home);
             return -1;
         }
         int n = vt_online_load_saved(saved, VT_ONLINE_MAX);
         for (int i = 0; i < n && current(j->generation); i++) {
             VtLibraryItem v;
             vt_library_online(&saved[i], NULL, &v);
+            VtLibraryResult cached;
+            if (!v.artwork[0] && vt_library_get(v.id, &cached))
+                snprintf(v.artwork, sizeof(v.artwork), "%s", cached.item.artwork);
+            if (home_count < VT_LIBRARY_HOME_FAVOURITES && per_provider[v.provider] < 8) {
+                home[home_count++] = v;
+                per_provider[v.provider]++;
+            }
             if (vt_library_matches(&v, j->query))
                 publish(j, &v);
         }
@@ -176,9 +191,30 @@ static int process(Job *j) {
             for (unsigned i = 0; i < tv->count && current(j->generation); i++) {
                 VtLibraryItem v;
                 vt_library_iptv(&tv->items[i], &v);
+                VtLibraryResult cached;
+                if (!v.artwork[0] && vt_library_get(v.id, &cached))
+                    snprintf(v.artwork, sizeof(v.artwork), "%s", cached.item.artwork);
+                if (tv->items[i].starred && home_count < VT_LIBRARY_HOME_FAVOURITES &&
+                    per_provider[v.provider] < 8) {
+                    home[home_count++] = v;
+                    per_provider[v.provider]++;
+                }
                 if (vt_library_matches(&v, j->query))
                     publish(j, &v);
             }
+        pthread_mutex_lock(&search_mutex);
+        if (j->generation == generation && !stopping && n >= 0 && ret >= 0) {
+            for (int i = 0; i < home_count; i++)
+                if (!home[i].artwork[0])
+                    for (int k = 0; k < home_favourite_count; k++)
+                        if (!strcmp(home[i].id, home_favourites[k].id))
+                            snprintf(home[i].artwork, sizeof(home[i].artwork), "%s",
+                                     home_favourites[k].artwork);
+            memcpy(home_favourites, home, (size_t)home_count * sizeof(*home));
+            home_favourite_count = home_count;
+        }
+        pthread_mutex_unlock(&search_mutex);
+        free(home);
         free(saved);
         free(tv);
         return ret;
@@ -518,6 +554,17 @@ int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySear
 }
 unsigned vt_library_search_revision(void) {
     return __atomic_load_n(&publication_revision, __ATOMIC_ACQUIRE);
+}
+int vt_library_search_home_favourites(VtLibraryItem *out, int capacity, VtLibrarySearchStatus *s) {
+    if (!out || capacity <= 0 || !s)
+        return 0;
+    pthread_mutex_lock(&search_mutex);
+    *s = status;
+    s->revision = __atomic_load_n(&publication_revision, __ATOMIC_ACQUIRE);
+    int count = home_favourite_count < capacity ? home_favourite_count : capacity;
+    memcpy(out, home_favourites, (size_t)count * sizeof(*out));
+    pthread_mutex_unlock(&search_mutex);
+    return count;
 }
 void vt_library_search_cover(const VtLibraryItem *v) {
     if (!v || !v->artwork_url[0] || v->artwork[0])

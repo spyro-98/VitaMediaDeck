@@ -79,11 +79,15 @@ int main(int argc,char **argv) {
    CHECK(ui_sections_sidebar_handle_buttons(&sidebar,&press,0,128)==section);CHECK(!sidebar.open&&!press);
   }
   sidebar.active=UI_SECTION_LOCAL_MEDIA;sidebar.cursor=0;sidebar.open=1;sidebar.animation=1;sidebar.focus_cursor=0;
-  for(int slot=1;slot<UI_SECTION_COUNT+live;slot++) {
-   unsigned press=SCE_CTRL_DOWN;ui_sections_sidebar_handle_buttons(&sidebar,&press,0,128);CHECK(sidebar.cursor==slot);
+  for (int slot = 1; sidebar_vertical() && slot < UI_SECTION_COUNT + live; slot++) {
+      unsigned press = SCE_CTRL_DOWN;
+      ui_sections_sidebar_handle_buttons(&sidebar, &press, 0, 128);
+      CHECK(sidebar.cursor == slot);
   }
-  for(int slot=UI_SECTION_COUNT+live-2;slot>=0;slot--) {
-   unsigned press=SCE_CTRL_UP;ui_sections_sidebar_handle_buttons(&sidebar,&press,0,128);CHECK(sidebar.cursor==slot);
+  for (int slot = UI_SECTION_COUNT + live - 2; sidebar_vertical() && slot >= 0; slot--) {
+      unsigned press = SCE_CTRL_UP;
+      ui_sections_sidebar_handle_buttons(&sidebar, &press, 0, 128);
+      CHECK(sidebar.cursor == slot);
   }
   if(theme==VT_UI_THEME_LEGACY) {
    CHECK(sidebar_section_at(&sidebar,live+2)==UI_SECTION_JELLYFIN);

@@ -5,7 +5,22 @@
 #include "../iptv/ui_test.c"
 #undef main
 #include "../../src/ui/home_tabs.c"
+static int dashboard_empty, dashboard_sources, dashboard_drop_resume;
+static int fixture_library_query(const char *, int, VtLibraryResult *, int);
+#define vt_library_query fixture_library_query
 #include "../../src/ui/library_screen.c"
+#undef vt_library_query
+static int fixture_library_query(const char *q, int type, VtLibraryResult *out, int cap) {
+    if (view == LIBRARY_HOME && dashboard_empty)
+        return 0;
+    int count = vt_library_query(q, type, out, cap);
+    if (dashboard_drop_resume && view == LIBRARY_HOME && type == VT_LIBRARY_CONTINUE &&
+        frame >= 16 && count > 0) {
+        memmove(out, out + 1, (size_t)(count - 1) * sizeof(*out));
+        count--;
+    }
+    return count;
+}
 #include "history/playback_history.h"
 static int search_calls, progressive, fixture_count, loading_fixture, loading_flag,
     publication_fixture;
@@ -18,6 +33,16 @@ int vt_i18n_current_language(void) {
 }
 int ui_local_media_library_tick(void) {
     return 0;
+}
+int vt_library_search_home_favourites(VtLibraryItem *out, int cap, VtLibrarySearchStatus *status) {
+    memset(status, 0, sizeof(*status));
+    if (dashboard_empty)
+        return 0;
+    const int saved[] = {5, 6, 4};
+    int count = cap < 3 ? cap : 3;
+    for (int i = 0; i < count; i++)
+        out[i] = fixture[saved[i]];
+    return count;
 }
 void vt_library_search_cancel(void) {}
 unsigned vt_library_search_revision(void) {
@@ -76,9 +101,17 @@ int vt_library_search_snapshot(VtLibraryResult *out, int cap, VtLibrarySearchSta
     return n;
 }
 int vt_network_sources_load(VtNetworkSource *s, int cap) {
-    (void)s;
-    (void)cap;
-    return 0;
+    if (!dashboard_sources)
+        return 0;
+    CHECK(cap >= 2);
+    memset(s, 0, 2 * sizeof(*s));
+    s[0].protocol = VT_NETWORK_SFTP;
+    strcpy(s[0].name, "NAS / sample data");
+    strcpy(s[0].host, "nas.fixture");
+    s[1].protocol = VT_NETWORK_JELLYFIN;
+    strcpy(s[1].name, "Jellyfin / sample data");
+    strcpy(s[1].host, "jellyfin.fixture");
+    return 2;
 }
 int vt_network_credentials_load(VtNetworkCredential *s, int cap) {
     (void)s;
@@ -205,6 +238,115 @@ int main(int argc, char **argv) {
         host_reduced_motion = 0;
     }
     loading_fixture = 0;
+    /* Dashboard is one heterogeneous surface, with every group visible and
+     * reachable. The backend is deliberately synthetic, including empty state. */
+    const unsigned directions[] = {SCE_CTRL_UP, SCE_CTRL_DOWN, SCE_CTRL_LEFT, SCE_CTRL_RIGHT};
+    for (int theme = 0; theme < 7; theme++)
+        for (int bottom = 472; bottom <= 536; bottom += 64) {
+            UiDashboardLayout l = ui_dashboard_layout(theme, bottom);
+            int reachable[UI_DASH_COUNT] = {1};
+            for (int iteration = 0; iteration < UI_DASH_COUNT; iteration++)
+                for (int from = 0; from < UI_DASH_COUNT; from++)
+                    if (reachable[from])
+                        for (int dir = 0; dir < 4; dir++)
+                            reachable[ui_dashboard_move(&l, from, directions[dir])] = 1;
+            for (int i = 0; i < UI_DASH_COUNT; i++) {
+                UiThemeRect a = l.cards[i];
+                CHECK(a.x >= l.content.x && a.y >= l.content.y);
+                CHECK(a.x + a.w <= l.content.x + l.content.w &&
+                      a.y + a.h <= l.content.y + l.content.h);
+                CHECK(a.h >= 36 && a.w >= 140 && reachable[i]);
+                for (int j = 0; j < i; j++) {
+                    UiThemeRect b = l.cards[j];
+                    CHECK(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y ||
+                          b.y + b.h <= a.y);
+                }
+            }
+        }
+    loading_fixture = 0;
+    progressive = 0;
+    for (int theme = 0; theme < 7; theme++)
+        for (dashboard_empty = 0; dashboard_empty <= 1; dashboard_empty++) {
+            ui_theme_apply(theme);
+            dashboard_sources = !dashboard_empty;
+            mini_top = theme % 2 ? 472 : 536;
+            view = LIBRARY_HOME;
+            dash_selected = UI_DASH_CONTINUE;
+            memset(dash_offset, 0, sizeof(dash_offset));
+            memset(dash_anchor, 0, sizeof(dash_anchor));
+            ui_home_tab_set(HOME_LIBRARY);
+            script_exit();
+            VtLibraryItem picked;
+            CHECK(ui_library_screen(&picked) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
+            CHECK(view == LIBRARY_HOME && !loading_flag);
+            memcpy(pixels, first_pixels, sizeof(pixels));
+            char name[80];
+            snprintf(name, sizeof(name), "home-dashboard-%d-%s", theme,
+                     dashboard_empty ? "empty" : "populated");
+            png(name);
+        }
+    dashboard_empty = 0;
+    dashboard_sources = 1;
+    mini_top = 536;
+    ui_theme_apply(VT_UI_THEME_LEGACY);
+    ui_home_tab_set(HOME_LIBRARY);
+    view = LIBRARY_HOME;
+    dash_selected = UI_DASH_CONNECTIONS;
+    memset(dash_offset, 0, sizeof(dash_offset));
+    memset(dash_anchor, 0, sizeof(dash_anchor));
+    script_exit();
+    input_script[2] = SCE_CTRL_CROSS;
+    VtLibraryItem connection;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
+    CHECK(!strcmp(connection.title, "NAS / sample data") &&
+          connection.provider == VT_LIBRARY_NETWORK);
+    view = LIBRARY_HOME;
+    dash_selected = UI_DASH_CONTINUE;
+    memset(dash_offset, 0, sizeof(dash_offset));
+    memset(dash_anchor, 0, sizeof(dash_anchor));
+    script_exit();
+    input_script[2] = SCE_CTRL_RTRIGGER;
+    input_script[18] = SCE_CTRL_CROSS;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_PLAY);
+    CHECK(view == LIBRARY_HOME && dash_offset[UI_DASH_CONTINUE] == 1);
+    /* A background expiry cannot replace an imminent Cross with another item. */
+    view = LIBRARY_HOME;
+    dash_selected = UI_DASH_CONTINUE;
+    dashboard_drop_resume = 1;
+    memset(dash_offset, 0, sizeof(dash_offset));
+    memset(dash_anchor, 0, sizeof(dash_anchor));
+    VtLibraryResult expected_resume[DASH_CONTINUE_MAX];
+    CHECK(vt_library_query("", VT_LIBRARY_CONTINUE, expected_resume, DASH_CONTINUE_MAX) > 0);
+    script_exit();
+    input_script[18] = SCE_CTRL_CROSS;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_PLAY);
+    CHECK(!strcmp(connection.id, expected_resume[0].item.id));
+    dashboard_drop_resume = 0;
+    /* A favourite preview is its own touch target, including non-primary covers. */
+    view = LIBRARY_HOME;
+    dash_selected = UI_DASH_FAVOURITES;
+    memset(dash_offset, 0, sizeof(dash_offset));
+    memset(dash_anchor, 0, sizeof(dash_anchor));
+    script_exit();
+    UiThemeRect favourite = ui_dashboard_layout(VT_UI_THEME_LEGACY, 536).cards[UI_DASH_FAVOURITES];
+    int cover_size = favourite.h - 42;
+    if (cover_size > 64)
+        cover_size = 64;
+    tap_frame = 2;
+    tap_x = favourite.x + 10 + (cover_size + 8) + cover_size / 2;
+    tap_y = favourite.y + 30 + cover_size / 2;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_PLAY);
+    CHECK(!strcmp(connection.id, fixture[6].id));
+    tap_frame = -1;
+    /* History is a deliberate drill-down. Circle returns to the composition. */
+    view = LIBRARY_HOME;
+    dash_selected = UI_DASH_HISTORY;
+    script_exit();
+    input_script[2] = SCE_CTRL_CROSS;
+    input_script[6] = SCE_CTRL_CIRCLE;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
+    CHECK(view == LIBRARY_HOME);
+    dashboard_sources = 0;
     /* Actual UI retains focused identity when a sorted progressive result arrives. */
     ui_theme_apply(VT_UI_THEME_LEGACY);
     view = 3;
@@ -248,7 +390,8 @@ int main(int argc, char **argv) {
     CHECK(artwork_requests > 0 && search_calls >= 28);
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
-    printf("Unified Home UI: %u checks; 42 host layouts, animated/reduced-motion loading, all "
+    printf("Unified Home UI: %u checks; 56 host layouts, integrated dashboard/navigation, "
+           "animated/reduced-motion loading, all "
            "themes, covers, mini-player space, "
            "progressive focus and player return passed.\n",
            checks);

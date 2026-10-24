@@ -15,6 +15,10 @@ void vt_library_search_begin(const char *query, const VtLibraryItem *folder);
 /* Copies a worker-prepared snapshot; no disk access, allocations or sorting. */
 int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySearchStatus *status);
 unsigned vt_library_search_revision(void);
+#define VT_LIBRARY_HOME_FAVOURITES 24
+/* Cached, worker-refreshed favourites. Saved connections contain no credentials. */
+int vt_library_search_home_favourites(VtLibraryItem *out, int capacity,
+                                      VtLibrarySearchStatus *status);
 void vt_library_search_cover(const VtLibraryItem *);
 void vt_library_search_local_refresh(void);
 void vt_library_search_cancel(void);
