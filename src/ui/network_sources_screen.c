@@ -2431,3 +2431,52 @@ int ui_network_library_authorize(VtNetworkSource *s, VtNetworkCredential *c) {
 		vt_library_search_set_session(s, c);
 	return ret;
 }
+
+static int library_persist_source(const VtNetworkSource *source) {
+	VtNetworkSource *saved = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*saved));
+	if (!saved)
+		return -1;
+	int n = vt_network_sources_load(saved, VT_NETWORK_MAX_SOURCES), found = 0;
+	char key[16];
+	vt_network_media_history_id(source, "", key);
+	for (int i = 0; i < n; i++) {
+		char other[16];
+		vt_network_media_history_id(&saved[i], "", other);
+		if (!strcmp(key, other)) {
+			saved[i] = *source;
+			found = 1;
+		}
+	}
+	int result = found ? vt_network_sources_save(saved, n) : -1;
+	free(saved);
+	if (result < 0)
+		show_save_error(result);
+	return result;
+}
+/* Dashboard connections reuse the native browser, credentials and explicit
+ * trust prompts; they never route through a generic provider picker first. */
+int ui_network_browse_saved(VtNetworkSource *s, VtNetworkCredential *c,
+                            UiNetworkSelection *selection) {
+	if (!s || !c || !selection)
+		return UI_NETWORK_ACTION_BACK;
+	int trust = prepare_sftp_trust(s);
+	if (trust < 0)
+		return trust;
+	if (trust > 0 && library_persist_source(s) < 0)
+		return -1;
+	int result = ui_network_library_authorize(s, c);
+	if (result < 0)
+		return result;
+	result = browse_source(s, c, selection,
+	                       g_browser_resume.valid &&
+	                           network_source_matches(s, &g_browser_resume.source));
+	if (result == VT_NETWORK_TLS_TRUST_REQUIRED && s->protocol == VT_NETWORK_WEBDAV) {
+		int accepted = prepare_https_trust(s, c);
+		if (accepted < 0)
+			return result;
+		if (accepted > 0 && library_persist_source(s) < 0)
+			return -1;
+		result = browse_source(s, c, selection, 0);
+	}
+	return result;
+}

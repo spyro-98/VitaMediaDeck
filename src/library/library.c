@@ -231,6 +231,24 @@ int vt_library_matches(const VtLibraryItem *v, const char *q) {
     }
     return 1;
 }
+int vt_library_get(const char *id, VtLibraryResult *out) {
+    if (!id || !out)
+        return 0;
+    pthread_mutex_lock(&mutex);
+    int index = find(id);
+    if (index >= 0) {
+        Slot *s = &slots[index];
+        *out = (VtLibraryResult){.item = s->item,
+                                 .position_ms = s->state.position,
+                                 .duration_ms =
+                                     s->state.duration ? s->state.duration : s->item.duration_ms,
+                                 .order = s->state.order,
+                                 .started = s->state.started,
+                                 .cached = 1};
+    }
+    pthread_mutex_unlock(&mutex);
+    return index >= 0;
+}
 static int query_items(const char *q, int view, const VtLibraryItem *parent, int search,
                        VtLibraryResult *out, int cap) {
     int indices[VT_LIBRARY_MAX], n = 0;

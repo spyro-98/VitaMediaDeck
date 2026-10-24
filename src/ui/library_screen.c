@@ -1,4 +1,5 @@
 #include "ui/library_screen.h"
+#include "ui/home_dashboard.h"
 #include "library/catalog.h"
 #include "library/search.h"
 #include "i18n/i18n.h"
@@ -23,7 +24,7 @@
 static const char *tr(const char *en, const char *it) {
     return vt_i18n_current_language() == VT_LANG_IT ? it : en;
 }
-static int view;
+static int view = 4;
 static char query[129];
 typedef struct {
     VtLibraryItem item;
@@ -257,7 +258,500 @@ static vita2d_texture *remote_artwork(LibraryArtworkSources *a, const VtLibraryI
         }
     return NULL;
 }
-int ui_library_screen(VtLibraryItem *selected_out) {
+/* One Home composition. Full collections/search are deliberate drill-downs,
+ * not alternate Home pages. No storage or transport calls in drawing. */
+enum { LIBRARY_HOME = 4, LIBRARY_OPEN_DETAIL = -10, LIBRARY_RETURN_HOME = -11 };
+#define DASH_CONTINUE_MAX 8
+#define DASH_RECENT_MAX 16
+typedef struct {
+    VtLibraryResult resume[DASH_CONTINUE_MAX], recent[DASH_RECENT_MAX];
+    VtLibraryItem favourites[VT_LIBRARY_HOME_FAVOURITES], connections[VT_NETWORK_MAX_SOURCES];
+    int count[4];
+} DashboardData;
+static int dash_selected, dash_offset[4];
+static char dash_anchor[4][16];
+static int dashboard_folder;
+static const char *dashboard_label(int role) {
+    switch (role) {
+    case UI_DASH_CONTINUE:
+        return tr("Pick up where you left off", "Riprendi da dove eri");
+    case UI_DASH_CONNECTIONS:
+        return tr("Saved connections", "Connessioni salvate");
+    case UI_DASH_FAVOURITES:
+        return tr("Favourites", "Preferiti");
+    case UI_DASH_RECENT:
+        return tr("Recently played", "Riprodotti di recente");
+    case UI_DASH_SOURCES:
+        return tr("Explore sources", "Esplora le sorgenti");
+    default:
+        return tr("Playback history", "Cronologia");
+    }
+}
+static int dashboard_item(const DashboardData *d, int role, int offset, VtLibraryResult *out) {
+    memset(out, 0, sizeof(*out));
+    if (role >= 4 || d->count[role] <= 0)
+        return 0;
+    int i = offset % d->count[role];
+    if (i < 0)
+        i += d->count[role];
+    if (role == UI_DASH_CONTINUE)
+        *out = d->resume[i];
+    else if (role == UI_DASH_RECENT)
+        *out = d->recent[i];
+    else
+        out->item = role == UI_DASH_CONNECTIONS ? d->connections[i] : d->favourites[i];
+    return 1;
+}
+static void dashboard_refresh(DashboardData *d, VtLibrarySearchStatus *status, int keep_focus) {
+    VtLibraryResult prior;
+    int role = dash_selected;
+    int had_prior = keep_focus && role < 4 && dashboard_item(d, role, dash_offset[role], &prior);
+    d->count[0] = vt_library_query("", VT_LIBRARY_CONTINUE, d->resume, DASH_CONTINUE_MAX);
+    int recent = vt_library_query("", VT_LIBRARY_RECENT, d->recent, DASH_RECENT_MAX), used = 0;
+    for (int i = 0; i < recent; i++) {
+        int duplicate = 0;
+        for (int k = 0; k < d->count[0]; k++)
+            if (!strcmp(d->recent[i].item.id, d->resume[k].item.id))
+                duplicate = 1;
+        if (!duplicate)
+            d->recent[used++] = d->recent[i];
+    }
+    d->count[3] = used;
+    d->count[2] =
+        vt_library_search_home_favourites(d->favourites, VT_LIBRARY_HOME_FAVOURITES, status);
+    if (had_prior) {
+        int found = 0;
+        for (int i = 0; i < d->count[role]; i++) {
+            VtLibraryResult current;
+            dashboard_item(d, role, i, &current);
+            if (!strcmp(current.item.id, prior.item.id))
+                found = 1;
+        }
+        if (!found) {
+            int capacity = role == UI_DASH_CONTINUE     ? DASH_CONTINUE_MAX
+                           : role == UI_DASH_RECENT     ? DASH_RECENT_MAX
+                           : role == UI_DASH_FAVOURITES ? VT_LIBRARY_HOME_FAVOURITES
+                                                        : VT_NETWORK_MAX_SOURCES;
+            int at = d->count[role] < capacity ? d->count[role]++ : capacity - 1;
+            prior.cached = 1;
+            if (role == UI_DASH_CONTINUE)
+                d->resume[at] = prior;
+            else if (role == UI_DASH_RECENT)
+                d->recent[at] = prior;
+            else if (role == UI_DASH_FAVOURITES)
+                d->favourites[at] = prior.item;
+            else
+                d->connections[at] = prior.item;
+        }
+    }
+    for (int role = 0; role < 4; role++) {
+        for (int i = 0; i < d->count[role]; i++) {
+            VtLibraryResult item;
+            dashboard_item(d, role, i, &item);
+            if (!strcmp(item.item.id, dash_anchor[role])) {
+                dash_offset[role] = i;
+                break;
+            }
+        }
+        if (dash_offset[role] >= d->count[role])
+            dash_offset[role] = 0;
+        VtLibraryResult item;
+        if (dashboard_item(d, role, dash_offset[role], &item))
+            snprintf(dash_anchor[role], sizeof(dash_anchor[role]), "%s", item.item.id);
+        else
+            dash_anchor[role][0] = 0;
+    }
+}
+static vita2d_texture *dashboard_cover(LibraryArtworkSources *sources, const VtLibraryItem *item,
+                                       int priority) {
+    if (item->artwork[0] && strcmp(item->artwork, "-"))
+        return vt_artwork_thumbnail_get(item->artwork);
+    if (item->artwork_url[0])
+        vt_library_search_cover(item);
+    if (item->provider == VT_LIBRARY_LOCAL && item->kind == VT_LIBRARY_IMAGE)
+        return vt_image_thumbnail_get(item->locator, item->size);
+    if (item->provider == VT_LIBRARY_LOCAL && item->kind == VT_LIBRARY_VIDEO)
+        return vt_video_thumbnail_get(item->locator, item->size);
+    if (item->kind == VT_LIBRARY_VIDEO || item->kind == VT_LIBRARY_IMAGE)
+        return remote_artwork(sources, item, priority);
+    return NULL;
+}
+static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, int available,
+                           int count, int offset, int selected, LibraryArtworkSources *sources,
+                           const DashboardData *data) {
+    int theme = ui_theme_id(), action = role >= 4, hero = role == UI_DASH_CONTINUE;
+    ui_theme_scene_card(UI_SCENE_HOME, r, selected, role);
+    ui_theme_fx_surface(r.x + 2, r.y + 2, r.w - 4, r.h - 4,
+                        selected ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE, selected);
+    if (action) {
+        ui_text_line(r.x + 12, r.y + r.h / 2 + 6, r.w - 30, dashboard_label(role),
+                     selected ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_TEXT, UI_FONT_SMALL);
+        return;
+    }
+    int compact = r.h < 62;
+    char heading[128];
+    snprintf(heading, sizeof(heading), "%s",
+             role == UI_DASH_CONNECTIONS && r.w < 260 ? tr("Connections", "Connessioni")
+                                                      : dashboard_label(role));
+    if (!compact)
+        ui_text_line(r.x + 12, r.y + 21, r.w - 24 - (count > 1 ? 62 : 0), heading,
+                     VT_THEME_COLD_LIGHT, UI_FONT_SMALL);
+    const char *empty =
+        role == UI_DASH_CONTINUE ? tr("Find something to play", "Scegli cosa guardare o ascoltare")
+        : role == UI_DASH_CONNECTIONS ? tr("Connect your library", "Collega la tua libreria")
+        : role == UI_DASH_FAVOURITES
+            ? tr("Save your favourite media", "Salva i tuoi contenuti preferiti")
+            : tr("Your recent media appears here", "Qui troverai gli ultimi contenuti");
+    int art_size = compact ? r.h - 12 : r.h - 40;
+    if (art_size > 130)
+        art_size = 130;
+    if (art_size > r.w / 3)
+        art_size = r.w / 3;
+    if (art_size < 26)
+        art_size = 26;
+    int ay = compact ? r.y + 6 : r.y + 30, tx = r.x + art_size + 24, tw = r.w - art_size - 36;
+    vita2d_texture *art = available && role != UI_DASH_CONNECTIONS
+                              ? dashboard_cover(sources, &v->item, selected ? 100 : 40)
+                              : NULL;
+    int film = role == UI_DASH_FAVOURITES && available && r.w >= 300 && r.h >= 66;
+    if (film) {
+        art_size = r.h - 42;
+        if (art_size > 64)
+            art_size = 64;
+        int previews = count < 3 ? count : 3;
+        for (int k = 0; k < previews; k++) {
+            const VtLibraryItem *item = &data->favourites[(offset + k) % count];
+            vita2d_texture *cover = dashboard_cover(sources, item, selected ? 90 : 40);
+            ui_artwork_tile(r.x + 10 + k * (art_size + 8), ay, art_size, cover,
+                            media_label(item->kind));
+            if (!k)
+                vita2d_draw_rectangle(r.x + 10, ay + art_size + 2, art_size, 2,
+                                      VT_THEME_SIGNAL_BRIGHT);
+        }
+        tx = r.x + previews * (art_size + 8) + 18;
+        tw = r.x + r.w - tx - 12;
+    } else {
+        if (compact && role == UI_DASH_RECENT) {
+            ui_text_line(r.x + 10, r.y + 20, 68, tr("Recent", "Recenti"), VT_THEME_COLD_LIGHT,
+                         UI_FONT_SMALL);
+            ui_artwork_tile(r.x + 82, ay, art_size, art,
+                            available ? media_label(v->item.kind) : "+");
+            tx = r.x + art_size + 94;
+            tw = r.x + r.w - tx - 12;
+        } else
+            ui_artwork_tile(r.x + 10, ay, art_size, art,
+                            role == UI_DASH_CONNECTIONS ? "NET"
+                            : available                 ? media_label(v->item.kind)
+                                                        : "+");
+    }
+    unsigned title_size = hero && r.w > 440 && r.h > 112 ? UI_FONT_BODY : UI_FONT_SMALL;
+    int title_y = compact ? r.y + 21 : r.y + 49;
+    ui_text_line(tx, title_y, tw, available ? v->item.title : empty, VT_THEME_TEXT, title_size);
+    if (available) {
+        char line[512];
+        describe(v, 0, line, sizeof(line));
+        if (role == UI_DASH_CONNECTIONS)
+            snprintf(line, sizeof(line), "%s", vt_library_provider_name(v->item.provider));
+        if (compact || r.h >= 76)
+            ui_text_line(tx, title_y + (compact ? 18 : 24), tw, line, VT_THEME_TEXT_MUTED,
+                         UI_FONT_SMALL);
+        if (hero && v->duration_ms && v->position_ms) {
+            float fraction = fminf(1, (float)v->position_ms / (float)v->duration_ms);
+            vita2d_draw_rectangle(tx, r.y + r.h - 14, tw, 3, VT_THEME_BORDER_DIM);
+            vita2d_draw_rectangle(tx, r.y + r.h - 14, tw * fraction, 3, VT_THEME_SIGNAL_BRIGHT);
+        }
+    } else if (r.h > 90) {
+        ui_text_line(tx, title_y + 25, tw,
+                     role == UI_DASH_CONTINUE
+                         ? tr("Triangle: search", "Triangolo: cerca")
+                         : tr("Cross: explore sources", "Croce: esplora le sorgenti"),
+                     VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+    }
+    if (count > 1 && !compact) {
+        char counter[32];
+        snprintf(counter, sizeof(counter), "%d / %d", offset + 1, count);
+        ui_text_line(r.x + r.w - 68, r.y + 21, 56, counter, VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+    }
+    if (theme == VT_UI_THEME_APERTURE) {
+        for (int x = r.x + 8; x < r.x + r.w - 8; x += 24)
+            vita2d_draw_rectangle(x, r.y + r.h - 4, 10, 2, VT_THEME_COLD_DIM);
+    } else if (theme == VT_UI_THEME_DECK_90 && hero) {
+        for (int y = r.y + 28; y < r.y + r.h - 6; y += 6)
+            vita2d_draw_rectangle(r.x + 4, y, r.w - 8, 1, RGBA8(0, 0, 0, 12));
+    }
+}
+static int dashboard_search(void) {
+    char text[129] = "";
+    if (ui_text_input(tr("Search all your media", "Cerca in tutti i tuoi contenuti"), text, text,
+                      sizeof(text)) <= 0)
+        return 0;
+    snprintf(query, sizeof(query), "%s", text);
+    view = 3;
+    navigation.valid = 0;
+    dashboard_folder = 0;
+    return 1;
+}
+static int dashboard_screen(VtLibraryItem *chosen) {
+    DashboardData *data = calloc(1, sizeof(*data));
+    if (!data)
+        return UI_LIBRARY_BACK;
+    LibraryArtworkSources artwork = artwork_sources();
+    for (int i = 0; i < artwork.count; i++) {
+        VtNetworkEntry entry = {.is_directory = 1};
+        snprintf(entry.name, sizeof(entry.name), "%s",
+                 artwork.sources[i].name[0] ? artwork.sources[i].name : artwork.sources[i].host);
+        snprintf(entry.path, sizeof(entry.path), "%s",
+                 artwork.sources[i].root_path[0] ? artwork.sources[i].root_path : "/");
+        vt_library_remote(&artwork.sources[i], &entry, "", &data->connections[data->count[1]++]);
+    }
+    UiSectionsSidebar sidebar;
+    ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
+    UiFocusMotion tabs = {0}, focus_motion = {0};
+    ui_home_controls_reset();
+    ui_touch_reset();
+    vt_video_thumbnail_resume();
+    vt_library_search_begin("", NULL);
+    SceCtrlData previous = {0}, ctrl = {0};
+    sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+    sceCtrlPeekBufferPositive(0, &previous, 1);
+    VtLibrarySearchStatus status = {0};
+    unsigned revision = ~0U, search_revision = ~0U;
+    uint64_t refreshed = 0;
+    int dirty = 1, focus_sections = 0, result = UI_LIBRARY_BACK;
+    for (;;) {
+        uint64_t now = sceKernelGetProcessTimeWide();
+        ui_mini_player_pump();
+        vt_video_thumbnail_pump();
+        if (ui_local_media_library_tick()) {
+            vt_library_search_local_refresh();
+            dirty = 1;
+        }
+        if (dirty || (now - refreshed > 250000ULL &&
+                      (revision != vt_library_revision() ||
+                       search_revision != vt_library_search_revision() || status.pending))) {
+            dashboard_refresh(data, &status, !dirty && !focus_sections);
+            revision = vt_library_revision();
+            search_revision = status.revision;
+            refreshed = now;
+            dirty = 0;
+        }
+        int bottom =
+            ui_mini_player_top() < UI_CONTENT_BOTTOM ? ui_mini_player_top() : UI_CONTENT_BOTTOM;
+        UiDashboardLayout layout = ui_dashboard_layout(ui_theme_id(), bottom);
+        sceCtrlPeekBufferPositive(0, &ctrl, 1);
+        unsigned pressed = ctrl.buttons & ~previous.buttons;
+        previous = ctrl;
+        UiTouchEvent touch;
+        unsigned flags = ui_touch_poll(&touch);
+        ui_mini_player_handle_buttons(&pressed);
+        if (ui_mini_player_input_locked()) {
+            pressed = flags = 0;
+            ctrl.buttons = 0;
+            ctrl.lx = ctrl.ly = ctrl.rx = ctrl.ry = 128;
+        }
+        if (ui_brand_sections_hit(flags, touch.x, touch.y)) {
+            pressed |= SCE_CTRL_LTRIGGER;
+            flags = 0;
+        }
+        int was_open = sidebar.open;
+        int section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed, ctrl.buttons, ctrl.ly);
+        int blocked = was_open || sidebar.open || sidebar.animation > .01f;
+        if (blocked) {
+            int s = ui_sections_sidebar_handle_touch(&sidebar, flags, touch.x, touch.y);
+            if (s != UI_SECTION_NONE)
+                section = s;
+            flags = 0;
+        } else if (ui_mini_player_handle_touch(flags, &touch))
+            flags = 0;
+        ui_sections_sidebar_tick(&sidebar);
+        if (section != UI_SECTION_NONE) {
+            result = UI_LIBRARY_SECTION_BASE + section;
+            break;
+        }
+        UiHomeControlSample sample = {.pressed = pressed,
+                                      .held = ctrl.buttons,
+                                      .touch_flags = flags,
+                                      .lx = ctrl.lx,
+                                      .ly = ctrl.ly,
+                                      .rx = ctrl.rx,
+                                      .ry = ctrl.ry,
+                                      .selected = dash_selected,
+                                      .count = UI_DASH_COUNT,
+                                      .bottom = bottom,
+                                      .focus_sections = focus_sections,
+                                      .blocked = blocked,
+                                      .geometric_content = 1,
+                                      .touch = &touch};
+        UiHomeControlResult controls = ui_home_controls_update(&sample);
+        pressed = controls.pressed;
+        focus_sections = controls.focus_sections;
+        if (controls.sections_changed) {
+            result = UI_LIBRARY_TAB;
+            break;
+        }
+        unsigned nav = controls.content_nav;
+        if (blocked) {
+            pressed = nav = flags = 0;
+        }
+        if (pressed & SCE_CTRL_TRIANGLE) {
+            if (dashboard_search()) {
+                result = LIBRARY_OPEN_DETAIL;
+                break;
+            }
+            sceCtrlPeekBufferPositive(0, &previous, 1);
+            ui_home_controls_reset();
+            ui_touch_reset();
+            continue;
+        }
+        if (pressed & SCE_CTRL_CIRCLE)
+            focus_sections = 1;
+        if (!focus_sections && nav) {
+            int next = ui_dashboard_move(&layout, dash_selected, nav);
+            if (next == dash_selected && ui_theme_id() != VT_UI_THEME_GHOST_MESH) {
+                int leave =
+                    ui_theme_id() == VT_UI_THEME_DECK_90 || ui_theme_id() == VT_UI_THEME_RELAY
+                        ? !!(nav & SCE_CTRL_LEFT)
+                    : ui_theme_id() == VT_UI_THEME_APERTURE ? !!(nav & SCE_CTRL_DOWN)
+                                                            : !!(nav & SCE_CTRL_UP);
+                if (leave)
+                    focus_sections = 1;
+            }
+            if (dash_selected != next)
+                dirty = 1;
+            dash_selected = next;
+        }
+        if (flags & UI_TOUCH_EVENT_TAP) {
+            for (int i = 0; i < UI_DASH_COUNT; i++) {
+                UiThemeRect r = layout.cards[i];
+                if (ui_touch_hit_rect(touch.x, touch.y, r.x, r.y, r.w, r.h)) {
+                    dash_selected = i;
+                    focus_sections = 0;
+                    if (i == UI_DASH_FAVOURITES && data->count[i] && r.w >= 300 && r.h >= 66) {
+                        int size = r.h - 42;
+                        if (size > 64)
+                            size = 64;
+                        int k = (touch.x - r.x - 10) / (size + 8),
+                            previews = data->count[i] < 3 ? data->count[i] : 3;
+                        if (touch.x >= r.x + 10 && k >= 0 && k < previews && touch.y >= r.y + 30 &&
+                            touch.y < r.y + 30 + size) {
+                            dash_offset[i] = (dash_offset[i] + k) % data->count[i];
+                            snprintf(dash_anchor[i], 16, "%s", data->favourites[dash_offset[i]].id);
+                        }
+                    }
+                    pressed |= SCE_CTRL_CROSS;
+                    break;
+                }
+            }
+        }
+        if (!focus_sections && (pressed & (SCE_CTRL_RTRIGGER | SCE_CTRL_SQUARE)))
+            dirty = 1;
+        if (!focus_sections && dash_selected < 4 && data->count[dash_selected] > 1 &&
+            (pressed & (SCE_CTRL_RTRIGGER | SCE_CTRL_SQUARE))) {
+            int count = data->count[dash_selected], step = pressed & SCE_CTRL_SQUARE ? -1 : 1;
+            dash_offset[dash_selected] = (dash_offset[dash_selected] + count + step) % count;
+            VtLibraryResult item;
+            dashboard_item(data, dash_selected, dash_offset[dash_selected], &item);
+            snprintf(dash_anchor[dash_selected], 16, "%s", item.item.id);
+        }
+        if ((pressed & SCE_CTRL_CROSS) && !focus_sections) {
+            VtLibraryResult selected;
+            int exists = dashboard_item(
+                data, dash_selected, dash_selected < 4 ? dash_offset[dash_selected] : 0, &selected);
+            if (dash_selected == UI_DASH_SOURCES ||
+                (!exists && dash_selected != UI_DASH_CONTINUE && dash_selected != UI_DASH_RECENT)) {
+                view = 2;
+                navigation.valid = 0;
+                query[0] = 0;
+                result = LIBRARY_OPEN_DETAIL;
+                break;
+            }
+            if (dash_selected == UI_DASH_HISTORY || (!exists && dash_selected == UI_DASH_RECENT)) {
+                view = 1;
+                navigation.valid = 0;
+                query[0] = 0;
+                result = LIBRARY_OPEN_DETAIL;
+                break;
+            }
+            if (!exists) {
+                if (dashboard_search()) {
+                    result = LIBRARY_OPEN_DETAIL;
+                    break;
+                }
+                sceCtrlPeekBufferPositive(0, &previous, 1);
+                ui_home_controls_reset();
+                continue;
+            }
+            *chosen = selected.item;
+            if (dash_selected == UI_DASH_CONNECTIONS) {
+                result = UI_LIBRARY_CONNECT;
+                break;
+            }
+            if (chosen->kind >= VT_LIBRARY_FOLDER && chosen->provider != VT_LIBRARY_LOCAL) {
+                if (authorize_folder(chosen) < 0)
+                    continue;
+                view = 3;
+                query[0] = 0;
+                dashboard_folder = 1;
+                navigation = (typeof(navigation)){
+                    .valid = 1, .focus = 0, .filter = -1, .in_folder = 1, .folder = *chosen};
+                result = LIBRARY_OPEN_DETAIL;
+                break;
+            }
+            result = UI_LIBRARY_PLAY;
+            break;
+        }
+        ui_home_tabs_set_expanded(1);
+        vita2d_start_drawing();
+        vita2d_clear_screen();
+        ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
+        ui_brand_set_loading(status.pending != 0);
+        ui_brand_draw_home_header();
+        ui_home_tabs_draw_with_focus(focus_sections, &tabs);
+        ui_theme_scene_begin(UI_SCENE_HOME, "integrated-home");
+        ui_text_line(layout.content.x, layout.title_y, layout.content.w,
+                     tr("Your media, together", "I tuoi contenuti, insieme"), VT_THEME_TEXT,
+                     ui_theme_id() == VT_UI_THEME_LEGACY ? UI_FONT_BODY : UI_FONT_DISPLAY);
+        if (layout.subtitle_y)
+            ui_text_line(layout.content.x, layout.subtitle_y, layout.content.w,
+                         tr("Continue · saved connections · favourites",
+                            "Riprendi · connessioni salvate · preferiti"),
+                         VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+        for (int i = 0; i < UI_DASH_COUNT; i++) {
+            VtLibraryResult item;
+            int count = i < 4 ? data->count[i] : 0, offset = i < 4 ? dash_offset[i] : 0;
+            int available = dashboard_item(data, i, offset, &item);
+            dashboard_card(layout.cards[i], i, &item, available, count, offset,
+                           !focus_sections && dash_selected == i, &artwork, data);
+        }
+        if (!focus_sections) {
+            UiThemeRect r = layout.cards[dash_selected];
+            ui_focus_motion_tick(&focus_motion, r.x, r.y, r.w, r.h);
+            ui_focus_outline_draw(&focus_motion);
+        }
+        ui_text_line(layout.content.x, layout.footer_y, layout.content.w,
+                     focus_sections ? ui_theme_home_controls_hint(1)
+                                    : tr("Triangle: search · R1/Square: next/previous",
+                                         "Triangolo: cerca · R1/Quadrato: altri"),
+                     VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+        ui_mini_player_draw();
+        ui_sections_sidebar_draw(&sidebar);
+        vita2d_end_drawing();
+        vita2d_wait_rendering_done();
+        vita2d_swap_buffers();
+    }
+    ui_brand_set_loading(0);
+    vt_library_search_cancel();
+    ui_touch_reset();
+    if (artwork.credentials) {
+        memset(artwork.credentials, 0, VT_NETWORK_MAX_SOURCES * sizeof(*artwork.credentials));
+        free(artwork.credentials);
+    }
+    free(artwork.sources);
+    free(data);
+    return result;
+}
+
+static int library_browser_screen(VtLibraryItem *selected_out) {
     VtLibraryResult *items = calloc(VT_LIBRARY_RESULTS, sizeof(*items));
     if (!items)
         return UI_LIBRARY_BACK;
@@ -463,15 +957,8 @@ int ui_library_screen(VtLibraryItem *selected_out) {
         if ((pressed & SCE_CTRL_RTRIGGER) ||
             ((flags & UI_TOUCH_EVENT_TAP) &&
              ui_touch_hit_rect(touch.x, touch.y, heading.x, heading.y, heading.w, heading.h))) {
-            view = (view + 1) % 3;
-            query[0] = 0;
-            in_folder = depth = 0;
-            folder = (VtLibraryItem){0};
-            filter = -1;
-            selected = top = 0;
-            dirty = 1;
-            vt_library_search_begin("", NULL);
-            continue;
+            result = LIBRARY_RETURN_HOME;
+            break;
         }
         if ((pressed & SCE_CTRL_SQUARE) && view == 3 && !in_folder) {
             filter++;
@@ -482,6 +969,10 @@ int ui_library_screen(VtLibraryItem *selected_out) {
         }
         if (pressed & SCE_CTRL_CIRCLE) {
             if (in_folder) {
+                if (!depth && dashboard_folder) {
+                    result = LIBRARY_RETURN_HOME;
+                    break;
+                }
                 if (depth > 0) {
                     depth--;
                     folder = parents[depth].item;
@@ -494,16 +985,8 @@ int ui_library_screen(VtLibraryItem *selected_out) {
                 top = 0;
                 continue;
             }
-            if (view == 3) {
-                query[0] = 0;
-                view = 0;
-                filter = -1;
-                selected = top = 0;
-                dirty = 1;
-                vt_library_search_begin("", NULL);
-                continue;
-            }
-            focus = 1;
+            result = LIBRARY_RETURN_HOME;
+            break;
         }
         if (!focus) {
             if ((nav & SCE_CTRL_UP) && selected >= layout.columns)
@@ -575,8 +1058,8 @@ int ui_library_screen(VtLibraryItem *selected_out) {
         snprintf(identity, sizeof(identity), "library:%d:%.128s:%.15s", view, query, folder.id);
         snprintf(detail, sizeof(detail), "%s",
                  query[0] ? query
-                          : tr("R1: Continue / History / Sources · Triangle: search",
-                               "R1: Continua / Cronologia / Sorgenti · Triangolo: cerca"));
+                          : tr("R1: Home · Triangle: search",
+                               "R1: Home · Triangolo: cerca"));
         if (view == 3 || in_folder)
             search_detail(&status, n, in_folder ? -1 : filter, detail, sizeof(detail));
         ui_home_tabs_set_expanded(1);
@@ -652,13 +1135,13 @@ int ui_library_screen(VtLibraryItem *selected_out) {
                     : tr("No items in this view yet", "Ancora nessun contenuto in questa vista"),
                 VT_THEME_TEXT, UI_FONT_BODY);
             ui_text_line(layout.x, viewport + 62, empty_width,
-                         tr("R1: sources · Triangle: search all sources",
-                            "R1: sorgenti · Triangolo: cerca ovunque"),
+                         tr("R1: Home · Triangle: search all sources",
+                            "R1: Home · Triangolo: cerca ovunque"),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
         }
         ui_theme_page_finish(UI_SCENE_HOME, layout.x, viewport, legacy ? 924 : 942 - layout.x,
                              bottom - 38);
-        const char *actions = tr("R1: view · Triangle: search", "R1: vista · Triangolo: cerca");
+        const char *actions = tr("R1: Home · Triangle: search", "R1: Home · Triangolo: cerca");
         int footer_x = layout.x,
             footer_w = ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w : 942 - layout.x;
         if (ui_theme_id() == VT_UI_THEME_APERTURE) {
@@ -698,4 +1181,21 @@ int ui_library_screen(VtLibraryItem *selected_out) {
     free(artwork.sources);
     free(items);
     return result;
+}
+
+int ui_library_screen(VtLibraryItem *selected_out) {
+    for (;;) {
+        int result = view == LIBRARY_HOME ? dashboard_screen(selected_out)
+                                          : library_browser_screen(selected_out);
+        if (result == LIBRARY_OPEN_DETAIL)
+            continue;
+        if (result == LIBRARY_RETURN_HOME) {
+            view = LIBRARY_HOME;
+            query[0] = 0;
+            navigation.valid = 0;
+            dashboard_folder = 0;
+            continue;
+        }
+        return result;
+    }
 }

@@ -138,44 +138,58 @@ static float sidebar_row_y(const UiSectionsSidebar *sidebar,float slot) {
     return y;
 }
 static int sidebar_row_height(void) { return 42; }
+static int sidebar_vertical(void) {
+	int theme = ui_theme_id();
+	return theme == VT_UI_THEME_LEGACY || theme == VT_UI_THEME_DECK_90 ||
+	       theme == VT_UI_THEME_APERTURE;
+}
 static UiThemeRect sidebar_content_rect(const UiSectionsSidebar *sidebar,int slot) {
     int theme=ui_theme_id(),live=sidebar->player_available+sidebar->download_available;
-    if(theme==VT_UI_THEME_LEGACY)
-        return (UiThemeRect){ITEM_X,(int)sidebar_row_y(sidebar,(float)slot),ITEM_W,sidebar_row_height()};
-    if(slot<live)return (UiThemeRect){64+slot*428,188,live==1?832:404,52};
-    int index=slot-live,base=live?280:192;
-    if(theme==VT_UI_THEME_GHOST_MESH) {
-        if(index<SIDEBAR_CONTENT_COUNT) {
-            float angle=-1.57079632679f+index*(6.28318530718f/SIDEBAR_CONTENT_COUNT);
-            return (UiThemeRect){(int)(382+cosf(angle)*230)-95,(int)(base+232+sinf(angle)*200)-32,190,64};
-        }
-        return (UiThemeRect){716,base+(index-SIDEBAR_CONTENT_COUNT)*112,184,84};
-    }
-    if(theme==VT_UI_THEME_DECK_90)
-        return (UiThemeRect){104,base+index*64+(index>=SIDEBAR_CONTENT_COUNT?36:0),752,48};
-    if(theme==VT_UI_THEME_APERTURE)
-        return (UiThemeRect){104,base+index*72+(index>=SIDEBAR_CONTENT_COUNT?36:0),752,52};
-    if(theme==VT_UI_THEME_SIGNAL) {
-        if(index<SIDEBAR_CONTENT_COUNT)return (UiThemeRect){64+(index%2)*286,base+(index/2)*100,268,76};
-        return (UiThemeRect){664,base+(index-SIDEBAR_CONTENT_COUNT)*100,232,76};
-    }
-    int app=index>=SIDEBAR_CONTENT_COUNT;
-    int local=app?index-SIDEBAR_CONTENT_COUNT:index;
-    if(theme==VT_UI_THEME_RELAY) {
-        int row=local/2+(app?4:0),col=row%2?1-local%2:local%2;
-        return (UiThemeRect){56+col*436,base+row*98+(app?36:0),408,72};
-    }
-    return (UiThemeRect){62+(local%3)*288,base+(local/3+(app?3:0))*132+(app?36:0),260,104};
+	if (theme == VT_UI_THEME_LEGACY) {
+		return (UiThemeRect){ITEM_X, (int)sidebar_row_y(sidebar, (float)slot), ITEM_W,
+		                     sidebar_row_height()};
+	}
+	if (slot < live)
+		return (UiThemeRect){64 + slot * 428, 166, live == 1 ? 832 : 404, 42};
+	int index = slot - live, base = live ? 224 : 188;
+	if (theme == VT_UI_THEME_DECK_90)
+		return (UiThemeRect){104, base + index * 64 + (index >= SIDEBAR_CONTENT_COUNT ? 36 : 0),
+		                     752, 48};
+	if (theme == VT_UI_THEME_APERTURE)
+		return (UiThemeRect){104, base + index * 72 + (index >= SIDEBAR_CONTENT_COUNT ? 36 : 0),
+		                     752, 52};
+	if (theme == VT_UI_THEME_GHOST_MESH) {
+		if (index < SIDEBAR_CONTENT_COUNT) {
+			float angle=-1.57079632679f+index*(6.28318530718f/SIDEBAR_CONTENT_COUNT);
+			return (UiThemeRect){(int)lroundf(350 + cosf(angle) * 102) - 37,
+			                     (int)lroundf(334 + sinf(angle) * 102) - 21, 74, 42};
+		}
+		return (UiThemeRect){704, 238 + (index - SIDEBAR_CONTENT_COUNT) * 78, 192, 54};
+	}
+	if (theme == VT_UI_THEME_SIGNAL) {
+		if (index < SIDEBAR_CONTENT_COUNT)
+			return (UiThemeRect){64 + (index % 2) * 286, (live ? 240 : 188) + (index / 2) * 58, 268, 44};
+		return (UiThemeRect){664, (live ? 240 : 188) + (index - SIDEBAR_CONTENT_COUNT) * 80, 232, 58};
+	}
+	int app = index >= SIDEBAR_CONTENT_COUNT;
+	int local = app ? index - SIDEBAR_CONTENT_COUNT : index, row = local / 3, col = local % 3;
+	if (theme == VT_UI_THEME_RELAY && !app && row % 2)
+		col = 2 - col;
+	return (UiThemeRect){64 + col * 282, app ? 416 : base + (live ? 16 : 0) + row * (live ? 50 : 58), 264,
+                         app || live ? 44 : 48};
 }
+
 static UiThemeRect sidebar_slot_rect(const UiSectionsSidebar *sidebar,int slot) {
     UiThemeRect r=sidebar_content_rect(sidebar,slot);
     r.y-=(int)lroundf(sidebar->scroll);
     return r;
 }
 static float sidebar_scroll_max(const UiSectionsSidebar *sidebar) {
-    int count=UI_SECTION_COUNT+sidebar->player_available+sidebar->download_available;
-    float bottom=0;
-    for(int i=0;i<count;i++) {
+	if (!sidebar_vertical())
+		return 0;
+	int count = UI_SECTION_COUNT + sidebar->player_available + sidebar->download_available;
+	float bottom = 0;
+	for(int i=0;i<count;i++) {
         UiThemeRect r=sidebar_content_rect(sidebar,i);
         if(r.y+r.h>bottom)bottom=(float)(r.y+r.h);
     }
@@ -188,9 +202,13 @@ static float sidebar_scroll_clamp(const UiSectionsSidebar *sidebar,float value) 
     return value>maximum?maximum:value;
 }
 static void sidebar_scroll_to_cursor(UiSectionsSidebar *sidebar) {
-    UiThemeRect r=sidebar_content_rect(sidebar,sidebar->cursor);
-    float target=sidebar->scroll_target;
-    int live=sidebar->player_available+sidebar->download_available;
+	if (!sidebar_vertical()) {
+		sidebar->scroll = sidebar->scroll_target = sidebar->scroll_velocity = 0;
+		return;
+	}
+	UiThemeRect r = sidebar_content_rect(sidebar, sidebar->cursor);
+	float target = sidebar->scroll_target;
+	int live=sidebar->player_available+sidebar->download_available;
     int margin=sidebar->cursor==0||sidebar->cursor==live||sidebar->cursor==live+SIDEBAR_CONTENT_COUNT?36:18;
     if(r.y-target<sidebar_view_top()+margin)target=r.y-sidebar_view_top()-margin;
     if(r.y+r.h-target>sidebar_view_bottom()-18)target=r.y+r.h-sidebar_view_bottom()+18;
@@ -211,6 +229,27 @@ static void sidebar_focus_visible(UiSectionsSidebar *sidebar) {
         if(score<best){best=score;next=i;}
     }
     sidebar->cursor=next;
+}
+static int sidebar_neighbour(const UiSectionsSidebar *s, unsigned nav) {
+	UiThemeRect from = sidebar_content_rect(s, s->cursor);
+	float x = from.x + from.w * .5f, y = from.y + from.h * .5f, best = 1e9f;
+	int next = s->cursor, count = UI_SECTION_COUNT + s->player_available + s->download_available;
+	int vertical = !!(nav & (SCE_CTRL_UP | SCE_CTRL_DOWN));
+	int sign = (nav & (SCE_CTRL_UP | SCE_CTRL_LEFT)) ? -1 : 1;
+	for (int i = 0; i < count; i++)
+		if (i != s->cursor) {
+			UiThemeRect r = sidebar_content_rect(s, i);
+			float dx = r.x + r.w * .5f - x, dy = r.y + r.h * .5f - y;
+			float along = vertical ? dy : dx, across = vertical ? dx : dy;
+			if (along * sign <= 8)
+				continue;
+			float score = fabsf(along) + fabsf(across) * 2.4f;
+			if (score < best) {
+				best = score;
+				next = i;
+			}
+		}
+	return next;
 }
 static float sidebar_offset(const UiSectionsSidebar *sidebar) {
  float travel=1-sidebar->animation;
@@ -238,9 +277,25 @@ static void sidebar_group_headings(const UiSectionsSidebar *sidebar,float ox) {
         if(ui_theme_id()==VT_UI_THEME_GHOST_MESH)x=group==2?716:64;
         if(ui_theme_id()==VT_UI_THEME_SIGNAL)x=group==2?664:64;
         int y=r.y-14;
-        /* Ghost's first node is at the top of its orbit, not at the left edge. */
-        if(y-UI_FONT_SMALL<sidebar_view_top() || y+4>sidebar_view_bottom())continue;
-        const char *label=vt_i18n_str(labels[group]);
+        if (!legacy && sidebar_vertical() && live && group == 1) y = r.y - 8;
+		if (!sidebar_vertical()) {
+			if (group == 0)
+				continue;
+			y = group == 2 ? 408 : (live ? 228 : 178);
+			x = group == 2 ? 64 : 64;
+			if (ui_theme_id() == VT_UI_THEME_GHOST_MESH) {
+				x = group == 2 ? 704 : 64;
+				y = live ? 228 : (group == 2 ? 224 : 210);
+			}
+			if (ui_theme_id() == VT_UI_THEME_SIGNAL && group == 2) {
+				x = 664;
+				y = live ? 228 : 178;
+			}
+		}
+		/* Ghost's first node is at the top of its orbit, not at the left edge. */
+		if (y - UI_FONT_SMALL < sidebar_view_top() || y + 4 > sidebar_view_bottom())
+			continue;
+		const char *label=vt_i18n_str(labels[group]);
         ui_text_line(ox+x,y,legacy?350:group==2&&ui_theme_id()==VT_UI_THEME_GHOST_MESH?184:832-x+64,
                      label,legacy?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
     }
@@ -249,10 +304,17 @@ static void sidebar_scroll_chrome(const UiSectionsSidebar *sidebar,float ox) {
     int legacy=ui_theme_id()==VT_UI_THEME_LEGACY;
     float maximum=sidebar_scroll_max(sidebar);
     int left=legacy?28:64,width=legacy?272:704;
-    ui_text_line(ox+left,503,width,vt_i18n_str(VT_STR_SECTIONS_SCROLL_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
-    ui_text_line(ox+left,528,width,vt_i18n_str(sidebar->audio_layout_available?VT_STR_MUSIC_LAYOUT_HINT:VT_STR_SECTIONS_FOOTER_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
-    if(maximum<=0)return;
-    float top=sidebar_view_top()+6,height=sidebar_view_bottom()-sidebar_view_top()-12;
+	ui_text_line(
+	    ox + left, 503, width,
+	    vt_i18n_str(sidebar_vertical() ? VT_STR_SECTIONS_SCROLL_HINT : VT_STR_SECTIONS_SPATIAL_HINT),
+	    VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+	ui_text_line(ox + left, 528, width,
+	             vt_i18n_str(sidebar->audio_layout_available ? VT_STR_MUSIC_LAYOUT_HINT
+	                                                         : VT_STR_SECTIONS_FOOTER_HINT),
+	             VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+	if (maximum <= 0)
+		return;
+	float top=sidebar_view_top()+6,height=sidebar_view_bottom()-sidebar_view_top()-12;
     float thumb=height*height/(height+maximum);
     if(thumb<30)thumb=30;
     float x=ox+(legacy?412:908),y=top+(height-thumb)*(sidebar->scroll/maximum);
@@ -322,7 +384,8 @@ static void sidebar_themed_draw(const UiSectionsSidebar *sidebar,const char *con
  }else if(sidebar_clip_body(ox)){
   if(theme==VT_UI_THEME_GHOST_MESH) {
    int live=sidebar->player_available+sidebar->download_available;
-   ui_theme_scene_model(UI_SCENE_MENU,ox+382,(live?280:192)+232-sidebar->scroll,120,.55f,1);
+   (void)live;
+   ui_theme_scene_model(UI_SCENE_MENU, ox + 350, 334, 96, .55f, 1);
   }
   sidebar_group_headings(sidebar,ox);
   int count=UI_SECTION_COUNT+sidebar->player_available+sidebar->download_available;
@@ -337,15 +400,40 @@ static void sidebar_themed_draw(const UiSectionsSidebar *sidebar,const char *con
    ui_theme_scene_card(UI_SCENE_MENU,r,selected,i);
    if(theme!=VT_UI_THEME_APERTURE)ui_theme_fx_surface(r.x+3,r.y+2,r.w-6,r.h-4,background,selected);
    else vita2d_draw_rectangle(r.x+5,r.y+4,r.w-10,r.h-8,background);
-   ui_text_line(r.x+18,r.y+r.h/2+7,r.w-36,label,fg,UI_FONT_BODY);
+   int ghost = theme == VT_UI_THEME_GHOST_MESH &&
+			   i >= sidebar->player_available + sidebar->download_available &&
+			   i < sidebar->player_available + sidebar->download_available + SIDEBAR_CONTENT_COUNT;
+   ui_text_line(r.x + (ghost ? 6 : 18), r.y + r.h / 2 + 6, r.w - (ghost ? 12 : 36), label, fg,
+			    ghost ? UI_FONT_SMALL : UI_FONT_BODY);
    if(section==sidebar->active)vita2d_draw_rectangle(r.x+8,r.y+8,3,r.h-16,VT_THEME_COLD);
   }
-  if(sidebar->open){
-   float cursor=sidebar->focus_cursor;if(cursor<0)cursor=0;if(cursor>count-1)cursor=count-1;
-   int a=(int)cursor,b=a+1<count?a+1:a;float t=cursor-a;
-   UiThemeRect from=sidebar_slot_rect(sidebar,a),to=sidebar_slot_rect(sidebar,b);
-   UiFocusMotion focus={.x=ox+from.x+(to.x-from.x)*t,.y=from.y+(to.y-from.y)*t,
-    .width=from.w+(to.w-from.w)*t,.height=from.h+(to.h-from.h)*t,.initialized=1};ui_focus_outline_draw(&focus);
+  if (sidebar->open && theme == VT_UI_THEME_GHOST_MESH) {
+	  int selected = sidebar_section_at(sidebar, sidebar->cursor);
+	  const char *title = selected == UI_SECTION_PLAYER     ? vt_i18n_str(VT_STR_SECTIONS_PLAYER)
+			              : selected == UI_SECTION_DOWNLOAD ? vt_i18n_str(VT_STR_SECTIONS_DOWNLOAD)
+			                                                : items[selected];
+	  ui_text_line(ox + 252, 338, 196, title, VT_THEME_TEXT, UI_FONT_SMALL);
+  }
+  if (sidebar->open && !sidebar_vertical()) {
+	  UiFocusMotion focus = sidebar->fixed_focus;
+	  focus.x += ox;
+	  ui_focus_outline_draw(&focus);
+  }
+  if (sidebar->open && sidebar_vertical()) {
+	  float cursor = sidebar->focus_cursor;
+	  if (cursor < 0)
+		  cursor = 0;
+	  if (cursor > count - 1)
+		  cursor = count - 1;
+	  int a = (int)cursor, b = a + 1 < count ? a + 1 : a;
+	  float t = cursor - a;
+	  UiThemeRect from = sidebar_slot_rect(sidebar, a), to = sidebar_slot_rect(sidebar, b);
+	  UiFocusMotion focus = {.x = ox + from.x + (to.x - from.x) * t,
+			                 .y = from.y + (to.y - from.y) * t,
+			                 .width = from.w + (to.w - from.w) * t,
+			                 .height = from.h + (to.h - from.h) * t,
+			                 .initialized = 1};
+	  ui_focus_outline_draw(&focus);
   }
  }
  vita2d_set_clip_rectangle(0,54,960,544);
@@ -371,6 +459,7 @@ void ui_sections_sidebar_init(UiSectionsSidebar *sidebar, int active) {
 	sidebar->audio_layout_cursor=sidebar->audio_layout_selected=0;
 	sidebar->scroll=sidebar->scroll_target=sidebar->scroll_velocity=0;
 	sidebar->scroll_theme=ui_theme_id();
+	ui_focus_motion_reset(&sidebar->fixed_focus);
 	sidebar->touch_active=sidebar->touch_dragged=sidebar->touch_start_y=0;
 	sidebar->touch_start_scroll=0;
 	sidebar_scroll_to_cursor(sidebar);
@@ -447,23 +536,17 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 		if(*pressed&SCE_CTRL_CIRCLE)sidebar->open=0;
 		*pressed=0;return result;
 	}
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY&&!sidebar->audio_layout_available&&(navigated&(SCE_CTRL_LEFT|SCE_CTRL_RIGHT))){
-        int count=UI_SECTION_COUNT+sidebar->player_available+sidebar->download_available;
-        UiThemeRect current=sidebar_content_rect(sidebar,sidebar->cursor);
-        float best=1e9f;int next=sidebar->cursor,sign=(navigated&SCE_CTRL_LEFT)?-1:1;
-        for(int i=0;i<count;i++)if(i!=sidebar->cursor){
-            UiThemeRect rr=sidebar_content_rect(sidebar,i);
-            float dx=(rr.x+rr.w*.5f)-(current.x+current.w*.5f);
-            float dy=(rr.y+rr.h*.5f)-(current.y+current.h*.5f);
-            if(dx*sign>8){float score=fabsf(dx)+fabsf(dy)*2.5f;if(score<best){best=score;next=i;}}
-        }
-        sidebar->cursor=next;
-    }
-	if ((navigated & SCE_CTRL_UP) && sidebar->cursor > 0) sidebar->cursor--;
-	int slot_count = UI_SECTION_COUNT + sidebar->player_available +
-	                 sidebar->download_available;
-	if ((navigated & SCE_CTRL_DOWN) && sidebar->cursor + 1 < slot_count)
-		sidebar->cursor++;
+	int slot_count = UI_SECTION_COUNT + sidebar->player_available + sidebar->download_available;
+	if (!sidebar_vertical() && !sidebar->audio_layout_available) {
+		if (navigated)
+			sidebar->cursor = sidebar_neighbour(sidebar, navigated);
+	} else {
+		if ((navigated & SCE_CTRL_UP) && sidebar->cursor > 0)
+			sidebar->cursor--;
+		if ((navigated & SCE_CTRL_DOWN) && sidebar->cursor + 1 < slot_count)
+			sidebar->cursor++;
+	}
+
 	if(navigated || (*pressed&SCE_CTRL_CROSS)) {
 		sidebar->touch_active=sidebar->touch_dragged=0;
 		sidebar_scroll_to_cursor(sidebar);
@@ -483,28 +566,31 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
     int ox=(int)sidebar_offset(sidebar),legacy=ui_theme_id()==VT_UI_THEME_LEGACY;
     int left=ox+(legacy?0:48),right=ox+(legacy?SIDEBAR_WIDTH:912);
     int in_body=x>=left&&x<right&&y>=sidebar_view_top()&&y<sidebar_view_bottom();
-    if(!sidebar->audio_layout_page) {
-        if((flags&UI_TOUCH_EVENT_DOWN)&&in_body) {
-            sidebar->touch_active=1;sidebar->touch_dragged=0;
-            sidebar->touch_start_y=y;sidebar->touch_start_scroll=sidebar->scroll;
+	if (!sidebar->audio_layout_page && sidebar_vertical()) {
+		if ((flags & UI_TOUCH_EVENT_DOWN) && in_body) {
+			sidebar->touch_active = 1;
+			sidebar->touch_dragged = 0;
+			sidebar->touch_start_y=y;sidebar->touch_start_scroll=sidebar->scroll;
             sidebar->scroll_target=sidebar->scroll;sidebar->scroll_velocity=0;
-        }
-        if(sidebar->touch_active&&(flags&(UI_TOUCH_EVENT_MOVE|UI_TOUCH_EVENT_HOLD|UI_TOUCH_EVENT_UP))) {
-            int delta=sidebar->touch_start_y-y;
+		}
+		if (sidebar->touch_active &&
+		    (flags & (UI_TOUCH_EVENT_MOVE | UI_TOUCH_EVENT_HOLD | UI_TOUCH_EVENT_UP))) {
+			int delta=sidebar->touch_start_y-y;
             if(abs(delta)>=8)sidebar->touch_dragged=1;
             if(sidebar->touch_dragged) {
                 sidebar->scroll=sidebar->scroll_target=sidebar_scroll_clamp(sidebar,sidebar->touch_start_scroll+delta);
                 sidebar->scroll_velocity=0;
             }
-        }
-        if((flags&UI_TOUCH_EVENT_UP)&&sidebar->touch_active) {
+		}
+		if((flags&UI_TOUCH_EVENT_UP)&&sidebar->touch_active) {
             sidebar->touch_active=0;
             if(sidebar->touch_dragged){sidebar_focus_visible(sidebar);sidebar->touch_dragged=0;return UI_SECTION_NONE;}
         }
-    }
-    if(!(flags&UI_TOUCH_EVENT_TAP))return UI_SECTION_NONE;
-    if(sidebar->audio_layout_available) {
-        UiThemeRect tabs=legacy?(UiThemeRect){ox+20,54,384,40}:(UiThemeRect){ox+64,94,584,44};
+	}
+	if (!(flags & UI_TOUCH_EVENT_TAP))
+		return UI_SECTION_NONE;
+	if (sidebar->audio_layout_available) {
+		UiThemeRect tabs=legacy?(UiThemeRect){ox+20,54,384,40}:(UiThemeRect){ox+64,94,584,44};
         if(ui_touch_hit_rect(x,y,tabs.x,tabs.y,tabs.w,tabs.h)) {
             sidebar->audio_layout_page=x>=ox+(legacy?209:320);
             sidebar->focus_cursor=(float)(sidebar->audio_layout_page?sidebar->audio_layout_cursor:sidebar->cursor);
@@ -518,27 +604,31 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
                 }
             }
         }
-    }
-    if(!sidebar->audio_layout_page) {
-        for(int down=0;down<2;down++) {
-            int bx=(legacy?318:806)+down*(legacy?48:50);
-            if(ui_touch_hit_rect(x,y,ox+bx,494,36,34)) {
-                float target=sidebar_scroll_clamp(sidebar,sidebar->scroll_target+
+	}
+	if(!sidebar->audio_layout_page) {
+		for (int down = 0; sidebar_vertical() && down < 2; down++) {
+			int bx = (legacy ? 318 : 806) + down * (legacy ? 48 : 50);
+			if (ui_touch_hit_rect(x, y, ox + bx, 494, 36, 34)) {
+				float target=sidebar_scroll_clamp(sidebar,sidebar->scroll_target+
                     (down?1:-1)*(sidebar_view_bottom()-sidebar_view_top())*.72f);
                 if(fabsf(target-sidebar->scroll_target)>.5f) {
                     sidebar->scroll_target=target;sidebar_focus_visible(sidebar);
                 }
                 return UI_SECTION_NONE;
-            }
-        }
-        if(in_body)for(int i=0;i<UI_SECTION_COUNT+sidebar->player_available+sidebar->download_available;i++) {
-            UiThemeRect r=sidebar_slot_rect(sidebar,i);
-            if(sidebar_rect_visible(r)&&ui_touch_hit_rect(x,y,ox+r.x,r.y,r.w,r.h)) {
-                sidebar->cursor=i;return activate(sidebar);
-            }
-        }
-    }
-    if(legacy?x>=ox+SIDEBAR_WIDTH:!ui_touch_hit_rect(x,y,ox+36,70,888,464))sidebar->open=0;
+			}
+		}
+		if (in_body)
+			for (int i = 0;
+			     i < UI_SECTION_COUNT + sidebar->player_available + sidebar->download_available;
+			     i++) {
+				UiThemeRect r = sidebar_slot_rect(sidebar, i);
+				if (sidebar_rect_visible(r) && ui_touch_hit_rect(x, y, ox + r.x, r.y, r.w, r.h)) {
+					sidebar->cursor = i;
+					return activate(sidebar);
+				}
+			}
+	}
+	if(legacy?x>=ox+SIDEBAR_WIDTH:!ui_touch_hit_rect(x,y,ox+36,70,888,464))sidebar->open=0;
     return UI_SECTION_NONE;
 }
 
@@ -560,6 +650,7 @@ void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	}
 	if(sidebar->scroll_theme!=ui_theme_id()) {
 		sidebar->scroll_theme=ui_theme_id();sidebar->scroll=sidebar->scroll_target=0;
+		ui_focus_motion_reset(&sidebar->fixed_focus);
 		sidebar_scroll_to_cursor(sidebar);sidebar->scroll=sidebar->scroll_target;sidebar->scroll_velocity=0;
 		sidebar->touch_active=sidebar->touch_dragged=0;
 	}
@@ -574,6 +665,10 @@ void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	}
 	if(!sidebar->open)sidebar->touch_active=sidebar->touch_dragged=0;
 	if (!sidebar->open && sidebar->animation < 0.025f) sidebar->animation = 0.0f;
+	if (!sidebar_vertical() && !sidebar->audio_layout_page) {
+		UiThemeRect rect = sidebar_content_rect(sidebar, sidebar->cursor);
+		ui_focus_motion_tick(&sidebar->fixed_focus, rect.x, rect.y, rect.w, rect.h);
+	}
 	float target=(float)(sidebar->audio_layout_page?sidebar->audio_layout_cursor:sidebar->cursor);
 	if (vt_preferences_reduce_motion())
 		sidebar->focus_cursor = target;

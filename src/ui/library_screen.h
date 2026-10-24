@@ -6,6 +6,7 @@ enum {
     UI_LIBRARY_PLAY,
     UI_LIBRARY_LOCAL,
     UI_LIBRARY_TAB,
+    UI_LIBRARY_CONNECT,
     UI_LIBRARY_SECTION_BASE = 100
 };
 int ui_library_screen(VtLibraryItem *selected);

@@ -51,11 +51,36 @@ static void fixture(int kind){
  memset(input_script,0,sizeof(input_script));
 }
 static void exit_via_sidebar(unsigned after){
- CHECK(after+5<16);script_count=after+6;
- input_script[after+1]=SCE_CTRL_LTRIGGER;
- input_script[after+3]=SCE_CTRL_DOWN;
- input_script[after+5]=SCE_CTRL_CROSS;
+ /* Follow the actual theme geometry rather than assuming Down always means
+  * Network. Fixed wheels/grids now use spatial navigation. */
+ UiSectionsSidebar probe;ui_sections_sidebar_init(&probe,g_home?UI_SECTION_LOCAL_MEDIA:UI_SECTION_ONLINE_AUDIO);
+ int start=probe.cursor,target=-1,count=UI_SECTION_COUNT+probe.player_available+probe.download_available;
+ for(int i=0;i<count;i++)if(sidebar_section_at(&probe,i)==UI_SECTION_NETWORK)target=i;
+ CHECK(target>=0);
+ unsigned path[UI_SECTION_ACTION_COUNT];int length=0;
+ if(sidebar_vertical()) {
+  for(int at=start;at!=target;at+=target>at?1:-1)path[length++]=target>at?SCE_CTRL_DOWN:SCE_CTRL_UP;
+ } else {
+  int queue[UI_SECTION_ACTION_COUNT],parent[UI_SECTION_ACTION_COUNT],head=0,tail=0;
+  unsigned via[UI_SECTION_ACTION_COUNT];for(int i=0;i<count;i++)parent[i]=-1;
+  queue[tail++]=start;parent[start]=start;
+  unsigned dirs[]={SCE_CTRL_UP,SCE_CTRL_DOWN,SCE_CTRL_LEFT,SCE_CTRL_RIGHT};
+  while(head<tail&&parent[target]<0) {
+   int at=queue[head++];probe.cursor=at;
+   for(int d=0;d<4;d++) {
+    int next=sidebar_neighbour(&probe,dirs[d]);
+    if(parent[next]<0){parent[next]=at;via[next]=dirs[d];queue[tail++]=next;}
+   }
+  }
+  CHECK(parent[target]>=0);
+  for(int at=target;at!=start;at=parent[at])path[length++]=via[at];
+  for(int a=0,b=length-1;a<b;a++,b--){unsigned swap=path[a];path[a]=path[b];path[b]=swap;}
+ }
+ CHECK(after+5+2*length<64);input_script[after+1]=SCE_CTRL_LTRIGGER;
+ for(int i=0;i<length;i++)input_script[after+3+2*i]=path[i];
+ input_script[after+3+2*length]=SCE_CTRL_CROSS;script_count=after+4+2*length;
 }
+
 int main(int argc,char **argv){
  CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));loaded=1;
  FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));

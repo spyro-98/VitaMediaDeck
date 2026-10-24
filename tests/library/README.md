@@ -12,11 +12,22 @@ eight-record reads, 32-record yield budget, cancellation without any match, and
 corrupt headers. The search fixture asserts that every cache query runs on a
 worker, and checks publication of covers after provider completion.
 
-Run `bash tests/library/run-ui.sh` for 42 host-rendered layouts of the production
-Home, all themes, cached covers, mini-player space, progressive focus/return,
+Run `bash tests/library/run-ui.sh` for 56 host-rendered layouts of the production
+Home, integrated dashboard components/empty state, spatial reachability, direct
+saved-connection selection, carousel item changes, all themes, cached covers, mini-player space, progressive focus/return,
 late-cover refresh, partial/empty loading, and Reduce Motion checks. Synthetic titles/artwork are test fixtures, not user data or screenshots
 from PS Vita. Existing provider UI tests stub the library service independently.
 
 Real-transport provider request/encoding/cancellation fixtures are in the existing
 `tests/personal_media/run-host-tests.sh` suite. See
 [implementation and console checks](../../docs/unified-library-2026-10-24.md).
+
+The real worker fixture also distinguishes explicit favourites/starred IPTV from
+merely discovered media, replaces removed favourites and retains cached covers.
+The dashboard uses bounded metadata and does not trigger provider-wide refreshes
+until search or an actual saved connection is opened.
+
+The saved-connection contract suite extracts the production direct-entry function
+and checks rejected/accepted SSH/TLS trust, failed pin persistence, authentication
+failure, restored browser navigation and section propagation using host adapters.
+It does not authenticate to real accounts.

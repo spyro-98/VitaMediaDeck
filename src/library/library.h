@@ -49,6 +49,7 @@ uint64_t vt_library_resume_fallback(const VtLibraryItem *, uint64_t legacy);
 void vt_library_start_id(const char *history_id);
 uint64_t vt_library_resume(const VtLibraryItem *item);
 int vt_library_query(const char *query, int view, VtLibraryResult *out, int capacity);
+int vt_library_get(const char *id, VtLibraryResult *out);
 int vt_library_matches(const VtLibraryItem *item, const char *query);
 const char *vt_library_provider_name(int provider);
 /* Request only: checkpoint I/O belongs to the low priority worker. */

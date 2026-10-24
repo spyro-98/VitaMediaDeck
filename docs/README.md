@@ -1,5 +1,7 @@
 # VitaMediaDeck documentation — 1.4.1
 
+Current Home/L1/LTO update: [integrated dashboard and complete app LTO](home-dashboard-lto-2026-10-24.md).
+
 Current app **1.4.1**, Vita package **01.05**, standard bubble **VitaMediaDeck**.
 This index covers all maintained Markdown documents in the app repository.
 Decoder packages have independent 2.0.0 ABI versions and their own runtime,

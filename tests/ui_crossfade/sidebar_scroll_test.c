@@ -27,11 +27,64 @@ int main(int argc,char **argv) {
   frame=1;host_reduced_motion=reduced;ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
   int count=UI_SECTION_COUNT+live_slots+download_slots;
   UiSectionsSidebar menu;ui_sections_sidebar_init(&menu,UI_SECTION_LOCAL_MEDIA);button(&menu,SCE_CTRL_LTRIGGER);advance(&menu,60);
-  SCROLL_CHECK(sidebar_scroll_max(&menu)>0);
+  SCROLL_CHECK((sidebar_scroll_max(&menu) > 0) == sidebar_vertical());
   /* Spacious targets remain distinct in the entire canvas, not just the viewport. */
   for(int i=0;i<count;i++) {
    UiThemeRect a=sidebar_content_rect(&menu,i);SCROLL_CHECK(a.h>=42&&a.x>=18&&a.x+a.w<=942);
    for(int j=0;j<i;j++){UiThemeRect b=sidebar_content_rect(&menu,j);SCROLL_CHECK(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.h<=b.y||b.y+b.h<=a.y);}
+  }
+  if (!sidebar_vertical()) {
+      const unsigned dirs[] = {SCE_CTRL_UP, SCE_CTRL_DOWN, SCE_CTRL_LEFT, SCE_CTRL_RIGHT};
+      int reached[UI_SECTION_ACTION_COUNT] = {0};
+      reached[0] = 1;
+      for (int iteration = 0; iteration < count; iteration++)
+          for (int at = 0; at < count; at++)
+              if (reached[at]) {
+                  UiSectionsSidebar from = menu;
+                  from.cursor = at;
+                  for (int d = 0; d < 4; d++)
+                      reached[sidebar_neighbour(&from, dirs[d])] = 1;
+              }
+      for (int i = 0; i < count; i++) {
+          SCROLL_CHECK(reached[i]);
+          menu.cursor = i;
+          sidebar_scroll_to_cursor(&menu);
+          settled(&menu);
+          UiThemeRect r = sidebar_slot_rect(&menu, i);
+          SCROLL_CHECK(menu.scroll == 0 && menu.scroll_target == 0);
+          UiSectionsSidebar copy = menu;
+          copy.active = UI_SECTION_NONE;
+          copy.touch_active = 0;
+          copy.audio_layout_available = 0;
+          SCROLL_CHECK(ui_sections_sidebar_handle_touch(&copy, UI_TOUCH_EVENT_TAP, r.x + r.w / 2,
+                                                        r.y + r.h / 2) ==
+                       sidebar_section_at(&menu, i));
+          for (int d = 0; d < 4; d++) {
+              copy = menu;
+              int expected = sidebar_neighbour(&copy, dirs[d]);
+              button(&copy, dirs[d]);
+              SCROLL_CHECK(copy.cursor == expected && copy.scroll == 0);
+          }
+      }
+      ui_sections_sidebar_handle_touch(&menu, UI_TOUCH_EVENT_DOWN, 300, 260);
+      ui_sections_sidebar_handle_touch(&menu, UI_TOUCH_EVENT_MOVE, 300, 170);
+      ui_sections_sidebar_handle_touch(&menu, UI_TOUCH_EVENT_UP, 300, 170);
+      SCROLL_CHECK(!menu.touch_active && menu.scroll == 0 && menu.scroll_target == 0);
+      if (language && live_slots && download_slots && !reduced) {
+          menu.cursor = sidebar_active_slot(&menu);
+          settled(&menu);
+          menu.animation = 1;
+          draw_primitives = 0;
+          vita2d_clear_screen();
+          ui_sections_sidebar_draw(&menu);
+          if (draw_primitives > max_draws)
+              max_draws = draw_primitives;
+          SCROLL_CHECK(draw_primitives < 1200 && !clipped);
+          char name[80];
+          snprintf(name, sizeof(name), "l1-fixed-%d", theme);
+          png(name);
+      }
+      continue;
   }
   /* Every item is reachable with immediate selection and a settled visible border. */
   menu.cursor=0;sidebar_scroll_to_cursor(&menu);settled(&menu);
@@ -102,6 +155,8 @@ int main(int argc,char **argv) {
  /* Held d-pad repeats still reach the end and keep the camera following. */
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++) {
   ui_theme_apply(theme);host_reduced_motion=0;live_slots=download_slots=1;
+  if (!sidebar_vertical())
+      continue;
   UiSectionsSidebar held;ui_sections_sidebar_init(&held,UI_SECTION_LOCAL_MEDIA);held.open=1;held.cursor=0;
   for(int n=0;n<240;n++) {
    unsigned pressed=0;ui_sections_sidebar_handle_buttons(&held,&pressed,SCE_CTRL_DOWN,128);
@@ -115,6 +170,9 @@ int main(int argc,char **argv) {
  UiSectionsSidebar menu;ui_sections_sidebar_init(&menu,UI_SECTION_INFO);menu.open=1;frame=0;advance(&menu,1);
  ui_theme_apply(VT_UI_THEME_GHOST_MESH);advance(&menu,1);SCROLL_CHECK(menu.scroll_theme==VT_UI_THEME_GHOST_MESH);settled(&menu);
  FT_Done_Face(mono);FT_Done_Face(inter);FT_Done_FreeType(ft);
- printf("Scrollable L1: %u checks; seven themes, IT/EN, live tasks, full navigation, rapid reversal, clipped touch, drag release, arrows, reduced motion and audio page isolation; max %u primitives/frame (host).\n",scroll_checks,max_draws);
+ printf("L1 lists/fixed decks: %u checks; seven themes, IT/EN, live tasks, spatial navigation and "
+        "zero-scroll grids/wheel, rapid reversal, clipped touch, drag release, arrows, reduced "
+        "motion and audio page isolation; max %u primitives/frame (host).\n",
+        scroll_checks, max_draws);
  return 0;
 }

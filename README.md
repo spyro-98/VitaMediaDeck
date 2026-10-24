@@ -19,19 +19,21 @@ VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
 or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
-**Home → Library** now joins Continue watching/listening, playback History and
-Sources across local files, Jellyfin, Navidrome, Immich, IPTV, radio and podcasts.
-Press **R1** to change that view, **Triangle** for one global search, and **Square**
-to filter search results by provider. Cached metadata appears first; independent
-workers refresh available providers. Local search matches indexed titles, filenames,
-artists and albums without reopening media files. Result preparation stays in the
-background; loading and cached result lists follow the selected theme and respect
-Reduce Motion. Resume checkpoints are saved asynchronously,
-and the existing mini-player session is restored when selecting its current item.
-See [unified library, search and acceptance checks](docs/unified-library-2026-10-24.md)
-for the 24-result/provider limit, local-only state, provider coverage and remaining
-real-console/server validation. All these changes are included in the standard 1.4.1 release VPK, with the
-VitaMediaDeck bubble and `session_standard.txt` log.
+**Home** is now one integrated dashboard: unfinished media takes priority,
+saved connections open directly, and favourites, recent activity and access to
+sources/history stay visible together. Components use different sizes and
+presentations in each theme. D-pad/left stick moves between them; **R1/Square**
+cycles items within a component, and **Triangle** opens global search. Full
+collections are deliberate drill-downs rather than interchangeable Home lists.
+
+Search matches indexed titles, filenames, artists and albums, with worker-prepared
+results, cache and progressive loading. L1 scrolls only in the vertical Legacy,
+Deck 90 and Aperture menus; the other wheels/grids remain fixed and use spatial
+navigation. LTO now covers all app-owned decoder/HTTPS/IPTV targets as well as the
+application and the existing FFmpeg C objects, with compiler-matched archive tools.
+See the [dashboard/LTO report](docs/home-dashboard-lto-2026-10-24.md) for checks and
+remaining console acceptance. Everything is in the standard **1.4.1** release VPK,
+bubble **VitaMediaDeck**, log `session_standard.txt`.
 
 Jellyfin is a dedicated **L1 → Jellyfin** provider immediately before Navidrome
 in every theme. It reuses your saved Jellyfin servers, authentication and video

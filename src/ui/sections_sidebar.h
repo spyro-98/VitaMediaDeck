@@ -2,6 +2,7 @@
 #define VITAMEDIADECK_UI_SECTIONS_SIDEBAR_H
 
 #include <stdint.h>
+#include "ui/focus_glow.h"
 
 enum {
 	UI_SECTION_LOCAL_MEDIA = 0,
@@ -32,6 +33,7 @@ typedef struct {
 	int download_available;
 	float animation;
 	float focus_cursor;
+	UiFocusMotion fixed_focus;
 	float scroll, scroll_target, scroll_velocity;
 	int scroll_theme;
 	int touch_active, touch_dragged, touch_start_y;

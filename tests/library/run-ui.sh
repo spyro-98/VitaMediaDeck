@@ -10,7 +10,7 @@ clang -O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fda
 clang -O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections \
  -Isrc -I../vita-https/include -Itests/iptv/include -Itests/online_navigation/include -Itests/online_audio/include \
  "-I$(xcrun --show-sdk-path)/usr/include/libxml2" "${vmd_cflags[@]}" \
- tests/library/ui_test.c src/library/catalog.c "$vmd_output/library.o" src/network/iptv_manifest.c src/network/iptv_catalog.c \
+ tests/library/ui_test.c src/ui/home_dashboard.c src/library/catalog.c "$vmd_output/library.o" src/network/iptv_manifest.c src/network/iptv_catalog.c \
  -Itests/podcast_resume/include -Itests/podcast_metadata/include "${vmd_libs[@]}" -lxml2 -lpthread -Wl,-dead_strip -o "$vmd_output/ui-test"
 "$vmd_output/ui-test" assets/fonts/Inter-Medium.ttf "$vmd_output"
 printf 'Unified Home host layouts: %s\n' "$vmd_output"

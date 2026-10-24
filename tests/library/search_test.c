@@ -27,7 +27,7 @@ static int observed_query(const char *q, const VtLibraryItem *parent, VtLibraryR
 static pthread_t pool[3];
 static SceKernelThreadEntry entries[3];
 static int created;
-static int remember = 1;
+static int remember = 1, favourites_fixture;
 int vita_https_is_connected(void) {
     return 1;
 }
@@ -131,13 +131,30 @@ int ui_local_media_search(const char *q, UiLocalMediaVisitor visit, void *ctx,
     return 0;
 }
 int vt_online_load_saved(VtOnlineItem *v, int cap) {
-    (void)v;
-    (void)cap;
-    return 0;
+    if (!favourites_fixture)
+        return 0;
+    CHECK(cap >= 3);
+    memset(v, 0, 3 * sizeof(*v));
+    for (int i = 0; i < 3; i++) {
+        v[i].kind = i == 0 ? VT_ONLINE_RADIO : i == 1 ? VT_ONLINE_FEED : VT_ONLINE_EPISODE;
+        snprintf(v[i].title, sizeof(v[i].title), "Saved fixture %d", i);
+        snprintf(v[i].url, sizeof(v[i].url), "https://saved.fixture/%d", i);
+        strcpy(v[i].artwork_url, "https://saved.fixture/cover.jpg");
+    }
+    return 3;
 }
 int vt_iptv_saved_load(VtIptvCatalog *v, int stars) {
     (void)stars;
     memset(v, 0, sizeof(*v));
+    if (favourites_fixture) {
+        v->count = 2;
+        for (int i = 0; i < 2; i++) {
+            v->items[i].starred = i == 0;
+            v->items[i].mode = VT_IPTV_HLS;
+            snprintf(v->items[i].url, sizeof(v->items[i].url), "https://tv.fixture/%d.m3u8", i);
+            snprintf(v->items[i].title, sizeof(v->items[i].title), "TV fixture %d", i);
+        }
+    }
     return 0;
 }
 int vt_online_fetch_query(void *ctx) {
@@ -309,6 +326,41 @@ int main(void) {
     vt_library_search_begin("isolated", NULL);
     n = wait_results(out, &state, 1);
     CHECK(state.state[VT_LIBRARY_JELLYFIN] == VT_SEARCH_LOGIN);
+    /* The Home favourites snapshot is separate from discovered/cache media:
+     * only explicit online favourites and starred TV, and removals replace it. */
+    favourites_fixture = 1;
+    source_count = 0;
+    vt_library_search_begin("", NULL);
+    wait_results(out, &state, 1);
+    VtLibraryItem *home = calloc(VT_LIBRARY_HOME_FAVOURITES, sizeof(*home));
+    CHECK(home);
+    int favourites = vt_library_search_home_favourites(home, VT_LIBRARY_HOME_FAVOURITES, &state);
+    CHECK(favourites == 4);
+    int tv_favourites = 0;
+    for (int i = 0; i < favourites; i++) {
+        CHECK(!strstr(home[i].locator, "tv.fixture/1"));
+        if (home[i].provider == VT_LIBRARY_IPTV)
+            tv_favourites++;
+    }
+    CHECK(tv_favourites == 1);
+    vt_library_search_cover(&home[0]);
+    int favourite_cover = 0;
+    for (int tick = 0; tick < 2000 && !favourite_cover; tick++) {
+        vt_library_search_home_favourites(home, VT_LIBRARY_HOME_FAVOURITES, &state);
+        favourite_cover = !strcmp(home[0].artwork, "fixture-cover-cache");
+        if (!favourite_cover)
+            usleep(1000);
+    }
+    CHECK(favourite_cover);
+    vt_library_search_begin("", NULL);
+    wait_results(out, &state, 1);
+    CHECK(vt_library_search_home_favourites(home, VT_LIBRARY_HOME_FAVOURITES, &state) == 4);
+    CHECK(!strcmp(home[0].artwork, "fixture-cover-cache"));
+    favourites_fixture = 0;
+    vt_library_search_begin("", NULL);
+    wait_results(out, &state, 1);
+    CHECK(!vt_library_search_home_favourites(home, VT_LIBRARY_HOME_FAVOURITES, &state));
+    free(home);
     vt_library_search_cancel();
     vt_library_search_shutdown();
     free(out);
