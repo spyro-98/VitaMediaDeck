@@ -245,16 +245,13 @@ static int api_cancel(const VtNetworkSource *s, const VtNetworkCredential *c, co
     free(b.data);
     return ret;
 }
-static int api(const VtNetworkSource *s, const VtNetworkCredential *c, const char *endpoint,
-               const char *query, json_t *body, json_t **out) {
-    return api_cancel(s, c, endpoint, query, body, out, NULL);
-}
-int vt_personal_authenticate(const VtNetworkSource *s, VtNetworkCredential *c, char *detail,
-                             size_t n) {
+int vt_personal_authenticate_cancel(const VtNetworkSource *s, VtNetworkCredential *c, char *detail,
+                                    size_t n, volatile int *cancel) {
     if (!s || !c)
         return VT_NETWORK_ERROR;
     json_t *j = NULL;
-    int ret = api(s, c, s->protocol == VT_NETWORK_NAVIDROME ? "ping" : "users/me", NULL, NULL, &j);
+    int ret = api_cancel(s, c, s->protocol == VT_NETWORK_NAVIDROME ? "ping" : "users/me", NULL,
+                         NULL, &j, cancel);
     if (ret == 0 &&
         (!json_is_object(j) || (s->protocol == VT_NETWORK_IMMICH && !valid_id(str(j, "id")))))
         ret = -1;
@@ -267,6 +264,11 @@ int vt_personal_authenticate(const VtNetworkSource *s, VtNetworkCredential *c, c
                                                : "");
     return ret;
 }
+int vt_personal_authenticate(const VtNetworkSource *s, VtNetworkCredential *c, char *detail,
+                             size_t n) {
+    return vt_personal_authenticate_cancel(s, c, detail, n, NULL);
+}
+
 static int entry(VtNetworkEntry *e, int n, int cap, const char *name, const char *path, int kind) {
     if (n >= cap || strlen(path) >= sizeof(e[n].path))
         return n;
@@ -321,6 +323,8 @@ static int object_entries(json_t *a, VtNetworkEntry *e, int cap, int kind, const
             e[n - 1].runtime_ms =
                 duration > 0 && duration < INT64_MAX / 1000 ? (uint64_t)duration * 1000ULL : 0;
             e[n - 1].size = bytes > 0 ? (uint64_t)bytes : 0;
+            if (kind == 1)
+                copy(e[n - 1].artist, sizeof(e[n - 1].artist), str(v, "artist"));
             if (kind == 3) {
                 copy(e[n - 1].artist, sizeof(e[n - 1].artist), str(v, "artist"));
                 copy(e[n - 1].album, sizeof(e[n - 1].album), str(v, "album"));
@@ -346,8 +350,9 @@ static int number(const char *s, int *n) {
     *n = (int)v;
     return 0;
 }
-int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, const char *path,
-                     VtNetworkEntry *e, int cap, char *detail, size_t ds) {
+int vt_personal_list_cancel(const VtNetworkSource *s, const VtNetworkCredential *c,
+                            const char *path, VtNetworkEntry *e, int cap, char *detail, size_t ds,
+                            volatile int *cancel) {
     if (!s || !c || !e || cap < 4)
         return -1;
     if (!path)
@@ -382,6 +387,51 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
     char ep[256] = "", query[512] = "", next[768] = "";
     int kind = 1, offset = 0, more = 0, ret = -1;
     const char *prefix = "";
+    if (!strcmp(type, "search")) {
+        if (!*arg || strlen(arg) > 128)
+            return -1;
+        if (nav) {
+            char encoded[385];
+            if (encode(arg, encoded, sizeof(encoded)) < 0)
+                return -1;
+            snprintf(query, sizeof(query), "query=%s&artistCount=8&albumCount=8&songCount=24",
+                     encoded);
+            ret = api_cancel(s, c, "search3", query, NULL, &j, cancel);
+            if (ret == 0) {
+                json_t *r = json_object_get(j, "searchResult3");
+                int n = 0;
+                const char *keys[] = {"artist", "album", "song"},
+                           *prefixes[] = {"artist:", "album:", "song:"};
+                for (int k = 0; k < 3 && n < cap; k++) {
+                    json_t *a = json_object_get(r, keys[k]);
+                    if (!a)
+                        continue;
+                    int added =
+                        object_entries(a, e + n, cap - n, k == 2 ? 3 : 1, prefixes[k], 0, 0);
+                    if (added < 0) {
+                        ret = -1;
+                        break;
+                    }
+                    n += added;
+                }
+                if (ret == 0)
+                    ret = n;
+            }
+        } else {
+            payload = json_pack("{s:s,s:s,s:i,s:i}", "type", "IMAGE", "originalFileName", arg,
+                                "page", 1, "size", 100);
+            if (!payload)
+                return -1;
+            ret = api_cancel(s, c, "search/metadata", NULL, payload, &j, cancel);
+            json_decref(payload);
+            if (ret == 0)
+                ret = object_entries(json_object_get(json_object_get(j, "assets"), "items"), e, cap,
+                                     4, "photo:", 0, 0);
+        }
+        if (j)
+            json_decref(j);
+        return ret;
+    }
     if (nav) {
         if (!strcmp(type, "albums")) {
             if (number(arg, &offset) < 0)
@@ -389,7 +439,7 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
             copy(ep, sizeof(ep), "getAlbumList2");
             snprintf(query, sizeof(query), "type=alphabeticalByName&size=%d&offset=%d", page_size,
                      offset);
-            ret = api(s, c, ep, query, NULL, &j);
+            ret = api_cancel(s, c, ep, query, NULL, &j, cancel);
             items = json_object_get(json_object_get(j, "albumList2"), "album");
             prefix = "album:";
             more = json_array_size(items) == (size_t)page_size;
@@ -400,7 +450,7 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
         } else if (!strcmp(type, "playlists")) {
             if (number(arg, &offset) < 0)
                 return -1;
-            ret = api(s, c, "getPlaylists", NULL, NULL, &j);
+            ret = api_cancel(s, c, "getPlaylists", NULL, NULL, &j, cancel);
             items = json_object_get(json_object_get(j, "playlists"), "playlist");
             prefix = "playlist:";
             more = json_array_size(items) > (size_t)(offset + page_size);
@@ -416,11 +466,11 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
                 return -1;
             snprintf(query, sizeof(query), "id=%s", arg);
             int artist = !strcmp(type, "artist"), playlist = !strcmp(type, "playlist");
-            ret = api(s, c,
-                      artist     ? "getArtist"
-                      : playlist ? "getPlaylist"
-                                 : "getAlbum",
-                      query, NULL, &j);
+            ret = api_cancel(s, c,
+                             artist     ? "getArtist"
+                             : playlist ? "getPlaylist"
+                                        : "getAlbum",
+                             query, NULL, &j, cancel);
             items = json_object_get(json_object_get(j, artist     ? "artist"
                                                        : playlist ? "playlist"
                                                                   : "album"),
@@ -446,7 +496,7 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
                 json_object_set_new(payload, "cursor", json_string(cursor));
             if (!strcmp(type, "favorites"))
                 json_object_set_new(payload, "isFavorite", json_true());
-            ret = api(s, c, "search/metadata", NULL, payload, &j);
+            ret = api_cancel(s, c, "search/metadata", NULL, payload, &j, cancel);
             json_decref(payload);
             json_t *assets = json_object_get(j, "assets");
             items = json_object_get(assets, "items");
@@ -464,7 +514,7 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
         } else if (!strcmp(type, "collections")) {
             if (number(arg, &offset) < 0)
                 return -1;
-            ret = api(s, c, "albums", NULL, NULL, &j);
+            ret = api_cancel(s, c, "albums", NULL, NULL, &j, cancel);
             items = j;
             prefix = "collection:";
             more = json_array_size(items) > (size_t)(offset + page_size);
@@ -479,7 +529,7 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
             if (!valid_id(arg))
                 return -1;
             snprintf(ep, sizeof(ep), "albums/%s", arg);
-            ret = api(s, c, ep, NULL, NULL, &j);
+            ret = api_cancel(s, c, ep, NULL, NULL, &j, cancel);
             items = json_object_get(j, "assets");
             kind = 4;
             prefix = "photo:";
@@ -495,7 +545,7 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
         snprintf(query, sizeof(query),
                  "query=&artistCount=%d&artistOffset=%d&albumCount=0&songCount=0", page_size,
                  offset);
-        ret = api(s, c, "search3", query, NULL, &j);
+        ret = api_cancel(s, c, "search3", query, NULL, &j, cancel);
         items = json_object_get(json_object_get(j, "searchResult3"), "artist");
         prefix = "artist:";
         more = json_array_size(items) == (size_t)page_size;
@@ -524,6 +574,11 @@ int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, con
                                                  "non valida o connessione fallita");
     return ret;
 }
+int vt_personal_list(const VtNetworkSource *s, const VtNetworkCredential *c, const char *path,
+                     VtNetworkEntry *e, int cap, char *detail, size_t ds) {
+    return vt_personal_list_cancel(s, c, path, e, cap, detail, ds, NULL);
+}
+
 int vt_personal_stream_url(const VtNetworkSource *s, const VtNetworkCredential *c, const char *path,
                            char *out, size_t n) {
     if (!path || strncmp(path, "song:", 5) || !valid_id(path + 5))

@@ -11,4 +11,8 @@ int vt_personal_preview(const VtNetworkSource *, const VtNetworkCredential *, co
 int vt_personal_stream_url(const VtNetworkSource *, const VtNetworkCredential *, const char *,
                            char *, size_t);
 int vt_personal_base_url(const VtNetworkSource *, char *, size_t);
+int vt_personal_authenticate_cancel(const VtNetworkSource *, VtNetworkCredential *, char *, size_t,
+                                    volatile int *);
+int vt_personal_list_cancel(const VtNetworkSource *, const VtNetworkCredential *, const char *,
+                            VtNetworkEntry *, int, char *, size_t, volatile int *);
 #endif

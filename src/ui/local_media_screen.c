@@ -1,3 +1,4 @@
+#include "library/catalog.h"
 #include "ui/theme_scene.h"
 #include "ui/local_media_screen.h"
 #include "ui/home_services.h"
@@ -1628,4 +1629,53 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		            storage_filter, sort_mode, flattened,
 		            &focus_motion, &sidebar);
 	}
+}
+
+int ui_local_media_library_tick(void) {
+	if (!g_index_ready) {
+		LocalMediaIndexHeader cached;
+		if (!local_index_load(&cached)) {
+			g_index = cached;
+			g_index_ready = 1;
+		}
+	}
+	if (g_catalog_dirty || !g_scan_started_us)
+		local_scan_start(g_catalog_dirty);
+	return local_scan_finish() > 0;
+}
+int ui_local_media_search(const char *query, UiLocalMediaVisitor visitor, void *ctx) {
+	LocalMediaIndexHeader header = {0};
+	int fd = sceIoOpen(LOCAL_INDEX_PATH, SCE_O_RDONLY, 0);
+	if (fd < 0)
+		return -1;
+	int read = sceIoRead(fd, &header, sizeof(header));
+	SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
+	uint64_t grouped = (uint64_t)header.video_count + header.audio_count + header.image_count;
+	uint64_t expected = sizeof(header) + (uint64_t)header.total_count * sizeof(VtLocalMediaItem);
+	VtLocalMediaItem item;
+	int result = 0;
+	if (read != sizeof(header) || memcmp(header.magic, "VTLOCAL6", 8) || header.version != 8 ||
+	    header.record_size != sizeof(item) || header.total_count > LOCAL_MAX_ITEMS ||
+	    grouped != header.total_count || header.podcast_count > header.audio_count || size < 0 ||
+	    (uint64_t)size != expected || sceIoLseek(fd, sizeof(header), SCE_SEEK_SET) < 0) {
+		sceIoClose(fd);
+		return -1;
+	}
+	for (unsigned i = 0; i < header.total_count; i++) {
+		if (sceIoRead(fd, &item, sizeof(item)) != sizeof(item)) {
+			result = -1;
+			break;
+		}
+		if (!memchr(item.path, 0, sizeof(item.path)) || !memchr(item.name, 0, sizeof(item.name)) ||
+		    !memchr(item.artist, 0, sizeof(item.artist)) ||
+		    !memchr(item.album, 0, sizeof(item.album)) ||
+		    !memchr(item.artwork_path, 0, sizeof(item.artwork_path)))
+			continue;
+		VtLibraryItem v;
+		vt_library_local(&item, &v);
+		if (vt_library_matches(&v, query) && !visitor(&item, ctx))
+			break;
+	}
+	sceIoClose(fd);
+	return result;
 }

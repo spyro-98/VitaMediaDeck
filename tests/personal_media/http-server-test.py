@@ -30,6 +30,10 @@ class API(BaseHTTPRequestHandler):
    except (BrokenPipeError,ConnectionResetError):pass
    return
   u=urllib.parse.urlsplit(self.path)
+  if u.path=='/Items':
+   q=urllib.parse.parse_qs(u.query);assert q['searchTerm']==['Night & è'] and q['recursive']==['true'];assert 'mock-session' in self.headers['Authorization'];assert 'mock-session' not in self.path
+   assert q['userId']==['user1'] and q['limit']==['256'] and 'parentId' not in q
+   self.send({'Items':[{'Id':'video-1','Name':'Night & è','MediaType':'Video','RunTimeTicks':900000000},{'Id':'series-1','Name':'Series','Type':'Series','IsFolder':True}]});return
   if '/rest/' in u.path:
    q=urllib.parse.parse_qs(u.query);assert q['u']==['user'];assert q['t']==[hashlib.md5(('password'+q['s'][0]).encode()).hexdigest()];assert 'x-api-key' not in self.headers
    response={'status':'ok'}

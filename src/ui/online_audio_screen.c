@@ -1,3 +1,4 @@
+#include "library/catalog.h"
 #include "ui/theme_scene.h"
 #include "ui/online_audio_screen.h"
 #include "ui/online_catalog_layout.h"
@@ -169,18 +170,36 @@ static void cover_tick(int rows) {
 			int recovered=!g_query.items[i].artwork_url[0]&&g_cover_item.artwork_url[0];
 			if(!g_query.items[i].artwork_url[0])snprintf(g_query.items[i].artwork_url,sizeof(g_query.items[i].artwork_url),"%s",g_cover_item.artwork_url);
 			snprintf(g_query.items[i].artwork_path,sizeof(g_query.items[i].artwork_path),"%s",g_cover_item.artwork_path[0]?g_cover_item.artwork_path:"-");
-			if(recovered && saved_list() && favorite_index(&g_query.items[i])>=0)vt_online_save(&g_query.items[i]);
-		}
+			VtLibraryItem library_item;
+			vt_library_online(&g_query.items[i],
+				              g_query.kind == VT_ONLINE_EPISODE ? g_query.query : NULL,
+				              &library_item);
+			vt_library_cache(&library_item);
+			if (recovered && saved_list() && favorite_index(&g_query.items[i]) >= 0)
+				vt_online_save(&g_query.items[i]);
+			}
 	}
-	if(g_cover_thread>=0)return;
-	for(int r=-1;r<rows;r++) {
-		int i=r<0?g_selected:g_top+r;
-		if(i<0||i>=g_query.count||g_query.items[i].artwork_path[0])continue;
-		if(!g_query.items[i].artwork_url[0] && !(g_query.items[i].kind==VT_ONLINE_RADIO&&g_query.items[i].id[0]) && g_query.items[i].kind!=VT_ONLINE_FEED)continue;
-		g_cover_item=g_query.items[i];g_cover_cancel=g_cover_done=0;g_cover_generation=g_context_generation;
-		g_cover_thread=sceKernelCreateThread("VmdCover",cover_worker,0x10000100,0x40000,0,0,NULL);
-		if(g_cover_thread>=0&&sceKernelStartThread(g_cover_thread,0,NULL)<0){sceKernelDeleteThread(g_cover_thread);g_cover_thread=-1;}
-		if(g_cover_thread<0)snprintf(g_query.items[i].artwork_path,sizeof(g_query.items[i].artwork_path),"-");
+	if (g_cover_thread >= 0)
+		return;
+	for (int r = -1; r < rows; r++) {
+		int i = r < 0 ? g_selected : g_top + r;
+		if (i < 0 || i >= g_query.count || g_query.items[i].artwork_path[0])
+			continue;
+		if (!g_query.items[i].artwork_url[0] &&
+		    !(g_query.items[i].kind == VT_ONLINE_RADIO && g_query.items[i].id[0]) &&
+		    g_query.items[i].kind != VT_ONLINE_FEED)
+			continue;
+		g_cover_item = g_query.items[i];
+		g_cover_cancel = g_cover_done = 0;
+		g_cover_generation = g_context_generation;
+		g_cover_thread =
+		    sceKernelCreateThread("VmdCover", cover_worker, 0x10000100, 0x40000, 0, 0, NULL);
+		if (g_cover_thread >= 0 && sceKernelStartThread(g_cover_thread, 0, NULL) < 0) {
+			sceKernelDeleteThread(g_cover_thread);
+			g_cover_thread = -1;
+		}
+		if (g_cover_thread < 0)
+			snprintf(g_query.items[i].artwork_path, sizeof(g_query.items[i].artwork_path), "-");
 		break;
 	}
 }
@@ -193,6 +212,15 @@ static void episode_labels(const VtOnlineItem *item, char date[16], char duratio
 	else snprintf(duration,24,"%u:%02u",(unsigned)(seconds/60),(unsigned)(seconds%60));
 }
 static int show_loading(void *ctx) {return vt_online_resolve_show(ctx,&g_action_cancel);}
+static void library_query_cache(const VtOnlineQuery *q) {
+	for (int i = 0; i < q->count; i++)
+		if (q->items[i].kind == VT_ONLINE_RADIO || q->items[i].kind == VT_ONLINE_FEED ||
+		    q->items[i].kind == VT_ONLINE_EPISODE) {
+			VtLibraryItem v;
+			vt_library_online(&q->items[i], q->kind == VT_ONLINE_EPISODE ? q->query : NULL, &v);
+			vt_library_cache(&v);
+		}
+}
 static int lazy_worker(SceSize args, void *ctx) {
 	(void)args;(void)ctx;
     if(g_lazy_direction==2) {
@@ -204,8 +232,11 @@ static int lazy_worker(SceSize args, void *ctx) {
     } else {
         g_lazy_result=vt_online_fetch_query(&g_lazy);
         if(g_lazy.kind==VT_ONLINE_EPISODE&&!g_lazy.offset&&!g_lazy.count)g_lazy_result=-1;
-        if(g_lazy_result>=0&&!g_lazy.cancel)vt_online_query_cache_write(&g_lazy);
-    }
+		if (g_lazy_result >= 0 && !g_lazy.cancel) {
+			vt_online_query_cache_write(&g_lazy);
+			library_query_cache(&g_lazy);
+		}
+	}
 	__sync_synchronize();g_lazy_done=1;return sceKernelExitThread(0);
 }
 static void lazy_stop(void) {
@@ -397,8 +428,11 @@ static void reset_input(SceCtrlData *previous, UiNavRepeat *repeat) {
 static int fetch_and_cache(void *ctx) {
     VtOnlineQuery *query=ctx;
     int result=vt_online_fetch_query(query);
-    if(result>=0&&!query->cancel)vt_online_query_cache_write(query);
-    return result;
+	if (result >= 0 && !query->cancel) {
+		vt_online_query_cache_write(query);
+		library_query_cache(query);
+	}
+	return result;
 }
 static int fetch_page(int kind,const char *text,unsigned offset,int remember_parent) {
     VtOnlineQuery *next=calloc(1,sizeof(*next));if(!next)return -1;
@@ -775,27 +809,13 @@ int ui_online_audio_screen(void) {
                     lazy_stop();cover_stop();
                     /* Play immediately with the already cached cover. */
                     if(!strcmp(item.artwork_path,"-"))item.artwork_path[0]=0;
-					vt_video_thumbnail_prepare_playback();
-					int prepared = item.kind == VT_ONLINE_RADIO
-					    ? vt_background_playback_prepare_radio(item.url, item.title)
-					    : vt_background_playback_prepare_podcast(item.url, item.title);
-					if(prepared==0)vt_background_playback_set_audio_details(item.author[0]?item.author:item.detail,item.artwork_path);
-					char episode_identity[1025];
-					snprintf(episode_identity,sizeof(episode_identity),"%s#%s",g_query.query,item.id[0]?item.id:item.url);
-					uint64_t resume = prepared==0 && item.kind==VT_ONLINE_EPISODE
-					    ? vt_background_playback_set_podcast_history(episode_identity,item.duration_ms) : 0;
-					if (prepared == 0 &&
-					    vt_background_playback_activate(resume) == 0) {
-						vt_background_playback_set_fullscreen_resume(radio_fullscreen, NULL);
-						int result = radio_fullscreen(0, NULL);
-						if (result >= UI_MUSIC_PLAYER_SECTION_BASE)
-							return online_leave(result - UI_MUSIC_PLAYER_SECTION_BASE);
-					} else {
-						vt_background_playback_stop();
-						ui_message_show(vt_i18n_str(VT_STR_ONLINE_FAILED),
-						    vt_i18n_str(VT_STR_ONLINE_RETRY), 2800);
+					VtLibraryItem library_item;
+					vt_library_online(&item, g_query.query, &library_item);
+					int result = ui_online_audio_open_library(&library_item);
+					if (result >= UI_MUSIC_PLAYER_SECTION_BASE)
+						return online_leave(result - UI_MUSIC_PLAYER_SECTION_BASE);
+					if (result < 0)
 						playback_failed();
-					}
 				} else if (!vt_download_background_active()) {
 					char folder[768];
 					if (ui_folder_picker(NULL, folder, sizeof(folder))) {
@@ -803,17 +823,22 @@ int ui_online_audio_screen(void) {
 						vt_download_job_init_url(&job, item.url);
 						vt_download_job_set_destination(&job, folder);
 						job.podcast = item;
-						snprintf(job.podcast_show,sizeof(job.podcast_show),"%s",item.show_title);
-						if (vt_download_background_start(&job) == 0) return online_leave(UI_SECTION_DOWNLOAD);
-						ui_message_show(vt_i18n_str(VT_STR_ONLINE_FAILED), vt_i18n_str(VT_STR_ONLINE_RETRY), 2600);
+						snprintf(job.podcast_show, sizeof(job.podcast_show), "%s", item.show_title);
+						if (vt_download_background_start(&job) == 0)
+							return online_leave(UI_SECTION_DOWNLOAD);
+						ui_message_show(vt_i18n_str(VT_STR_ONLINE_FAILED),
+						                vt_i18n_str(VT_STR_ONLINE_RETRY), 2600);
 					}
-				} else return online_leave(UI_SECTION_DOWNLOAD);
+				} else
+					return online_leave(UI_SECTION_DOWNLOAD);
 				reset_input(&previous, &repeat);
 			}
 		}
-		if(THEMED&&(sidebar.open||sidebar.animation>.01f||options.open||options.animation>.01f||ui_mini_player_input_locked())){
-   UiHomeControlSample blocked={.focus_sections=focus_tabs,.blocked=1};ui_home_controls_update(&blocked);
-  }
+		if (THEMED && (sidebar.open || sidebar.animation > .01f || options.open ||
+		               options.animation > .01f || ui_mini_player_input_locked())) {
+			UiHomeControlSample blocked = {.focus_sections = focus_tabs, .blocked = 1};
+			ui_home_controls_update(&blocked);
+		}
 		columns = CATALOG_COLUMNS;
 		rows = CATALOG_ROWS;
 		g_top = vt_catalog_top(g_selected, g_top, columns, rows);
@@ -926,4 +951,30 @@ int ui_online_audio_screen(void) {
 		vita2d_end_drawing(); vita2d_wait_rendering_done(); vita2d_swap_buffers();
 		ui_frame_pace(frame_started_us);
 	}
+}
+
+int ui_online_audio_open_library(const VtLibraryItem *v) {
+	if (vt_background_playback_library_matches(v->id))
+		return radio_fullscreen(0, NULL);
+	vt_library_cache(v);
+	vt_video_thumbnail_prepare_playback();
+	int ret = v->provider == VT_LIBRARY_RADIO
+	              ? vt_background_playback_prepare_radio(v->locator, v->title)
+	              : vt_background_playback_prepare_podcast(v->locator, v->title);
+	uint64_t resume = 0;
+	if (!ret) {
+		vt_background_playback_set_audio_details(v->artist, v->artwork);
+		if (v->provider == VT_LIBRARY_PODCAST)
+			resume = vt_background_playback_restore_podcast_history(v->history_id, v->duration_ms);
+		vt_background_playback_set_library_id(v->id);
+		ret = vt_background_playback_activate(resume);
+	}
+	if (!ret) {
+		vt_library_started(v);
+		vt_background_playback_set_fullscreen_resume(radio_fullscreen, NULL);
+		return radio_fullscreen(0, NULL);
+	}
+	vt_background_playback_stop();
+	ui_message_show(vt_i18n_str(VT_STR_ONLINE_FAILED), vt_i18n_str(VT_STR_ONLINE_RETRY), 2800);
+	return -1;
 }

@@ -1,4 +1,5 @@
 #include "ui/iptv_screen.h"
+#include "library/catalog.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -144,6 +145,13 @@ static int load_catalog(void *ctx) {
     if(saved && !vt_iptv_saved_load(saved,0))
         for(unsigned i=0;i<catalog.count;i++)for(unsigned j=0;j<saved->count;j++)
             if(!strcmp(catalog.items[i].url,saved->items[j].url))catalog.items[i].starred=saved->items[j].starred;
+    if (!result)
+        for (unsigned i = 0; i < catalog.count; i++) {
+            VtLibraryItem v;
+            vt_library_iptv(&catalog.items[i], &v);
+            snprintf(v.context, sizeof(v.context), "%s", link);
+            vt_library_cache(&v);
+        }
     free(saved);return result;
 }
 static int toggle_star(VtIptvChannel *item) {
@@ -351,6 +359,9 @@ static int play_link(const char **message) {
             break;
         }
     free(saved_items);
+    VtLibraryItem library_item;
+    vt_library_iptv(&playing, &library_item);
+    vt_library_cache(&library_item);
     vt_video_thumbnail_prepare_playback();
     vt_background_playback_set_fullscreen_resume(NULL, NULL);
     /* Release the previous audio port and fence mini-player video before
@@ -359,6 +370,8 @@ static int play_link(const char **message) {
     if (mode == VT_IPTV_FILE) {
         VtHwPlayerScreenSource source = {0};
         source.favorite=player_favorite;source.favorite_ctx=&playing;
+        source.history_id = library_item.history_id;
+        source.start_position_ms = vt_library_resume(&library_item);
         vt_http_audio_stream_factory(link, &source.stream);
         source.title = channel_title[0] ? channel_title : TR(IPTV_TITLE);
         source.location = TR(IPTV_MODE_FILE); source.authenticated_remote = 1;
@@ -389,6 +402,7 @@ static int play_link(const char **message) {
         source.title = channel_title[0] ? channel_title : TR(IPTV_TITLE);
         source.location = current_list.title[0] ? current_list.title : TR(IPTV_TITLE);
         source.authenticated_remote = 1;
+        source.history_id = library_item.history_id;
         int result = vt_hw_player_screen_run_live(&source, session);
         int event = vt_iptv_session_event(session);
         VtIptvSourceStatus status;
@@ -739,4 +753,15 @@ int ui_iptv_screen(void) {
         vita2d_end_drawing(); vita2d_wait_rendering_done(); vita2d_swap_buffers();
         sceKernelDelayThread(1000);
     }
+}
+
+int ui_iptv_open_library(const VtLibraryItem *v) {
+    snprintf(link, sizeof(link), "%s", v->locator);
+    snprintf(channel_title, sizeof(channel_title), "%s", v->title);
+    snprintf(channel_agent, sizeof(channel_agent), "%s", v->user_agent);
+    mode = v->mode;
+    memset(&current_list, 0, sizeof(current_list));
+    const char *message = NULL;
+    int ret = play_link(&message);
+    return ret;
 }

@@ -415,22 +415,32 @@ int vt_online_fetch_query(void *ctx) {
 	int variants=q->kind==VT_ONLINE_RADIO?4:2, success=0;
 	VtOnlineQuery *part=calloc(1,sizeof(*part));if(!part)return -1;
 	q->count=q->has_more=0;
-	for(int v=0;v<variants && !q->cancel;v++) {
-		part->kind=q->kind;part->cancel=q->cancel;part->cancel_parent=&q->cancel;
-		memcpy(part->country,q->country,sizeof(part->country));
-		part->offset=q->offset/(unsigned)variants;part->batch_size=VT_ONLINE_MAX/(unsigned)variants;
-		part->search_field=v==2?1:v==3?2:0;
-		snprintf(part->query,sizeof(part->query),"%s",v==1?compact:spaced);
+	for (int v = 0; v < variants && !q->cancel && !(q->cancel_parent && *q->cancel_parent); v++) {
+		part->kind = q->kind;
+		part->cancel = q->cancel;
+		part->cancel_parent = q->cancel_parent ? q->cancel_parent : &q->cancel;
+		memcpy(part->country, q->country, sizeof(part->country));
+		part->offset = q->offset / (unsigned)variants;
+		part->batch_size = VT_ONLINE_MAX / (unsigned)variants;
+		part->search_field = v == 2 ? 1 : v == 3 ? 2 : 0;
+		snprintf(part->query, sizeof(part->query), "%s", v == 1 ? compact : spaced);
 		/* Share cancellation while requests run, not a one-time copied flag. */
-		part->cancel=q->cancel;
-		if(fetch_query_raw(part)<0)continue;
-		success=1;q->has_more|=part->has_more;
-		for(int i=0;i<part->count && q->count<VT_ONLINE_MAX;i++) {
-			int duplicate=0;for(int j=0;j<q->count;j++)if(!strcmp(q->items[j].url,part->items[i].url))duplicate=1;
-			if(!duplicate)q->items[q->count++]=part->items[i];
+		part->cancel = q->cancel;
+		if (fetch_query_raw(part) < 0)
+			continue;
+		success = 1;
+		q->has_more |= part->has_more;
+		for (int i = 0; i < part->count && q->count < VT_ONLINE_MAX; i++) {
+			int duplicate = 0;
+			for (int j = 0; j < q->count; j++)
+				if (!strcmp(q->items[j].url, part->items[i].url))
+					duplicate = 1;
+			if (!duplicate)
+				q->items[q->count++] = part->items[i];
 		}
 	}
-	free(part);return q->cancel || !success ? -1 : 0;
+	free(part);
+	return q->cancel || (q->cancel_parent && *q->cancel_parent) || !success ? -1 : 0;
 }
 
 int vt_online_load_saved(VtOnlineItem *out, int capacity) {

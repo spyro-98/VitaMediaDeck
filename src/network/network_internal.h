@@ -24,6 +24,10 @@ int vt_smb_list(const VtNetworkSource *, const VtNetworkCredential *,
 int vt_smb_open_stream(const VtNetworkSource *, const VtNetworkCredential *,
                        const char *, VtDecoderStreamHandle *, volatile int *);
 
+int vt_jellyfin_authenticate_cancel(const VtNetworkSource *, VtNetworkCredential *, char *, size_t,
+                                    volatile int *);
+int vt_jellyfin_list_cancel(const VtNetworkSource *, const VtNetworkCredential *, const char *,
+                            VtNetworkEntry *, int, char *, size_t, volatile int *);
 int vt_jellyfin_authenticate(const VtNetworkSource *, VtNetworkCredential *,
 	                         char *, size_t);
 int vt_jellyfin_list(const VtNetworkSource *, const VtNetworkCredential *,

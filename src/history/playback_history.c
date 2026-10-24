@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include "history/playback_history.h"
 
 #include <stdint.h>
@@ -120,34 +121,38 @@ static int save_database(void) {
 	return ret;
 }
 
-int vt_playback_history_init(void) {
+int vt_playback_history_init_unlocked(void) {
 	memset(&g_disk, 0, sizeof(g_disk));
 	g_count = 0;
 	g_next_order = 1;
 	SceIoStat stat;
 	memset(&stat, 0, sizeof(stat));
 	if (sceIoGetstat(VT_PLAYBACK_HISTORY_PATH, &stat) < 0) {
-		if (sceIoRename(VT_PLAYBACK_HISTORY_BACKUP,
-		                VT_PLAYBACK_HISTORY_PATH) < 0) return 0;
+		if (sceIoRename(VT_PLAYBACK_HISTORY_BACKUP, VT_PLAYBACK_HISTORY_PATH) < 0)
+			return 0;
 	}
-	if (sceIoGetstat(VT_PLAYBACK_HISTORY_PATH, &stat) < 0) return 0;
-	if (stat.st_size != (SceOff)sizeof(g_disk)) return -1;
+	if (sceIoGetstat(VT_PLAYBACK_HISTORY_PATH, &stat) < 0)
+		return 0;
+	if (stat.st_size != (SceOff)sizeof(g_disk))
+		return -1;
 	SceUID fd = sceIoOpen(VT_PLAYBACK_HISTORY_PATH, SCE_O_RDONLY, 0);
-	if (fd < 0) return fd;
+	if (fd < 0)
+		return fd;
 	int ret = read_all(fd, &g_disk, sizeof(g_disk));
 	sceIoClose(fd);
 	if (ret < 0 || memcmp(g_disk.magic, g_magic, sizeof(g_magic)) != 0 ||
-	    g_disk.version != VT_PLAYBACK_HISTORY_VERSION ||
-	    g_disk.count > VT_PLAYBACK_HISTORY_MAX ||
+	    g_disk.version != VT_PLAYBACK_HISTORY_VERSION || g_disk.count > VT_PLAYBACK_HISTORY_MAX ||
 	    g_disk.checksum != checksum(&g_disk)) {
 		memset(&g_disk, 0, sizeof(g_disk));
 		return -1;
 	}
 	for (uint32_t i = 0; i < g_disk.count; i++) {
 		VtPlaybackHistoryRecord record = g_disk.records[i];
-		if (!valid_id(record.video_id)) continue;
+		if (!valid_id(record.video_id))
+			continue;
 		g_disk.records[g_count++] = record;
-		if (record.order >= g_next_order) g_next_order = record.order + 1;
+		if (record.order >= g_next_order)
+			g_next_order = record.order + 1;
 	}
 	return 0;
 }
@@ -169,43 +174,49 @@ void vt_playback_history_local_id(const char *path, char out[16]) {
 	snprintf(out, 16, "media%08x", hash);
 }
 
-uint64_t vt_playback_history_position(const char *video_id,
-	                                  uint64_t duration_ms) {
+uint64_t vt_playback_history_position_unlocked(const char *video_id, uint64_t duration_ms) {
 	int index = find_index(video_id);
-	if (index < 0) return 0;
+	if (index < 0)
+		return 0;
 	uint64_t position = g_disk.records[index].position_ms;
-	uint64_t known_duration = duration_ms ? duration_ms
-	                        : g_disk.records[index].duration_ms;
-	if (position < VT_RESUME_MIN_MS ||
-	    (known_duration > VT_RESUME_END_GUARD_MS &&
-	     position + VT_RESUME_END_GUARD_MS >= known_duration)) return 0;
+	uint64_t known_duration = duration_ms ? duration_ms : g_disk.records[index].duration_ms;
+	if (position < VT_RESUME_MIN_MS || (known_duration > VT_RESUME_END_GUARD_MS &&
+	                                    position + VT_RESUME_END_GUARD_MS >= known_duration))
+		return 0;
 	return position;
 }
 
-int vt_playback_history_get(const char *video_id, uint64_t *position_ms,
-	                        uint64_t *duration_ms) {
+int vt_playback_history_get_unlocked(const char *video_id, uint64_t *position_ms,
+                                     uint64_t *duration_ms) {
 	int index = find_index(video_id);
-	if (index < 0) return 0;
-	uint64_t position = vt_playback_history_position(
-	    video_id, g_disk.records[index].duration_ms);
-	if (!position || !g_disk.records[index].duration_ms) return 0;
-	if (position_ms) *position_ms = position;
-	if (duration_ms) *duration_ms = g_disk.records[index].duration_ms;
+	if (index < 0)
+		return 0;
+	uint64_t position =
+	    vt_playback_history_position_unlocked(video_id, g_disk.records[index].duration_ms);
+	if (!position || !g_disk.records[index].duration_ms)
+		return 0;
+	if (position_ms)
+		*position_ms = position;
+	if (duration_ms)
+		*duration_ms = g_disk.records[index].duration_ms;
 	return 1;
 }
 
-int vt_playback_history_progress(const char *video_id, uint64_t *position_ms,
-	                             uint64_t *duration_ms) {
+int vt_playback_history_progress_unlocked(const char *video_id, uint64_t *position_ms,
+                                          uint64_t *duration_ms) {
 	int index = find_index(video_id);
-	if (index < 0 || !g_disk.records[index].duration_ms) return 0;
-	if (position_ms) *position_ms = g_disk.records[index].position_ms;
-	if (duration_ms) *duration_ms = g_disk.records[index].duration_ms;
+	if (index < 0 || !g_disk.records[index].duration_ms)
+		return 0;
+	if (position_ms)
+		*position_ms = g_disk.records[index].position_ms;
+	if (duration_ms)
+		*duration_ms = g_disk.records[index].duration_ms;
 	return 1;
 }
 
-uint64_t vt_playback_history_order(const char *video_id) {
-	int index=find_index(video_id);
-	return index>=0?g_disk.records[index].order:0;
+uint64_t vt_playback_history_order_unlocked(const char *video_id) {
+	int index = find_index(video_id);
+	return index >= 0 ? g_disk.records[index].order : 0;
 }
 static int history_update(const char *video_id, uint64_t position_ms,
 	                           uint64_t duration_ms) {
@@ -242,10 +253,44 @@ static int history_update(const char *video_id, uint64_t position_ms,
 	return save_database();
 }
 
-int vt_playback_history_update(const char *video_id,uint64_t position_ms,uint64_t duration_ms) {
-    VtPlaybackHistoryDisk previous=g_disk;
+int vt_playback_history_update_unlocked(const char *video_id, uint64_t position_ms,
+                                        uint64_t duration_ms) {
+	VtPlaybackHistoryDisk previous=g_disk;
     int count=g_count;uint64_t order=g_next_order;
     int ret=history_update(video_id,position_ms,duration_ms);
     if(ret<0){g_disk=previous;g_count=count;g_next_order=order;}
     return ret;
+}
+
+static pthread_mutex_t history_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define HISTORY_CALL(expr)                                                                         \
+	do {                                                                                           \
+		pthread_mutex_lock(&history_mutex);                                                        \
+		int result = (expr);                                                                       \
+		pthread_mutex_unlock(&history_mutex);                                                      \
+		return result;                                                                             \
+	} while (0)
+int vt_playback_history_init(void) {
+	HISTORY_CALL(vt_playback_history_init_unlocked());
+}
+uint64_t vt_playback_history_position(const char *id, uint64_t duration) {
+	pthread_mutex_lock(&history_mutex);
+	uint64_t p = vt_playback_history_position_unlocked(id, duration);
+	pthread_mutex_unlock(&history_mutex);
+	return p;
+}
+int vt_playback_history_get(const char *id, uint64_t *p, uint64_t *d) {
+	HISTORY_CALL(vt_playback_history_get_unlocked(id, p, d));
+}
+int vt_playback_history_progress(const char *id, uint64_t *p, uint64_t *d) {
+	HISTORY_CALL(vt_playback_history_progress_unlocked(id, p, d));
+}
+uint64_t vt_playback_history_order(const char *id) {
+	pthread_mutex_lock(&history_mutex);
+	uint64_t order = vt_playback_history_order_unlocked(id);
+	pthread_mutex_unlock(&history_mutex);
+	return order;
+}
+int vt_playback_history_update(const char *id, uint64_t p, uint64_t d) {
+	HISTORY_CALL(vt_playback_history_update_unlocked(id, p, d));
 }

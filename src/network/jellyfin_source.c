@@ -293,32 +293,32 @@ static int request_json(const VtNetworkSource *source, const char *url,
 	return 0;
 }
 
-int vt_jellyfin_authenticate(const VtNetworkSource *source,
-	                         VtNetworkCredential *credential,
-	                         char *detail, size_t detail_size) {
-	if (!source || !credential || !source->username[0]) return -1;
-	if (credential->access_token[0] && credential->user_id[0]) return 0;
+int vt_jellyfin_authenticate_cancel(const VtNetworkSource *source, VtNetworkCredential *credential,
+                                    char *detail, size_t detail_size, volatile int *cancel) {
+	if (!source || !credential || !source->username[0])
+		return -1;
+	if (credential->access_token[0] && credential->user_id[0])
+		return 0;
 	char url[2048];
-	if (jellyfin_url(source, "Users/AuthenticateByName", NULL,
-	                 url, sizeof(url)) < 0) {
+	if (jellyfin_url(source, "Users/AuthenticateByName", NULL, url, sizeof(url)) < 0) {
 		if (detail && detail_size)
-			snprintf(detail, detail_size,
-			         "Jellyfin requires a valid HTTP or HTTPS endpoint");
+			snprintf(detail, detail_size, "Jellyfin requires a valid HTTP or HTTPS endpoint");
 		return -1;
 	}
 	char authorization[512];
 	if (authorization_header(NULL, authorization, sizeof(authorization)) < 0)
 		return -1;
-	json_t *payload = json_pack("{s:s,s:s}", "Username", source->username,
-	                           "Pw", credential->password);
-	if (!payload) return -1;
+	json_t *payload =
+	    json_pack("{s:s,s:s}", "Username", source->username, "Pw", credential->password);
+	if (!payload)
+		return -1;
 	char *body = json_dumps(payload, JSON_COMPACT | JSON_ENSURE_ASCII);
 	json_decref(payload);
-	if (!body) return -1;
-	JellyfinBuffer response = { .limit = JELLYFIN_RESPONSE_MAX };
+	if (!body)
+		return -1;
+	JellyfinBuffer response = {.limit = JELLYFIN_RESPONSE_MAX};
 	long status = 0;
-	int ret = request_json(source, url, "POST", authorization, body,
-	                       &response, &status, NULL);
+	int ret = request_json(source, url, "POST", authorization, body, &response, &status, cancel);
 	secure_zero(body, strlen(body));
 	free(body);
 	if (ret < 0) {
@@ -336,12 +336,9 @@ int vt_jellyfin_authenticate(const VtNetworkSource *source,
 	json_error_t error;
 	json_t *root = json_loadb((const char *)response.data, response.size, 0, &error);
 	free(response.data);
-	const char *token = root
-	                  ? json_string_value(json_object_get(root, "AccessToken"))
-	                  : NULL;
+	const char *token = root ? json_string_value(json_object_get(root, "AccessToken")) : NULL;
 	json_t *user = root ? json_object_get(root, "User") : NULL;
-	const char *user_id = user
-	                    ? json_string_value(json_object_get(user, "Id")) : NULL;
+	const char *user_id = user ? json_string_value(json_object_get(user, "Id")) : NULL;
 	if (!safe_header_value(token) || !safe_header_value(user_id) ||
 	    strlen(token) >= sizeof(credential->access_token) ||
 	    strlen(user_id) >= sizeof(credential->user_id)) {
@@ -353,9 +350,14 @@ int vt_jellyfin_authenticate(const VtNetworkSource *source,
 		snprintf(credential->user_id, sizeof(credential->user_id), "%s", user_id);
 		ret = 0;
 	}
-	if (root) json_decref(root);
+	if (root)
+		json_decref(root);
 	(void)status;
 	return ret;
+}
+int vt_jellyfin_authenticate(const VtNetworkSource *source, VtNetworkCredential *credential,
+                             char *detail, size_t detail_size) {
+	return vt_jellyfin_authenticate_cancel(source, credential, detail, detail_size, NULL);
 }
 
 static int item_id_from_path(const char *path, char out[VT_NETWORK_USER_ID_MAX]) {
@@ -597,32 +599,56 @@ int vt_network_jellyfin_metadata(const VtNetworkSource *source,
 	return 0;
 }
 
-int vt_jellyfin_list(const VtNetworkSource *source,
-	                 const VtNetworkCredential *credential,
-	                 const char *path, VtNetworkEntry *entries, int capacity,
-	                 char *detail, size_t detail_size) {
-	if (!source || !credential || !entries || capacity <= 0 ||
-	    !credential->access_token[0] || !credential->user_id[0])
+int vt_jellyfin_list_cancel(const VtNetworkSource *source, const VtNetworkCredential *credential,
+                            const char *path, VtNetworkEntry *entries, int capacity, char *detail,
+                            size_t detail_size, volatile int *cancel) {
+	if (!source || !credential || !entries || capacity <= 0 || !credential->access_token[0] ||
+	    !credential->user_id[0])
 		return VT_NETWORK_AUTH_FAILED;
-	char parent_id[VT_NETWORK_USER_ID_MAX];
-	if (item_id_from_path(path, parent_id) < 0) return -1;
-	char query[512];
-	int query_size = snprintf(
-	    query, sizeof(query),
-	    "userId=%s%s%s&limit=%d&recursive=false&sortBy=SortName&sortOrder=Ascending"
-	    "&fields=MediaSources,MediaStreams&enableImages=true&enableTotalRecordCount=false",
-	    credential->user_id, parent_id[0] ? "&parentId=" : "",
-	    parent_id[0] ? parent_id : "", capacity);
-	if (query_size < 0 || (size_t)query_size >= sizeof(query)) return -1;
+	int searching = path && !strncmp(path, "search:", 7);
+	char encoded[385] = "";
+	if (searching) {
+		const unsigned char *p = (const unsigned char *)path + 7;
+		size_t n = 0;
+		if (!*p || strlen((const char *)p) > 128)
+			return -1;
+		for (; *p; p++) {
+			if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9'))
+				encoded[n++] = (char)*p;
+			else {
+				snprintf(encoded + n, sizeof(encoded) - n, "%%%02X", *p);
+				n += 3;
+			}
+		}
+		encoded[n] = 0;
+	}
+	char parent_id[VT_NETWORK_USER_ID_MAX] = "";
+	if (!searching && item_id_from_path(path, parent_id) < 0)
+		return -1;
+	char query[1024];
+	int query_size =
+	    snprintf(query, sizeof(query),
+		         "userId=%s%s%s&limit=%d&recursive=false&sortBy=SortName&sortOrder=Ascending"
+		         "&fields=MediaSources,MediaStreams&enableImages=true&enableTotalRecordCount=false",
+		         credential->user_id, parent_id[0] ? "&parentId=" : "",
+		         parent_id[0] ? parent_id : "", capacity);
+	if (searching)
+		query_size = snprintf(
+		    query, sizeof(query),
+		    "userId=%s&searchTerm=%s&recursive=true&includeItemTypes=Movie,Episode,Series,Folder&"
+		    "limit=%d&fields=MediaSources,MediaStreams&enableTotalRecordCount=false",
+		    credential->user_id, encoded, capacity);
+	if (query_size < 0 || (size_t)query_size >= sizeof(query))
+		return -1;
 	char url[2048];
-	if (jellyfin_url(source, "Items", query, url, sizeof(url)) < 0) return -1;
+	if (jellyfin_url(source, "Items", query, url, sizeof(url)) < 0)
+		return -1;
 	char authorization[512];
-	if (authorization_header(credential->access_token, authorization,
-	                         sizeof(authorization)) < 0) return -1;
-	JellyfinBuffer response = { .limit = JELLYFIN_RESPONSE_MAX };
+	if (authorization_header(credential->access_token, authorization, sizeof(authorization)) < 0)
+		return -1;
+	JellyfinBuffer response = {.limit = JELLYFIN_RESPONSE_MAX};
 	long status = 0;
-	int ret = request_json(source, url, "GET", authorization, NULL,
-	                       &response, &status, NULL);
+	int ret = request_json(source, url, "GET", authorization, NULL, &response, &status, cancel);
 	if (ret < 0) {
 		if (detail && detail_size && ret == VT_NETWORK_AUTH_FAILED)
 			snprintf(detail, detail_size, "Jellyfin session expired");
@@ -642,28 +668,33 @@ int vt_jellyfin_list(const VtNetworkSource *source,
 	if (!json_is_array(items)) {
 		if (detail && detail_size)
 			snprintf(detail, detail_size, "Invalid Jellyfin library response");
-		if (root) json_decref(root);
+		if (root)
+			json_decref(root);
 		return -1;
 	}
 	int count = 0;
 	size_t index;
 	json_t *item;
 	json_array_foreach(items, index, item) {
-		if (count >= capacity || !json_is_object(item)) break;
+		if (count >= capacity || !json_is_object(item))
+			break;
 		const char *id = json_string_value(json_object_get(item, "Id"));
 		const char *name = json_string_value(json_object_get(item, "Name"));
 		const char *type = json_string_value(json_object_get(item, "Type"));
 		const char *media_type = json_string_value(json_object_get(item, "MediaType"));
-		if (!id || !name || !safe_header_value(id)) continue;
+		if (!id || !name || !safe_header_value(id))
+			continue;
 		int folder = item_is_folder(item, type);
 		int video = media_type && !strcmp(media_type, "Video");
-		if (!folder && !video) continue;
+		if (!folder && !video)
+			continue;
 		VtNetworkEntry *entry = &entries[count];
 		memset(entry, 0, sizeof(*entry));
 		snprintf(entry->name, sizeof(entry->name), "%s", name);
-		if (path && path[0])
+		if (!searching && path && path[0])
 			snprintf(entry->path, sizeof(entry->path), "%s/%s", path, id);
-		else snprintf(entry->path, sizeof(entry->path), "%s", id);
+		else
+			snprintf(entry->path, sizeof(entry->path), "%s", id);
 		entry->size = video ? item_size(item) : 0;
 		json_t *runtime = json_object_get(item, "RunTimeTicks");
 		if (json_is_integer(runtime) && json_integer_value(runtime) > 0)
@@ -681,6 +712,12 @@ int vt_jellyfin_list(const VtNetworkSource *source,
 	json_decref(root);
 	(void)status;
 	return count;
+}
+int vt_jellyfin_list(const VtNetworkSource *source, const VtNetworkCredential *credential,
+                     const char *path, VtNetworkEntry *entries, int capacity, char *detail,
+                     size_t detail_size) {
+	return vt_jellyfin_list_cancel(source, credential, path, entries, capacity, detail, detail_size,
+	                               NULL);
 }
 
 int vt_jellyfin_probe_public_key(const VtNetworkSource *source,

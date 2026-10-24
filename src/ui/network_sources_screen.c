@@ -1,4 +1,6 @@
 #include "ui/network_sources_screen.h"
+#include "library/catalog.h"
+#include "library/search.h"
 #include "ui/qr_scanner.h"
 #include "ui/personal_media_screen.h"
 #include "ui/folder_picker.h"
@@ -252,6 +254,11 @@ static int list_task(void *opaque) {
 	task->result = vt_network_list(task->source, task->credential, task->path,
 	                               task->entries, VT_NETWORK_MAX_ENTRIES,
 	                               task->detail, sizeof(task->detail));
+	for (int i = 0; i < task->result; i++) {
+		VtLibraryItem v;
+		vt_library_remote(task->source, &task->entries[i], task->path, &v);
+		vt_library_cache(&v);
+	}
 	return task->result < 0 ? task->result : 0;
 }
 
@@ -1632,6 +1639,7 @@ static int prepare_provider_session(const VtNetworkSource *source,
 			                2800);
 		return task.result < 0 ? task.result : ret;
 	}
+	vt_library_search_set_session(source, credential);
 	return 0;
 }
 
@@ -2387,4 +2395,39 @@ int ui_network_resume_jellyfin(const VtNetworkSource *sources,int count,UiNetwor
     }
     network_browser_resume_clear();
     return UI_NETWORK_ACTION_BACK;
+}
+
+int ui_network_library_authorize(VtNetworkSource *s, VtNetworkCredential *c) {
+	ui_network_personal_resume_credential(s, c);
+	vt_library_search_get_session(s, c);
+	if (!c->password[0] && ui_text_input_secure(vt_i18n_str(s->protocol == VT_NETWORK_IMMICH
+	                                                            ? VT_STR_NETWORK_API_KEY_PROMPT
+																: VT_STR_NETWORK_PASSWORD_PROMPT),
+	                                            "", c->password, sizeof(c->password)) <= 0)
+		return -1;
+	int ret = prepare_provider_session(s, c);
+	if (ret == VT_NETWORK_TLS_TRUST_REQUIRED) {
+		if (prepare_https_trust(s, c) < 0)
+			return ret;
+		ret = prepare_provider_session(s, c);
+		if (ret >= 0) {
+			VtNetworkSource *sources = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*sources));
+			if (sources) {
+				int n = vt_network_sources_load(sources, VT_NETWORK_MAX_SOURCES);
+				char key[16];
+				vt_network_media_history_id(s, "", key);
+				for (int i = 0; i < n; i++) {
+					char other[16];
+					vt_network_media_history_id(&sources[i], "", other);
+					if (!strcmp(key, other))
+						sources[i] = *s;
+				}
+				vt_network_sources_save(sources, n);
+				free(sources);
+			}
+		}
+	}
+	if (ret >= 0)
+		vt_library_search_set_session(s, c);
+	return ret;
 }
