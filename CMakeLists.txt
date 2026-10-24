@@ -291,6 +291,7 @@ add_executable(${PROJECT_NAME}
   src/media/music_metadata.c
   src/media/podcast_metadata.c
   src/history/playback_history.c
+  src/media/podcast_resume.c
   src/settings/preferences.c
   src/system/background_audio.c
   src/system/display_awake.c

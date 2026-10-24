@@ -19,7 +19,7 @@ int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out){memset(ou
 int vt_background_playback_prepare_radio(const char*a,const char*b){(void)a;(void)b;return 0;}
 int vt_background_playback_prepare_podcast(const char*a,const char*b){(void)a;(void)b;return 0;}
 void vt_background_playback_set_audio_details(const char*a,const char*b){(void)a;(void)b;}
-uint64_t vt_background_playback_set_podcast_history(const char*a){(void)a;return 0;}
+uint64_t vt_background_playback_set_podcast_history(const char*a,uint64_t duration){(void)a;(void)duration;return 0;}
 int vt_background_playback_activate(uint64_t n){(void)n;return 0;}
 int ui_music_player_run(const char*a,const char*b,const char*c,uint32_t d){(void)a;(void)b;(void)c;(void)d;return 0;}
 int ui_text_reader_run(const char*a,const char*b){(void)a;(void)b;return UI_SECTION_NONE;}

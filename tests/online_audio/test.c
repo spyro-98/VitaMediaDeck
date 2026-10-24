@@ -15,7 +15,7 @@
 
 static unsigned checks, outputs, opened, released, leases, calls, chunk = 1;
 void log_printf(const char *format, ...) { (void)format; }
-#define CHECK(x) do { checks++; assert(x); } while(0)
+#define CHECK(x) do { __atomic_add_fetch(&checks,1,__ATOMIC_RELAXED); assert(x); } while(0)
 static unsigned muted, pause_test, cancel_test;
 static int disconnect_test;
 static int icy_test;

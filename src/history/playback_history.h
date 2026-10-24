@@ -13,6 +13,8 @@ int vt_playback_history_get(const char *video_id, uint64_t *position_ms,
  * this never applies the resume-end guard. */
 int vt_playback_history_progress(const char *video_id, uint64_t *position_ms,
 	                             uint64_t *duration_ms);
+/* Persisted record generation, including zero-position podcast tombstones. */
+uint64_t vt_playback_history_order(const char *video_id);
 int vt_playback_history_update(const char *video_id, uint64_t position_ms,
 	                           uint64_t duration_ms);
 

@@ -746,7 +746,6 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 	uint64_t volume_visible_until_us = 0;
 	int action = UI_MUSIC_PLAYER_STOP;
 	for (;;) {
-		vt_background_playback_checkpoint();
 		VtBackgroundPlaybackSnapshot snapshot;
 		if (!vt_background_playback_snapshot(&snapshot)) {
 			action = g_repeat_one ? UI_MUSIC_PLAYER_REPEAT

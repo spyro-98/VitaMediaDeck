@@ -52,7 +52,8 @@ void vt_background_playback_init(void);
 int vt_background_playback_prepare_radio(const char *url, const char *title);
 int vt_background_playback_prepare_podcast(const char *url, const char *title);
 /* UI-thread only, after prepare and before activate. Returns stored resume. */
-uint64_t vt_background_playback_set_podcast_history(const char *episode_identity);
+uint64_t vt_background_playback_set_podcast_history(const char *episode_identity, uint64_t duration_ms);
+/* Request an asynchronous checkpoint; no storage work runs on this caller. */
 void vt_background_playback_checkpoint(void);
 void vt_background_playback_set_audio_details(const char *author, const char *artwork);
 

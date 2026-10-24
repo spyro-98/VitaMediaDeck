@@ -59,6 +59,12 @@ left/right switches provider and Down/X enters content. These two provider tabs
 remain separate from the themed Home menu. Circle restores each previous list,
 selection and scroll position, including country → shows → episodes.
 
+Podcast episodes resume automatically from saved progress, including downloads
+with app metadata in a custom folder. Positions below ten seconds and completed
+episodes start at the beginning. Saving runs separately from audio/UI; pause and
+suspend request a checkpoint. Closing the bubble forcibly can lose roughly the
+last 15 seconds. See [resume implementation and console checks](../docs/podcast-resume-2026-10-24.md).
+
 **L1 → IPTV** opens saved lists/channels. **Start / Add stream** opens the URL
 form. Its R1 menu offers Enter link, Scan QR and Save. In saved lists/channels,
 R1 starts with Open/Play, the explicit favourite toggle, Rename and Remove saved

@@ -266,8 +266,10 @@ static int run_local_audio_session(VtLocalMediaItem item, int prepare_first,
 			    item.path, id, item.name, item.artist,
 			    item.artwork_path[0] ? item.artwork_path : NULL, item.duration_ms);
 			uint64_t resume = 0;
-			if (ret == 0 && (strstr(item.path, ":podcast/") || strstr(item.path, ":podcasts/")))
-				resume = vt_background_playback_set_podcast_history(item.path);
+			VtMusicMetadata podcast_metadata;
+			if (ret == 0 && (strstr(item.path, ":podcast/") || strstr(item.path, ":podcasts/") ||
+			                vt_podcast_metadata_load(item.path,&podcast_metadata)==0))
+				resume = vt_background_playback_set_podcast_history(item.path,item.duration_ms);
 			if (ret == 0) ret = vt_background_playback_activate(resume);
 			if (ret < 0) {
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
@@ -758,8 +760,8 @@ static int browse_network(int provider_section) {
 
 static int run_application(void) {
 	uint64_t stage_started_us = sceKernelGetProcessTimeWide();
-	vt_background_playback_init();
 	vt_playback_history_init();
+	vt_background_playback_init();
 	log_printf("startup stage: playback/history=%llu ms total=%llu ms",
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                stage_started_us) / 1000ULL),

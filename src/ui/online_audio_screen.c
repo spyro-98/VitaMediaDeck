@@ -783,7 +783,7 @@ int ui_online_audio_screen(void) {
 					char episode_identity[1025];
 					snprintf(episode_identity,sizeof(episode_identity),"%s#%s",g_query.query,item.id[0]?item.id:item.url);
 					uint64_t resume = prepared==0 && item.kind==VT_ONLINE_EPISODE
-					    ? vt_background_playback_set_podcast_history(episode_identity) : 0;
+					    ? vt_background_playback_set_podcast_history(episode_identity,item.duration_ms) : 0;
 					if (prepared == 0 &&
 					    vt_background_playback_activate(resume) == 0) {
 						vt_background_playback_set_fullscreen_resume(radio_fullscreen, NULL);
