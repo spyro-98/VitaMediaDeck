@@ -1,9 +1,12 @@
 # Unified library and global search — 2026-10-24
 
-App version: **1.4.1 / 01.05**. Test identity: **library-1024**.
-The frozen 1.4.1 standard and earlier test VPKs are preserved. This follow-up
-changes application orchestration; hardware/software decoder repositories,
-clock defaults and decoder ABI are unchanged.
+App version: **1.4.1 / 01.05**. Release identity: **standard**.
+All library/search changes described here are now integrated in the standard
+`VitaMediaDeck-1.4.1.vpk`, bubble **VitaMediaDeck**, log
+`ux0:data/VitaMediaDeck/session_standard.txt`. Earlier library-1024 and search-1024
+identities refer to historical validation only. Further normal deliveries use the
+release VPK. Hardware/software decoder repositories, clock defaults and decoder
+ABI are unchanged.
 
 ## Home and playback continuity
 
@@ -53,7 +56,7 @@ Results are grouped by provider; **Square** cycles the provider filter. A global
 page is bounded to **24 items per provider / 192 overall**: refine a broad query or
 open the provider to browse everything. Navidrome allocates artist/album slots
 without crowding out songs. Provider folders keep their existing pagination.
-The search follow-up (`search-1024`) prepares merged/sorted snapshots exclusively
+The integrated search implementation (previously validated as `search-1024`) prepares merged/sorted snapshots exclusively
 on the three low-priority workers. The renderer copies a ready snapshot and
 observes a publication revision, including covers arriving after the provider jobs
 finish. Two reusable result buffers replace the former 512-result temporary merge
@@ -176,7 +179,7 @@ Recorded host results (library suites refreshed for search-1024; unchanged provi
    playlists needing a custom User-Agent.
 6. Compare UI/player responsiveness and battery/frame timing on the real device.
    Host and build success do not establish these measurements or authenticate to
-   the user's servers. Log: `ux0:data/VitaMediaDeck/session_library-1024.txt`.
+   the user's servers. Log: `ux0:data/VitaMediaDeck/session_standard.txt`.
 
 ## API references checked
 

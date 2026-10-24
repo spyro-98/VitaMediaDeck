@@ -30,7 +30,8 @@ Reduce Motion. Resume checkpoints are saved asynchronously,
 and the existing mini-player session is restored when selecting its current item.
 See [unified library, search and acceptance checks](docs/unified-library-2026-10-24.md)
 for the 24-result/provider limit, local-only state, provider coverage and remaining
-real-console/server validation. This follow-up retains the frozen standard VPK.
+real-console/server validation. All these changes are included in the standard 1.4.1 release VPK, with the
+VitaMediaDeck bubble and `session_standard.txt` log.
 
 Jellyfin is a dedicated **L1 → Jellyfin** provider immediately before Navidrome
 in every theme. It reuses your saved Jellyfin servers, authentication and video
