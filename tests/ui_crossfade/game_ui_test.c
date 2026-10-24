@@ -60,8 +60,10 @@ int main(int argc,char **argv) {
   UiSectionsSidebar sidebar;ui_sections_sidebar_init(&sidebar,UI_SECTION_LOCAL_MEDIA);
   int prev=0;
   for(int slot=0;slot<UI_SECTION_COUNT+live;slot++) {
-   UiThemeRect r=sidebar_slot_rect(&sidebar,slot);int y=r.y;
-   CHECK(r.x>=18&&r.y>=104&&r.x+r.w<=942&&r.y+r.h<510);
+   sidebar.cursor=slot;sidebar_scroll_to_cursor(&sidebar);sidebar.scroll=sidebar.scroll_target;
+   UiThemeRect r=sidebar_slot_rect(&sidebar,slot);int y=sidebar_content_rect(&sidebar,slot).y;
+   CHECK(r.x>=18&&r.y>=sidebar_view_top()+17&&r.x+r.w<=942&&r.y+r.h<=sidebar_view_bottom()-17);
+   CHECK(r.h>=42);
    if(theme==VT_UI_THEME_LEGACY)CHECK(y>prev);prev=y;
    CHECK(sidebar_section_at(&sidebar,live+2)==UI_SECTION_JELLYFIN);
    CHECK(sidebar_section_at(&sidebar,live+3)==UI_SECTION_NAVIDROME);
@@ -72,7 +74,7 @@ int main(int argc,char **argv) {
    }
    int section=sidebar_section_at(&sidebar,slot);
    sidebar.open=1;sidebar.animation=1;sidebar.active=-1;
-   CHECK(ui_sections_sidebar_handle_touch(&sidebar,UI_TOUCH_EVENT_TAP,r.x+r.w/2,y+r.h/2)==section);
+   CHECK(ui_sections_sidebar_handle_touch(&sidebar,UI_TOUCH_EVENT_TAP,r.x+r.w/2,r.y+r.h/2)==section);
    sidebar.open=1;sidebar.cursor=slot;sidebar.active=-1;unsigned press=SCE_CTRL_CROSS;
    CHECK(ui_sections_sidebar_handle_buttons(&sidebar,&press,0,128)==section);CHECK(!sidebar.open&&!press);
   }
@@ -87,8 +89,12 @@ int main(int argc,char **argv) {
    CHECK(sidebar_section_at(&sidebar,live+2)==UI_SECTION_JELLYFIN);
    CHECK(sidebar_section_at(&sidebar,live+3)==UI_SECTION_NAVIDROME);
    CHECK(sidebar_section_at(&sidebar,live+4)==UI_SECTION_IMMICH);
-   int headings[]={102,(int)sidebar_row_y(&sidebar,live)-12,(int)sidebar_row_y(&sidebar,live+SIDEBAR_CONTENT_COUNT)-12};
-   for(int i=0;i<3;i++){sidebar.open=1;CHECK(ui_sections_sidebar_handle_touch(&sidebar,UI_TOUCH_EVENT_TAP,100,headings[i])==UI_SECTION_NONE);CHECK(sidebar.open);}
+   int starts[]={0,live,live+SIDEBAR_CONTENT_COUNT};
+   for(int i=live?0:1;i<3;i++){
+    sidebar.cursor=starts[i];sidebar_scroll_to_cursor(&sidebar);sidebar.scroll=sidebar.scroll_target;
+    int heading=sidebar_slot_rect(&sidebar,starts[i]).y-14;
+    sidebar.open=1;CHECK(ui_sections_sidebar_handle_touch(&sidebar,UI_TOUCH_EVENT_TAP,100,heading)==UI_SECTION_NONE);CHECK(sidebar.open);
+   }
   }
   if(theme!=VT_UI_THEME_LEGACY){
    UiSectionsSidebar audio;ui_sections_sidebar_init(&audio,UI_SECTION_LOCAL_MEDIA);
@@ -105,6 +111,7 @@ int main(int argc,char **argv) {
    if(language&&live_slots==1&&download_slots==1){char name[80];snprintf(name,sizeof(name),"theme-player-layout-%d",theme);png(name);}
    CHECK(ui_sections_sidebar_handle_touch(&audio,UI_TOUCH_EVENT_TAP,100,115)==UI_SECTION_NONE&&!audio.audio_layout_page);
   }
+  sidebar.cursor=0;sidebar.focus_cursor=0;sidebar.scroll=sidebar.scroll_target=sidebar.scroll_velocity=0;
   vita2d_clear_screen();ui_sections_sidebar_draw(&sidebar);
   if(language&&live_slots==1&&download_slots==1){char name[80];snprintf(name,sizeof(name),"theme-l1-%d",theme);png(name);}
  }

@@ -7,6 +7,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Scrollable L1 menus](l1-scroll-2026-10-24.md): roomier targets, per-theme motion, touch and focus preservation.
+
 - [Podcast resume and lightweight checkpoints](podcast-resume-2026-10-24.md): restart/suspend recovery, storage budget and device checks.
 
 - [Dedicated Jellyfin provider](jellyfin-provider-2026-10-24.md): L1 order, saved servers and video-browser return in all seven themes.
@@ -105,3 +107,4 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [docs/jellyfin-provider-2026-10-24.md](jellyfin-provider-2026-10-24.md) | Dedicated Jellyfin L1 provider and validation limits |
 | [docs/podcast-resume-2026-10-24.md](podcast-resume-2026-10-24.md) | Podcast checkpoint reliability, I/O budget and acceptance limits |
 | [tests/podcast_resume/README.md](../tests/podcast_resume/README.md) | Persistence/worker/real MP3 resume host regressions |
+| [docs/l1-scroll-2026-10-24.md](l1-scroll-2026-10-24.md) | Animated L1 viewports, spacing and input validation |

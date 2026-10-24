@@ -420,7 +420,9 @@ int main(int argc,char **argv) {
         online_case=0;catalog.count=0;
         UiSectionsSidebar sidebar;live_slots=1;ui_sections_sidebar_init(&sidebar,UI_SECTION_IPTV);
         sidebar.open=1;sidebar.animation=1;sidebar.cursor=sidebar.focus_cursor=UI_SECTION_INFO+2;
-        CHECK(ITEM_Y+(UI_SECTION_COUNT+1)*ITEM_STEP+ITEM_H<504);
+        CHECK(sidebar_scroll_max(&sidebar)>0);
+        UiThemeRect focused=sidebar_slot_rect(&sidebar,sidebar.cursor);
+        CHECK(focused.y>=sidebar_view_top()&&focused.y+focused.h<=sidebar_view_bottom());
         ui_sections_sidebar_draw(&sidebar);png(language?"drawer-it":"drawer-en");
         live_slots=0;
     }

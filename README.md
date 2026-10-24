@@ -31,6 +31,9 @@ server from its section; use Navidrome credentials or an Immich API key. See
 [configuration, supported media and Vita tests](docs/personal-media-2026-10-23.md).
 The six newer themes include native animated lighting and material effects;
 Legacy groups L1 into active tasks, content/services and application tools.
+All seven L1 menus now scroll with animated focus following, larger targets,
+touch dragging and fixed headers/footers. The wheel, grids and individual theme
+layouts remain distinct. See [scrollable L1 navigation](docs/l1-scroll-2026-10-24.md).
 See [native UI changes and validation limits](docs/game-ui-2026-10-23.md) and
 [cached navigation, compact covers and the Ghost 3D scene](docs/cache-and-ghost-2026-10-23.md).
 The [latest interface revision](docs/theme-chrome-2026-10-23.md) adds GPU MSAA 2x,
