@@ -50,14 +50,27 @@ information, refresh and download actions. L1 and R1 close the opposite panel.
 Country/genre/station grids navigate with the d-pad or touch and page lazily.
 Radio: X plays/pauses and reconnects live after pause. Podcast: X opens a show
 or streams an episode, Start downloads an episode, Select/Square shows details.
-Outside episodes, Triangle searches, Start adds a URL and Square saves.
+Outside episodes, Triangle searches, Start adds a URL and **Square toggles the
+selected favourite**, including Home. R1 explicitly offers Add to favourites or
+Remove from favourites; removing the last item leaves an empty favourites view.
+The action removes only the saved reference, preserving downloads and playback.
+In provider discovery, Up from the first row focuses the Radio/Podcast tabs;
+left/right switches provider and Down/X enters content. These two provider tabs
+remain separate from the themed Home menu. Circle restores each previous list,
+selection and scroll position, including country → shows → episodes.
 
 **L1 → IPTV** opens saved lists/channels. **Start / Add stream** opens the URL
-form. R1 offers Enter link, Scan QR and save actions. In the
+form. Its R1 menu offers Enter link, Scan QR and Save. In saved lists/channels,
+R1 starts with Open/Play, the explicit favourite toggle, Rename and Remove saved
+entry; its other actions include All/Favourites, Search, Refresh and Add. In the
 form, Triangle changes the detected format and X activates the focused control.
 In a list, X opens, Square stars a channel, Select stars the current playlist;
 Triangle searches lists/channels; R1 offers All/Favourites for saved entries.
-Circle returns. During IPTV playback, **Square** or the HUD Favourite button
+Circle returns one level and restores the saved-list selection; a search does
+not consume Back. The saved browser toolbar switches All/Favourites; inside a
+playlist the same position controls availability filtering. Remove saved entry
+requires confirmation and does not remove other channels or remote content.
+During IPTV playback, **Square** or the HUD Favourite button
 toggles the current channel's favourite state without restarting playback.
 **Filter errors** (also in R1 Options) checks entry URLs without decoding media
 and hides only DNS/403/404 failures. Circle cancels; **Show all** restores the
@@ -262,7 +275,9 @@ use separate positions so the lock never covers the OLED ECO label.
 ## Navidrome and Immich
 
 Open the dedicated section with L1. Cross connects, Square adds a server,
-Triangle edits, and two R1 presses remove a local connection. Circle returns;
+Triangle edits. **R1 → Options** exposes Connect, Add server, Edit connection
+and Remove connection. Removing asks for a fresh X confirmation; Circle cancels.
+Only the saved connection is removed. Circle returns;
 Hold Select for 900 ms to lock/unlock mini-player input. Navidrome uses the existing
 music-player controls; Immich uses the existing image-viewer controls.
 See [setup and console checks](../docs/personal-media-2026-10-23.md).

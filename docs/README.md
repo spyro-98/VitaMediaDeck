@@ -7,6 +7,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Provider navigation and favourite removal](provider-navigation-2026-10-24.md): all seven themes, saved-state consistency and provider controls.
+
 - [Controls clarification follow-up](controls-guide-2026-10-23.md): guide, theme navigation, active mapping and README audit.
 
 - [Release 1.4.1](releases/1.4.1.md): integrated changes, profile and limits.

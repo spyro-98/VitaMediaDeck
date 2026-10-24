@@ -881,6 +881,7 @@ int main(int argc, char *argv[]) {
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                g_startup_started_us) / 1000ULL));
 	run_application();
+	ui_iptv_shutdown();
 	vt_video_thumbnail_shutdown();
 	vt_background_playback_shutdown();
 	ui_personal_media_shutdown();

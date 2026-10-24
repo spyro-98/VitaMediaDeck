@@ -56,6 +56,13 @@ includes background-download UI, file/image/player improvements and navigation
 fixes developed after 1.2. This is not a claim that a new GitHub release has
 been published or that every provider has passed hardware testing.
 
+The [provider-navigation follow-up](docs/provider-navigation-2026-10-24.md) adds
+explicit Add/Remove favourite actions for radio and podcasts, including Home;
+retains nested catalogue Back history; separates provider tabs from Home inputs;
+clarifies IPTV saved/favourite actions; and gives Navidrome/Immich a consistent
+R1 Options menu for managing local connections. These controls apply to all seven
+themes. Favourite removal preserves downloaded files and remote content.
+
 Press **L1** or tap the app logo to open sections. Use **Network** for media
 servers, direct links and QR downloads, and **Radio/Podcast** to discover and
 save stations/shows. Radio Home shows favourites. The single **Podcast** tab
@@ -396,7 +403,7 @@ currently saved mapping. The native keyboard keeps its system confirmation keys.
 Download destination: X enters a folder, Triangle creates one, Start accepts the
 current location, O goes up/cancels at root. During transfer Start pauses/resumes,
 O aborts, and Background/L1 navigation lets the job continue. L1 → Download
-reopens progress. QR from Network or IPTV accepts HTTP(S); O/touch Cancel exits.
+reopens progress. QR from Network or IPTV → Start → R1 accepts HTTP(S); O/touch Cancel exits.
 
 Network Sources uses Square to add, Triangle to edit, and Select to remove a
 saved server. Inside a Jellyfin library, Triangle opens the spectral metadata

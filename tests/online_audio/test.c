@@ -100,7 +100,11 @@ char *vita_https_escape(const char *v,size_t n) {
 void vita_https_free(void *p) { free(p); }
 int sceIoGetstat(const char *p,SceIoStat *s) { struct stat x; int r=stat(p,&x); if(!r)s->st_size=x.st_size; return r; }
 int sceIoRemove(const char *p) { return unlink(p); }
-int sceIoRename(const char *a,const char *b) { return rename(a,b); }
+static int saved_fail_commit;
+int sceIoRename(const char *a,const char *b) {
+    if(saved_fail_commit && strstr(a,"online-audio.tmp"))return -1;
+    return rename(a,b);
+}
 static void feed_test(void) {
     VtOnlineQuery *q=calloc(1,sizeof(*q)); CHECK(q);
     const char *good="<rss><channel><item><title>Episode &amp; one</title><guid>g1</guid><enclosure url='one.mp3' type='audio/mpeg'/></item><item><enclosure url='one.mp3'/></item><item/><item><enclosure url='https://example.org/v.mp4' type='video/mp4'/></item><item><enclosure url='file:///etc/passwd'/></item></channel></rss>";
@@ -200,7 +204,23 @@ static void saved_test(void) {
     VtOnlineItem feed={.kind=VT_ONLINE_FEED,.url="https://example.org/feed.xml"};
     feed_cover_test=1;CHECK(!vt_online_fetch_cover(&feed,&cancelled));feed_cover_test=0;
     CHECK(!strcmp(feed.artwork_url,"https://example.org/podcast.png")&&feed.artwork_path[0]);
+    /* The same URL may be a radio and a feed: remove only the requested kind. */
+    feed.kind=VT_ONLINE_FEED;strcpy(feed.url,item.url);strcpy(feed.title,"Other provider");
+    CHECK(!vt_online_save(&feed));CHECK(vt_online_load_saved(loaded,64)==2);
+    saved_fail_commit=1;CHECK(vt_online_remove(item.kind,item.url)<0);saved_fail_commit=0;
+    CHECK(vt_online_load_saved(loaded,64)==2);
+    CHECK(!vt_online_remove(item.kind,item.url));CHECK(vt_online_load_saved(loaded,64)==1);
+    CHECK(loaded[0].kind==VT_ONLINE_FEED&&!strcmp(loaded[0].title,feed.title));
+    CHECK(!vt_online_remove(item.kind,item.url)); /* Exact-match idempotency. */
+    CHECK(vt_online_remove(VT_ONLINE_EPISODE,item.url)<0);
+    CHECK(vt_online_remove(VT_ONLINE_FEED,"file:///private/local")<0);
+    CHECK(!rename("ux0:data/VitaMediaDeck/online-audio.json","ux0:data/VitaMediaDeck/online-audio.bak"));
+    saved_fail_commit=1;CHECK(vt_online_remove(feed.kind,feed.url)<0);saved_fail_commit=0;
+    CHECK(vt_online_load_saved(loaded,64)==1); /* Backup survives a failed recovery commit. */
+    CHECK(!vt_online_remove(feed.kind,feed.url));CHECK(vt_online_load_saved(loaded,64)==0);
+    CHECK(!vt_online_save(&item));
     FILE *f=fopen("ux0:data/VitaMediaDeck/online-audio.json","wb"); CHECK(f); fputs("broken",f); fclose(f);
+    CHECK(vt_online_remove(item.kind,item.url)<0);
     CHECK(vt_online_save(&item)<0); CHECK(vt_online_load_saved(loaded,64)<0);
     unlink("ux0:data/VitaMediaDeck/online-audio.json");
 }

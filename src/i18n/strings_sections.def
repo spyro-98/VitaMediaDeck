@@ -69,7 +69,7 @@ VT_STR(ONLINE_EMPTY, "Nessun elemento. Cerca oppure aggiungi un URL.", "No items
 VT_STR(ONLINE_MP3_ONLY, "Questa versione supporta radio MP3 dirette, non AAC/HLS o playlist.", "This version supports direct MP3 radio, not AAC/HLS or playlists.")
 VT_STR(ONLINE_LIVE_HINT, "Diretta MP3. Pausa disconnette; riprendi torna alla diretta.", "Live MP3. Pause disconnects; play reconnects live.")
 VT_STR(ONLINE_EPISODE_HINT, "X: ascolta. START: scarica. Quadrato: descrizione e autori.", "X: stream. Start: download. Square: description and authors.")
-VT_STR(ONLINE_LIST_HINT, "X: ascolta / apri. Quadrato: salva. Select: informazioni.", "X: play / open. Square: save. Select: information.")
+VT_STR(ONLINE_LIST_HINT, "X: ascolta / apri. Quadrato: preferito +/-. R1: opzioni.", "X: play / open. Square: favourite +/-. R1: options.")
 
 VT_STR(HOME_GHOST_WHEEL_HINT, "Levetta destra: scegli sezione", "Right stick: choose section")
 VT_STR(HOME_GHOST_CONTENT_HINT, "D-pad / levetta sx: elenco | X: apri", "D-pad / left stick: list | X: open")
@@ -112,3 +112,9 @@ VT_STR(UI_KEY_TRIANGLE, "Triangolo", "Triangle")
 VT_STR(UI_KEY_SQUARE, "Quadrato", "Square")
 
 VT_STR(HOME_HELP_MOSAIC_CONTENT, "Su/giu: pagine | < >: copertine | X: apri", "Up/down: pages | < >: covers | X: open")
+
+VT_STR(ONLINE_REMOVED, "Rimosso dai preferiti", "Removed from favourites")
+VT_STR(ONLINE_REMOVE_FAILED, "Impossibile rimuovere il preferito. Riprova.", "Could not remove the favourite. Try again.")
+VT_STR(ONLINE_PROVIDER_TABS_HINT, "Sinistra/destra: Radio o Podcast | Giu o X: contenuto", "Left/right: Radio or Podcast | Down or X: content")
+VT_STR(ONLINE_FAVORITE_HINT, "X: apri/ascolta | Quadrato: preferito +/- | R1: opzioni | O: indietro", "X: open/play | Square: favourite +/- | R1: options | O: back")
+VT_STR(ONLINE_PROVIDER_EMPTY, "Nessun elemento qui. R1: preferiti, ricerca o aggiungi URL.", "Nothing here yet. R1: favourites, search or add URL.")

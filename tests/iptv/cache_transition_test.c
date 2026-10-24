@@ -50,5 +50,15 @@ int main(int argc,char**argv){
   CHECK(artwork_requests>=(unsigned)HOME_LAYOUT.rows);
   if(!mini&&language){char name[80];snprintf(name,sizeof(name),"compact-covers-%d-kind%d",theme,kind);png(name);}
  }
+ /* Leaving an IPTV page never waits for an unfinished artwork request. */
+ memset(&catalog,0,sizeof(catalog));catalog.count=1;saved_view=0;hide_unavailable=0;
+ strcpy(catalog.items[0].logo,"https://example.org/old.png");strcpy(catalog.items[0].url,"https://example.org/old");
+ filter_dirty=1;catalog_top=0;filter_catalog();iptv_cover_tick();int pending=artwork_thread;CHECK(pending>0);
+ int before_waits=waits;iptv_cover_stop();CHECK(waits==before_waits&&artwork_cancel);
+ memset(&catalog,0,sizeof(catalog));catalog.count=1;strcpy(catalog.items[0].logo,"https://example.org/new.png");
+ strcpy(catalog.items[0].url,"https://example.org/new");filter_dirty=1;filter_catalog();
+ finish(pending);iptv_cover_tick();CHECK(!catalog.items[0].artwork_path[0]&&artwork_thread!=pending);
+ pending=artwork_thread;CHECK(pending>0);finish(pending);iptv_cover_tick();CHECK(!strcmp(catalog.items[0].artwork_path,"-"));
+ pending=artwork_thread;ui_iptv_shutdown();CHECK(artwork_thread<0);
  free(held);FT_Done_Face(face);FT_Done_FreeType(ft);printf("Cached navigation: %u checks, held-worker exits, stale replies, refresh failures, all compact covers passed.\n",checks);return 0;
 }

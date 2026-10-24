@@ -47,6 +47,10 @@ static volatile int probe_cancel;
 static volatile long probe_current,probe_total;
 static char probe_summary[256];
 static int saved_view, starred_view;
+static int saved_parent_focus,saved_parent_top;
+static char saved_parent_url[VT_IPTV_URL_MAX];
+static unsigned artwork_generation,artwork_worker_generation;
+static volatile int catalog_cancel;
 static VtIptvChannel current_list;
 static SceUID artwork_thread = -1;
 static volatile int artwork_cancel, artwork_done;
@@ -81,19 +85,34 @@ static void search_catalog(void) {
 }
 
 static void iptv_cover_stop(void) {
-    if (artwork_thread < 0) return;
-    artwork_cancel = 1; sceKernelWaitThreadEnd(artwork_thread, NULL, NULL);
-    sceKernelDeleteThread(artwork_thread); artwork_thread = -1;
+    artwork_generation++;
+    if(artwork_thread>=0)artwork_cancel=1;
 }
+void ui_iptv_shutdown(void) {
+    iptv_cover_stop();
+    if(artwork_thread>=0) {
+        sceKernelWaitThreadEnd(artwork_thread,NULL,NULL);
+        sceKernelDeleteThread(artwork_thread);artwork_thread=-1;
+    }
+}
+static void restore_saved_selection(const char *url,int fallback,int top) {
+    filter_catalog();catalog_focus=fallback;
+    for(unsigned i=0;i<result_count;i++)if(url[0]&&!strcmp(catalog.items[results[i]].url,url)){catalog_focus=(int)i;break;}
+    if(catalog_focus>=(int)result_count)catalog_focus=result_count?result_count-1:0;
+    catalog_top=top;
+    if(catalog_top>catalog_focus)catalog_top=catalog_focus/2*2;
+}
+
 static int iptv_cover_worker(SceSize args, void *ctx) {
     (void)args; (void)ctx; vt_online_fetch_cover(&artwork_item, &artwork_cancel);
     __sync_synchronize(); artwork_done = 1; return sceKernelExitThread(0);
 }
 static void iptv_cover_tick(void) {
     if (artwork_thread >= 0 && artwork_done) {
-        iptv_cover_stop();
-        snprintf(catalog.items[artwork_index].artwork_path, sizeof(catalog.items[0].artwork_path),
-            "%s", artwork_item.artwork_path[0] ? artwork_item.artwork_path : "-");
+        sceKernelWaitThreadEnd(artwork_thread,NULL,NULL);sceKernelDeleteThread(artwork_thread);artwork_thread=-1;
+        if(!artwork_cancel && artwork_worker_generation==artwork_generation && artwork_index<(int)catalog.count)
+            snprintf(catalog.items[artwork_index].artwork_path,sizeof(catalog.items[0].artwork_path),
+                "%s",artwork_item.artwork_path[0]?artwork_item.artwork_path:"-");
     }
     if (artwork_thread >= 0) return;
     for (int i = catalog_top; i < catalog_top+catalog_visible && i < (int)result_count; i++) {
@@ -101,7 +120,7 @@ static void iptv_cover_tick(void) {
         if (!item->logo[0] || item->artwork_path[0]) continue;
         memset(&artwork_item, 0, sizeof(artwork_item));
         snprintf(artwork_item.artwork_url, sizeof(artwork_item.artwork_url), "%s", item->logo);
-        artwork_index = results[i]; artwork_cancel = artwork_done = 0;
+        artwork_index = results[i]; artwork_cancel = artwork_done = 0;artwork_worker_generation=artwork_generation;
         artwork_thread = sceKernelCreateThread("VmdIptvCover", iptv_cover_worker, 0x10000100, 0x40000, 0, 0, NULL);
         if (artwork_thread >= 0 && sceKernelStartThread(artwork_thread, 0, NULL) < 0) {
             sceKernelDeleteThread(artwork_thread); artwork_thread = -1;
@@ -115,7 +134,7 @@ static int load_catalog(void *ctx) {
     VtIptvHttpOptions options={0};
     snprintf(options.user_agent,sizeof(options.user_agent),"%s",channel_agent);
     int result = vt_iptv_http_fetch(&options, link, VT_IPTV_PLAYLIST_LIMIT, &data, &size,
-        effective, sizeof(effective), &artwork_cancel);
+        effective, sizeof(effective), &catalog_cancel);
     int fetched=result;
     if (!result) result = vt_iptv_catalog_parse(data, size, effective, &catalog);
     log_printf("IPTV catalog: transport=%d parse=%d bytes=%u entries=%u truncated=%d agent=%d\n",
@@ -216,8 +235,8 @@ static int rename_saved_link(VtIptvChannel *item, const char **message) {
 static void open_list(const char **message) {
     if(saved_view)snprintf(saved_search,sizeof(saved_search),"%s",search);
     search[0]=0;filter_dirty=1;
-    iptv_cover_stop();artwork_cancel=0;saved_view=starred_view=0;
-    int result=ui_loading_run(TR(IPTV_MODE_LIST),load_catalog,NULL,&artwork_cancel,NULL,NULL);
+    iptv_cover_stop();catalog_cancel=0;saved_view=0;
+    int result=ui_loading_run(TR(IPTV_MODE_LIST),load_catalog,NULL,&catalog_cancel,NULL,NULL);
     if(result<0){
         catalog.count=0;
         *message=result==VT_IPTV_CANCELLED?"":result==VT_IPTV_INVALID || result==VT_IPTV_UNSUPPORTED
@@ -406,23 +425,32 @@ static const char *mode_label(int kind) {
         kind==VT_IPTV_LIST?VT_STR_IPTV_MODE_LIST:VT_STR_IPTV_MODE_HLS);
 }
 static int options_for_page(UiContextAction items[8]) {
-    int n=0, listing=catalog.count || saved_view;
-    items[n++]=(UiContextAction){TR(IPTV_EDIT),NULL,0,1};
-    items[n++]=(UiContextAction){TR(IPTV_QR),NULL,3,1};
+    int n=0,listing=catalog.count || saved_view;
     if(listing) {
-        VtIptvChannel *selected=selected_channel();int starred=selected && selected->starred;
-        items[n++]=(UiContextAction){starred?TR(UI_UNSTAR):TR(UI_STAR),NULL,10,selected!=NULL};
-        if(saved_view) {
-            items[n++]=(UiContextAction){TR(IPTV_RENAME),NULL,14,selected!=NULL};
-            items[n++]=(UiContextAction){TR(IPTV_DELETE),NULL,15,selected!=NULL};
-            items[n++]=(UiContextAction){starred_view?TR(UI_SHOW_ALL):TR(UI_SHOW_STARRED),NULL,11,1};
+        VtIptvChannel *item=selected_channel();
+        if(item) {
+            items[n++]=(UiContextAction){item->mode==VT_IPTV_LIST?TR(IPTV_MODE_LIST):TR(IPTV_PLAY),NULL,18,1};
+            items[n++]=(UiContextAction){item->starred?TR(UI_UNSTAR):TR(UI_STAR),NULL,10,1};
+            if(saved_view) {
+                items[n++]=(UiContextAction){TR(IPTV_RENAME),NULL,14,1};
+                items[n++]=(UiContextAction){TR(IPTV_DELETE),NULL,15,1};
+            }
         }
-        else items[n++]=(UiContextAction){TR(IPTV_STAR_LIST),NULL,12,current_list.url[0]!=0};
+        if(saved_view)items[n++]=(UiContextAction){starred_view?TR(UI_SHOW_ALL):TR(UI_SHOW_STARRED),NULL,11,1};
+        else {
+            items[n++]=(UiContextAction){current_list.starred?TR(IPTV_UNSTAR_LIST):TR(IPTV_STAR_LIST),NULL,12,current_list.url[0]!=0};
+            items[n++]=(UiContextAction){TR(IPTV_SAVE_LIST),NULL,16,current_list.url[0]!=0};
+        }
+        items[n++]=(UiContextAction){TR(IPTV_SEARCH),NULL,19,1};
         items[n++]=(UiContextAction){TR(UI_REFRESH),NULL,13,1};
-        if(!saved_view)items[n++]=(UiContextAction){TR(IPTV_COLLECTION),NULL,5,1};
-        if(!saved_view)items[n++]=(UiContextAction){TR(IPTV_SAVE_LIST),NULL,16,current_list.url[0]!=0};
-        items[n++]=(UiContextAction){hide_unavailable?TR(IPTV_SHOW_UNAVAILABLE):TR(IPTV_CHECK_FILTER),NULL,17,catalog.count>0};
+        if(saved_view)items[n++]=(UiContextAction){TR(IPTV_ADD),NULL,0,1};
+        else {
+            items[n++]=(UiContextAction){hide_unavailable?TR(IPTV_SHOW_UNAVAILABLE):TR(IPTV_CHECK_FILTER),NULL,17,catalog.count>0};
+            items[n++]=(UiContextAction){TR(UI_BACK),NULL,5,1};
+        }
     } else {
+        items[n++]=(UiContextAction){TR(IPTV_EDIT),NULL,0,1};
+        items[n++]=(UiContextAction){TR(IPTV_QR),NULL,3,1};
         items[n++]=(UiContextAction){TR(IPTV_SAVE),NULL,4,link[0]!=0};
         items[n++]=(UiContextAction){TR(IPTV_COLLECTION),NULL,5,1};
     }
@@ -467,7 +495,7 @@ int ui_iptv_screen(void) {
         int option_action=ui_context_menu_input(&options,option_items,option_count,&pressed,controls.buttons,controls.ly,&touches,&touch);
         if(!options.open && options.animation<=.01f && !sidebar.open && sidebar.animation<=.01f &&
             (catalog.count || saved_view) && (touches&UI_TOUCH_EVENT_TAP) &&
-            ui_touch_hit_rect(touch.x,touch.y,564,UI_TABS_Y,176,40)) { option_action=17;touches=0; }
+            ui_touch_hit_rect(touch.x,touch.y,564,UI_TABS_Y,176,40)) { option_action=saved_view?11:17;touches=0; }
         ui_context_menu_tick(&options);
         int was_open = sidebar.open;
         int section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed,
@@ -486,6 +514,8 @@ int ui_iptv_screen(void) {
             iptv_cover_stop();catalog.count=0;saved_view=0;root_action=option_action;
         }
         if(option_action==10)pressed|=SCE_CTRL_SQUARE;
+        if(option_action==18)pressed|=SCE_CTRL_CROSS;
+        if(option_action==19)pressed|=SCE_CTRL_TRIANGLE;
         if(option_action==11 && saved_view){iptv_cover_stop();starred_view=!starred_view;reload_saved();catalog_focus=catalog_top=0;}
         if(option_action==12)pressed|=SCE_CTRL_SELECT;
         if(option_action==17) {
@@ -566,29 +596,31 @@ int ui_iptv_screen(void) {
                     catalog_focus=catalog_top+i; pressed|=SCE_CTRL_CROSS;
                 }
             if(pressed&SCE_CTRL_SQUARE && selected_channel()) {
-                iptv_cover_stop();message=toggle_star(selected_channel())?TR(IPTV_SAVE_FAILED):TR(IPTV_SAVED);
-                if(saved_view){reload_saved();catalog_focus=catalog_top=0;}
+                VtIptvChannel *item=selected_channel();char keep[VT_IPTV_URL_MAX];snprintf(keep,sizeof(keep),"%s",item->url);
+                int was_starred=item->starred,old_focus=catalog_focus,old_top=catalog_top;
+                iptv_cover_stop();message=toggle_star(item)?TR(IPTV_SAVE_FAILED):was_starred?TR(ONLINE_REMOVED):TR(IPTV_SAVED);
+                if(saved_view){reload_saved();restore_saved_selection(keep,old_focus,old_top);}
             }
-            if((pressed&SCE_CTRL_SELECT) && !saved_view && current_list.url[0])message=toggle_star(&current_list)?TR(IPTV_SAVE_FAILED):TR(IPTV_SAVED);
+            if((pressed&SCE_CTRL_SELECT) && !saved_view && current_list.url[0]) {
+                int old=current_list.starred;message=toggle_star(&current_list)?TR(IPTV_SAVE_FAILED):old?TR(ONLINE_REMOVED):TR(IPTV_SAVED);
+            }
             if ((touches&UI_TOUCH_EVENT_TAP) && ui_touch_hit_rect(touch.x,touch.y,UI_CONTENT_X,UI_TABS_Y,240,40))pressed|=SCE_CTRL_START;
             if(pressed&SCE_CTRL_START) { iptv_cover_stop();new_link();focus=0;message="";memset(&focus_motion,0,sizeof(focus_motion)); }
             else if (pressed & SCE_CTRL_CIRCLE) {
                 iptv_cover_stop();
-                if(search[0]) {
-                    search[0]=0;if(saved_view)saved_search[0]=0;
-                    filter_dirty=1;catalog_focus=catalog_top=0;message="";
-                } else {
-                    if(saved_view)return UI_SECTION_LOCAL_MEDIA;
-                    saved_view=1;snprintf(search,sizeof(search),"%s",saved_search);
-                    reload_saved();catalog_focus=catalog_top=0;
-                }
+                if(saved_view)return UI_SECTION_LOCAL_MEDIA;
+                saved_view=1;snprintf(search,sizeof(search),"%s",saved_search);
+                reload_saved();restore_saved_selection(saved_parent_url,saved_parent_focus,saved_parent_top);
             }
             else if ((pressed & SCE_CTRL_CROSS) && selected_channel()) {
                 iptv_cover_stop(); VtIptvChannel *item=selected_channel();
                 snprintf(link,sizeof(link),"%s",item->url); snprintf(channel_title,sizeof(channel_title),"%s",item->title);
                 snprintf(channel_agent,sizeof(channel_agent),"%s",item->user_agent);
                 mode=item->mode;
-                if(mode==VT_IPTV_LIST){current_list=*item;open_list(&message);}
+                if(mode==VT_IPTV_LIST){
+                    if(saved_view){saved_parent_focus=catalog_focus;saved_parent_top=catalog_top;snprintf(saved_parent_url,sizeof(saved_parent_url),"%s",item->url);}
+                    current_list=*item;open_list(&message);
+                }
                 else {
                     section=play_link(&message);
                     if(section!=UI_SECTION_NONE && section!=UI_SECTION_IPTV)return section;
@@ -640,9 +672,10 @@ int ui_iptv_screen(void) {
                     rename_saved_link(&item,&message);
                 }
             } else if(action==5) {
-                iptv_cover_stop();saved_view=1;starred_view=0;catalog_focus=catalog_top=0;
+                iptv_cover_stop();saved_view=1;catalog_focus=catalog_top=0;
                 snprintf(search,sizeof(search),"%s",saved_search);
                 message=reload_saved()?TR(IPTV_SAVE_FAILED):"";
+                restore_saved_selection(saved_parent_url,saved_parent_focus,saved_parent_top);
             } else if(action==6) mode=(mode+1)%4;
             if (action >= 0) {
                 sceCtrlPeekBufferPositive(0, &previous, 1);
@@ -654,12 +687,12 @@ int ui_iptv_screen(void) {
         vita2d_start_drawing(); vita2d_clear_screen();
         ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);
         ui_brand_draw_breadcrumbs(TR(IPTV_TITLE), NULL,
-            saved_view ? TR(IPTV_COLLECTION) : catalog.count ? current_list.title : TR(IPTV_ADD));
+            saved_view ? (starred_view?TR(ONLINE_FAVORITES):TR(IPTV_COLLECTION)) : catalog.count ? current_list.title : TR(IPTV_ADD));
         if(catalog.count || saved_view) {
             ui_action_button(UI_CONTENT_X,UI_TABS_Y,240,40,VT_THEME_SURFACE,"Start",TR(IPTV_ADD),0);
             char count_label[192];snprintf(count_label,sizeof(count_label),"%s  %u/%u",search[0]?search:TR(IPTV_SEARCH_SHORT),result_count,catalog.count);
             ui_action_button(272,UI_TABS_Y,276,40,VT_THEME_SURFACE,"Triangle",count_label,0);
-            ui_action_button(564,UI_TABS_Y,176,40,VT_THEME_SURFACE,"",hide_unavailable?TR(IPTV_SHOW_ALL_SHORT):TR(IPTV_FILTER_SHORT),hide_unavailable);
+            ui_action_button(564,UI_TABS_Y,176,40,VT_THEME_SURFACE,"",saved_view?(starred_view?TR(UI_ALL):TR(ONLINE_FAVORITES)):hide_unavailable?TR(IPTV_SHOW_ALL_SHORT):TR(IPTV_FILTER_SHORT),saved_view?starred_view:hide_unavailable);
             for(int i=0;i<catalog_visible && catalog_top+i<(int)result_count;i++) {
                 int x=UI_CONTENT_X+i%2*466,y=110+i/2*catalog_step;VtIptvChannel *item=&catalog.items[results[catalog_top+i]];
                 int selected=page_input && catalog_top+i==catalog_focus;

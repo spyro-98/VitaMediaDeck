@@ -41,6 +41,7 @@ int ui_music_player_run(const char *a, const char *b, const char *c, uint32_t bi
     (void)a; (void)b; (void)c; (void)bitrate; return player_action;
 }
 static void reset(void) {
+    clear_history();g_saved_valid=g_saved_changed=0;
     memset(&g_query, 0, sizeof(g_query));
     g_query.kind = VT_ONLINE_FEED; g_query.count = 8;
     strcpy(g_query.query, "Original"); strcpy(g_query.items[5].title, "Favorite");
@@ -93,6 +94,22 @@ int main(void) {
 
     reset(); g_episodes = 1; playback_failed();
     CHECK(!g_episodes && g_query.count == 1 && g_query.kind == VT_ONLINE_FEED);
+    /* Country -> shows -> episodes must retain both parents and their positions. */
+    reset();g_home=0;g_catalog=1;g_query.kind=VT_ONLINE_COUNTRY;
+    strcpy(g_country_name,"Countries");strcpy(g_query.items[5].title,"Italy");
+    CHECK(!remember_list());g_query.kind=VT_ONLINE_SHOW;g_query.count=3;g_selected=2;g_top=1;
+    strcpy(g_country_name,"Italy");strcpy(g_query.items[2].title,"Selected show");
+    CHECK(!remember_list()&&g_history_count==1);
+    g_query.kind=VT_ONLINE_EPISODE;g_query.count=1;g_episodes=1;g_catalog=0;strcpy(g_feed_title,"Show episodes");
+    restore_list();CHECK(g_query.kind==VT_ONLINE_SHOW&&g_selected==2&&g_top==1&&g_return_valid);
+    CHECK(!strcmp(g_country_name,"Italy"));
+    restore_list();CHECK(g_query.kind==VT_ONLINE_COUNTRY&&g_selected==5&&g_top==3&&!g_return_valid&&!g_history_count);
+    CHECK(!strcmp(g_country_name,"Countries"));
+    /* Repeated descent is bounded and allocation is released on a new provider. */
+    CHECK(!remember_list());for(int i=0;i<ONLINE_HISTORY_MAX;i++)CHECK(!remember_list());
+    CHECK(remember_list()<0);clear_history();CHECK(!g_return_valid&&!g_history_count);
+    strcpy(g_query.country,"IT");strcpy(g_country_name,"Italy");strcpy(g_feed_title,"Show");
+    browse_menu();CHECK(!g_query.country[0]&&!g_country_name[0]&&!g_feed_title[0]&&!g_return_valid);
     printf("Online navigation: %u assertions passed\n", checks);
     return 0;
 }

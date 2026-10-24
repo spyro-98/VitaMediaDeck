@@ -12,6 +12,7 @@ int vt_online_fetch_query(void *ctx){(void)ctx;return -1;}
 int vt_online_load_saved(VtOnlineItem *out,int cap){(void)out;(void)cap;return 0;}
 #endif
 int vt_online_save(const VtOnlineItem *item){(void)item;return 0;}
+int vt_online_remove(int kind,const char *url){(void)kind;(void)url;return 0;}
 int vt_online_url_valid(const char *url){(void)url;return 1;}
 int vt_online_resolve_show(VtOnlineItem *item,volatile int *cancel){(void)item;(void)cancel;return 0;}
 int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out){memset(out,0,sizeof(*out));return 0;}
@@ -82,7 +83,7 @@ int main(int argc,char **argv) {
     frame=0;tap_frame=0;tap_x=240;tap_y=65;
     CHECK(ui_online_audio_screen()==UI_SECTION_IPTV && g_tab==VT_ONLINE_FEED);
     frame=0;tap_frame=0;tap_x=450;tap_y=65;
-    CHECK(ui_online_audio_screen()==UI_SECTION_IPTV && g_tab==VT_ONLINE_FEED);
+    CHECK(ui_online_audio_screen()==UI_SECTION_LOCAL_MEDIA && g_home && g_tab==VT_ONLINE_FEED);
     FT_Done_Face(face);FT_Done_FreeType(ft);printf("Catalogue host UI: %u checks passed\n",checks);
 }
 #endif

@@ -443,7 +443,7 @@ int vt_online_load_saved(VtOnlineItem *out, int capacity) {
 	}
 	if (status.st_size > 512 * 1024) return -1;
 	json_t *array = json_load_file(path, 0, NULL), *entry;
-	if (!json_is_array(array)) { json_decref(array); return -1; }
+	if (!json_is_array(array) || json_array_size(array) > VT_ONLINE_MAX) { json_decref(array); return -1; }
 	size_t i; int count = 0;
 	json_array_foreach(array, i, entry) {
 		if (count >= capacity) break;
@@ -464,30 +464,18 @@ int vt_online_load_saved(VtOnlineItem *out, int capacity) {
 	json_decref(array); return count;
 }
 
-int vt_online_save(const VtOnlineItem *item) {
-	if (!item || !vt_online_url_valid(item->url) ||
-	    (item->kind != VT_ONLINE_RADIO && item->kind != VT_ONLINE_FEED)) return -1;
-	VtOnlineItem *items = calloc(VT_ONLINE_MAX, sizeof(*items));
-	if (!items) return -1;
-	int count = vt_online_load_saved(items, VT_ONLINE_MAX);
-	if (count < 0) { free(items); return -1; }
-	int target=-1;
-	for (int i = 0; i < count; i++)if (!strcmp(item->url, items[i].url))target=i;
-	if(target<0){if(count==VT_ONLINE_MAX){free(items);return -1;}target=count++;}
-	/* Re-starring refreshes metadata from older favorites without duplicates. */
-	items[target] = *item;
+static int write_saved(const VtOnlineItem *items, int count) {
 	json_t *array = json_array();
-	if (!array) { free(items); return -1; }
+	if (!array) { return -1; }
 	for (int i = 0; i < count; i++) {
 		json_t *entry = json_pack("{s:s,s:s,s:s,s:i,s:s,s:s,s:s,s:s}", "title", items[i].title,
 		    "url", items[i].url, "id", items[i].id, "kind", items[i].kind,
 		    "artwork",items[i].artwork_url,"author",items[i].author,
 		    "description",items[i].description,"detail",items[i].detail);
 		if (!entry || json_array_append_new(array, entry) < 0) {
-			free(items); json_decref(array); return -1;
+			json_decref(array); return -1;
 		}
 	}
-	free(items);
 	FILE *file = fopen(SAVED_TEMP, "wb");
 	int result = file ? json_dumpf(array, file, JSON_INDENT(2)) : -1;
 	if (file) { if (fflush(file)) result = -1; if (fclose(file)) result = -1; }
@@ -495,13 +483,48 @@ int vt_online_save(const VtOnlineItem *item) {
 	if (result < 0) { sceIoRemove(SAVED_TEMP); return -1; }
 	SceIoStat status;
 	int old = sceIoGetstat(SAVED_PATH, &status) >= 0;
-	sceIoRemove(SAVED_BACKUP);
+	if (old) sceIoRemove(SAVED_BACKUP);
 	if (old && sceIoRename(SAVED_PATH, SAVED_BACKUP) < 0) return -1;
 	if (sceIoRename(SAVED_TEMP, SAVED_PATH) < 0) {
 		if (old) sceIoRename(SAVED_BACKUP, SAVED_PATH);
 		return -1;
 	}
 	sceIoRemove(SAVED_BACKUP); return 0;
+}
+
+
+int vt_online_save(const VtOnlineItem *item) {
+    if (!item || !vt_online_url_valid(item->url) ||
+        (item->kind != VT_ONLINE_RADIO && item->kind != VT_ONLINE_FEED)) return -1;
+    VtOnlineItem *items = calloc(VT_ONLINE_MAX, sizeof(*items));
+    if (!items) return -1;
+    int count = vt_online_load_saved(items, VT_ONLINE_MAX);
+    if (count < 0) { free(items); return -1; }
+    int target = -1;
+    for (int i = 0; i < count; i++)
+        if (items[i].kind == item->kind && !strcmp(item->url, items[i].url)) target = i;
+    if (target < 0) {
+        if (count == VT_ONLINE_MAX) { free(items); return -1; }
+        target = count++;
+    }
+    items[target] = *item;
+    int result = write_saved(items, count);
+    free(items);
+    return result;
+}
+
+int vt_online_remove(int kind, const char *url) {
+    if ((kind != VT_ONLINE_RADIO && kind != VT_ONLINE_FEED) || !vt_online_url_valid(url)) return -1;
+    VtOnlineItem *items = calloc(VT_ONLINE_MAX, sizeof(*items));
+    if (!items) return -1;
+    int count = vt_online_load_saved(items, VT_ONLINE_MAX);
+    if (count < 0) { free(items); return -1; }
+    int kept = 0;
+    for (int i = 0; i < count; i++)
+        if (items[i].kind != kind || strcmp(items[i].url, url)) items[kept++] = items[i];
+    int result = kept == count ? 0 : write_saved(items, kept);
+    free(items);
+    return result;
 }
 
 int vt_online_resolve_show(VtOnlineItem *item,volatile int *cancel) {
