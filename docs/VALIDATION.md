@@ -111,7 +111,8 @@ The post-1.4.1 [controls audit](controls-guide-2026-10-23.md) uses a distinct
 controls-1023 test identity. Its guide tests add actual-theme/current-mapping
 prefixes, hint-width limits, safe buffer failure and index/text navigation.
 The repository README and mds/CONTROLS.md use the same verified theme routes.
-The original archived standard VPK is not silently replaced by that test build.
+At that validation checkpoint, the original standard VPK was preserved. The
+subsequent standard refresh below integrates these changes as requested.
 
 ## Unified library/search follow-up (library-1024)
 
@@ -128,3 +129,16 @@ The `search-1024` follow-up refreshes the library suites with the production loc
 index reader, worker-only query ownership, late-cover publications, 42 host layouts
 and animated/Reduce Motion activity in all seven themes. It uses the same manual
 Vita/server checklist; host budgets do not measure console FPS or battery usage.
+
+
+## Standard 1.4.1 refresh — 2026-10-24
+
+The standard release now includes all current provider/favourites/L1/podcast,
+unified-library and background-search changes. Deliver the release VPK at
+`build/releases/1.4.1/VitaMediaDeck-1.4.1.vpk`; normal work is integrated there
+rather than delivered as additional test-specific VPKs. Configure explicitly with
+`-DVITAMEDIADECK_TEST_ID=standard` to clear a previously cached experiment identity.
+Verify bubble VitaMediaDeck and log `session_standard.txt`, SFO 01.05/VMDK00001,
+CRC, SELF equality and dependency/license audit. Existing runtime evidence remains
+in the validation logs; changing the package identity does not establish another
+physical-console test.

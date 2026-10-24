@@ -201,3 +201,13 @@ and themed source activity respecting Reduce Motion. Improved result metadata,
 media placeholders and empty-state width. Added worker ownership, production-index
 and seven-theme loading regressions. Test identity search-1024; previous standard
 and library-1024 packages preserved. See the [updated report](../docs/unified-library-2026-10-24.md).
+
+
+## 2026-10-24 — Consolidamento nella release standard
+
+Su richiesta dell'utente, tutte le modifiche provider/ripresa/L1/libreria/ricerca
+sono integrate nel VPK standard 1.4.1, senza ulteriori pacchetti specifici di prova.
+Configurazione esplicita `VITAMEDIADECK_TEST_ID=standard`; bolla VitaMediaDeck e log
+session_standard.txt. Aggiornati note di rilascio, guida build e documentazione;
+il bundle standard contiene sorgenti, manifest/hash e provenienza delle verifiche.
+La nuova identità di pacchetto non rappresenta una prova fisica aggiuntiva.
