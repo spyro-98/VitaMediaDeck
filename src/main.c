@@ -705,7 +705,7 @@ static int browse_local(void) {
 	}
 }
 
-static int browse_network(void) {
+static int browse_network(int provider_section) {
 	if (!g_network_ready) {
 		ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
 		                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
@@ -713,10 +713,10 @@ static int browse_network(void) {
 	}
 	for (;;) {
 		UiNetworkSelection selection;
-		int action = ui_network_sources_screen(&selection);
+		int action = provider_section==UI_SECTION_JELLYFIN?ui_jellyfin_sources_screen(&selection):ui_network_sources_screen(&selection);
 		if (action >= UI_NETWORK_ACTION_SECTION_BASE)
 			return action - UI_NETWORK_ACTION_SECTION_BASE;
-		if (action != UI_NETWORK_ACTION_PLAY) return UI_SECTION_NETWORK;
+		if (action != UI_NETWORK_ACTION_PLAY) return provider_section==UI_SECTION_JELLYFIN?UI_SECTION_LOCAL_MEDIA:UI_SECTION_NETWORK;
 		char id[16];
 		remote_media_id(&selection, id);
 		if (active_media_id_matches(id)) {
@@ -802,12 +802,12 @@ static int run_application(void) {
 		}
 		return_section = section;
 		if (section == UI_SECTION_LOCAL_MEDIA) section = browse_local();
-		else if (section == UI_SECTION_NETWORK) {
+		else if (section == UI_SECTION_NETWORK || section == UI_SECTION_JELLYFIN) {
 			if (!g_network_ready) {
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
 				                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 				section = UI_SECTION_LOCAL_MEDIA;
-			} else section = browse_network();
+			} else section = browse_network(section);
 		} else if (section == UI_SECTION_NAVIDROME || section == UI_SECTION_IMMICH) {
 			section = ui_personal_media_screen(section == UI_SECTION_NAVIDROME ? VT_NETWORK_NAVIDROME : VT_NETWORK_IMMICH);
 		} else if (section == UI_SECTION_SETTINGS) {

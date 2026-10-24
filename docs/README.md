@@ -7,6 +7,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Dedicated Jellyfin provider](jellyfin-provider-2026-10-24.md): L1 order, saved servers and video-browser return in all seven themes.
+
 - [Provider navigation and favourite removal](provider-navigation-2026-10-24.md): all seven themes, saved-state consistency and provider controls.
 
 - [Controls clarification follow-up](controls-guide-2026-10-23.md): guide, theme navigation, active mapping and README audit.
@@ -98,3 +100,4 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [tests/ui_crossfade/README.md](../tests/ui_crossfade/README.md) | Executable suite guide; host/device limits stated locally |
 | [tools/local_streaming/README.md](../tools/local_streaming/README.md) | Current reference, policy or build instructions |
 | [docs/controls-guide-2026-10-23.md](controls-guide-2026-10-23.md) | Current controls clarification following the 1.4.1 standard snapshot |
+| [docs/jellyfin-provider-2026-10-24.md](jellyfin-provider-2026-10-24.md) | Dedicated Jellyfin L1 provider and validation limits |

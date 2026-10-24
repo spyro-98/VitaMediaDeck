@@ -19,7 +19,7 @@ int vt_network_sources_save(const VtNetworkSource*s,int n){source_saves++;if(wri
 int vt_network_credentials_load(VtNetworkCredential*c,int n){memcpy(c,secret_db,(size_t)n*sizeof(*c));return db_count;}
 int vt_network_credentials_save(const VtNetworkCredential*c,int n){CHECK(remember);key_saves++;memcpy(secret_db,c,(size_t)n*sizeof(*c));return 0;}
 int vt_network_credentials_clear(void){memset(secret_db,0,sizeof(secret_db));return 0;}
-const char *vt_network_protocol_name(VtNetworkProtocol p){return p==VT_NETWORK_NAVIDROME?"Navidrome":"Immich";}
+const char *vt_network_protocol_name(VtNetworkProtocol p){return p==VT_NETWORK_JELLYFIN?"Jellyfin":p==VT_NETWORK_NAVIDROME?"Navidrome":"Immich";}
 int vt_personal_base_url(const VtNetworkSource*s,char*out,size_t n){snprintf(out,n,"https://%s",s->host);return s->host[0]?0:-1;}
 int ui_network_browse_personal(VtNetworkSource*s,VtNetworkCredential*c){CHECK(s->protocol==VT_NETWORK_NAVIDROME||s->protocol==VT_NETWORK_IMMICH);CHECK(c->password[0]);browses++;return 0;}
 int ui_text_input_secure(const char*t,const char*i,char*out,size_t n){(void)t;(void)i;if(!rename_input)return 0;snprintf(out,n,"mock-secret");return 1;}
@@ -40,6 +40,20 @@ int ui_music_player_shuffle_enabled(void){return shuffle;}
 int ui_network_personal_resume_credential(const VtNetworkSource*s,VtNetworkCredential*c){(void)s;(void)c;return 0;}
 int vt_personal_list(const VtNetworkSource*s,const VtNetworkCredential*c,const char*p,VtNetworkEntry*e,int n,char*d,size_t z){(void)d;(void)z;CHECK(s->protocol==VT_NETWORK_NAVIDROME&&c->password[0]&&n==VT_NETWORK_MAX_ENTRIES&&!strcmp(p,"playlist:many@100"));queue_fetches++;memset(e,0,2*sizeof(*e));for(int i=0;i<2;i++){e[i].is_audio=1;snprintf(e[i].path,sizeof(e[i].path),"song:next%d",i);snprintf(e[i].name,sizeof(e[i].name),"Next track %d",i);}return 2;}
 int sceKernelGetRandomNumber(void*p,size_t n){memset(p,0,n);return 0;}
+static int jellyfin_browses,jellyfin_configures,jellyfin_result,jellyfin_resume_result;
+int ui_network_resume_jellyfin(const VtNetworkSource *s,int count,UiNetworkSelection *selection) {
+ CHECK(count>0&&s&&selection);return jellyfin_resume_result;
+}
+int ui_network_configure_jellyfin(VtNetworkSource *s,VtNetworkCredential *c,int fresh) {
+ jellyfin_configures++;if(!rename_input)return 0;
+ if(fresh){memset(s,0,sizeof(*s));s->protocol=VT_NETWORK_JELLYFIN;strcpy(s->name,"Jellyfin added");strcpy(s->host,"http://jellyfin.example");s->port=8096;}
+ CHECK(s->protocol==VT_NETWORK_JELLYFIN);strcpy(c->password,"mock-jellyfin-password");return 1;
+}
+int ui_network_browse_jellyfin(VtNetworkSource *s,VtNetworkCredential *c,UiNetworkSelection *selection) {
+ CHECK(s&&c&&selection&&s->protocol==VT_NETWORK_JELLYFIN);jellyfin_browses++;
+ if(jellyfin_result==UI_NETWORK_ACTION_PLAY){memset(selection,0,sizeof(*selection));selection->source=*s;selection->credential=*c;strcpy(selection->path,"jellyfin:item");strcpy(selection->title,"Selected movie");}
+ return jellyfin_result;
+}
 static void reset_inputs(unsigned action){frame=0;script_count=4;memset(input_script,0,sizeof(input_script));input_script[1]=action;input_script[3]=SCE_CTRL_CIRCLE;capture_frame=0;mini_top=544;axis_count=0;tap_frame=-1;}
 int main(int argc,char**argv){CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));allow_audio_fullscreen=1;
  db_count=3;db[0].protocol=VT_NETWORK_JELLYFIN;db[1].protocol=VT_NETWORK_NAVIDROME;db[2].protocol=VT_NETWORK_IMMICH;
@@ -50,16 +64,42 @@ int main(int argc,char**argv){CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeT
   reset_inputs(SCE_CTRL_CROSS);CHECK(ui_personal_media_screen(provider)==UI_SECTION_LOCAL_MEDIA);
  }
  CHECK(browses==56);int saves=source_saves;
+ /* Direct Jellyfin is filtered to its own saved servers and preserves video selection. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++) {
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  UiNetworkSelection selection={0};reset_inputs(0);jellyfin_result=UI_NETWORK_ACTION_BACK;
+  CHECK(ui_jellyfin_sources_screen(&selection)==UI_NETWORK_ACTION_BACK);
+  memcpy(pixels,first_pixels,sizeof(pixels));char name[96];snprintf(name,sizeof(name),"jellyfin-provider-%d-%s",theme,language?"it":"en");png(name);
+  reset_inputs(SCE_CTRL_CROSS);jellyfin_result=UI_NETWORK_ACTION_PLAY;int before=jellyfin_browses;
+  CHECK(ui_jellyfin_sources_screen(&selection)==UI_NETWORK_ACTION_PLAY&&jellyfin_browses==before+1);
+  CHECK(selection.source.protocol==VT_NETWORK_JELLYFIN&&!strcmp(selection.path,"jellyfin:item"));
+  reset_inputs(SCE_CTRL_CROSS);jellyfin_result=UI_NETWORK_ACTION_SECTION_BASE+UI_SECTION_NAVIDROME;
+  CHECK(ui_jellyfin_sources_screen(&selection)==UI_NETWORK_ACTION_SECTION_BASE+UI_SECTION_NAVIDROME);
+  reset_inputs(SCE_CTRL_TRIANGLE);rename_input=NULL;before=jellyfin_configures;
+  CHECK(ui_jellyfin_sources_screen(&selection)==UI_NETWORK_ACTION_BACK&&jellyfin_configures==before+1);
+  reset_inputs(SCE_CTRL_SQUARE);rename_input="add";int old_count=db_count;
+  CHECK(ui_jellyfin_sources_screen(&selection)==UI_NETWORK_ACTION_BACK&&db_count==old_count+1);
+  CHECK(db[db_count-1].protocol==VT_NETWORK_JELLYFIN&&db[1].protocol==VT_NETWORK_NAVIDROME&&db[2].protocol==VT_NETWORK_IMMICH);
+  db_count=old_count;rename_input=NULL;
+ }
+ CHECK(ui_jellyfin_sources_screen(NULL)==UI_NETWORK_ACTION_BACK);
+ /* Restored video returns to its browser before showing the server picker. */
+ UiNetworkSelection resumed={0};
+ jellyfin_resume_result=UI_NETWORK_ACTION_PLAY;CHECK(ui_jellyfin_sources_screen(&resumed)==UI_NETWORK_ACTION_PLAY);
+ jellyfin_resume_result=UI_NETWORK_ACTION_SECTION_BASE+UI_SECTION_IMMICH;CHECK(ui_jellyfin_sources_screen(&resumed)==jellyfin_resume_result);
+ jellyfin_resume_result=0;saves=source_saves;
  /* R1 exposes removal; cancellation and failed persistence retain the connection. */
- for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(int provider=VT_NETWORK_NAVIDROME;provider<=VT_NETWORK_IMMICH;provider++) {
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(int provider=VT_NETWORK_JELLYFIN;provider<=VT_NETWORK_IMMICH;provider++) {
   ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
   for(int outcome=0;outcome<3;outcome++) {
    db_count=3;db[0].protocol=VT_NETWORK_JELLYFIN;db[1].protocol=VT_NETWORK_NAVIDROME;db[2].protocol=VT_NETWORK_IMMICH;
    reset_inputs(0);unsigned sequence[]={0,SCE_CTRL_RTRIGGER,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_CROSS,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
    if(outcome)sequence[11]=SCE_CTRL_CROSS;
    memcpy(input_script,sequence,sizeof(sequence));script_count=sizeof(sequence)/sizeof(*sequence);
-   write_failure=outcome==2;CHECK(ui_personal_media_screen(provider)==UI_SECTION_LOCAL_MEDIA);write_failure=0;
-   CHECK(db_count==(outcome==1?2:3));CHECK(db[0].protocol==VT_NETWORK_JELLYFIN);
+   write_failure=outcome==2;
+   UiNetworkSelection removed_selection={0};
+   CHECK((provider==VT_NETWORK_JELLYFIN?ui_jellyfin_sources_screen(&removed_selection):ui_personal_media_screen(provider))==(provider==VT_NETWORK_JELLYFIN?UI_NETWORK_ACTION_BACK:UI_SECTION_LOCAL_MEDIA));write_failure=0;
+   CHECK(db_count==(outcome==1?2:3));CHECK(db[0].protocol==(provider==VT_NETWORK_JELLYFIN&&outcome==1?VT_NETWORK_NAVIDROME:VT_NETWORK_JELLYFIN));
   }
  }
  db_count=3;db[0].protocol=VT_NETWORK_JELLYFIN;db[1].protocol=VT_NETWORK_NAVIDROME;db[2].protocol=VT_NETWORK_IMMICH;
@@ -76,6 +116,6 @@ int main(int argc,char**argv){CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeT
  VtNetworkEntry photo={.name="Photo.HEIC",.path="photo:one",.is_image=1};CHECK(ui_personal_media_open(&db[2],&secret_db[2],&photo,&photo,1,0)==0&&viewer_calls==1);
  /* Restored-player navigation is forwarded once to the underlying screen. */
  ui_sections_request(UI_SECTION_IMMICH);unsigned pressed=0;UiSectionsSidebar sidebar;ui_sections_sidebar_init(&sidebar,UI_SECTION_NAVIDROME);CHECK(ui_sections_sidebar_handle_buttons(&sidebar,&pressed,0,128)==UI_SECTION_IMMICH);CHECK(ui_sections_take_requested()==UI_SECTION_NONE);
- /* All eleven rows fit with live player + download actions. */
+ /* All twelve rows fit with live player + download actions. */
  live_slots=1;reset_inputs(SCE_CTRL_LTRIGGER);script_count=6;input_script[3]=SCE_CTRL_CIRCLE;input_script[4]=0;input_script[5]=SCE_CTRL_CIRCLE;capture_frame=1;CHECK(ui_personal_media_screen(VT_NETWORK_IMMICH)==UI_SECTION_LOCAL_MEDIA);memcpy(pixels,first_pixels,sizeof(pixels));png("personal-sidebar-all-sections");live_slots=0;
  ui_personal_media_shutdown();FT_Done_Face(mono);FT_Done_Face(inter);FT_Done_FreeType(ft);printf("Personal media native UI: %u checks, 7 themes, 2 languages, connection/edit/cancel/save failure and player handoff passed\n",checks);return 0;}
