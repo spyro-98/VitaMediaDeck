@@ -50,6 +50,20 @@ int main(int argc,char**argv){CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeT
   reset_inputs(SCE_CTRL_CROSS);CHECK(ui_personal_media_screen(provider)==UI_SECTION_LOCAL_MEDIA);
  }
  CHECK(browses==56);int saves=source_saves;
+ /* R1 exposes removal; cancellation and failed persistence retain the connection. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(int provider=VT_NETWORK_NAVIDROME;provider<=VT_NETWORK_IMMICH;provider++) {
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  for(int outcome=0;outcome<3;outcome++) {
+   db_count=3;db[0].protocol=VT_NETWORK_JELLYFIN;db[1].protocol=VT_NETWORK_NAVIDROME;db[2].protocol=VT_NETWORK_IMMICH;
+   reset_inputs(0);unsigned sequence[]={0,SCE_CTRL_RTRIGGER,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_CROSS,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
+   if(outcome)sequence[11]=SCE_CTRL_CROSS;
+   memcpy(input_script,sequence,sizeof(sequence));script_count=sizeof(sequence)/sizeof(*sequence);
+   write_failure=outcome==2;CHECK(ui_personal_media_screen(provider)==UI_SECTION_LOCAL_MEDIA);write_failure=0;
+   CHECK(db_count==(outcome==1?2:3));CHECK(db[0].protocol==VT_NETWORK_JELLYFIN);
+  }
+ }
+ db_count=3;db[0].protocol=VT_NETWORK_JELLYFIN;db[1].protocol=VT_NETWORK_NAVIDROME;db[2].protocol=VT_NETWORK_IMMICH;
+ saves=source_saves;
  reset_inputs(SCE_CTRL_TRIANGLE);rename_input=NULL;CHECK(ui_personal_media_screen(VT_NETWORK_IMMICH)==UI_SECTION_LOCAL_MEDIA&&source_saves==saves);
  reset_inputs(SCE_CTRL_SQUARE);rename_input="test.example";CHECK(ui_personal_media_screen(VT_NETWORK_IMMICH)==UI_SECTION_LOCAL_MEDIA&&db_count==4&&db[3].protocol==VT_NETWORK_IMMICH);CHECK(key_saves>0);
  int original_count=db_count;write_failure=1;reset_inputs(SCE_CTRL_SQUARE);CHECK(ui_personal_media_screen(VT_NETWORK_IMMICH)==UI_SECTION_LOCAL_MEDIA&&db_count==original_count);write_failure=0;

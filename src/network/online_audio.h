@@ -43,6 +43,8 @@ int vt_online_query_cache_write(const VtOnlineQuery *query);
 int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlineQuery *out);
 int vt_online_load_saved(VtOnlineItem *out, int capacity);
 int vt_online_save(const VtOnlineItem *item);
+/* Exact kind + URL; removes only the local favourite, preserving other media. */
+int vt_online_remove(int kind, const char *url);
 int vt_online_resolve_show(VtOnlineItem *item, volatile int *cancel);
 /* Bounded raster cover cache; call on a worker, not during drawing. */
 int vt_online_fetch_cover(VtOnlineItem *item, volatile int *cancel);

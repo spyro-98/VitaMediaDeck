@@ -8,8 +8,10 @@
 void ui_brand_draw_header_placeholder(const char *path,const char *title){(void)path;ui_brand_draw_header(title);}
 void ui_brand_set_loading(int loading){(void)loading;}
 int vt_online_fetch_query(void *ctx){(void)ctx;return -1;}
-int vt_online_load_saved(VtOnlineItem *out,int cap){(void)out;(void)cap;return 0;}
-int vt_online_save(const VtOnlineItem *item){(void)item;return 0;}
+static VtOnlineItem favorites[VT_ONLINE_MAX];static int favorite_count,favorite_write_error;
+int vt_online_load_saved(VtOnlineItem *out,int cap){int n=favorite_count<cap?favorite_count:cap;memcpy(out,favorites,n*sizeof(*out));return n;}
+int vt_online_save(const VtOnlineItem *item){if(favorite_write_error)return -1;CHECK(favorite_count<VT_ONLINE_MAX);favorites[favorite_count++]=*item;return 0;}
+int vt_online_remove(int kind,const char *url){if(favorite_write_error)return -1;int n=0;for(int i=0;i<favorite_count;i++)if(favorites[i].kind!=kind||strcmp(favorites[i].url,url))favorites[n++]=favorites[i];favorite_count=n;return 0;}
 int vt_online_url_valid(const char *url){(void)url;return 1;}
 int vt_online_resolve_show(VtOnlineItem *item,volatile int *cancel){(void)item;(void)cancel;return 0;}
 int vt_background_playback_snapshot(VtBackgroundPlaybackSnapshot *out){memset(out,0,sizeof(*out));return 0;}
@@ -27,16 +29,18 @@ void vt_download_job_init_url(VtDownloadJob*a,const char*b){(void)a;(void)b;}
 void vt_download_job_set_destination(VtDownloadJob*a,const char*b){(void)a;(void)b;}
 int vt_download_background_start(const VtDownloadJob*a){(void)a;return 0;}
 static void fixture(int kind){
+ clear_history();g_saved_changed=g_saved_valid=0;favorite_count=favorite_write_error=0;
  memset(&g_query,0,sizeof(g_query));g_home=kind==0||kind==1||kind==5;
  g_tab=kind==1||kind==5?VT_ONLINE_FEED:VT_ONLINE_RADIO;
  g_episodes=kind==5;g_menu=kind==2;g_catalog=kind==3||kind==4;
  g_return_valid=g_mode_changed=0;g_initialized=1;g_top=g_selected=0;
  g_query.kind=kind==2?VT_ONLINE_MENU:kind==3?VT_ONLINE_COUNTRY:kind==4?VT_ONLINE_TAG:
     kind==5?VT_ONLINE_EPISODE:g_tab;
- g_query.count=6;g_page_sizes[0]=6;g_pages=1;
+ g_query.count=6;g_page_sizes[0]=6;g_pages=1;g_home_list_loaded=1;
  for(int i=0;i<6;i++){
   VtOnlineItem *item=&g_query.items[i];item->kind=g_query.kind;
   snprintf(item->title,sizeof(item->title),"%s %d",kind==0?"Radio station":kind==5?"Podcast episode":"Science and history",i+1);
+  snprintf(item->url,sizeof(item->url),"https://example.org/item/%d",i);
   strcpy(item->detail,"Publisher / description");strcpy(item->artwork_path,"fixture-square.png");
   if(kind==5){strcpy(item->published_date,"2026-10-23");item->duration_ms=185000;}
  }
@@ -101,9 +105,44 @@ int main(int argc,char **argv){
  input_axes[4].rx=18;input_axes[4].ry=64;
  CHECK(ui_online_audio_screen()==UI_SECTION_LOCAL_MEDIA);
  CHECK(ui_home_tab()==HOME_IMAGES&&g_tab==VT_ONLINE_FEED&&!compact_home_labels);
- axis_count=0;face=inter;FT_Done_Face(mono);ui_theme_apply(VT_UI_THEME_LEGACY);
+ axis_count=0;
+ /* The same R1 Remove action works in Home for every theme, language and provider. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int provider=0;provider<2;provider++) {
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;fixture(provider);mini_top=544;
+  favorite_count=g_query.count;memcpy(favorites,g_query.items,favorite_count*sizeof(*favorites));
+  unsigned sequence[]={0,SCE_CTRL_RTRIGGER,0,SCE_CTRL_DOWN,0,SCE_CTRL_CROSS};
+  memcpy(input_script,sequence,sizeof(sequence));exit_via_sidebar(6);capture_frame=6;
+  CHECK(ui_online_audio_screen()==UI_SECTION_NETWORK);
+  CHECK(g_query.count==5&&favorite_count==5&&g_selected==0);
+  CHECK(!strcmp(g_query.items[0].url,"https://example.org/item/1"));
+  CHECK(!g_lazy.cancel || g_lazy_thread<0 || g_lazy_generation!=g_context_generation);
+  /* Discovery toggles the saved state without removing the catalogue result. */
+  fixture(provider);g_home=0;g_catalog=1;g_menu=0;g_query.count=1;
+  CHECK(toggle_favorite()==1&&favorite_count==1&&g_query.count==1);
+  CHECK(favorite_index(&g_query.items[0])>=0);
+  UiContextAction actions[8];int action_count=online_options(actions,0),remove_actions=0;
+  for(int i=0;i<action_count;i++)remove_actions+=actions[i].action==SCE_CTRL_SQUARE;
+  CHECK(action_count<=8&&remove_actions==1);
+  CHECK(toggle_favorite()==1&&!favorite_count&&g_query.count==1);
+  CHECK(favorite_index(&g_query.items[0])<0);
+  /* Last-item removal stays empty and cannot resurrect a cached favourite. */
+  fixture(provider);g_home_list_loaded=1;g_query.count=1;favorite_count=1;favorites[0]=g_query.items[0];
+  CHECK(toggle_favorite()==1&&!favorite_count&&!g_query.count);
+  load_saved();CHECK(!g_query.count&&g_home_cache[provider].valid);
+  /* A failed storage update leaves the selected favourite and cache intact. */
+  fixture(provider);favorite_count=1;favorites[0]=g_query.items[0];g_query.count=1;favorite_write_error=1;
+  CHECK(toggle_favorite()<0&&g_query.count==1&&favorite_count==1);
+ }
+ /* Discovery keeps provider tabs: the Ghost wheel cannot route into another Home section. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++) {
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;fixture(2);mini_top=544;
+  axis_count=6;for(unsigned i=0;i<axis_count;i++)input_axes[i]=(SceCtrlData){.lx=128,.ly=128,.rx=18,.ry=192};
+  exit_via_sidebar(0);int section=ui_online_audio_screen();CHECK(section==UI_SECTION_NETWORK||section==UI_SECTION_IPTV);
+  CHECK(!g_home&&g_tab==VT_ONLINE_RADIO&&ui_home_tab()==HOME_RADIO);axis_count=0;
+ }
+ clear_history();face=inter;FT_Done_Face(mono);ui_theme_apply(VT_UI_THEME_LEGACY);
  FT_Done_Face(face);FT_Done_FreeType(ft);
- printf("Themed online flows: %u checks, six themes, radio/podcast/discovery/episodes/back/offline and dual-stick transitions passed\n",checks);
+ printf("Themed online flows: %u checks, seven themes, favourite removal/failure/empty state, isolated provider inputs and nested flows passed\n",checks);
 }
 
 int vt_online_query_cache_read(VtOnlineQuery *q){(void)q;return -1;}

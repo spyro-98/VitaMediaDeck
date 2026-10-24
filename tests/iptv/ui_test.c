@@ -541,7 +541,8 @@ int main(int argc,char **argv) {
     unsigned search_script[]={0,SCE_CTRL_CROSS,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
     memcpy(input_script,search_script,sizeof(search_script));script_count=6;capture_frame=2;frame=0;
     CHECK(ui_iptv_screen()==UI_SECTION_LOCAL_MEDIA);
-    CHECK(!strcmp(last_stream_url,catalog.items[1].url) && !search[0]);
+    CHECK(!strcmp(last_stream_url,catalog.items[1].url));
+    CHECK(!strcmp(search,"rai news")); /* Circle leaves the level; it does not consume Back clearing a filter. */
     memcpy(pixels,first_pixels,sizeof(pixels));png("iptv-search-results");
     const char *empty_message="";
     for(language=0;language<2;language++) {

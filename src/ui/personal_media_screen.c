@@ -364,6 +364,7 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
         vt_network_credentials_load(credentials, VT_NETWORK_MAX_SOURCES) < 0)
         wipe(credentials, VT_NETWORK_MAX_SOURCES * sizeof(*credentials));
     int selected = 0, remove = 0, result = UI_SECTION_LOCAL_MEDIA;
+    UiContextMenu options={0};
     UiSectionsSidebar sidebar;
     ui_sections_sidebar_init(&sidebar, section_for(protocol));
     UiNavRepeat repeat;
@@ -384,7 +385,7 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
         UiTouchEvent touch;
         unsigned flags = ui_touch_poll(&touch);
         ui_mini_player_handle_buttons(&pressed);
-        if (ui_mini_player_handle_touch(flags, &touch))
+        if (!options.open && options.animation<=.01f && !sidebar.open && sidebar.animation<=.01f && ui_mini_player_handle_touch(flags, &touch))
             flags = 0;
         if (ui_mini_player_input_locked()) {
             pressed = 0;
@@ -396,6 +397,24 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
             pressed |= SCE_CTRL_LTRIGGER;
             flags = 0;
         }
+        if((flags&UI_TOUCH_EVENT_TAP) && ui_touch_hit_rect(touch.x,touch.y,756,62,186,40)) {
+            pressed|=SCE_CTRL_RTRIGGER;flags=0;
+        }
+        if(pressed&SCE_CTRL_RTRIGGER)sidebar.open=0;
+        UiContextAction actions[4];int action_count=0;
+        if(remove) {
+            actions[action_count++]=(UiContextAction){tr("Confirm removal", "Conferma rimozione"),NULL,SCE_CTRL_CROSS,1};
+            actions[action_count++]=(UiContextAction){tr("Cancel", "Annulla"),NULL,SCE_CTRL_CIRCLE,1};
+        } else {
+            actions[action_count++]=(UiContextAction){tr("Connect", "Collega"),NULL,SCE_CTRL_CROSS,n>0};
+            actions[action_count++]=(UiContextAction){tr("Add server", "Aggiungi server"),NULL,SCE_CTRL_SQUARE,count<VT_NETWORK_MAX_SOURCES};
+            actions[action_count++]=(UiContextAction){tr("Edit connection", "Modifica collegamento"),NULL,SCE_CTRL_TRIANGLE,n>0};
+            actions[action_count++]=(UiContextAction){tr("Remove connection", "Rimuovi collegamento"),NULL,1<<28,n>0};
+        }
+        int selected_action=ui_context_menu_input(&options,actions,action_count,&pressed,pad.buttons,pad.ly,&flags,&touch);
+        ui_context_menu_tick(&options);
+        if(selected_action==(1<<28)){remove=selected+1;}
+        else if(selected_action>=0)pressed|=(unsigned)selected_action;
         int section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed, pad.buttons, pad.ly);
         if (sidebar.open) {
             int hit = ui_sections_sidebar_handle_touch(&sidebar, flags, touch.x, touch.y);
@@ -408,7 +427,7 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
             result = section;
             break;
         }
-        if (!sidebar.open && sidebar.animation < 0.01f) {
+        if (!sidebar.open && sidebar.animation < 0.01f && ((!options.open && options.animation<.01f)||selected_action>=0)) {
             unsigned nav = ui_nav_repeat_update(&repeat, pressed, pad.buttons, pad.lx, pad.ly,
                                                 SCE_CTRL_UP | SCE_CTRL_DOWN);
             if ((nav & SCE_CTRL_UP) && selected > 0) {
@@ -426,32 +445,30 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
                         selected = top + row;
                         pressed |= SCE_CTRL_CROSS;
                     }
-            if (pressed & SCE_CTRL_CIRCLE)
-                break;
-            if ((pressed & SCE_CTRL_RTRIGGER) && n) {
-                if (remove == selected + 1) {
-                    int idx = map[selected];
-                    VtNetworkSource removed_source = sources[idx];
-                    VtNetworkCredential removed_credential = credentials[idx];
-                    for (int k = idx; k + 1 < count; k++) {
-                        sources[k] = sources[k + 1];
-                        credentials[k] = credentials[k + 1];
+            if (pressed & SCE_CTRL_CIRCLE) {
+                if(remove){remove=0;pressed=0;}else break;
+            }
+            if ((pressed & SCE_CTRL_CROSS) && n && remove == selected + 1) {
+                int idx = map[selected];
+                VtNetworkSource removed_source = sources[idx];
+                VtNetworkCredential removed_credential = credentials[idx];
+                for (int k = idx; k + 1 < count; k++) {
+                    sources[k] = sources[k + 1];
+                    credentials[k] = credentials[k + 1];
+                }
+                count--;
+                wipe(&credentials[count], sizeof(credentials[count]));
+                if (persist(sources, credentials, count) < 0) {
+                    for (int k = count; k > idx; k--) {
+                        sources[k] = sources[k - 1];
+                        credentials[k] = credentials[k - 1];
                     }
-                    count--;
-                    wipe(&credentials[count], sizeof(credentials[count]));
-                    if (persist(sources, credentials, count) < 0) {
-                        for (int k = count; k > idx; k--) {
-                            sources[k] = sources[k - 1];
-                            credentials[k] = credentials[k - 1];
-                        }
-                        sources[idx] = removed_source;
-                        credentials[idx] = removed_credential;
-                        count++;
-                    }
-                    wipe(&removed_credential, sizeof(removed_credential));
-                    remove = 0;
-                } else
-                    remove = selected + 1;
+                    sources[idx] = removed_source;
+                    credentials[idx] = removed_credential;
+                    count++;
+                }
+                wipe(&removed_credential, sizeof(removed_credential));
+                remove = 0;pressed=0;
             }
             if ((pressed & SCE_CTRL_SQUARE) && count < VT_NETWORK_MAX_SOURCES) {
                 VtNetworkSource s;
@@ -544,11 +561,13 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
              1);
         text(28, 466,
              remove
-                 ? tr("R1 again: remove this connection", "Ancora R1: rimuovi questo collegamento")
-                 : tr("Circle Back    R1 Remove connection    L1 Sections",
-                      "Cerchio Indietro    R1 Rimuovi collegamento    L1 Sezioni"),
+                 ? tr("X: remove connection only    Circle: cancel", "X: rimuovi solo collegamento    Cerchio: annulla")
+                 : tr("Circle Back    R1 Options    L1 Sections",
+                      "Cerchio Indietro    R1 Opzioni    L1 Sezioni"),
              1);
+        ui_action_button(756,62,186,40,VT_THEME_SURFACE,"R1",vt_i18n_str(VT_STR_UI_OPTIONS),options.open);
         ui_mini_player_draw();
+        ui_context_menu_draw(&options,vt_i18n_str(VT_STR_UI_OPTIONS),actions,action_count);
         if (sidebar.open || sidebar.animation > 0.01f)
             ui_sections_sidebar_draw(&sidebar);
         vita2d_end_drawing();
