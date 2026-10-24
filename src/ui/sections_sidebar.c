@@ -28,6 +28,7 @@
 #define ITEM_W 384
 #define ITEM_H 30
 #define ITEM_STEP 34
+#define SIDEBAR_CONTENT_COUNT (UI_SECTION_COUNT - 3)
 
 #define ANALOG_LOW 64
 #define ANALOG_HIGH 191
@@ -102,13 +103,14 @@ unsigned int ui_nav_repeat_update(UiNavRepeat *repeat,
 /* Presentation order is independent of the stable section/action identifiers. */
 static int sidebar_section_at(const UiSectionsSidebar *sidebar, int slot) {
     static const int legacy_order[] = {
-        UI_SECTION_LOCAL_MEDIA, UI_SECTION_NETWORK, UI_SECTION_NAVIDROME,
+        UI_SECTION_LOCAL_MEDIA, UI_SECTION_NETWORK, UI_SECTION_JELLYFIN, UI_SECTION_NAVIDROME,
         UI_SECTION_IMMICH, UI_SECTION_ONLINE_AUDIO, UI_SECTION_IPTV,
         UI_SECTION_SETTINGS, UI_SECTION_GUIDE, UI_SECTION_INFO
     };
     if (sidebar->player_available && slot == 0) return UI_SECTION_PLAYER;
     if (sidebar->download_available && slot == sidebar->player_available)
         return UI_SECTION_DOWNLOAD;
+    _Static_assert(sizeof(legacy_order)/sizeof(legacy_order[0])==UI_SECTION_COUNT,"Section order must cover every provider");
     int index = slot - sidebar->player_available - sidebar->download_available;
     if (index < 0 || index >= UI_SECTION_COUNT) return UI_SECTION_NONE;
     return legacy_order[index];
@@ -126,17 +128,17 @@ static float sidebar_row_y(const UiSectionsSidebar *sidebar, float slot) {
     if (slot < 0) slot = 0;
     if (slot > count - 1) slot = count - 1;
     int index = (int)slot;
-    float y = 114 + index * 28;
+    float y = 114 + index * 26;
     if (live && index >= live) y += 36;
-    if (index >= live + 6) y += 36;
+    if (index >= live + SIDEBAR_CONTENT_COUNT) y += 36;
     if (index + 1 < count) {
-        int next_gap = (live && index + 1 == live) || index + 1 == live + 6;
-        y += (slot - index) * (28 + (next_gap ? 36 : 0));
+        int next_gap = (live && index + 1 == live) || index + 1 == live + SIDEBAR_CONTENT_COUNT;
+        y += (slot - index) * (26 + (next_gap ? 36 : 0));
     }
     return y;
 }
 static int sidebar_row_height(void) {
-    return ui_theme_id() == VT_UI_THEME_LEGACY ? 26 : ITEM_H;
+    return ui_theme_id() == VT_UI_THEME_LEGACY ? 24 : ITEM_H;
 }
 
 static float sidebar_offset(const UiSectionsSidebar *sidebar) {
@@ -152,18 +154,18 @@ static UiThemeRect sidebar_slot_rect(const UiSectionsSidebar *sidebar,int slot) 
  if(slot<live)return (UiThemeRect){64+slot*428,164,live==1?832:404,34};
  int index=slot-live,theme=ui_theme_id();UiThemeRect r;
  if(theme==VT_UI_THEME_GHOST_MESH){
-  if(index<6){float a=-1.57079632679f+index*1.0471975512f;r=(UiThemeRect){(int)(350+cosf(a)*212)-96,(int)(342+sinf(a)*108)-24,192,48};}
-  else r=(UiThemeRect){716,234+(index-6)*82,184,64};
- }else if(theme==VT_UI_THEME_DECK_90)r=(UiThemeRect){104,202+index*32,670,28};
+  if(index<SIDEBAR_CONTENT_COUNT){float a=-1.57079632679f+index*(6.28318530718f/SIDEBAR_CONTENT_COUNT);r=(UiThemeRect){(int)(350+cosf(a)*220)-84,(int)(354+sinf(a)*106)-22,168,44};}
+  else r=(UiThemeRect){716,234+(index-SIDEBAR_CONTENT_COUNT)*82,184,64};
+ }else if(theme==VT_UI_THEME_DECK_90)r=(UiThemeRect){104,202+index*30,670,26};
  else if(theme==VT_UI_THEME_SIGNAL){
-  if(index<6)r=(UiThemeRect){64+(index%2)*286,234+(index/2)*84,268,70};
-  else r=(UiThemeRect){664,234+(index-6)*84,232,70};
+  if(index<SIDEBAR_CONTENT_COUNT)r=(UiThemeRect){64+(index%2)*286,232+(index/2)*64,268,56};
+  else r=(UiThemeRect){664,234+(index-SIDEBAR_CONTENT_COUNT)*84,232,70};
  }else if(theme==VT_UI_THEME_APERTURE)
-  r=(UiThemeRect){104,212+index*31,752,27};
+  r=(UiThemeRect){104,212+index*29,752,25};
  else if(theme==VT_UI_THEME_RELAY){
-  int row=index/3,col=row%2?2-index%3:index%3;
-  r=(UiThemeRect){56+col*290,220+row*90,260,72};
- }else r=(UiThemeRect){62+(index%3)*288,218+(index/3)*92,260,78};
+  int row=index/2,col=row%2?1-index%2:index%2;
+  r=(UiThemeRect){56+col*436,220+row*54,408,46};
+ }else r=(UiThemeRect){62+(index%3)*288,218+(index/3)*68,260,58};
  return ui_theme_scene_reveal(UI_SCENE_MENU,r,index);
 }
 static UiThemeRect sidebar_layout_rect(int index){return (UiThemeRect){64+index*284,228,264,188};}
@@ -439,7 +441,7 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		vt_i18n_str(VT_STR_SECTIONS_SETTINGS),
 		vt_i18n_str(VT_STR_SECTIONS_GUIDE),
 		vt_i18n_str(VT_STR_SECTIONS_ABOUT),
-		"Navidrome", "Immich"
+		"Navidrome", "Immich", "Jellyfin"
 	};
     if(ui_theme_id()!=VT_UI_THEME_LEGACY){sidebar_themed_draw(sidebar,items);return;}
 	float ox = -(float)SIDEBAR_WIDTH * (1.0f - animation);
@@ -509,12 +511,12 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		unsigned int color = has_focus && slot == cursor ? VT_THEME_TEXT
 		                                      : VT_THEME_TEXT_MUTED;
 		ui_font_draw_text(font, (int)ox + 34,
-		                  (int)sidebar_row_y(sidebar, (float)slot) + 23, color,
+		                  (int)sidebar_row_y(sidebar, (float)slot) + 21, color,
 		                      UI_FONT_BODY, label);
 	}
     if (small && ui_theme_id() == VT_UI_THEME_LEGACY) {
         int live = sidebar->player_available + sidebar->download_available;
-        const int starts[] = {0, live, live + 6};
+        const int starts[] = {0, live, live + SIDEBAR_CONTENT_COUNT};
         const VtStringId groups[] = {VT_STR_SECTIONS_GROUP_LIVE,
                                     VT_STR_SECTIONS_GROUP_CONTENT,
                                     VT_STR_SECTIONS_GROUP_APP};

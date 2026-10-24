@@ -39,7 +39,7 @@ static void wipe(void *p, size_t n) {
 static int it(void) { return vt_i18n_current_language() == VT_LANG_IT; }
 static const char *tr(const char *en, const char *italian) { return it() ? italian : en; }
 static int section_for(VtNetworkProtocol p) {
-    return p == VT_NETWORK_NAVIDROME ? UI_SECTION_NAVIDROME : UI_SECTION_IMMICH;
+    return p==VT_NETWORK_JELLYFIN?UI_SECTION_JELLYFIN:p==VT_NETWORK_NAVIDROME?UI_SECTION_NAVIDROME:UI_SECTION_IMMICH;
 }
 static void text(int x, int y, const char *s, int small) {
     unsigned size = small ? UI_FONT_SMALL : UI_FONT_BODY;
@@ -281,6 +281,7 @@ int ui_personal_media_open(const VtNetworkSource *source, const VtNetworkCredent
 }
 static int configure(VtNetworkSource *source, VtNetworkCredential *credential, int fresh,
                      VtNetworkProtocol protocol) {
+    if(protocol==VT_NETWORK_JELLYFIN)return ui_network_configure_jellyfin(source,credential,fresh);
     VtNetworkSource s = fresh ? (VtNetworkSource){0} : *source;
     VtNetworkCredential c = fresh ? (VtNetworkCredential){0} : *credential;
     s.protocol = protocol;
@@ -349,7 +350,7 @@ static int persist(VtNetworkSource *s, VtNetworkCredential *c, int n) {
                         tr("Configuration was not saved", "Configurazione non salvata"), 2800);
     return ret;
 }
-int ui_personal_media_screen(VtNetworkProtocol protocol) {
+static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection *selection) {
     VtNetworkSource *sources = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*sources));
     VtNetworkCredential *credentials = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*credentials));
     if (!sources || !credentials) {
@@ -363,7 +364,14 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
     if (vt_preferences_remember_network_passwords() &&
         vt_network_credentials_load(credentials, VT_NETWORK_MAX_SOURCES) < 0)
         wipe(credentials, VT_NETWORK_MAX_SOURCES * sizeof(*credentials));
-    int selected = 0, remove = 0, result = UI_SECTION_LOCAL_MEDIA;
+    int selected = 0, remove = 0, result = selection?UI_NETWORK_ACTION_BACK:UI_SECTION_LOCAL_MEDIA;
+    if (protocol==VT_NETWORK_JELLYFIN && selection) {
+        int action=ui_network_resume_jellyfin(sources,count,selection);
+        if(action==UI_NETWORK_ACTION_PLAY || action>=UI_NETWORK_ACTION_SECTION_BASE) {
+            result=action;
+            goto finish;
+        }
+    }
     UiContextMenu options={0};
     UiSectionsSidebar sidebar;
     ui_sections_sidebar_init(&sidebar, section_for(protocol));
@@ -424,7 +432,7 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
         }
         ui_sections_sidebar_tick(&sidebar);
         if (section != UI_SECTION_NONE) {
-            result = section;
+            result = selection?UI_NETWORK_ACTION_SECTION_BASE+section:section;
             break;
         }
         if (!sidebar.open && sidebar.animation < 0.01f && ((!options.open && options.animation<.01f)||selected_action>=0)) {
@@ -507,13 +515,15 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
             if ((pressed & SCE_CTRL_CROSS) && n) {
                 int idx = map[selected];
                 ui_network_personal_resume_credential(&sources[idx], &credentials[idx]);
-                if (!credentials[idx].password[0])
+                if (protocol!=VT_NETWORK_JELLYFIN && !credentials[idx].password[0])
                     ui_text_input_secure(protocol == VT_NETWORK_IMMICH ? "Immich API key"
                                                                        : tr("Password", "Password"),
                                          "", credentials[idx].password,
                                          sizeof(credentials[idx].password));
-                if (credentials[idx].password[0]) {
-                    int ret = ui_network_browse_personal(&sources[idx], &credentials[idx]);
+                if (protocol==VT_NETWORK_JELLYFIN || credentials[idx].password[0]) {
+                    int ret = protocol==VT_NETWORK_JELLYFIN
+                        ?ui_network_browse_jellyfin(&sources[idx],&credentials[idx],selection)
+                        :ui_network_browse_personal(&sources[idx], &credentials[idx]);
                     if (ret == VT_NETWORK_AUTH_FAILED) {
                         wipe(&credentials[idx], sizeof(credentials[idx]));
                         if (vt_preferences_remember_network_passwords() &&
@@ -521,8 +531,9 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
                             vt_network_credentials_clear();
                     } else if (ret >= 0)
                         persist(sources, credentials, count);
+                    if(protocol==VT_NETWORK_JELLYFIN && ret==UI_NETWORK_ACTION_PLAY){result=ret;break;}
                     if (ret >= UI_NETWORK_ACTION_SECTION_BASE) {
-                        result = ret - UI_NETWORK_ACTION_SECTION_BASE;
+                        result = selection?ret:ret-UI_NETWORK_ACTION_SECTION_BASE;
                         break;
                     }
                 }
@@ -540,7 +551,7 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
         ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);
         ui_brand_draw_header_placeholder(NULL, vt_network_protocol_name(protocol));
         text(28, 90,
-             protocol == VT_NETWORK_NAVIDROME
+             protocol==VT_NETWORK_JELLYFIN?tr("Your video libraries", "Le tue librerie video"):protocol == VT_NETWORK_NAVIDROME
                  ? tr("Your music servers", "I tuoi server musicali")
                  : tr("Your photo libraries", "Le tue raccolte fotografiche"),
              0);
@@ -574,8 +585,17 @@ int ui_personal_media_screen(VtNetworkProtocol protocol) {
         vita2d_swap_buffers();
         sceKernelDelayThread(1000);
     }
+finish:
     wipe(credentials, VT_NETWORK_MAX_SOURCES * sizeof(*credentials));
     free(credentials);
     free(sources);
     return result;
+}
+
+int ui_personal_media_screen(VtNetworkProtocol protocol) {
+    return provider_sources_screen(protocol,NULL);
+}
+int ui_jellyfin_sources_screen(UiNetworkSelection *selection) {
+    if(!selection)return UI_NETWORK_ACTION_BACK;
+    return provider_sources_screen(VT_NETWORK_JELLYFIN,selection);
 }

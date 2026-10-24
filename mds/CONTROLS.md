@@ -272,9 +272,13 @@ Audio-only media uses artwork when available; local video uses the same decoder
 compatibility path as fullscreen playback. The ECO status and input-lock badge
 use separate positions so the lock never covers the OLED ECO label.
 
-## Navidrome and Immich
+## Jellyfin, Navidrome and Immich
 
-Open the dedicated section with L1. Cross connects, Square adds a server,
+Open the dedicated section with L1. **Jellyfin** appears immediately before
+Navidrome in all themes and lists your existing Jellyfin servers. Its video
+libraries use the existing video controls and restore the folder/selection after
+playback. Navidrome and Immich retain their Music/Images Home shortcuts.
+Cross connects, Square adds a server,
 Triangle edits. **R1 → Options** exposes Connect, Add server, Edit connection
 and Remove connection. Removing asks for a fresh X confirmation; Circle cancels.
 Only the saved connection is removed. Circle returns;
@@ -283,7 +287,7 @@ music-player controls; Immich uses the existing image-viewer controls.
 See [setup and console checks](../docs/personal-media-2026-10-23.md).
 
 Nel tema **Legacy**, L1 separa In corso (player/download disponibili), Contenuti
-e servizi (Home, rete, Navidrome, Immich, Radio/Podcast, IPTV) e Applicazione
+e servizi (Home, rete, Jellyfin, Navidrome, Immich, Radio/Podcast, IPTV) e Applicazione
 (impostazioni, guida, informazioni). Le intestazioni non ricevono il fuoco.
 Navidrome è disponibile anche in Audio locale; Immich in Immagini; entrambi
 sono nella Libreria di tutti i temi.

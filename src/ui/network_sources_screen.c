@@ -1338,16 +1338,16 @@ static void editor_edit_field(VtNetworkSource *draft,
 		edit_text(vt_i18n_str(VT_STR_NETWORK_INPUT_DOMAIN), draft->domain, sizeof(draft->domain));
 }
 
-static int source_editor(VtNetworkSource *source,
-	                     VtNetworkCredential *credential, int is_new) {
+static int source_editor_impl(VtNetworkSource *source,
+	                     VtNetworkCredential *credential, int is_new, int fixed_protocol) {
 	VtNetworkSource draft;
 	memset(&draft, 0, sizeof(draft));
 	if (!is_new) draft = *source;
 	else {
-		draft.protocol = VT_NETWORK_WEBDAV;
-		draft.port = 443;
+		draft.protocol = fixed_protocol ? (VtNetworkProtocol)fixed_protocol : VT_NETWORK_WEBDAV;
+		draft.port = fixed_protocol==VT_NETWORK_JELLYFIN ? 8096 : 443;
 		snprintf(draft.name, sizeof(draft.name), "%s",
-		         vt_i18n_str(VT_STR_NETWORK_DEFAULT_NAME));
+		         fixed_protocol==VT_NETWORK_JELLYFIN?"Jellyfin":vt_i18n_str(VT_STR_NETWORK_DEFAULT_NAME));
 	}
 	int cursor = 0;
 	SceCtrlData controls, previous;
@@ -1360,6 +1360,12 @@ static int source_editor(VtNetworkSource *source,
 	for (;;) {
 		EditorField fields[9];
 		int field_count = editor_fields(draft.protocol, fields);
+		if (fixed_protocol) {
+			int n = 0;
+			for (int i = 0; i < field_count; i++)
+				if (fields[i] != EDITOR_PROTOCOL) fields[n++] = fields[i];
+			field_count = n;
+		}
 		if (cursor > field_count) cursor = field_count;
 		if (cursor < field_count)
 			ui_focus_motion_tick(&focus_motion, 18,
@@ -1513,6 +1519,14 @@ static int source_editor(VtNetworkSource *source,
 		if (pressed & SCE_CTRL_CIRCLE) return 0;
 		sceKernelDelayThread(1000);
 	}
+}
+
+static int source_editor(VtNetworkSource *source,VtNetworkCredential *credential,int is_new) {
+    return source_editor_impl(source,credential,is_new,0);
+}
+int ui_network_configure_jellyfin(VtNetworkSource *source,VtNetworkCredential *credential,int fresh) {
+    if(!source || !credential || (!fresh && source->protocol!=VT_NETWORK_JELLYFIN))return 0;
+    return source_editor_impl(source,credential,fresh,VT_NETWORK_JELLYFIN);
 }
 
 static int load_directory(const VtNetworkSource *source,
@@ -1677,7 +1691,7 @@ static int browse_source(const VtNetworkSource *source,
 	int grid_mode = vt_preferences_file_browser_grid();
 	int right_open = 0, right_cursor = 0;
 	UiSectionsSidebar sidebar;
-	ui_sections_sidebar_init(&sidebar, source->protocol == VT_NETWORK_NAVIDROME ? UI_SECTION_NAVIDROME : source->protocol == VT_NETWORK_IMMICH ? UI_SECTION_IMMICH : UI_SECTION_NETWORK);
+	ui_sections_sidebar_init(&sidebar, source->protocol == VT_NETWORK_JELLYFIN ? UI_SECTION_JELLYFIN : source->protocol == VT_NETWORK_NAVIDROME ? UI_SECTION_NAVIDROME : source->protocol == VT_NETWORK_IMMICH ? UI_SECTION_IMMICH : UI_SECTION_NETWORK);
 	UiFocusMotion focus_motion;
 	ui_focus_motion_reset(&focus_motion);
 	VtJellyfinMetadata metadata_cache;
@@ -2346,4 +2360,31 @@ int ui_network_personal_resume_credential(const VtNetworkSource *s,VtNetworkCred
  if(!s||!c||!g_browser_resume.valid||!network_source_matches(s,&g_browser_resume.source))return 0;
  if(!c->password[0])*c=g_browser_resume.credential;
  return c->password[0]!=0;
+}
+
+/* Same authentication/trust/selection contract as Network, with a dedicated L1 route. */
+int ui_network_browse_jellyfin(VtNetworkSource *s,VtNetworkCredential *c,UiNetworkSelection *selection) {
+    if(!s || !c || !selection || s->protocol!=VT_NETWORK_JELLYFIN)return -1;
+    int ret=prepare_provider_session(s,c);
+    if(ret==VT_NETWORK_TLS_TRUST_REQUIRED && !s->tls_public_key_sha256[0]) {
+        if(prepare_https_trust(s,c)<0)return ret;
+        ret=prepare_provider_session(s,c);
+    }
+    if(ret<0)return ret;
+    return browse_source(s,c,selection,g_browser_resume.valid && network_source_matches(s,&g_browser_resume.source));
+}
+
+/* Return from the video player to the saved directory and selection, as Network does. */
+int ui_network_resume_jellyfin(const VtNetworkSource *sources,int count,UiNetworkSelection *selection) {
+    if(!selection || !g_browser_resume.valid || g_browser_resume.source.protocol!=VT_NETWORK_JELLYFIN)
+        return UI_NETWORK_ACTION_BACK;
+    for(int i=0;i<count;i++) {
+        if(sources[i].protocol!=VT_NETWORK_JELLYFIN || !network_source_matches(&sources[i],&g_browser_resume.source))continue;
+        VtNetworkCredential credential=g_browser_resume.credential;
+        int result=browse_source(&sources[i],&credential,selection,1);
+        secure_zero(&credential,sizeof(credential));
+        return result;
+    }
+    network_browser_resume_clear();
+    return UI_NETWORK_ACTION_BACK;
 }

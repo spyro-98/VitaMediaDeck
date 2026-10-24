@@ -19,6 +19,12 @@ VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
 or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
+Jellyfin is a dedicated **L1 → Jellyfin** provider immediately before Navidrome
+in every theme. It reuses your saved Jellyfin servers, authentication and video
+player; no duplicate setup is needed. Its server list offers the same R1
+Connect/Add/Edit/Remove options as the other personal-media providers. See
+[Jellyfin provider navigation](docs/jellyfin-provider-2026-10-24.md).
+
 Navidrome music and Immich photos are available as dedicated **L1** sections
 in all seven themes, and as Home entries in Library, Audio and Images. Add each
 server from its section; use Navidrome credentials or an Immich API key. See

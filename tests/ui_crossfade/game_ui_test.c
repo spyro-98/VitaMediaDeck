@@ -63,6 +63,13 @@ int main(int argc,char **argv) {
    UiThemeRect r=sidebar_slot_rect(&sidebar,slot);int y=r.y;
    CHECK(r.x>=18&&r.y>=104&&r.x+r.w<=942&&r.y+r.h<510);
    if(theme==VT_UI_THEME_LEGACY)CHECK(y>prev);prev=y;
+   CHECK(sidebar_section_at(&sidebar,live+2)==UI_SECTION_JELLYFIN);
+   CHECK(sidebar_section_at(&sidebar,live+3)==UI_SECTION_NAVIDROME);
+   CHECK(sidebar_section_at(&sidebar,live+4)==UI_SECTION_IMMICH);
+   for(int other=0;other<slot;other++) {
+    UiThemeRect b=sidebar_slot_rect(&sidebar,other);
+    CHECK(r.x+r.w<=b.x || b.x+b.w<=r.x || r.y+r.h<=b.y || b.y+b.h<=r.y);
+   }
    int section=sidebar_section_at(&sidebar,slot);
    sidebar.open=1;sidebar.animation=1;sidebar.active=-1;
    CHECK(ui_sections_sidebar_handle_touch(&sidebar,UI_TOUCH_EVENT_TAP,r.x+r.w/2,y+r.h/2)==section);
@@ -77,9 +84,10 @@ int main(int argc,char **argv) {
    unsigned press=SCE_CTRL_UP;ui_sections_sidebar_handle_buttons(&sidebar,&press,0,128);CHECK(sidebar.cursor==slot);
   }
   if(theme==VT_UI_THEME_LEGACY) {
-   CHECK(sidebar_section_at(&sidebar,live+2)==UI_SECTION_NAVIDROME);
-   CHECK(sidebar_section_at(&sidebar,live+3)==UI_SECTION_IMMICH);
-   int headings[]={102,(int)sidebar_row_y(&sidebar,live)-12,(int)sidebar_row_y(&sidebar,live+6)-12};
+   CHECK(sidebar_section_at(&sidebar,live+2)==UI_SECTION_JELLYFIN);
+   CHECK(sidebar_section_at(&sidebar,live+3)==UI_SECTION_NAVIDROME);
+   CHECK(sidebar_section_at(&sidebar,live+4)==UI_SECTION_IMMICH);
+   int headings[]={102,(int)sidebar_row_y(&sidebar,live)-12,(int)sidebar_row_y(&sidebar,live+SIDEBAR_CONTENT_COUNT)-12};
    for(int i=0;i<3;i++){sidebar.open=1;CHECK(ui_sections_sidebar_handle_touch(&sidebar,UI_TOUCH_EVENT_TAP,100,headings[i])==UI_SECTION_NONE);CHECK(sidebar.open);}
   }
   if(theme!=VT_UI_THEME_LEGACY){
