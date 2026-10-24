@@ -104,3 +104,11 @@ They do not prove all files, 720p60, battery savings or sustained SW 720p30.
 The standard app still requests 444/222/222/111 MHz when app clock control is
 selected; PSVshell mode remains external. Current 1.4.1 packaging is not a new
 physical run or a published GitHub release.
+
+## Unified local activity and cross-provider search (2026-10-24)
+
+Home Library now shares Continue, History and Sources across the existing provider
+entry points. Global search publishes cache-first, provider-grouped results using
+a bounded cancelable worker pool. Playback metadata and confirmed checkpoints
+share stable local identities; the old history/podcast checkpoint formats remain
+compatible. See [implementation, limits and acceptance](../docs/unified-library-2026-10-24.md).

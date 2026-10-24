@@ -19,6 +19,16 @@ VitaMediaDeck plays video and music stored on the Vita and video from Jellyfin
 or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
+**Home → Library** now joins Continue watching/listening, playback History and
+Sources across local files, Jellyfin, Navidrome, Immich, IPTV, radio and podcasts.
+Press **R1** to change that view, **Triangle** for one global search, and **Square**
+to filter search results by provider. Cached metadata appears first; independent
+workers refresh available providers. Resume checkpoints are saved asynchronously,
+and the existing mini-player session is restored when selecting its current item.
+See [unified library, search and acceptance checks](docs/unified-library-2026-10-24.md)
+for the 24-result/provider limit, local-only state, provider coverage and remaining
+real-console/server validation. This follow-up retains the frozen standard VPK.
+
 Jellyfin is a dedicated **L1 → Jellyfin** provider immediately before Navidrome
 in every theme. It reuses your saved Jellyfin servers, authentication and video
 player; no duplicate setup is needed. Its server list offers the same R1

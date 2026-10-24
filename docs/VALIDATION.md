@@ -112,3 +112,13 @@ controls-1023 test identity. Its guide tests add actual-theme/current-mapping
 prefixes, hint-width limits, safe buffer failure and index/text navigation.
 The repository README and mds/CONTROLS.md use the same verified theme routes.
 The original archived standard VPK is not silently replaced by that test build.
+
+## Unified library/search follow-up (library-1024)
+
+Run `bash tests/library/run-host-tests.sh` (ASan/UBSan and TSan),
+`bash tests/library/run-ui.sh` (actual seven-theme Home on the host renderer),
+and the existing personal-media, podcast-resume, UI/chrome/motion suites.
+The provider HTTP fixtures now check encoded Jellyfin search and canceled
+Jellyfin/Immich requests. See the [implementation and Vita/server acceptance
+checklist](unified-library-2026-10-24.md). Host counts, synthetic layouts,
+native Release/LTO and VPK checks do not establish real account/device behavior.

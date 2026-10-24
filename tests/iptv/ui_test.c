@@ -17,6 +17,7 @@
 #include "../../src/ui/components.c"
 #include "../../src/ui/focus_glow.c"
 #include "../../src/ui/breadcrumbs.c"
+#include "../library/ui-stubs.h"
 
 static unsigned checks, frame, language, live_slots, created, destroyed, plays, stops, saved;
 static int download_slots=-1;
@@ -48,7 +49,7 @@ static int online_case;
 static int mini_top = 544, drawing_trail;
 static char trail_text[2048];
 static int tap_frame=-1, tap_x, tap_y;
-static unsigned input_script[16], script_count, capture_frame;
+static unsigned input_script[64], script_count, capture_frame;
 static SceCtrlData input_axes[64];static unsigned axis_count;
 static unsigned compact_home_labels;
 static int allow_audio_fullscreen;
@@ -302,7 +303,8 @@ void vt_iptv_session_factory(VtIptvSession *s,VtDecoderStreamFactory *f) { memse
 int vt_hw_player_screen_run_live(const VtHwPlayerScreenSource *s,VtIptvSession *session) {
     CHECK(s->favorite && s->favorite_ctx);
     CHECK(s->favorite(s->favorite_ctx,0)>=0);
-    CHECK(s->stream.opaque==session&&!s->allow_minimize&&!s->history_id&&s->authenticated_remote);
+    CHECK(s->stream.opaque == session && !s->allow_minimize && s->history_id &&
+          s->authenticated_remote);
     CHECK(!s->start_position_ms&&!s->start_audio_track&&!s->start_subtitle_track);
     plays++;return reconnect&&plays==1?VT_HW_PLAYER_ACTION_GO_LIVE:next_result;
 }

@@ -43,6 +43,10 @@ typedef struct {
 #define UI_LOCAL_MEDIA_ACTION_MANAGE 8
 #define UI_LOCAL_MEDIA_ACTION_SECTION_BASE 10
 
+typedef int (*UiLocalMediaVisitor)(const VtLocalMediaItem *, void *);
+int ui_local_media_search(const char *query, UiLocalMediaVisitor visitor, void *ctx);
+/* UI thread: start/pump indexing without entering the old local browser. */
+int ui_local_media_library_tick(void);
 int ui_local_media_screen(VtLocalMediaItem *selected_out);
 /* Call after a successful local mutation, before reopening the catalog. */
 void ui_local_media_cache_invalidate(void);

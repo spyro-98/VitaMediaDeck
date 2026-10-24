@@ -19,6 +19,22 @@ An open sidebar owns navigation before the underlying screen. Circle closes the
 active panel before leaving its page. While resumable playback is running, the
 sidebar adds **Active player** above Home; selecting it restores the full player.
 
+## Unified Library and global search
+
+In **Home → Library**, R1 cycles Continue, History and Sources. Triangle opens a
+single search for titles, artists, albums, shows and channels. Square cycles the
+provider filter in search results. Cross opens the focused media, artist/album
+folder or podcast feed. Circle returns from a folder/feed; from search it returns
+to Continue. Touch the view heading to change the Library view. Source entries
+open the existing provider/connection manager; Local files opens the local browser.
+The six category tabs retain the theme-specific controls below.
+
+Cached results appear immediately, then providers refresh independently. The
+focused media remains the same while results arrive. Returning from its player
+retains query/folder/focus. Search shows up to 24 results per provider: refine a
+broad query or open that provider to browse everything. Live entries reopen live;
+image history reopens the asset. Resume state is shared locally, not cloud-synced.
+
 ## Theme-specific Home controls
 
 Ghost Mesh keeps **right stick → section wheel** and **left stick / D-pad → content**

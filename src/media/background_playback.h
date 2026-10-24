@@ -55,6 +55,10 @@ int vt_background_playback_prepare_podcast(const char *url, const char *title);
 uint64_t vt_background_playback_set_podcast_history(const char *episode_identity, uint64_t duration_ms);
 /* Request an asynchronous checkpoint; no storage work runs on this caller. */
 void vt_background_playback_checkpoint(void);
+int vt_background_playback_library_matches(const char *id);
+void vt_background_playback_set_library_id(const char *id);
+int vt_background_playback_library_sample(char id[64], uint64_t *position, uint64_t *duration);
+uint64_t vt_background_playback_restore_podcast_history(const char *id, uint64_t duration);
 void vt_background_playback_set_audio_details(const char *author, const char *artwork);
 
 /* Opens a file already stored on the console. The service never performs

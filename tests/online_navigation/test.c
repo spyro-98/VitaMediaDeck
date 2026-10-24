@@ -5,6 +5,7 @@
 #include "../../src/ui/brand.h"
 /* Exercise the actual screen transactions, including its private state. */
 #include "../../src/ui/online_audio_screen.c"
+#include "../library/ui-stubs.h"
 
 static unsigned checks, messages;
 static int request_result, request_cancel, request_count;

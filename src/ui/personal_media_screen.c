@@ -1,4 +1,6 @@
 #include "ui/personal_media_screen.h"
+#include "library/catalog.h"
+#include "history/playback_history.h"
 #include "app_paths.h"
 #include "i18n/i18n.h"
 #include "media/background_playback.h"
@@ -143,6 +145,9 @@ static int run_music_queue(void) {
         return 0;
     for (;;) {
         const VtNetworkEntry *song = &queue->entries[queue->selected];
+        VtLibraryItem library_item;
+        vt_library_remote(&queue->source, song, NULL, &library_item);
+        vt_library_cache(&library_item);
         char id[16];
         vt_network_media_history_id(&queue->source, song->path, id);
         VtBackgroundPlaybackSnapshot snap = {0};
@@ -163,7 +168,10 @@ static int run_music_queue(void) {
             if (ret == 0) {
                 vt_background_playback_set_audio_details(
                     song->artist[0] ? song->artist : "Navidrome", g_music_cover_path);
-                ret = vt_background_playback_activate(0);
+                vt_background_playback_set_library_id(library_item.id);
+                ret = vt_background_playback_activate(vt_library_resume(&library_item));
+                if (!ret)
+                    vt_library_started(&library_item);
             }
             vt_video_thumbnail_resume();
             if (ret < 0) {
@@ -250,9 +258,12 @@ int ui_personal_media_open(const VtNetworkSource *source, const VtNetworkCredent
         vt_video_thumbnail_suspend();
         char preview[512];
         int ret = fetch_image(source, credential, item->path, PHOTO_PATH, preview, 1);
-        if (ret == 0)
+        if (ret == 0) {
+            VtLibraryItem library_item;
+            vt_library_remote(source, item, NULL, &library_item);
+            vt_library_started(&library_item);
             ret = ui_image_viewer_show(preview, item->name);
-        else
+        } else
             ui_message_show(
                 "Immich",
                 tr("Preview unavailable. Check API permissions and generated previews.",

@@ -290,6 +290,10 @@ add_executable(${PROJECT_NAME}
   src/media/image_loader.c
   src/media/music_metadata.c
   src/media/podcast_metadata.c
+  src/library/library.c
+  src/library/catalog.c
+  src/library/search.c
+  src/ui/library_screen.c
   src/history/playback_history.c
   src/media/podcast_resume.c
   src/settings/preferences.c

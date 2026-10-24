@@ -7,6 +7,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Unified library and global search](unified-library-2026-10-24.md): common Home, local state, progressive provider results and acceptance checks.
+
 - [Scrollable L1 menus](l1-scroll-2026-10-24.md): roomier targets, per-theme motion, touch and focus preservation.
 
 - [Podcast resume and lightweight checkpoints](podcast-resume-2026-10-24.md): restart/suspend recovery, storage budget and device checks.
@@ -93,6 +95,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [src/common/README.md](../src/common/README.md) | Current reference, policy or build instructions |
 | [tests/home_tabs/README.md](../tests/home_tabs/README.md) | Executable suite guide; host/device limits stated locally |
 | [tests/image_viewer/README.md](../tests/image_viewer/README.md) | Executable suite guide; host/device limits stated locally |
+| [tests/library/README.md](../tests/library/README.md) | Unified cache, journal, concurrent search and host Home layouts |
 | [tests/iptv/README.md](../tests/iptv/README.md) | Executable suite guide; host/device limits stated locally |
 | [tests/online_audio/README.md](../tests/online_audio/README.md) | Executable suite guide; host/device limits stated locally |
 | [tests/online_navigation/README.md](../tests/online_navigation/README.md) | Executable suite guide; host/device limits stated locally |
@@ -104,6 +107,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [tests/ui_crossfade/README.md](../tests/ui_crossfade/README.md) | Executable suite guide; host/device limits stated locally |
 | [tools/local_streaming/README.md](../tools/local_streaming/README.md) | Current reference, policy or build instructions |
 | [docs/controls-guide-2026-10-23.md](controls-guide-2026-10-23.md) | Current controls clarification following the 1.4.1 standard snapshot |
+| [docs/unified-library-2026-10-24.md](unified-library-2026-10-24.md) | Unified Home, resume journal, global search and validation boundaries |
 | [docs/jellyfin-provider-2026-10-24.md](jellyfin-provider-2026-10-24.md) | Dedicated Jellyfin L1 provider and validation limits |
 | [docs/podcast-resume-2026-10-24.md](podcast-resume-2026-10-24.md) | Podcast checkpoint reliability, I/O budget and acceptance limits |
 | [tests/podcast_resume/README.md](../tests/podcast_resume/README.md) | Persistence/worker/real MP3 resume host regressions |

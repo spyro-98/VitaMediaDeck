@@ -49,4 +49,29 @@ int main(void){VtNetworkSource s={.protocol=VT_NETWORK_NAVIDROME};VtNetworkCrede
  expect_endpoint="getAlbumList2";fixture="{\"subsonic-response\":{\"status\":\"ok\",\"albumList2\":{\"album\":[{\"id\":\"one\",\"name\":\"One\"},{\"id\":\"two\",\"name\":\"Two\"}]}}}";
  CHECK(list(&s,&c,"albums:0",e,4)==3&&!strcmp(e[2].path,"albums:2")&&e[2].is_directory==2);CHECK(strstr(last_url,"size=2&offset=0"));CHECK(list(&s,&c,"albums:2",e,4)==3&&strstr(last_url,"offset=2"));
  fixture="{\"subsonic-response\":{\"status\":\"ok\",\"status\":\"failed\"}}";expect_endpoint=NULL;CHECK(vt_personal_authenticate(&s,&c,detail,sizeof(detail))<0);
+
+ /* Global search returns typed artists/albums/songs with encoded user text. */
+ s.protocol = VT_NETWORK_NAVIDROME;
+ snprintf(s.host, sizeof(s.host), "https://music.example");
+ snprintf(s.username, sizeof(s.username), "user &/è");
+ snprintf(c.password, sizeof(c.password), "p&sswörd");
+ expect_endpoint = "search3";
+ fixture = "{\"subsonic-response\":{\"status\":\"ok\",\"searchResult3\":{\"artist\":[{\"id\":"
+           "\"artist-1\",\"name\":\"A\"}],\"album\":[{\"id\":\"album-1\",\"name\":\"B\"}],\"song\":"
+           "[{\"id\":\"song-1\",\"title\":\"C\",\"artist\":\"A\",\"album\":\"B\"}]}}}";
+ CHECK(list(&s, &c, "search:A & è", e, 256) == 3 && e[0].is_directory && e[1].is_directory &&
+       e[2].is_audio);
+ CHECK(strstr(last_url, "query=A%20%26%20%C3%A8&artistCount=8&albumCount=8&songCount=24"));
+ CHECK(!strcmp(e[2].album, "B"));
+ auth_url(c.password);
+ CHECK(list(&s, &c, "search:A", e, 4) == 3);
+ CHECK(list(&s, &c, "search:", e, 256) < 0);
+ s.protocol = VT_NETWORK_IMMICH;
+ snprintf(c.password, sizeof(c.password), "mock-key");
+ expect_endpoint = "search/metadata";
+ fixture = "{\"assets\":{\"items\":[{\"id\":\"photo-1\",\"type\":\"IMAGE\",\"originalFileName\":"
+           "\"Night.jpg\"}]}}";
+ CHECK(list(&s, &c, "search:Night", e, 256) == 1 && e[0].is_image);
+ CHECK(strstr(last_body, "\"originalFileName\":\"Night\""));
+ CHECK(!strstr(last_url, c.password));
  printf("Personal media API: %d checks, %d authenticated requests passed\n",checks,requests);return 0;}

@@ -16,6 +16,7 @@ typedef struct {
 #define UI_NETWORK_ACTION_PLAY 1
 #define UI_NETWORK_ACTION_SECTION_BASE 10
 
+int ui_network_library_authorize(VtNetworkSource *, VtNetworkCredential *);
 int ui_network_sources_screen(UiNetworkSelection *selection);
 int ui_jellyfin_sources_screen(UiNetworkSelection *selection);
 int ui_network_resume_jellyfin(const VtNetworkSource *, int count, UiNetworkSelection *);

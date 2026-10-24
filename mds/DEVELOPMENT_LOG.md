@@ -180,3 +180,12 @@ the physical console. Those tests remain mandatory.
   `modules/vita_hw_player` once the public API settles.
 - Publish the module as its own repository/release with a standalone CMake
   package and an independently buildable example.
+
+## 2026-10-24 — Unified library and progressive search
+
+Implemented a shared Continue/History/Sources Home in every theme, persistent
+metadata and asynchronous local playback journal, provider identity/legacy resume
+migration, cancelable progressive global search, cached artwork and retained
+query/folder/focus. Reuses the existing players, account/trust flows and thumbnail
+cache. Test build library-1024; 1.4.1 standard and prior artifacts preserved.
+See [design, verification and real-device checklist](../docs/unified-library-2026-10-24.md).

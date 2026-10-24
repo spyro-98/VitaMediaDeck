@@ -1,4 +1,5 @@
 #include "media/background_playback.h"
+#include "library/library.h"
 
 #include <limits.h>
 #include <malloc.h>
@@ -50,6 +51,7 @@ typedef struct {
 	char input_path[512];
 	char podcast_history[16];
 	int podcast_position_valid;
+	char library_id[16];
 	uint64_t podcast_history_order;
 	uint64_t podcast_position_ms;
 	int mp3_source;
@@ -1016,7 +1018,12 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		player_unlock(job);
 		snapshot_lock();
 		job->snapshot.position_ms = status.position_ms;
-		if (status.duration_ms) job->snapshot.duration_ms = status.duration_ms;
+		if (status.opened && !status.error) {
+			job->podcast_position_ms = status.position_ms;
+			job->podcast_position_valid = 1;
+		}
+		if (status.duration_ms)
+			job->snapshot.duration_ms = status.duration_ms;
 		job->snapshot.video_width = status.width;
 		job->snapshot.video_height = status.height;
 		snapshot_unlock();
@@ -1041,6 +1048,10 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 	player_unlock(job);
 	snapshot_lock();
 	job->snapshot.position_ms = final_status.position_ms;
+	if (ret >= 0 && final_status.opened && !final_status.error) {
+		job->podcast_position_ms = final_status.position_ms;
+		job->podcast_position_valid = 1;
+	}
 	snapshot_unlock();
 	vt_decoder_destroy(decoder);
 	vt_background_audio_release(&lease);
@@ -1238,18 +1249,29 @@ int vt_background_playback_prepare_podcast(const char *url, const char *title) {
 }
 
 uint64_t vt_background_playback_set_podcast_history(const char *identity,uint64_t duration_ms) {
+	if (!identity || !*identity)
+		return 0;
+	char id[16];
+	vt_playback_history_local_id(identity, id);
+	memcpy(id, "podcs", 5);
+	return vt_background_playback_restore_podcast_history(id, duration_ms);
+}
+uint64_t vt_background_playback_restore_podcast_history(const char *id, uint64_t duration_ms) {
 	BackgroundPlaybackJob *job = &g_background;
-	if (!identity || !*identity || job->activate) return 0;
+	if (!id || strlen(id) != 13 || strncmp(id, "podcs", 5) || job->activate)
+		return 0;
 	snapshot_lock();
-	vt_playback_history_local_id(identity, job->podcast_history);
-	memcpy(job->podcast_history, "podcs", 5);
-	job->podcast_history_order=vt_playback_history_order(job->podcast_history);
+	snprintf(job->podcast_history, sizeof(job->podcast_history), "%s", id);
+	job->podcast_history_order = vt_playback_history_order(job->podcast_history);
 	job->snapshot.is_podcast = 1;
-	if(duration_ms && duration_ms<=2592000000ULL)job->snapshot.duration_ms=duration_ms;
+	if (duration_ms && duration_ms <= 2592000000ULL)
+		job->snapshot.duration_ms = duration_ms;
 	snapshot_unlock();
-	uint64_t position=0;
-	if(vt_podcast_resume_restore(job->podcast_history,job->podcast_history_order,duration_ms,&position))return position;
-	return vt_playback_history_position(job->podcast_history,duration_ms);
+	uint64_t position = 0;
+	if (vt_podcast_resume_restore(job->podcast_history, job->podcast_history_order, duration_ms,
+	                              &position))
+		return position;
+	return vt_playback_history_position(job->podcast_history, duration_ms);
 }
 static int podcast_resume_sample(VtPodcastResumePoint *out) {
 	BackgroundPlaybackJob *job=&g_background;
@@ -1401,6 +1423,7 @@ void vt_background_playback_toggle_pause(void) {
 	if (g_background.thid >= 0 && !g_background.done && g_background.activate)
 		__atomic_fetch_xor(&g_background.desired_paused, 1, __ATOMIC_ACQ_REL);
 	vt_podcast_resume_request();
+	vt_library_checkpoint();
 }
 
 void vt_background_playback_seek_to(uint64_t position_ms) {
@@ -1469,6 +1492,10 @@ void vt_background_playback_request_stop(void) {
 }
 
 void vt_background_playback_stop(void) {
+	char library_id[64];
+	uint64_t library_position = 0, library_duration = 0;
+	if (vt_background_playback_library_sample(library_id, &library_position, &library_duration))
+		vt_library_progress(library_id, library_position, library_duration);
 	if (g_background.thid >= 0) {
 		/* stop() is the synchronous UI-thread teardown path. Complete the most
 		 * recent mini-player draw before waiting for the worker, otherwise the
@@ -1480,16 +1507,23 @@ void vt_background_playback_stop(void) {
 		sceKernelDeleteThread(g_background.thid);
 		g_background.thid = -1;
 	}
-	VtPodcastResumePoint point;
-	if(vt_podcast_resume_finish(g_background.podcast_history,&point) &&
-	   point.history_order==g_background.podcast_history_order)
-		if(vt_playback_history_update(point.id,point.position_ms,point.duration_ms)<0)
-			log_printf("podcast history: save failed; compact checkpoint retained");
-	if (g_background.podcast_history[0]) log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+	if (vt_background_playback_library_sample(library_id, &library_position, &library_duration))
+		vt_library_progress(library_id, library_position, library_duration);
+	vt_library_checkpoint();
 	snapshot_lock();
-	g_background.podcast_history[0]=0;
-	g_background.podcast_position_valid=0;
-	memset(&g_background.snapshot,0,sizeof(g_background.snapshot));
+	g_background.library_id[0] = 0;
+	snapshot_unlock();
+	VtPodcastResumePoint point;
+	if (vt_podcast_resume_finish(g_background.podcast_history, &point) &&
+	    point.history_order == g_background.podcast_history_order)
+		if (vt_playback_history_update(point.id, point.position_ms, point.duration_ms) < 0)
+			log_printf("podcast history: save failed; compact checkpoint retained");
+	if (g_background.podcast_history[0])
+		log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+	snapshot_lock();
+	g_background.podcast_history[0] = 0;
+	g_background.podcast_position_valid = 0;
+	memset(&g_background.snapshot, 0, sizeof(g_background.snapshot));
 	snapshot_unlock();
 	memset(&g_background.remote_factory.credential, 0,
 	       sizeof(g_background.remote_factory.credential));
@@ -1609,4 +1643,31 @@ int vt_background_playback_draw_video(float x, float y,
 	job->video_in_gpu = 1;
 	player_unlock(job);
 	return 1;
+}
+
+void vt_background_playback_set_library_id(const char *id) {
+	snapshot_lock();
+	snprintf(g_background.library_id, sizeof(g_background.library_id), "%s", id ? id : "");
+	snapshot_unlock();
+}
+int vt_background_playback_library_sample(char id[64], uint64_t *p, uint64_t *d) {
+	snapshot_lock();
+	BackgroundPlaybackJob *j = &g_background;
+	int valid = j->library_id[0] && j->podcast_position_valid;
+	if (valid) {
+		snprintf(id, 64, "%s", j->library_id);
+		*p = j->podcast_position_ms;
+		*d = j->snapshot.duration_ms;
+	}
+	snapshot_unlock();
+	return valid;
+}
+
+int vt_background_playback_library_matches(const char *id) {
+	if (!id || !*id)
+		return 0;
+	snapshot_lock();
+	int matches = g_background.snapshot.visible && !strcmp(g_background.library_id, id);
+	snapshot_unlock();
+	return matches && vt_background_playback_can_resume_fullscreen();
 }

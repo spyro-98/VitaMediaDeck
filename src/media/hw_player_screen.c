@@ -14,6 +14,7 @@
 #include <libavutil/error.h>
 
 #include "history/playback_history.h"
+#include "library/library.h"
 #include "network/iptv_session.h"
 #include "i18n/i18n.h"
 #include "media/audio_volume.h"
@@ -829,10 +830,16 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 		vt_performance_end_video(&clock_guard);
 		return cancel ? 0 : ret;
 	}
+	int library_started = 0;
+	uint64_t library_tick = 0, library_position = source->start_position_ms, library_duration = 0;
 	uint64_t vod_duration = 0;
 	if (live) {
-		VtIptvSourceStatus input; vt_iptv_session_status(live_session, &input);
-		if (input.finite) { live = 2; vod_duration = input.duration_ms; }
+		VtIptvSourceStatus input;
+		vt_iptv_session_status(live_session, &input);
+		if (input.finite) {
+			live = 2;
+			vod_duration = input.duration_ms;
+		}
 	}
 	SceCtrlData controls, previous;
 	memset(&controls, 0, sizeof(controls));
@@ -949,24 +956,38 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 		}
 		VtDecoderPlayerStatus status;
 		vt_decoder_get_status(player, &status);
-		if (live && !paused && vt_iptv_session_event(live_session)) { ret = -1; break; }
+		if (source->history_id && status.opened && !status.error &&
+		    (!library_started || now - library_tick >= 1000000ULL)) {
+			if (!library_started) {
+				vt_library_start_id(source->history_id);
+				library_started = 1;
+			}
+			library_position = status.position_ms;
+			if (status.duration_ms)
+				library_duration = status.duration_ms;
+			vt_library_progress(source->history_id, library_position, library_duration);
+			library_tick = now;
+		}
+		if (live && !paused && vt_iptv_session_event(live_session)) {
+			ret = -1;
+			break;
+		}
 		if (status.error && !(live && paused)) {
 			if (!live && decoder_preference == VT_VIDEO_DECODER_AUTO &&
 			    session_backend_override == VT_DECODER_BACKEND_NONE &&
 			    vt_decoder_backend(player) == VT_DECODER_BACKEND_HARDWARE) {
-				SeekTask task = { player, status.position_ms };
+				SeekTask task = {player, status.position_ms};
 				cancel = 0;
 				loading.status = vt_i18n_str(VT_STR_PLAYER_FALLBACK_SOFTWARE);
 				fence_decoder_frame(player);
-				ret = ui_player_loading_run(&loading, fallback_task, &task,
-				                            &cancel, NULL, NULL);
+				ret = ui_player_loading_run(&loading, fallback_task, &task, &cancel, NULL, NULL);
 				loading.status = opening_status;
 				if (ret >= 0) {
 					vt_decoder_set_paused(player, paused);
+					vt_library_checkpoint();
 					hud_visible = 1;
-					now = resync_after_blocking_action(
-					    &controls, &previous, &left_seek_direction,
-					    &left_seek_repeat_at);
+					now = resync_after_blocking_action(&controls, &previous, &left_seek_direction,
+					                                   &left_seek_repeat_at);
 					hud_deadline = now + 3500000ULL;
 					continue;
 				}
@@ -975,15 +996,18 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			break;
 		}
 		if (status.eof) {
-			if (live || !vt_preferences_loop_enabled()) { ret = 0; break; }
+			if (live || !vt_preferences_loop_enabled()) {
+				ret = 0;
+				break;
+			}
 			ret = run_seek(player, &loading, &cancel, 0);
-			if (ret < 0) break;
+			if (ret < 0)
+				break;
 			paused = 0;
 			vt_decoder_set_paused(player, 0);
 			hud_visible = 1;
-			now = resync_after_blocking_action(
-			    &controls, &previous, &left_seek_direction,
-			    &left_seek_repeat_at);
+			now = resync_after_blocking_action(&controls, &previous, &left_seek_direction,
+			                                   &left_seek_repeat_at);
 			hud_deadline = now + 3500000ULL;
 			continue;
 		}
@@ -1107,6 +1131,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					if (source->history_id)
 						vt_playback_history_update(source->history_id, 0,
 						                           status.duration_ms);
+					vt_library_progress(source->history_id, 0, status.duration_ms);
+					vt_library_checkpoint();
 					paused = 0;
 					vt_decoder_set_paused(player, 0);
 					resume_available = 0;
@@ -1148,14 +1174,17 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			if (live == 1 && paused) { ret = VT_HW_PLAYER_ACTION_GO_LIVE; break; }
 			paused = !paused;
 			vt_decoder_set_paused(player, paused);
+			if (source->history_id)
+				vt_library_progress(source->history_id, status.position_ms, status.duration_ms);
+			vt_library_checkpoint();
 			hud_visible = 1;
 			hud_deadline = now + 3500000ULL;
 		}
 		unsigned transport = swapped ? transport_pressed : pressed;
-		int seek_direction = !panels_open &&
-		    (transport & (swapped ? SCE_CTRL_RTRIGGER : SCE_CTRL_RIGHT)) ? 1
-		                   : !panels_open &&
-		    (transport & (swapped ? SCE_CTRL_LTRIGGER : SCE_CTRL_LEFT)) ? -1 : 0;
+		int seek_direction =
+		    !panels_open && (transport & (swapped ? SCE_CTRL_RTRIGGER : SCE_CTRL_RIGHT))  ? 1
+			: !panels_open && (transport & (swapped ? SCE_CTRL_LTRIGGER : SCE_CTRL_LEFT)) ? -1
+			                                                                              : 0;
 		int left_x = (int)controls.lx - STICK_CENTER;
 		int left_y = (int)controls.ly - STICK_CENTER;
 		int abs_left_x = left_x < 0 ? -left_x : left_x;
@@ -1275,6 +1304,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 						if (source->history_id)
 							vt_playback_history_update(source->history_id, 0,
 							                           status.duration_ms);
+						vt_library_progress(source->history_id, 0, status.duration_ms);
+						vt_library_checkpoint();
 						paused = 0;
 						vt_decoder_set_paused(player, 0);
 						resume_available = 0;
@@ -1341,33 +1372,34 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 				if (live == 1 && paused) { ret = VT_HW_PLAYER_ACTION_GO_LIVE; break; }
 				paused = !paused;
 				vt_decoder_set_paused(player, paused);
+				if (source->history_id)
+					vt_library_progress(source->history_id, status.position_ms, status.duration_ms);
+				vt_library_checkpoint();
 				hud_visible = 1;
 				hud_deadline = now + 3500000ULL;
 			} else if (status.duration_ms &&
-			           ui_touch_hit_rect(touch.x, touch.y,
-			                             (int)PLAYER_BACK_X - 28,
+			           ui_touch_hit_rect(touch.x, touch.y, (int)PLAYER_BACK_X - 28,
 			                             (int)PLAYER_TRANSPORT_Y - 28, 56, 56)) {
-				uint64_t target = status.position_ms > 10000ULL
-				                ? status.position_ms - 10000ULL : 0;
+				uint64_t target = status.position_ms > 10000ULL ? status.position_ms - 10000ULL : 0;
 				ret = run_seek(player, &loading, &cancel, target);
-				if (ret < 0) break;
-				now = resync_after_blocking_action(
-				    &controls, &previous, &left_seek_direction,
-				    &left_seek_repeat_at);
+				if (ret < 0)
+					break;
+				now = resync_after_blocking_action(&controls, &previous, &left_seek_direction,
+				                                   &left_seek_repeat_at);
 				hud_visible = 1;
 				hud_deadline = now + 3500000ULL;
 				continue;
 			} else if (status.duration_ms &&
-			           ui_touch_hit_rect(touch.x, touch.y,
-			                             (int)PLAYER_FORWARD_X - 28,
+			           ui_touch_hit_rect(touch.x, touch.y, (int)PLAYER_FORWARD_X - 28,
 			                             (int)PLAYER_TRANSPORT_Y - 28, 56, 56)) {
 				uint64_t target = status.position_ms + 10000ULL;
-				if (target > status.duration_ms) target = status.duration_ms;
+				if (target > status.duration_ms)
+					target = status.duration_ms;
 				ret = run_seek(player, &loading, &cancel, target);
-				if (ret < 0) break;
-				now = resync_after_blocking_action(
-				    &controls, &previous, &left_seek_direction,
-				    &left_seek_repeat_at);
+				if (ret < 0)
+					break;
+				now = resync_after_blocking_action(&controls, &previous, &left_seek_direction,
+				                                   &left_seek_repeat_at);
 				hud_visible = 1;
 				hud_deadline = now + 3500000ULL;
 				continue;
@@ -1375,7 +1407,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 				hud_visible = 0;
 			}
 		}
-		if (!paused && now > hud_deadline) hud_visible = 0;
+		if (!paused && now > hud_deadline)
+			hud_visible = 0;
 		ui_sections_sidebar_tick(&sidebar);
 		if (vt_preferences_reduce_motion()) {
 			right_animation = right_open ? 1.0f : 0.0f;
@@ -1472,10 +1505,28 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 	}
 	VtDecoderPlayerStatus final_status;
 	vt_decoder_get_status(player, &final_status);
-	if (last_paused) *last_paused = paused;
-	if (last_position_ms) *last_position_ms = final_status.position_ms;
-	if (last_duration_ms) *last_duration_ms = final_status.duration_ms;
-	if (last_audio_track) *last_audio_track = vt_decoder_active_audio_track(player);
+	if (library_started && source->history_id) {
+		if (ret >= 0 && final_status.opened && !final_status.error) {
+			library_position = final_status.position_ms;
+			if (final_status.duration_ms)
+				library_duration = final_status.duration_ms;
+		}
+		vt_library_progress(source->history_id, library_position, library_duration);
+		vt_library_checkpoint();
+		if (ret < 0) {
+			final_status.position_ms = library_position;
+			if (library_duration)
+				final_status.duration_ms = library_duration;
+		}
+	}
+	if (last_paused)
+		*last_paused = paused;
+	if (last_position_ms)
+		*last_position_ms = final_status.position_ms;
+	if (last_duration_ms)
+		*last_duration_ms = final_status.duration_ms;
+	if (last_audio_track)
+		*last_audio_track = vt_decoder_active_audio_track(player);
 	if (last_subtitle_track)
 		*last_subtitle_track = vt_decoder_active_subtitle_track(player);
 	vt_decoder_destroy(player);
