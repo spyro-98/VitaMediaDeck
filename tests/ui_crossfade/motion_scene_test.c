@@ -98,9 +98,10 @@ int main(int argc,char **argv){
   for(int n=1;n<=4;n++){
    menu.open=1;menu.animation=n*.25f;menu.focus_cursor=3;
    for(int slot=0;slot<UI_SECTION_COUNT+2;slot++){
-    UiThemeRect hit=theme?sidebar_slot_rect(&menu,slot):(UiThemeRect){ITEM_X,(int)sidebar_row_y(&menu,slot),ITEM_W,sidebar_row_height()};
+    menu.cursor=slot;sidebar_scroll_to_cursor(&menu);menu.scroll=menu.scroll_target;
+    UiThemeRect hit=sidebar_slot_rect(&menu,slot);
     int x=(int)sidebar_offset(&menu)+hit.x+hit.w/2,y=hit.y+hit.h/2;
-    if(x<0||x>=960||y<54||y>=544)continue;
+    if(x<0||x>=960||y<sidebar_view_top()||y>=sidebar_view_bottom())continue;
     UiSectionsSidebar test=menu;test.active=UI_SECTION_NONE;
     CHECK(ui_sections_sidebar_handle_touch(&test,UI_TOUCH_EVENT_TAP,x,y)==sidebar_section_at(&menu,slot));
    }

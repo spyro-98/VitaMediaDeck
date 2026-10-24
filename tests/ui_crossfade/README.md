@@ -57,3 +57,15 @@ output buffer, and exercises index-to-text, scroll, return and exit in IT/EN
 with and without mini-player for every theme. Hint widths are checked against
 the actual Inter and Deck 90 Mono metrics, including the HUD/panel rails.
 Reference `guide-home-*` images show the active theme and scrolled chapter.
+
+## Scrollable L1 menus
+
+`run-game-ui.sh` compiles both the game UI and scrolling command-deck fixtures.
+The latter uses the production sidebar with the native host rasterizer. It checks
+larger non-overlapping content targets, every entry reached in both directions,
+held d-pad repeat, bounded spring retargeting, drag/release ownership, footer
+arrows, clip-aware animated hitboxes, reduced motion, theme/clock changes,
+live-task focus preservation and independent audio-layout navigation.
+The same pixel offset drives labels, faces and touch; item entrances are not
+restarted on scroll. Reference PNGs capture beginning/middle/end in each theme.
+Actual Vita GPU frame pacing and touch feel remain device acceptance items.

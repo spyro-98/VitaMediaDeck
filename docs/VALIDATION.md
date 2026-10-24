@@ -61,6 +61,10 @@ budget, plus the production MP3 function with real CBR/VBR decoding. See the
 [suite boundaries](../tests/podcast_resume/README.md) and
 [console checklist](podcast-resume-2026-10-24.md).
 
+`run-game-ui.sh` also runs the scrolling L1 fixture across all seven themes,
+IT/EN, reduced motion and player/download combinations. See
+[scrolling coverage and console checks](l1-scroll-2026-10-24.md).
+
 ## Native standard release
 
 Use the [toolchain guide](../mds/setup/TOOLCHAIN_SETUP.md) and

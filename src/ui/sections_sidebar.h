@@ -32,6 +32,10 @@ typedef struct {
 	int download_available;
 	float animation;
 	float focus_cursor;
+	float scroll, scroll_target, scroll_velocity;
+	int scroll_theme;
+	int touch_active, touch_dragged, touch_start_y;
+	float touch_start_scroll;
 	unsigned int repeat_button;
 	uint64_t repeat_next_us;
 	uint64_t animation_last_us;

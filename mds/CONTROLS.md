@@ -7,7 +7,7 @@
 | D-pad / left stick | Move focus or scroll the active list. |
 | Cross | Open or confirm the selected item. |
 | Circle | Close the active view or return. |
-| L1 | Open or close the shared section sidebar. |
+| L1 | Open or close Sections. Up/down selects and scrolls its contents. |
 | R1 | Open the context or information sidebar where available. |
 | Touch | Activate supported visible controls. |
 
@@ -295,13 +295,20 @@ See [setup and console checks](../docs/personal-media-2026-10-23.md).
 Nel tema **Legacy**, L1 separa In corso (player/download disponibili), Contenuti
 e servizi (Home, rete, Jellyfin, Navidrome, Immich, Radio/Podcast, IPTV) e Applicazione
 (impostazioni, guida, informazioni). Le intestazioni non ricevono il fuoco.
+
+In **tutti i temi**, su/giù o levetta sinistra seleziona le voci e fa scorrere
+il menu L1. Puoi trascinare il contenuto oppure toccare le frecce in basso per
+scorrere; rilasciare un trascinamento non apre una sezione. X apre la selezione,
+Cerchio chiude. Titolo e comandi restano fermi, mentre la barra laterale indica
+la posizione. Riduci movimento rende immediati gli spostamenti. La pagina
+Sezioni/Player conserva i propri comandi sinistra/destra e la scelta della cover.
 Navidrome è disponibile anche in Audio locale; Immich in Immagini; entrambi
 sono nella Libreria di tutti i temi.
 
 **Posizioni Home per tema:** Impostazioni → Interfaccia → Posizione tab del
 tema. Su/giù sceglie la voce; sinistra/destra o le frecce touch la spostano;
 X salva, Cerchio annulla. La posizione viene salvata solo per il tema attivo.
-Nei nuovi L1 a tre colonne, sinistra/destra cambia colonna quando non è
+Nei nuovi L1 con più colonne, sinistra/destra cambia colonna quando non è
 abilitata la pagina di disposizione del player; in quel caso mantiene il
 passaggio fra Sezioni e Player. La Libreria elenca i servizi dopo i locali;
 Musica e Immagini tengono il rispettivo servizio in testa.
