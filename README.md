@@ -23,7 +23,10 @@ synchronization, and rendering run directly on the console.
 Sources across local files, Jellyfin, Navidrome, Immich, IPTV, radio and podcasts.
 Press **R1** to change that view, **Triangle** for one global search, and **Square**
 to filter search results by provider. Cached metadata appears first; independent
-workers refresh available providers. Resume checkpoints are saved asynchronously,
+workers refresh available providers. Local search matches indexed titles, filenames,
+artists and albums without reopening media files. Result preparation stays in the
+background; loading and cached result lists follow the selected theme and respect
+Reduce Motion. Resume checkpoints are saved asynchronously,
 and the existing mini-player session is restored when selecting its current item.
 See [unified library, search and acceptance checks](docs/unified-library-2026-10-24.md)
 for the 24-result/provider limit, local-only state, provider coverage and remaining

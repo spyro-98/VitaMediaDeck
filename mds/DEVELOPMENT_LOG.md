@@ -189,3 +189,15 @@ migration, cancelable progressive global search, cached artwork and retained
 query/folder/focus. Reuses the existing players, account/trust flows and thumbnail
 cache. Test build library-1024; 1.4.1 standard and prior artifacts preserved.
 See [design, verification and real-device checklist](../docs/unified-library-2026-10-24.md).
+
+
+## 2026-10-24 — Lightweight search and theme activity
+
+Moved result selection/merge/sorting off the UI thread into reusable worker
+snapshots, applying per-provider quotas before copying. Added file-basename
+matching alongside indexed title/artist/album, eight-record index reads with
+independent cancellation and periodic yields, late-cover publication revisions,
+and themed source activity respecting Reduce Motion. Improved result metadata,
+media placeholders and empty-state width. Added worker ownership, production-index
+and seven-theme loading regressions. Test identity search-1024; previous standard
+and library-1024 packages preserved. See the [updated report](../docs/unified-library-2026-10-24.md).

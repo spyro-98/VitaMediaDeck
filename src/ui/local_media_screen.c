@@ -1643,7 +1643,8 @@ int ui_local_media_library_tick(void) {
 		local_scan_start(g_catalog_dirty);
 	return local_scan_finish() > 0;
 }
-int ui_local_media_search(const char *query, UiLocalMediaVisitor visitor, void *ctx) {
+int ui_local_media_search(const char *query, UiLocalMediaVisitor visitor, void *ctx,
+                          volatile int *cancel) {
 	LocalMediaIndexHeader header = {0};
 	int fd = sceIoOpen(LOCAL_INDEX_PATH, SCE_O_RDONLY, 0);
 	if (fd < 0)
@@ -1661,20 +1662,44 @@ int ui_local_media_search(const char *query, UiLocalMediaVisitor visitor, void *
 		sceIoClose(fd);
 		return -1;
 	}
-	for (unsigned i = 0; i < header.total_count; i++) {
-		if (sceIoRead(fd, &item, sizeof(item)) != sizeof(item)) {
+	VtLocalMediaItem batch[8];
+	for (unsigned i = 0; i < header.total_count;) {
+		if (cancel && __atomic_load_n(cancel, __ATOMIC_ACQUIRE))
+			break;
+		unsigned count = header.total_count - i;
+		if (count > 8)
+			count = 8;
+		unsigned bytes = count * sizeof(*batch);
+		if (sceIoRead(fd, batch, bytes) != (int)bytes) {
 			result = -1;
 			break;
 		}
-		if (!memchr(item.path, 0, sizeof(item.path)) || !memchr(item.name, 0, sizeof(item.name)) ||
-		    !memchr(item.artist, 0, sizeof(item.artist)) ||
-		    !memchr(item.album, 0, sizeof(item.album)) ||
-		    !memchr(item.artwork_path, 0, sizeof(item.artwork_path)))
-			continue;
-		VtLibraryItem v;
-		vt_library_local(&item, &v);
-		if (vt_library_matches(&v, query) && !visitor(&item, ctx))
+		int stop = 0;
+		for (unsigned k = 0; k < count; k++) {
+			VtLocalMediaItem *record = &batch[k];
+			if (cancel && __atomic_load_n(cancel, __ATOMIC_ACQUIRE)) {
+				stop = 1;
+				break;
+			}
+			if (!memchr(record->path, 0, sizeof(record->path)) ||
+			    !memchr(record->name, 0, sizeof(record->name)) ||
+			    !memchr(record->artist, 0, sizeof(record->artist)) ||
+			    !memchr(record->album, 0, sizeof(record->album)) ||
+			    !memchr(record->artwork_path, 0, sizeof(record->artwork_path)))
+				continue;
+			VtLibraryItem v;
+			vt_library_local(record, &v);
+			if (vt_library_matches(&v, query) && !visitor(record, ctx)) {
+				stop = 1;
+				break;
+			}
+		}
+		if (stop)
 			break;
+		i += count;
+		/* Yield after 32 records (~50 KiB), including zero-match searches. */
+		if (!(i % 32))
+			sceKernelDelayThread(1000);
 	}
 	sceIoClose(fd);
 	return result;

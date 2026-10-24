@@ -52,6 +52,9 @@ int vt_library_query(const char *query, int view, VtLibraryResult *out, int capa
 int vt_library_matches(const VtLibraryItem *item, const char *query);
 const char *vt_library_provider_name(int provider);
 /* Request only: checkpoint I/O belongs to the low priority worker. */
+/* Worker-only bounded selection: provider quotas / folder scope before copying. */
+int vt_library_query_search(const char *query, const VtLibraryItem *parent, VtLibraryResult *out,
+                            int capacity);
 void vt_library_checkpoint(void);
 unsigned vt_library_revision(void);
 #endif

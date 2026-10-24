@@ -14,7 +14,7 @@
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/kernel/processmgr.h>
 #define WORKERS 3
-#define JOB_MAX (VT_NETWORK_MAX_SOURCES + 4)
+#define JOB_MAX (VT_NETWORK_MAX_SOURCES + 5)
 typedef struct {
     unsigned generation;
     int type, provider;
@@ -65,7 +65,7 @@ void vt_library_search_set_session(const VtNetworkSource *s, const VtNetworkCred
 }
 static Job jobs[JOB_MAX];
 static int job_count, next_job, stopping, available_workers;
-static unsigned generation;
+static unsigned generation, publication_revision;
 static char cover_ids[24][16];
 static int cover_count;
 static volatile int cancellations[WORKERS];
@@ -75,6 +75,13 @@ static VtLibraryItem live[VT_LIBRARY_RESULTS];
 static int live_count, scoped;
 static char text[129];
 static VtLibraryItem scope;
+/* Workers assemble snapshots in reusable storage. The UI only copies the published
+ * page; it never scans the cache, allocates a merge buffer or sorts results. */
+static pthread_mutex_t snapshot_mutex = PTHREAD_MUTEX_INITIALIZER;
+static VtLibraryResult *snapshot_stage, *snapshot_results;
+static int snapshot_count, cache_refresh_queued;
+static unsigned snapshot_library_revision;
+static void rebuild_snapshot(unsigned gen);
 static SceUID threads[WORKERS] = {-1, -1, -1};
 static int current(unsigned gen) {
     pthread_mutex_lock(&search_mutex);
@@ -129,6 +136,8 @@ static int local_item(const VtLocalMediaItem *item, void *ctx) {
     return 1;
 }
 static int process(Job *j) {
+    if (j->type == 6)
+        return 0;
     if (j->type >= 2 && j->type != 5 && !vita_https_is_connected())
         return -1;
     if (j->type == 5) {
@@ -145,7 +154,7 @@ static int process(Job *j) {
         return ret;
     }
     if (j->type == 0) {
-        return ui_local_media_search(j->query, local_item, j);
+        return ui_local_media_search(j->query, local_item, j, j->cancel);
     }
     if (j->type == 1) {
         VtOnlineItem *saved = calloc(VT_ONLINE_MAX, sizeof(*saved));
@@ -282,18 +291,23 @@ static int worker(SceSize n, void *arg) {
             continue;
         }
         int result = process(j);
+        rebuild_snapshot(j->generation);
         pthread_mutex_lock(&search_mutex);
         if (j->generation == generation) {
+            if (j->type == 6)
+                cache_refresh_queued = 0;
             if (j->type != 5 && status.pending > 0)
                 status.pending--;
             if (j->provider >= 0) {
+                if (status.updating[j->provider] > 0)
+                    status.updating[j->provider]--;
                 int *s = &status.state[j->provider];
                 if (result == VT_NETWORK_AUTH_FAILED)
                     *s = VT_SEARCH_LOGIN;
                 else if (result < 0)
                     *s = VT_SEARCH_ERROR;
                 else if (*s != VT_SEARCH_ERROR && *s != VT_SEARCH_LOGIN)
-                    *s = VT_SEARCH_READY;
+                    *s = status.updating[j->provider] ? VT_SEARCH_LOADING : VT_SEARCH_READY;
             }
         }
         pthread_mutex_unlock(&search_mutex);
@@ -304,6 +318,13 @@ static int worker(SceSize n, void *arg) {
 }
 static void add_job(int type, int provider, const VtNetworkSource *s, const VtNetworkCredential *c,
                     const VtLibraryItem *folder) {
+    if (job_count == JOB_MAX && next_job) {
+        int pending = job_count - next_job;
+        memmove(jobs, jobs + next_job, (size_t)pending * sizeof(*jobs));
+        memset(jobs + pending, 0, (JOB_MAX - pending) * sizeof(*jobs));
+        job_count = pending;
+        next_job = 0;
+    }
     if (job_count >= JOB_MAX)
         return;
     Job *j = &jobs[job_count++];
@@ -324,8 +345,10 @@ static void add_job(int type, int provider, const VtNetworkSource *s, const VtNe
         return;
     }
     status.pending++;
-    if (provider >= 0)
+    if (provider >= 0) {
+        status.updating[provider]++;
         status.state[provider] = VT_SEARCH_LOADING;
+    }
 }
 void vt_library_search_begin(const char *q, const VtLibraryItem *folder) {
     VtNetworkSource *sources = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*sources));
@@ -345,7 +368,14 @@ void vt_library_search_begin(const char *q, const VtLibraryItem *folder) {
     }
     for (int k = 0; k < WORKERS; k++)
         __atomic_store_n(&cancellations[k], 1, __ATOMIC_RELEASE);
+    int reuse = !folder && !scoped && !strcmp(text, q ? q : "");
+    if (!reuse)
+        snapshot_count = 0;
+    else
+        for (int i = 0; i < snapshot_count; i++)
+            snapshot_results[i].cached = 1;
     generation++;
+    __atomic_add_fetch(&publication_revision, 1, __ATOMIC_RELEASE);
     memset(&status, 0, sizeof(status));
     status.generation = generation;
     memset(jobs, 0, sizeof(jobs));
@@ -354,6 +384,8 @@ void vt_library_search_begin(const char *q, const VtLibraryItem *folder) {
     snprintf(text, sizeof(text), "%s", q ? q : "");
     scoped = folder != NULL;
     scope = folder ? *folder : (VtLibraryItem){0};
+    cache_refresh_queued = available_workers != 0;
+    add_job(6, -1, NULL, NULL, NULL);
     if (folder) {
         if (folder->provider == VT_LIBRARY_PODCAST)
             add_job(2, VT_LIBRARY_PODCAST, NULL, NULL, folder);
@@ -395,35 +427,28 @@ static int compare_results(const void *a, const void *b) {
     int order = x->item.provider - y->item.provider;
     return order ? order : strcmp(x->item.title, y->item.title);
 }
-int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySearchStatus *s) {
-    VtLibraryResult *cached = calloc(VT_LIBRARY_MAX, sizeof(*cached));
-    if (!cached)
-        return 0;
+static void rebuild_snapshot(unsigned gen) {
+    pthread_mutex_lock(&snapshot_mutex);
+    VtLibraryResult *out = snapshot_stage;
+    const int capacity = VT_LIBRARY_RESULTS;
+    if (!out || !current(gen)) {
+        pthread_mutex_unlock(&snapshot_mutex);
+        return;
+    }
     char q[129];
     pthread_mutex_lock(&search_mutex);
     snprintf(q, sizeof(q), "%s", text);
     int scope_active = scoped;
     VtLibraryItem parent = scope;
     pthread_mutex_unlock(&search_mutex);
-    int n = vt_library_query(scope_active ? "" : q, VT_LIBRARY_ALL, cached, VT_LIBRARY_MAX),
-        count = 0;
+    unsigned library_revision = vt_library_revision();
+    int count = vt_library_query_search(scope_active ? "" : q, scope_active ? &parent : NULL, out,
+                                        capacity);
     pthread_mutex_lock(&search_mutex);
-    *s = status;
-    for (int i = 0; i < n && count < capacity; i++) {
-        int matches = !scope_active ||
-                      (cached[i].item.provider == parent.provider &&
-                       (parent.provider == VT_LIBRARY_PODCAST ||
-                        !strcmp(cached[i].item.server, parent.server)) &&
-                       !strcmp(cached[i].item.context, parent.locator) &&
-                       (cached[i].item.provider == VT_LIBRARY_IPTV || cached[i].item.mode != 2));
-        if (matches) {
-            int in_provider = 0;
-            for (int k = 0; k < count; k++)
-                if (out[k].item.provider == cached[i].item.provider)
-                    in_provider++;
-            if (scope_active || in_provider < 24)
-                out[count++] = cached[i];
-        }
+    if (gen != generation || stopping) {
+        pthread_mutex_unlock(&search_mutex);
+        pthread_mutex_unlock(&snapshot_mutex);
+        return;
     }
     for (int i = 0; i < live_count; i++) {
         int found = -1;
@@ -457,10 +482,42 @@ int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySear
         }
     }
     pthread_mutex_unlock(&search_mutex);
-    free(cached);
+
     /* Stable provider grouping. UI restores focus by identity on every refresh. */
     qsort(out, (size_t)count, sizeof(*out), compare_results);
-    return count;
+    pthread_mutex_lock(&search_mutex);
+    if (gen == generation && !stopping) {
+        VtLibraryResult *prior = snapshot_results;
+        snapshot_results = snapshot_stage;
+        snapshot_stage = prior;
+        snapshot_count = count;
+        snapshot_library_revision = library_revision;
+        __atomic_add_fetch(&publication_revision, 1, __ATOMIC_RELEASE);
+    }
+    pthread_mutex_unlock(&search_mutex);
+    pthread_mutex_unlock(&snapshot_mutex);
+}
+int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySearchStatus *s) {
+    if (!out || capacity <= 0 || !s)
+        return 0;
+    unsigned revision = vt_library_revision();
+    pthread_mutex_lock(&search_mutex);
+    if (revision != snapshot_library_revision && !cache_refresh_queued && available_workers &&
+        !stopping && (job_count < JOB_MAX || next_job)) {
+        cache_refresh_queued = 1;
+        add_job(6, -1, NULL, NULL, NULL);
+        pthread_cond_broadcast(&search_changed);
+    }
+    *s = status;
+    s->revision = __atomic_load_n(&publication_revision, __ATOMIC_ACQUIRE);
+    int n = snapshot_count < capacity ? snapshot_count : capacity;
+    if (n)
+        memcpy(out, snapshot_results, (size_t)n * sizeof(*out));
+    pthread_mutex_unlock(&search_mutex);
+    return n;
+}
+unsigned vt_library_search_revision(void) {
+    return __atomic_load_n(&publication_revision, __ATOMIC_ACQUIRE);
 }
 void vt_library_search_cover(const VtLibraryItem *v) {
     if (!v || !v->artwork_url[0] || v->artwork[0])
@@ -514,6 +571,15 @@ void vt_library_search_cancel(void) {
     pthread_mutex_unlock(&search_mutex);
 }
 int vt_library_search_init(void) {
+    snapshot_stage = calloc(VT_LIBRARY_RESULTS, sizeof(*snapshot_stage));
+    snapshot_results = calloc(VT_LIBRARY_RESULTS, sizeof(*snapshot_results));
+    if (!snapshot_stage || !snapshot_results) {
+        free(snapshot_stage);
+        free(snapshot_results);
+        snapshot_stage = snapshot_results = NULL;
+        return -1;
+    }
+    snapshot_count = cache_refresh_queued = 0;
     stopping = 0;
     int started = 0;
     for (int i = 0; i < WORKERS; i++) {
@@ -530,6 +596,11 @@ int vt_library_search_init(void) {
         }
     }
     available_workers = started;
+    if (!started) {
+        free(snapshot_stage);
+        free(snapshot_results);
+        snapshot_stage = snapshot_results = NULL;
+    }
     return started ? 0 : -1;
 }
 void vt_library_search_shutdown(void) {
@@ -548,4 +619,8 @@ void vt_library_search_shutdown(void) {
             sceKernelDeleteThread(threads[i]);
             threads[i] = -1;
         }
+    free(snapshot_stage);
+    free(snapshot_results);
+    snapshot_stage = snapshot_results = NULL;
+    snapshot_count = available_workers = 0;
 }

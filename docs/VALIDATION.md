@@ -122,3 +122,9 @@ The provider HTTP fixtures now check encoded Jellyfin search and canceled
 Jellyfin/Immich requests. See the [implementation and Vita/server acceptance
 checklist](unified-library-2026-10-24.md). Host counts, synthetic layouts,
 native Release/LTO and VPK checks do not establish real account/device behavior.
+
+
+The `search-1024` follow-up refreshes the library suites with the production local
+index reader, worker-only query ownership, late-cover publications, 42 host layouts
+and animated/Reduce Motion activity in all seven themes. It uses the same manual
+Vita/server checklist; host budgets do not measure console FPS or battery usage.
