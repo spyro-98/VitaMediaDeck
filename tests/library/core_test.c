@@ -185,6 +185,9 @@ int main(void) {
     CHECK(vt_library_matches(&a, "blade VANGELIS soundtrack"));
     CHECK(!vt_library_matches(&a, "missing"));
     CHECK(vt_library_matches(&a, "   "));
+    CHECK(vt_library_matches(&a, "one.mp4 VANGELIS"));
+    CHECK(!vt_library_matches(&b, "song:two"));
+    CHECK(!vt_library_matches(&a, "ux0:video"));
     vt_library_put(&a);
     CHECK(vt_library_resume_fallback(&a, 90000) == 90000);
     CHECK(!vt_library_query("", VT_LIBRARY_RECENT, out, 512));

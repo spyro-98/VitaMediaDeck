@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 static const char *tr(const char *en, const char *it) {
     return vt_i18n_current_language() == VT_LANG_IT ? it : en;
 }
@@ -70,45 +71,127 @@ static void source_results(VtLibraryResult *items, int *n) {
                                           : VT_LIBRARY_NETWORK;
     }
 }
-static void describe(const VtLibraryResult *v, int searching, char *out, size_t size) {
-    char time[48] = "";
-    if (v->started && v->item.kind != VT_LIBRARY_LIVE && v->item.kind != VT_LIBRARY_IMAGE) {
-        uint64_t s = v->position_ms / 1000, d = v->duration_ms / 1000;
-        snprintf(time, sizeof(time), "%llu:%02llu%s", (unsigned long long)(s / 60),
-                 (unsigned long long)(s % 60),
-                 d && (s >= d || (d > 15 && s >= d - 15)) ? tr("  completed", "  completato") : "");
+static const char *media_label(int kind) {
+    switch (kind) {
+    case VT_LIBRARY_VIDEO:
+        return "VIDEO";
+    case VT_LIBRARY_AUDIO:
+        return "AUDIO";
+    case VT_LIBRARY_IMAGE:
+        return tr("PHOTO", "FOTO");
+    case VT_LIBRARY_LIVE:
+        return "LIVE";
+    case VT_LIBRARY_FEED:
+        return "FEED";
+    default:
+        return "DIR";
     }
-    char origin[128];
-    snprintf(origin, sizeof(origin), "%s%s%s", vt_library_provider_name(v->item.provider),
-             v->item.server_name[0] ? " / " : "", v->item.server_name);
-    snprintf(out, size, "%s%s%s%s%s%s%s", origin, time[0] ? " · " : "", time,
-             v->item.artist[0] ? " · " : "", v->item.artist, v->item.album[0] ? " · " : "",
-             v->item.album);
-    if (searching && v->cached && !v->started && !v->item.artist[0])
-        snprintf(out, size, "%s · %s", origin,
-                 tr("Cached / updating independently", "Cache / aggiornamento indipendente"));
 }
-static void search_detail(const VtLibrarySearchStatus *s, char *out, size_t size) {
+static void describe(const VtLibraryResult *v, int searching, char *out, size_t size) {
+    char time[72] = "";
+    uint64_t seconds = v->position_ms / 1000, duration = v->duration_ms / 1000;
+    if (v->item.kind != VT_LIBRARY_LIVE && v->item.kind != VT_LIBRARY_IMAGE) {
+        if (v->started)
+            snprintf(time, sizeof(time), "%llu:%02llu", (unsigned long long)(seconds / 60),
+                     (unsigned long long)(seconds % 60));
+        if (duration) {
+            size_t used = strlen(time);
+            snprintf(time + used, sizeof(time) - used, "%s%llu:%02llu%s", used ? " / " : "",
+                     (unsigned long long)(duration / 60), (unsigned long long)(duration % 60),
+                     v->started && seconds >= duration ? tr(" completed", " completato") : "");
+        }
+    }
+    /* Keep useful metadata ahead of the longer connection name. Covers carry
+     * the media type; the first detail field identifies the provider group. */
+    snprintf(out, size, "%s%s%s%s%s%s%s%s%s%s", vt_library_provider_name(v->item.provider),
+             v->item.artist[0] ? " · " : "", v->item.artist, v->item.album[0] ? " · " : "",
+             v->item.album, time[0] ? " · " : "", time,
+             searching && v->cached ? tr(" · saved", " · cache") : "",
+             !v->item.artist[0] && !v->item.album[0] && v->item.server_name[0] ? " · " : "",
+             !v->item.artist[0] && !v->item.album[0] ? v->item.server_name : "");
+}
+static void search_detail(const VtLibrarySearchStatus *s, int count, int filter, char *out,
+                          size_t size) {
+    const char *group =
+        filter >= 0 ? vt_library_provider_name(filter) : tr("All sources", "Tutte le sorgenti");
     if (s->pending) {
-        snprintf(out, size,
-                 tr("%d sources updating · cached results are ready",
-                    "%d sorgenti in aggiornamento · cache disponibile"),
-                 s->pending);
+        snprintf(
+            out, size,
+            tr("%s · %d results · searching (%d)", "%s · %d risultati · ricerca in corso (%d)"),
+            group, count, s->pending);
         return;
     }
     for (int i = 0; i < VT_LIBRARY_PROVIDER_COUNT; i++)
-        if (s->state[i] == VT_SEARCH_LOGIN || s->state[i] == VT_SEARCH_ERROR) {
-            snprintf(
-                out, size, "%s: %s", vt_library_provider_name(i),
-                s->state[i] == VT_SEARCH_LOGIN
-                    ? tr("sign in from Sources to refresh", "accedi da Sorgenti per aggiornare")
-                    : tr("unavailable · showing cached results",
-                         "non disponibile · risultati dalla cache"));
+        if ((filter < 0 || filter == i) &&
+            (s->state[i] == VT_SEARCH_LOGIN || s->state[i] == VT_SEARCH_ERROR)) {
+            snprintf(out, size, "%d · %s: %s", count, vt_library_provider_name(i),
+                     s->state[i] == VT_SEARCH_LOGIN
+                         ? tr("sign in from Sources", "accedi da Sorgenti")
+                         : tr("unavailable · saved results", "non disponibile · cache"));
             return;
         }
-    snprintf(out, size, "%s",
-             tr("Results grouped by provider · Square changes provider",
-                "Risultati per provider · Quadrato cambia provider"));
+    snprintf(out, size,
+             tr("%s · %d results · Square: provider", "%s · %d risultati · Quadrato: provider"),
+             group, count);
+}
+/* One compact eight-source rail: existing theme geometry, no textures, timers,
+ * allocations or percentage claims. Only pending sources animate. */
+static void search_activity(const VtLibrarySearchStatus *s, int filter, int x, int y, int width,
+                            uint64_t now) {
+    int theme = ui_theme_id();
+    float phase = vt_preferences_reduce_motion() ? .375f : (now % 1200000ULL) / 1200000.0f;
+    int cell = width / VT_LIBRARY_PROVIDER_COUNT;
+    for (int i = 0; i < VT_LIBRARY_PROVIDER_COUNT; i++) {
+        int state = s->state[i], active = state == VT_SEARCH_LOADING || s->updating[i] > 0;
+        float px = x + i * cell, w = cell - 5;
+        unsigned color = state == VT_SEARCH_ERROR || state == VT_SEARCH_LOGIN ? VT_THEME_WARNING
+                         : state == VT_SEARCH_READY ? VT_THEME_SIGNAL_BRIGHT
+                                                    : VT_THEME_BORDER;
+        if (active)
+            color = VT_THEME_COLD;
+        if (filter >= 0 && filter != i)
+            color = ui_theme_alpha(color, 70);
+        float travel = active ? phase : .5f;
+        if (theme == VT_UI_THEME_GHOST_MESH) {
+            vita2d_draw_line(px + 13, y, px + w, y, ui_theme_alpha(color, 120));
+            for (int k = 0; k < 8; k++) {
+                float angle = k * .78539816f, next = angle + .5f;
+                unsigned c = active && k != (int)(travel * 8) ? ui_theme_alpha(color, 65) : color;
+                vita2d_draw_line(px + 5 + cosf(angle) * 4, y + sinf(angle) * 4,
+                                 px + 5 + cosf(next) * 4, y + sinf(next) * 4, c);
+            }
+        } else if (theme == VT_UI_THEME_DECK_90) {
+            for (int k = 0; k < 4; k++)
+                vita2d_draw_rectangle(px + k * w / 4, y - 3, w / 4 - 2, 5,
+                                      active && k != (int)(travel * 4) ? ui_theme_alpha(color, 65)
+                                                                       : color);
+        } else if (theme == VT_UI_THEME_SIGNAL) {
+            for (int k = 0; k < 5; k++) {
+                unsigned c = active && k != (int)(travel * 5) ? ui_theme_alpha(color, 65) : color;
+                float at = px + k * w / 5;
+                vita2d_draw_line(at, y + 3, at + 5, y - 3, c);
+            }
+        } else if (theme == VT_UI_THEME_APERTURE) {
+            vita2d_draw_line(px, y, px + w, y, ui_theme_alpha(color, 90));
+            for (int k = 0; k < 4; k++)
+                vita2d_draw_rectangle(px + k * w / 4, y - 3, w / 4 - 4, 6,
+                                      active && k != (int)(travel * 4) ? ui_theme_alpha(color, 65)
+                                                                       : color);
+        } else if (theme == VT_UI_THEME_RELAY) {
+            vita2d_draw_line(px, y, px + w, y, ui_theme_alpha(color, 100));
+            vita2d_draw_rectangle(px + travel * (w - 5), y - 2, 5, 5, color);
+        } else if (theme == VT_UI_THEME_MOSAIC) {
+            for (int k = 0; k < 3; k++)
+                vita2d_draw_rectangle(px + k * w / 3, y - 3, w / 3 - 3, 6,
+                                      active && k != (int)(travel * 3) ? ui_theme_alpha(color, 65)
+                                                                       : color);
+        } else {
+            vita2d_draw_rectangle(px, y, w, 2, ui_theme_alpha(color, 90));
+            vita2d_draw_rectangle(px + travel * (w - 12), y - 1, active ? 12 : w / 2, 3, color);
+        }
+        if (filter == i)
+            vita2d_draw_rectangle(px, y + 5, w, 1, VT_THEME_TEXT);
+    }
 }
 static UiThemeRect heading_rect(int theme, int bottom) {
     if (theme == VT_UI_THEME_LEGACY)
@@ -194,7 +277,7 @@ int ui_library_screen(VtLibraryItem *selected_out) {
     VtLibraryItem folder = {0};
     int in_folder = 0;
     uint64_t refreshed = 0;
-    unsigned seen_revision = ~0U;
+    unsigned seen_revision = ~0U, seen_search_revision = ~0U;
     VtLibrarySearchStatus status = {0};
     char identity[192], detail[256];
     if (navigation.valid) {
@@ -219,7 +302,9 @@ int ui_library_screen(VtLibraryItem *selected_out) {
             dirty = 1;
         }
         if (dirty || (now - refreshed > 250000ULL &&
-                      (status.pending || seen_revision != vt_library_revision()))) {
+                      (status.pending || seen_revision != vt_library_revision() ||
+                       ((view == 3 || in_folder) &&
+                        seen_search_revision != vt_library_search_revision())))) {
             int keep = !dirty && !focus && n && selected < n;
             VtLibraryResult prior = {0};
             if (keep)
@@ -267,6 +352,7 @@ int ui_library_screen(VtLibraryItem *selected_out) {
                 selected = n ? n - 1 : 0;
             refreshed = now;
             seen_revision = vt_library_revision();
+            seen_search_revision = status.revision;
             dirty = 0;
         }
         int bottom =
@@ -492,11 +578,12 @@ int ui_library_screen(VtLibraryItem *selected_out) {
                           : tr("R1: Continue / History / Sources · Triangle: search",
                                "R1: Continua / Cronologia / Sorgenti · Triangolo: cerca"));
         if (view == 3 || in_folder)
-            search_detail(&status, detail, sizeof(detail));
+            search_detail(&status, n, in_folder ? -1 : filter, detail, sizeof(detail));
         ui_home_tabs_set_expanded(1);
         vita2d_start_drawing();
         vita2d_clear_screen();
         ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
+        ui_brand_set_loading((view == 3 || in_folder) && status.pending);
         ui_brand_draw_home_header();
         ui_home_tabs_draw_with_focus(focus, &tab_motion);
         if (!legacy)
@@ -505,13 +592,22 @@ int ui_library_screen(VtLibraryItem *selected_out) {
                                              : view_label(view),
                                   detail, bottom);
         else {
-            ui_text_line(18, 82, 924, in_folder ? folder.title : view_label(view), VT_THEME_TEXT,
-                         UI_FONT_BODY);
+            ui_text_line(18, 82, 924,
+                         in_folder  ? folder.title
+                         : query[0] ? query
+                                    : view_label(view),
+                         VT_THEME_TEXT, UI_FONT_BODY);
             ui_text_line(18, 103, 924, detail, VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
         }
         UiPageView page = ui_theme_page(UI_SCENE_HOME, "unified-library", identity, top, n,
                                         layout.columns, visible, layout.step);
         int viewport = layout.y + offset * layout.step;
+        if (view == 3 || in_folder)
+            search_activity(&status, in_folder ? -1 : filter, layout.x, viewport - 7,
+                            legacy                                    ? 924
+                            : ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w
+                                                                      : 942 - layout.x,
+                            now);
         vita2d_set_clip_rectangle(0, viewport - 3, 960, bottom - 38);
         vita2d_enable_clipping();
         for (int i = page.first; i < page.end; i++) {
@@ -535,11 +631,8 @@ int ui_library_screen(VtLibraryItem *selected_out) {
                 art = vt_video_thumbnail_get(v->item.locator, v->item.size);
             if (!art)
                 art = remote_artwork(&artwork, &v->item, i == selected ? 100 : 50);
-            ui_theme_home_row_art(
-                i - top + offset, i, v->item.title, line, i == selected, !focus, bottom, art,
-                v->item.kind == VT_LIBRARY_FOLDER || v->item.kind == VT_LIBRARY_FEED
-                    ? "DIR"
-                    : vt_library_provider_name(v->item.provider));
+            ui_theme_home_row_art(i - top + offset, i, v->item.title, line, i == selected, !focus,
+                                  bottom, art, media_label(v->item.kind));
             if (v->duration_ms && v->position_ms && v->item.kind != VT_LIBRARY_LIVE) {
                 UiThemeRect r = ui_theme_home_item_rect(ui_theme_id(), i - top + offset, bottom);
                 float fraction = (float)v->position_ms / (float)v->duration_ms;
@@ -551,13 +644,14 @@ int ui_library_screen(VtLibraryItem *selected_out) {
         }
         vita2d_disable_clipping();
         if (!n) {
+            int empty_width = ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w : 942 - layout.x;
             ui_text_line(
-                layout.x, viewport + 34, legacy ? 924 : layout.w,
+                layout.x, viewport + 34, empty_width,
                 (status.pending && (view == 3 || in_folder))
                     ? tr("Searching available sources...", "Ricerca nelle sorgenti...")
                     : tr("No items in this view yet", "Ancora nessun contenuto in questa vista"),
                 VT_THEME_TEXT, UI_FONT_BODY);
-            ui_text_line(layout.x, viewport + 62, legacy ? 924 : layout.w,
+            ui_text_line(layout.x, viewport + 62, empty_width,
                          tr("R1: sources · Triangle: search all sources",
                             "R1: sorgenti · Triangolo: cerca ovunque"),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
@@ -585,6 +679,7 @@ int ui_library_screen(VtLibraryItem *selected_out) {
         vita2d_wait_rendering_done();
         vita2d_swap_buffers();
     }
+    ui_brand_set_loading(0);
     navigation.selected = selected;
     navigation.top = top;
     navigation.focus = focus;

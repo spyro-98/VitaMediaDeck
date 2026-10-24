@@ -31,7 +31,7 @@ state shared by the application's entry points, not cross-device cloud sync.
 
 ## Search and caching
 
-One query searches title, artist and album in indexed local media; Jellyfin titles;
+One query searches title, filename, artist and album in indexed local media; Jellyfin titles;
 Navidrome artists/albums/songs; Immich original filenames; radio/podcast catalogues;
 and saved or previously discovered IPTV channels. Artist and album results open
 their provider folders; podcast shows open their episode feeds. There is no global
@@ -53,6 +53,31 @@ Results are grouped by provider; **Square** cycles the provider filter. A global
 page is bounded to **24 items per provider / 192 overall**: refine a broad query or
 open the provider to browse everything. Navidrome allocates artist/album slots
 without crowding out songs. Provider folders keep their existing pagination.
+The search follow-up (`search-1024`) prepares merged/sorted snapshots exclusively
+on the three low-priority workers. The renderer copies a ready snapshot and
+observes a publication revision, including covers arriving after the provider jobs
+finish. Two reusable result buffers replace the former 512-result temporary merge
+allocation on every UI refresh. Provider quotas are applied before copying cache
+records. Idle workers sleep; polling does not restart provider requests.
+
+Local queries read the immutable on-disk metadata index, **eight records per I/O**,
+check cancellation before every record (even with no matches), and yield for 1 ms
+after every 32 records. No media files are opened or tags re-extracted per query;
+the existing catalog indexer supplies title/artist/album tags. File basename
+matching applies only to local/network file paths, not opaque provider ids or
+credentials in URLs. This bounds individual batches, not total scan time: a
+zero-match query can still scan the full local index in the background.
+
+Results retain each theme's native cards, covers, viewport transitions and focus.
+The detail prioritizes provider, artist/album and playback duration. A compact
+source rail uses radar segments (Ghost Mesh), blocks (Deck 90), diagonal impulses
+(Signal), film perforations (Aperture), link nodes (Relay), tiles (Mosaic), or a
+simple sweep (Legacy). Source order is Local, Jellyfin, Navidrome, Immich, IPTV,
+Radio, Podcast, Network. Ready/loading/login/error have separate states; unavailable
+sources retain cache and no indeterminate animation claims a completion percentage.
+The header also shows activity; **Reduce Motion** freezes the activity shapes.
+Cached content remains usable and incoming batches do not restart item reveals.
+
 The metadata cache retains **512 items**, evicting unplayed cache before the oldest
 activity. It is not a second complete copy of every remote library. Search text
 uses ASCII case folding with exact UTF-8 matching for other characters.
@@ -113,20 +138,21 @@ Navidrome query encoding, Immich request bodies, canceled HTTP, redirects and
 native range-cache regression. Existing UI/motion/provider/podcast suites and the
 native Release/LTO VPK audit are part of the build validation.
 
-Recorded host results for this source snapshot:
+Recorded host results (library suites refreshed for search-1024; unchanged provider/player suites retain the preceding library-1024 evidence):
 
 | Check | Result |
 | --- | --- |
-| Library journal/cache | 105 checks under ASan/UBSan and TSan |
-| Concurrent global search | 126 checks under both sanitizer runs |
+| Library journal/cache | 108 checks under ASan/UBSan and TSan |
+| Concurrent global search | 171 checks in the recorded sanitizer runs, including worker-only queries and late cover publication |
+| Local immutable index reader | 632 checks under both sanitizer runs: real file records, metadata, I/O/yield budget, zero-match cancellation and corrupt header |
 | Production background sampler | 6 checks under both sanitizer runs |
-| Unified Home | 288,038 checks and 28 synthetic host layouts |
+| Unified Home | 424,066 checks, 42 synthetic host layouts, animated/reduced-motion activity and late-cover invalidation |
 | Provider APIs / authenticated range cache | 239 API checks / 48,205 byte checks, plus local HTTP search/cancellation |
 | Existing personal-media UI | 219,325 checks across seven themes/two languages |
 | Game UI / scrolling L1 | 146,670 / 547,063 checks |
 | Continuous motion / theme chrome | 225,694 / 19,376 checks |
 | Podcast persistence / production MP3 | 143 / 153 checks under both sanitizer runs |
-| Documentation | 86 Markdown files, 300 relative links checked |
+| Documentation | 86 Markdown files, 301 relative links checked |
 
 ## Acceptance on PS Vita / real servers
 

@@ -7,13 +7,23 @@
 #include <unistd.h>
 #include <time.h>
 int sceKernelDelayThread(unsigned);
+#include "library/library.h"
+static pthread_t ui_thread;
+static int observed_query(const char *, const VtLibraryItem *, VtLibraryResult *, int);
+#define vt_library_query_search observed_query
 #include "../../src/library/search.c"
+#undef vt_library_query_search
 static unsigned checks;
 #define CHECK(x)                                                                                   \
     do {                                                                                           \
         __atomic_add_fetch(&checks, 1, __ATOMIC_RELAXED);                                          \
         assert(x);                                                                                 \
     } while (0)
+static int observed_query(const char *q, const VtLibraryItem *parent, VtLibraryResult *out,
+                          int cap) {
+    CHECK(!pthread_equal(pthread_self(), ui_thread));
+    return vt_library_query_search(q, parent, out, cap);
+}
 static pthread_t pool[3];
 static SceKernelThreadEntry entries[3];
 static int created;
@@ -108,7 +118,9 @@ int vt_playback_history_progress(const char *s, uint64_t *p, uint64_t *d) {
     (void)d;
     return 0;
 }
-int ui_local_media_search(const char *q, UiLocalMediaVisitor visit, void *ctx) {
+int ui_local_media_search(const char *q, UiLocalMediaVisitor visit, void *ctx,
+                          volatile int *cancel) {
+    (void)cancel;
     for (int i = 0; i < 300; i++) {
         VtLocalMediaItem v = {.type = VT_LOCAL_MEDIA_AUDIO};
         snprintf(v.path, sizeof(v.path), "ux0:music/%s-%03d.mp3", q, i);
@@ -210,6 +222,7 @@ static int wait_results(VtLibraryResult *out, VtLibrarySearchStatus *status, int
     return 0;
 }
 int main(void) {
+    ui_thread = pthread_self();
     sources[0].protocol = VT_NETWORK_JELLYFIN;
     strcpy(sources[0].host, "https://slow.example");
     sources[1].protocol = VT_NETWORK_NAVIDROME;
@@ -257,6 +270,25 @@ int main(void) {
     n = vt_library_search_snapshot(out, VT_LIBRARY_RESULTS, &state);
     CHECK((has_provider(out, n, VT_LIBRARY_NAVIDROME) && has_provider(out, n, VT_LIBRARY_RADIO) &&
            has_provider(out, n, VT_LIBRARY_PODCAST)));
+    /* Cover jobs do not keep the provider spinner running, but their later
+     * publication must still be discoverable by a quiet UI. */
+    n = wait_results(out, &state, 1);
+    VtLibraryItem cover_item = out[0].item;
+    strcpy(cover_item.artwork_url, "https://fixture.example/cover.jpg");
+    cover_item.artwork[0] = 0;
+    unsigned prior_publication = vt_library_search_revision();
+    vt_library_search_cover(&cover_item);
+    int got_cover = 0;
+    for (int tick = 0; tick < 2000 && !got_cover; tick++) {
+        n = vt_library_search_snapshot(out, VT_LIBRARY_RESULTS, &state);
+        for (int i = 0; i < n; i++)
+            if (!strcmp(out[i].item.id, cover_item.id) &&
+                !strcmp(out[i].item.artwork, "fixture-cover-cache"))
+                got_cover = 1;
+        if (!got_cover)
+            usleep(1000);
+    }
+    CHECK(got_cover && vt_library_search_revision() != prior_publication);
     /* RAM-only sessions work with remembered passwords disabled and are account scoped. */
     remember = 0;
     VtNetworkCredential credential = {0};
@@ -309,7 +341,8 @@ int vt_jellyfin_list_cancel(const VtNetworkSource *s, const VtNetworkCredential 
 }
 
 int vt_online_fetch_cover(VtOnlineItem *v, volatile int *c) {
-    (void)v;
     (void)c;
-    return -1;
+    usleep(2000);
+    strcpy(v->artwork_path, "fixture-cover-cache");
+    return 0;
 }

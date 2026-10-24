@@ -131,7 +131,7 @@ static int insert(const VtLibraryItem *item) {
     slots[i].cached_order = cache_order++;
     if (memcmp(&slots[i].item, &merged, sizeof(merged))) {
         slots[i].item = merged;
-        slots[i].metadata_revision = ++revision;
+        slots[i].metadata_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
     }
     return i;
 }
@@ -149,11 +149,11 @@ void vt_library_started(const VtLibraryItem *item) {
     int i = insert(item);
     if (strcmp(slots[i].item.history_id, item->history_id)) {
         memcpy(slots[i].item.history_id, item->history_id, sizeof(item->history_id));
-        slots[i].metadata_revision = ++revision;
+        slots[i].metadata_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
     }
     slots[i].state.started = 1;
     slots[i].state.order = next_order++;
-    slots[i].state_revision = ++revision;
+    slots[i].state_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
     urgent = 1;
     pthread_mutex_unlock(&mutex);
 }
@@ -172,7 +172,7 @@ void vt_library_progress(const char *id, uint64_t p, uint64_t d) {
                 s->position = p;
                 if (d)
                     s->duration = d;
-                slots[i].state_revision = ++revision;
+                slots[i].state_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
             }
         }
     pthread_mutex_unlock(&mutex);
@@ -221,13 +221,18 @@ int vt_library_matches(const VtLibraryItem *v, const char *q) {
         const char *end = strchr(q, ' ');
         size_t n = end ? (size_t)(end - q) : strlen(q);
         if (n && !contains(v->title, q, n) && !contains(v->artist, q, n) &&
-            !contains(v->album, q, n))
-            return 0;
+            !contains(v->album, q, n)) {
+            const char *file = strrchr(v->locator, '/');
+            if ((v->provider != VT_LIBRARY_LOCAL && v->provider != VT_LIBRARY_NETWORK) ||
+                !contains(file ? file + 1 : v->locator, q, n))
+                return 0;
+        }
         q += n;
     }
     return 1;
 }
-int vt_library_query(const char *q, int view, VtLibraryResult *out, int cap) {
+static int query_items(const char *q, int view, const VtLibraryItem *parent, int search,
+                       VtLibraryResult *out, int cap) {
     int indices[VT_LIBRARY_MAX], n = 0;
     if (!out || cap <= 0)
         return 0;
@@ -235,7 +240,12 @@ int vt_library_query(const char *q, int view, VtLibraryResult *out, int cap) {
     for (int i = 0; i < count; i++)
         if (vt_library_matches(&slots[i].item, q) &&
             (view != VT_LIBRARY_CONTINUE || resumable(&slots[i])) &&
-            (view != VT_LIBRARY_RECENT || slots[i].state.started))
+            (view != VT_LIBRARY_RECENT || slots[i].state.started) &&
+            (!parent || (slots[i].item.provider == parent->provider &&
+                         (parent->provider == VT_LIBRARY_PODCAST ||
+                          !strcmp(slots[i].item.server, parent->server)) &&
+                         !strcmp(slots[i].item.context, parent->locator) &&
+                         (parent->provider == VT_LIBRARY_IPTV || slots[i].item.mode != 2))))
             indices[n++] = i;
     for (int i = 1; i < n; i++) {
         int idx = indices[i], j = i;
@@ -252,20 +262,29 @@ int vt_library_query(const char *q, int view, VtLibraryResult *out, int cap) {
         }
         indices[j] = idx;
     }
-    if (n > cap)
-        n = cap;
-    for (int i = 0; i < n; i++) {
+    int used[VT_LIBRARY_PROVIDER_COUNT] = {0}, written = 0;
+    for (int i = 0; i < n && written < cap; i++) {
         Slot *s = &slots[indices[i]];
-        out[i] = (VtLibraryResult){.item = s->item,
-                                   .position_ms = s->state.position,
-                                   .duration_ms =
-                                       s->state.duration ? s->state.duration : s->item.duration_ms,
-                                   .order = s->state.order,
-                                   .started = s->state.started,
-                                   .cached = 1};
+        if (search && !parent && used[s->item.provider] >= 24)
+            continue;
+        used[s->item.provider]++;
+        out[written++] = (VtLibraryResult){.item = s->item,
+                                           .position_ms = s->state.position,
+                                           .duration_ms = s->state.duration ? s->state.duration
+                                                                            : s->item.duration_ms,
+                                           .order = s->state.order,
+                                           .started = s->state.started,
+                                           .cached = 1};
     }
     pthread_mutex_unlock(&mutex);
-    return n;
+    return written;
+}
+int vt_library_query(const char *q, int view, VtLibraryResult *out, int cap) {
+    return query_items(q, view, NULL, 0, out, cap);
+}
+int vt_library_query_search(const char *q, const VtLibraryItem *parent, VtLibraryResult *out,
+                            int cap) {
+    return query_items(q, VT_LIBRARY_ALL, parent, 1, out, cap);
 }
 void vt_library_checkpoint(void) {
     pthread_mutex_lock(&mutex);
@@ -273,10 +292,8 @@ void vt_library_checkpoint(void) {
     pthread_mutex_unlock(&mutex);
 }
 unsigned vt_library_revision(void) {
-    pthread_mutex_lock(&mutex);
-    unsigned r = revision;
-    pthread_mutex_unlock(&mutex);
-    return r;
+    /* Render polling must not wait for the worker's cache selection/sort. */
+    return __atomic_load_n(&revision, __ATOMIC_ACQUIRE);
 }
 static int write_all(int fd, const void *data, size_t size) {
     const char *p = data;
@@ -455,7 +472,7 @@ int vt_library_init(VtLibrarySample sample) {
     memset(slots, 0, sizeof(slots));
     count = 0;
     next_order = cache_order = 1;
-    revision = 0;
+    __atomic_store_n(&revision, 0, __ATOMIC_RELEASE);
     stop = urgent = 0;
     sampler = sample;
     journal_bytes = 0;
@@ -490,7 +507,7 @@ void vt_library_import(const VtLibraryItem *v, uint64_t p, uint64_t d, uint64_t 
     if (!slots[i].state.started) {
         slots[i].state = (State){.position = p, .duration = d, .order = order, .started = 1};
         memcpy(slots[i].state.id, v->id, 16);
-        slots[i].state_revision = ++revision;
+        slots[i].state_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
         if (next_order <= order)
             next_order = order + 1;
     }
@@ -516,7 +533,7 @@ void vt_library_start_id(const char *id) {
     if (i >= 0) {
         slots[i].state.started = 1;
         slots[i].state.order = next_order++;
-        slots[i].state_revision = ++revision;
+        slots[i].state_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
         urgent = 1;
     }
     pthread_mutex_unlock(&mutex);
@@ -529,7 +546,7 @@ void vt_library_bind(const VtLibraryItem *v) {
     int i = insert(v);
     if (strcmp(slots[i].item.history_id, v->history_id)) {
         memcpy(slots[i].item.history_id, v->history_id, sizeof(v->history_id));
-        slots[i].metadata_revision = ++revision;
+        slots[i].metadata_revision = __atomic_add_fetch(&revision, 1, __ATOMIC_RELEASE);
     }
     pthread_mutex_unlock(&mutex);
 }

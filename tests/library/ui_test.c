@@ -7,7 +7,11 @@
 #include "../../src/ui/home_tabs.c"
 #include "../../src/ui/library_screen.c"
 #include "history/playback_history.h"
-static int search_calls, progressive, fixture_count;
+static int search_calls, progressive, fixture_count, loading_fixture, loading_flag,
+    publication_fixture;
+void ui_brand_set_loading(int loading) {
+    loading_flag = loading;
+}
 static VtLibraryItem fixture[8];
 int vt_i18n_current_language(void) {
     return language ? VT_LANG_IT : VT_LANG_EN;
@@ -16,6 +20,9 @@ int ui_local_media_library_tick(void) {
     return 0;
 }
 void vt_library_search_cancel(void) {}
+unsigned vt_library_search_revision(void) {
+    return publication_fixture && frame >= 16 ? 1 : 0;
+}
 void vt_library_search_local_refresh(void) {}
 void vt_library_search_cover(const VtLibraryItem *v) {
     (void)v;
@@ -44,7 +51,21 @@ int vt_library_search_snapshot(VtLibraryResult *out, int cap, VtLibrarySearchSta
         status->pending = 0;
     } else if (progressive)
         status->pending = 1;
+    if (loading_fixture) {
+        status->pending = 3;
+        status->state[VT_LIBRARY_LOCAL] = VT_SEARCH_READY;
+        status->state[VT_LIBRARY_NAVIDROME] = VT_SEARCH_LOADING;
+        status->state[VT_LIBRARY_RADIO] = VT_SEARCH_LOADING;
+        status->state[VT_LIBRARY_IMMICH] = VT_SEARCH_LOGIN;
+        status->state[VT_LIBRARY_PODCAST] = VT_SEARCH_ERROR;
+        if (loading_fixture == 2)
+            return 0;
+    }
     int n = vt_library_query(query, VT_LIBRARY_ALL, out, cap);
+    status->revision = vt_library_search_revision();
+    if (publication_fixture && frame >= 16)
+        for (int i = 0; i < n; i++)
+            strcpy(out[i].item.artwork, "late-fixture-cover");
     if (progressive == 2 && frame >= 16) {
         int k = 0;
         for (int i = 0; i < n; i++)
@@ -147,6 +168,43 @@ int main(int argc, char **argv) {
             snprintf(name, sizeof(name), "library-theme-%d-view-%d", theme, mode);
             png(name);
         }
+    /* Loading coexists with cached content; all shells get compact activity
+     * without covering their wheel, sidebar, bottom tabs or mini-player. */
+    for (int theme = 0; theme < 7; theme++) {
+        ui_theme_apply(theme);
+        for (loading_fixture = 1; loading_fixture <= 2; loading_fixture++) {
+            view = 3;
+            query[0] = 0;
+            navigation.valid = 0;
+            script_exit();
+            VtLibraryItem chosen;
+            CHECK(ui_library_screen(&chosen) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
+            CHECK(!loading_flag);
+            memcpy(pixels, first_pixels, sizeof(pixels));
+            char name[80];
+            snprintf(name, sizeof(name), "search-theme-%d-%s", theme,
+                     loading_fixture == 1 ? "partial" : "loading");
+            png(name);
+        }
+        VtLibrarySearchStatus active = {.pending = 1};
+        active.state[VT_LIBRARY_NAVIDROME] = VT_SEARCH_LOADING;
+        host_reduced_motion = 0;
+        memset(pixels, 0, sizeof(pixels));
+        search_activity(&active, -1, 24, 60, 900, 0);
+        memcpy(first_pixels, pixels, sizeof(pixels));
+        memset(pixels, 0, sizeof(pixels));
+        search_activity(&active, -1, 24, 60, 900, 600000);
+        CHECK(memcmp(first_pixels, pixels, sizeof(pixels)));
+        host_reduced_motion = 1;
+        memset(pixels, 0, sizeof(pixels));
+        search_activity(&active, -1, 24, 60, 900, 0);
+        memcpy(first_pixels, pixels, sizeof(pixels));
+        memset(pixels, 0, sizeof(pixels));
+        search_activity(&active, -1, 24, 60, 900, 600000);
+        CHECK(!memcmp(first_pixels, pixels, sizeof(pixels)));
+        host_reduced_motion = 0;
+    }
+    loading_fixture = 0;
     /* Actual UI retains focused identity when a sorted progressive result arrives. */
     ui_theme_apply(VT_UI_THEME_LEGACY);
     view = 3;
@@ -172,6 +230,15 @@ int main(int argc, char **argv) {
     input_script[1] = SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&selected) == UI_LIBRARY_PLAY);
     CHECK(!strcmp(selected.id, fixture[0].id));
+    /* A late cover can publish after all providers finish without a registry
+     * revision. The screen must observe the search publication itself. */
+    publication_fixture = 1;
+    navigation = (typeof(navigation)){.valid = 1, .focus = 0, .filter = -1};
+    script_exit();
+    input_script[18] = SCE_CTRL_CROSS;
+    CHECK(ui_library_screen(&selected) == UI_LIBRARY_PLAY);
+    CHECK(!strcmp(selected.artwork, "late-fixture-cover"));
+    publication_fixture = 0;
     /* Sources has a concrete local entry, and R1 cycles views in place. */
     view = 2;
     navigation = (typeof(navigation)){.valid = 1, .focus = 0, .filter = -1};
@@ -181,7 +248,8 @@ int main(int argc, char **argv) {
     CHECK(artwork_requests > 0 && search_calls >= 28);
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
-    printf("Unified Home UI: %u checks; 28 host layouts, all themes, covers, mini-player space, "
+    printf("Unified Home UI: %u checks; 42 host layouts, animated/reduced-motion loading, all "
+           "themes, covers, mini-player space, "
            "progressive focus and player return passed.\n",
            checks);
     return 0;
