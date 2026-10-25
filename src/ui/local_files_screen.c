@@ -38,7 +38,10 @@
 #define FILE_Y 106
 #define FILE_W UI_CONTENT_W
 #define FILE_ROW_H 54
-#define FILE_GRID_COLS (ui_theme_id()==VT_UI_THEME_LEGACY?3:ui_theme_browser_layout(ui_theme_id(),viewport_bottom(),1).columns)
+#define FILE_GRID_COLS                                                                             \
+	(vt_ui_theme_legacy_layout(ui_theme_id())                                                      \
+	     ? 3                                                                                       \
+		 : ui_theme_browser_layout(ui_theme_id(), viewport_bottom(), 1).columns)
 #define FILE_CARD_W UI_GRID_CARD_W
 #define FILE_CARD_H (ui_media_grid_layout(FILE_Y, viewport_bottom()).card_h)
 #define FILE_GAP_X 9
@@ -155,7 +158,8 @@ static int viewport_bottom(void) {
 }
 
 static int list_visible_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)return ui_theme_browser_layout(ui_theme_id(),viewport_bottom(),0).rows;
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return ui_theme_browser_layout(ui_theme_id(), viewport_bottom(), 0).rows;
 	int rows = (viewport_bottom() - FILE_Y + 6) / FILE_ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > 8) rows = 8;
@@ -163,7 +167,8 @@ static int list_visible_rows(void) {
 }
 
 static int list_render_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)return list_visible_rows();
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return list_visible_rows();
 	int rows = (viewport_bottom() - FILE_Y + FILE_ROW_H - 1) / FILE_ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > 8) rows = 8;
@@ -171,12 +176,18 @@ static int list_render_rows(void) {
 }
 
 static int grid_visible_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),viewport_bottom(),1);return l.rows/l.columns;}
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		UiThemeHomeLayout l = ui_theme_browser_layout(ui_theme_id(), viewport_bottom(), 1);
+		return l.rows / l.columns;
+	}
  return ui_media_grid_layout(FILE_Y, viewport_bottom()).rows;
 }
 
 static int grid_render_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),viewport_bottom(),1);return l.rows/l.columns;}
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		UiThemeHomeLayout l = ui_theme_browser_layout(ui_theme_id(), viewport_bottom(), 1);
+		return l.rows / l.columns;
+	}
  return ui_media_grid_layout(FILE_Y, viewport_bottom()).rows;
 }
 
@@ -465,18 +476,25 @@ static void draw_video_preview(vita2d_texture *texture, float x, float y,
 static UiPageView files_page(int top,int count,int grid) {
     int columns=grid?FILE_GRID_COLS:1;
     UiThemeHomeLayout layout=ui_theme_browser_layout(ui_theme_id(),viewport_bottom(),grid);
-    int slots=ui_theme_id()==VT_UI_THEME_LEGACY?(grid?grid_render_rows()*columns:list_render_rows()):layout.rows;
-    float step=ui_theme_id()==VT_UI_THEME_LEGACY?(grid?FILE_CARD_H+FILE_GAP_Y:FILE_ROW_H):layout.step;
-    return ui_theme_page(UI_SCENE_BROWSER,"local-files",g_last_path,grid?top*columns:top,count,columns,slots,step);
+	int slots = vt_ui_theme_legacy_layout(ui_theme_id())
+	                ? (grid ? grid_render_rows() * columns : list_render_rows())
+	                : layout.rows;
+	float step = vt_ui_theme_legacy_layout(ui_theme_id())
+	                 ? (grid ? FILE_CARD_H + FILE_GAP_Y : FILE_ROW_H)
+	                 : layout.step;
+	return ui_theme_page(UI_SCENE_BROWSER, "local-files", g_last_path, grid ? top * columns : top,
+	                     count, columns, slots, step);
 }
 static UiThemeRect files_item_rect(int index,int top,int grid) {
     int columns=grid?FILE_GRID_COLS:1,first=grid?top*columns:top;
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY)
-        return ui_theme_browser_rect(ui_theme_id(),index-first,viewport_bottom(),grid);
-    UiThemeRect r=grid?(UiThemeRect){FILE_X+index%columns*(FILE_CARD_W+FILE_GAP_X),
-        FILE_Y+(index/columns-top)*(FILE_CARD_H+FILE_GAP_Y),FILE_CARD_W,FILE_CARD_H}:
-        (UiThemeRect){FILE_X,FILE_Y+(index-top)*FILE_ROW_H,FILE_W,FILE_ROW_H-6};
-    return ui_theme_page_rect(UI_SCENE_BROWSER,r);
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return ui_theme_browser_rect(ui_theme_id(), index - first, viewport_bottom(), grid);
+	UiThemeRect r =
+	    grid ? (UiThemeRect){FILE_X + index % columns * (FILE_CARD_W + FILE_GAP_X),
+		                     FILE_Y + (index / columns - top) * (FILE_CARD_H + FILE_GAP_Y),
+		                     FILE_CARD_W, FILE_CARD_H}
+		     : (UiThemeRect){FILE_X, FILE_Y + (index - top) * FILE_ROW_H, FILE_W, FILE_ROW_H - 6};
+	return ui_theme_page_rect(UI_SCENE_BROWSER, r);
 }
 
 static void draw_files(const LocalFileEntry *entries, int count,
@@ -513,26 +531,38 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		if (body) ui_font_draw_text(body, 280, 258, VT_THEME_TEXT,
 		                             UI_FONT_BODY,
 		                             vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_EMPTY));
-	} else if(ui_theme_id()!=VT_UI_THEME_LEGACY) {
-  ui_theme_scene_begin(UI_SCENE_BROWSER,g_last_path);
-  UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),bottom,grid_mode);
-  int first=grid_mode?top*l.columns:top;
-  vita2d_set_clip_rectangle(0,FILE_Y,960,bottom);vita2d_enable_clipping();
-  for(int i=page.first;i<page.end;i++) {
-   int slot=i-first;const LocalFileEntry *entry=&entries[i];
-   vita2d_texture *preview=entry->media.artwork_path[0]?
-      vt_image_thumbnail_get_priority(entry->media.artwork_path,entry->media.artwork_size,
-        thumbnail_viewport_priority(i,selected,first,first+l.rows)):NULL;
-   if(!preview&&entry->media.type==VT_LOCAL_MEDIA_VIDEO)preview=vt_video_thumbnail_get_priority(
-      entry->media.path,entry->media.size,thumbnail_viewport_priority(i,selected,first,first+l.rows));
-   char detail[64];if(entry->is_directory)snprintf(detail,sizeof(detail),"%s",vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_FOLDER));
-   else ui_format_file_size(entry->media.size,detail,sizeof(detail));
-   UiThemeRect tile=ui_theme_browser_rect(ui_theme_id(),slot,bottom,grid_mode);
-   ui_theme_browser_tile(UI_SCENE_BROWSER,tile,slot,i==selected,preview,entry->media.name,detail,entry->is_directory);
-  }
-  vita2d_disable_clipping();
+	} else if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		ui_theme_scene_begin(UI_SCENE_BROWSER, g_last_path);
+		UiThemeHomeLayout l = ui_theme_browser_layout(ui_theme_id(), bottom, grid_mode);
+		int first = grid_mode ? top * l.columns : top;
+		vita2d_set_clip_rectangle(0, FILE_Y, 960, bottom);
+		vita2d_enable_clipping();
+		for (int i = page.first; i < page.end; i++) {
+			int slot = i - first;
+			const LocalFileEntry *entry = &entries[i];
+			vita2d_texture *preview =
+			    entry->media.artwork_path[0]
+			        ? vt_image_thumbnail_get_priority(
+			              entry->media.artwork_path, entry->media.artwork_size,
+			              thumbnail_viewport_priority(i, selected, first, first + l.rows))
+			        : NULL;
+			if (!preview && entry->media.type == VT_LOCAL_MEDIA_VIDEO)
+				preview = vt_video_thumbnail_get_priority(
+				    entry->media.path, entry->media.size,
+				    thumbnail_viewport_priority(i, selected, first, first + l.rows));
+			char detail[64];
+			if (entry->is_directory)
+				snprintf(detail, sizeof(detail), "%s",
+				         vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_FOLDER));
+			else
+				ui_format_file_size(entry->media.size, detail, sizeof(detail));
+			UiThemeRect tile = ui_theme_browser_rect(ui_theme_id(), slot, bottom, grid_mode);
+			ui_theme_browser_tile(UI_SCENE_BROWSER, tile, slot, i == selected, preview,
+			                      entry->media.name, detail, entry->is_directory);
+		}
+		vita2d_disable_clipping();
 	} else if (!grid_mode) {
-        int list_x=FILE_X+(int)roundf(page.dx);
+		int list_x = FILE_X + (int)roundf(page.dx);
 		vita2d_set_clip_rectangle(0, FILE_Y, 960, bottom);
 		vita2d_enable_clipping();
 		int visible_limit = top + list_visible_rows();
@@ -638,11 +668,11 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		}
 		vita2d_disable_clipping();
 	}
-    ui_theme_page_finish(UI_SCENE_BROWSER,FILE_X,FILE_Y,FILE_W,viewport_bottom());
-    if(count && !right_open) {
-        UiThemeRect r=files_item_rect(selected,top,grid_mode);
-        ui_focus_motion_tick(focus_motion,r.x,r.y,r.w,r.h);
-    }
+	ui_theme_page_finish(UI_SCENE_BROWSER, FILE_X, FILE_Y, FILE_W, viewport_bottom());
+	if (count && !right_open) {
+		UiThemeRect r = files_item_rect(selected, top, grid_mode);
+		ui_focus_motion_tick(focus_motion, r.x, r.y, r.w, r.h);
+	}
 	if(count && !right_open && !ui_mini_player_input_locked() &&
 	    (!sidebar || (!sidebar->open && sidebar->animation<=.01f)))
 		ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,

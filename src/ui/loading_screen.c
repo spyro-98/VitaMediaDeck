@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/loading_screen.h"
 
 #include <math.h>
@@ -136,6 +139,11 @@ static double update_download_rate(UiDownloadRateState *state, uint64_t current,
 static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 	                          float radius, float active_radius,
 	                          float idle_radius) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+	if (!vt_preferences_reduce_motion() && ui_native_vita_busy(center_x, center_y, radius * 2))
+		return;
+#endif
+
 	const int dots = 10;
 	const float tau = 6.28318530718f;
 	int reduced_motion = vt_preferences_reduce_motion();
@@ -337,7 +345,8 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 	}
 
 	vita2d_draw_rectangle(0,0,960,544,VT_THEME_MEDIA_BACKDROP);
-	if(ui_theme_id()!=VT_UI_THEME_LEGACY)ui_theme_fx_background(VT_THEME_MEDIA_BACKDROP);
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		ui_theme_fx_background(VT_THEME_MEDIA_BACKDROP);
 	/* Top band integrated into the player: three layers give a slight
 	 * gradient toward the canvas without extra textures or shaders. */
 	vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, 74, RGBA8(0, 0, 0, 220));

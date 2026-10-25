@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/components.h"
 #include "ui/page_motion.h"
 
@@ -134,6 +137,11 @@ void ui_text_line(float x,float baseline,float width,const char *text,unsigned c
 }
 
 void ui_tab(float x,float y,float w,float h,const char *label,int active) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+	if (ui_native_vita_button(x, y, w, h, label, active))
+		return;
+#endif
+
 	ui_panel(x,y,w,h,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 	ui_text_line(x+14,y+h*.5f+7,w-28,label,active?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 	if(active)vita2d_draw_rectangle(x+14,y+h-2,w-28,2,VT_THEME_SIGNAL_BRIGHT);
@@ -234,6 +242,9 @@ void ui_panel(float x, float y, float width, float height,
 		UiFocusMotion focus={.x=x,.y=y,.width=width,.height=height,.initialized=1};
 		ui_focus_outline_draw(&focus);
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+	ui_native_vita_panel(x, y, width, height, fill, focused);
+#endif
 	(void)accent;
 }
 
@@ -247,36 +258,42 @@ void ui_action_button(float x, float y, float width, float height,
   else if(!strcmp(key,"Triangle"))key=vt_i18n_str(VT_STR_UI_KEY_TRIANGLE);
   else if(!strcmp(key,"Square"))key=vt_i18n_str(VT_STR_UI_KEY_SQUARE);
  }
-	unsigned int foreground = ui_contrast_bw(fill);
-	ui_panel(x, y, width, height, fill,
-	         active ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER, active);
-	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	float key_width = 0.0f;
-	if (small && key && key[0]) {
-		key_width = (float)ui_font_text_width(small, UI_FONT_SMALL, key) + 14.0f;
-		if (key_width < 34.0f) key_width = 34.0f;
-	}
-	if (key_width > 0.0f) {
-		vita2d_draw_rectangle(x + 10, y + 9, key_width, height - 18,
-		                      active ? VT_THEME_SPECTRAL_A(42)
-		                             : RGBA8(255, 255, 255, 18));
-		if (small) {
-			int kw = ui_font_text_width(small, UI_FONT_SMALL, key);
-			ui_font_draw_text(small, (int)(x + 10 + (key_width - kw) * .5f),
-			                  (int)(y + height * .5f + 7), foreground,
-			                  UI_FONT_SMALL, key);
-		}
-	}
-	if (small && label) {
-		char fitted[192];
-		float left = x + key_width + 17.0f;
-		float available = width - key_width - 24.0f;
-		ui_font_fit_text(small, UI_FONT_SMALL, label, fitted, sizeof(fitted),
-		                 (int)available);
-		ui_font_draw_text(small, (int)left,
-		                  (int)(y + height * .5f + 7), foreground,
-		                  UI_FONT_SMALL, fitted);
-	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+ if (ui_native_vita_active()) {
+	 char native_label[256];
+	 snprintf(native_label, sizeof(native_label), "%s%s%s", key ? key : "",
+		      key && key[0] && label && label[0] ? "  " : "", label ? label : "");
+	 if (ui_native_vita_button_fade(x, y, width, height, native_label, active,
+		                            (fill >> 24) / 255.f))
+		 return;
+ }
+#endif
+ unsigned int foreground = ui_contrast_bw(fill);
+ ui_panel(x, y, width, height, fill, active ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER, active);
+ vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
+ float key_width = 0.0f;
+ if (small && key && key[0]) {
+	 key_width = (float)ui_font_text_width(small, UI_FONT_SMALL, key) + 14.0f;
+	 if (key_width < 34.0f)
+		 key_width = 34.0f;
+ }
+ if (key_width > 0.0f) {
+	 vita2d_draw_rectangle(x + 10, y + 9, key_width, height - 18,
+		                   active ? VT_THEME_SPECTRAL_A(42) : RGBA8(255, 255, 255, 18));
+	 if (small) {
+		 int kw = ui_font_text_width(small, UI_FONT_SMALL, key);
+		 ui_font_draw_text(small, (int)(x + 10 + (key_width - kw) * .5f),
+			               (int)(y + height * .5f + 7), foreground, UI_FONT_SMALL, key);
+	 }
+ }
+ if (small && label) {
+	 char fitted[192];
+	 float left = x + key_width + 17.0f;
+	 float available = width - key_width - 24.0f;
+	 ui_font_fit_text(small, UI_FONT_SMALL, label, fitted, sizeof(fitted), (int)available);
+	 ui_font_draw_text(small, (int)left, (int)(y + height * .5f + 7), foreground, UI_FONT_SMALL,
+		               fitted);
+ }
 }
 
 void ui_watched_progress(const char *history_id, float x, float y, float width) {

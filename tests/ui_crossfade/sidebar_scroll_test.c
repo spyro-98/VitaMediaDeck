@@ -98,7 +98,7 @@ int main(int argc,char **argv) {
   for(int i=0;i<count-1;i++){button(&menu,SCE_CTRL_UP);advance(&menu,1);}settled(&menu);
   /* Dragging follows the finger, clamps at both ends and cannot become a tap. */
   menu.cursor=0;menu.focus_cursor=0;menu.scroll=menu.scroll_target=menu.scroll_velocity=0;
-  int touch_x=theme?300:180;
+  int touch_x = vt_ui_theme_legacy_layout(theme) ? 180 : 300;
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_DOWN,touch_x,420)==UI_SECTION_NONE);
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_MOVE,touch_x,180)==UI_SECTION_NONE);
   SCROLL_CHECK(menu.scroll>0&&menu.scroll==menu.scroll_target);
@@ -112,10 +112,10 @@ int main(int argc,char **argv) {
   ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_UP,touch_x,2000);
   /* Footer arrows scroll the viewport and preserve the modal; header/footer
    * taps never activate an offscreen item beneath those fixed areas. */
-  int before_arrow=menu.cursor,up_x=(theme?806:318)+18;
+  int before_arrow = menu.cursor, up_x = (vt_ui_theme_legacy_layout(theme) ? 318 : 806) + 18;
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_TAP,up_x,510)==UI_SECTION_NONE);
   SCROLL_CHECK(menu.cursor==before_arrow&&menu.scroll_target==0);
-  int arrow_x=(theme?856:366)+18;
+  int arrow_x = (vt_ui_theme_legacy_layout(theme) ? 366 : 856) + 18;
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_TAP,arrow_x,510)==UI_SECTION_NONE&&menu.open);
   SCROLL_CHECK(menu.scroll_target>0);advance(&menu,90);
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_TAP,touch_x,95)==UI_SECTION_NONE&&menu.open);
@@ -170,7 +170,7 @@ int main(int argc,char **argv) {
  UiSectionsSidebar menu;ui_sections_sidebar_init(&menu,UI_SECTION_INFO);menu.open=1;frame=0;advance(&menu,1);
  ui_theme_apply(VT_UI_THEME_GHOST_MESH);advance(&menu,1);SCROLL_CHECK(menu.scroll_theme==VT_UI_THEME_GHOST_MESH);settled(&menu);
  FT_Done_Face(mono);FT_Done_Face(inter);FT_Done_FreeType(ft);
- printf("L1 lists/fixed decks: %u checks; seven themes, IT/EN, live tasks, spatial navigation and "
+ printf("L1 lists/fixed decks: %u checks; eight themes, IT/EN, live tasks, spatial navigation and "
         "zero-scroll grids/wheel, rapid reversal, clipped touch, drag release, arrows, reduced "
         "motion and audio page isolation; max %u primitives/frame (host).\n",
         scroll_checks, max_draws);

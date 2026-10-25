@@ -110,5 +110,8 @@ int main(int argc,char **argv){
  }
  CHECK(max_items<=10&&max_vertices<=2304&&max_primitives<900);
  FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);
- printf("Continuous native drawing: %u checks, 7 themes, retained outgoing rows, uniform transforms, no overlaps, animated touch and cache append; max %u items, %u vertices, %u primitives/frame (host).\n",checks,max_items,max_vertices,max_primitives);
+ printf("Continuous native drawing: %u checks, 8 themes, retained outgoing rows, uniform "
+        "transforms, no overlaps, animated touch and cache append; max %u items, %u vertices, %u "
+        "primitives/frame (host).\n",
+        checks, max_items, max_vertices, max_primitives);
 }

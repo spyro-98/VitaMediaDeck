@@ -41,7 +41,7 @@ progressive refresh, focused identity and the existing 24-result/provider limit.
 Saved connections open their actual browser through native authentication/trust;
 source credentials never enter the dashboard's model or artwork labels.
 
-Only **Legacy, Deck 90 and Aperture** have scrolling vertical L1 menus, including
+Only **Legacy, Legacy Vita, Deck 90 and Aperture** have scrolling vertical L1 menus, including
 dragging and footer arrows. **Ghost Mesh, Signal, Relay and Mosaic** keep every
 section visible in a fixed wheel/grid: directions follow geometric positions,
 and dragging does not scroll them. The audio layout subpage retains its controls.
@@ -56,7 +56,7 @@ before selecting a new sector.
 
 | Theme | Section selection | Content / return |
 | --- | --- | --- |
-| Legacy | Up from first result row, then left/right on top tabs | Down enters; Up from first row returns |
+| Legacy / Legacy Vita | Up from first result row, then left/right on top tabs | Down enters; Up from first row returns |
 | Ghost Mesh | Right stick selects wheel | Left stick/D-pad owns content at all times; X opens |
 | Deck 90 | Up/down on left menu | Right/X enters; Left returns |
 | Signal | Left/right on top tabs | Down/X enters; Up from first row returns |
@@ -345,7 +345,7 @@ Musica e Immagini tengono il rispettivo servizio in testa.
 Open QR from Network Download Tools or IPTV R1 Options. Aim a complete HTTP(S)
 QR at the rear camera; Circle or the touch Cancel button returns without changing
 the pending link. Unsupported payloads stay in the scanner with a translated
-status. All seven themes frame the same unobscured 444x444 preview.
+status. All eight themes frame the same unobscured 444x444 preview.
 
 URL, search, username and password prompts use themed app chrome behind the
 native Vita IME. Key layout and native keyboard appearance belong to Vita OS.
@@ -359,3 +359,15 @@ Left returns to the index and Circle exits. Home and Player chapters prepend
 the actual theme/mapping. Guide footer labels follow the current focus; R1 is
 not a guide-navigation action. Key badges consistently use X and O; Square and
 Triangle names are localized. See [follow-up evidence](../docs/controls-guide-2026-10-23.md).
+
+## Legacy Vita native theme
+
+Choose Settings → Interface → Theme → Legacy Vita. All screens use the shared
+PAF presentation: Sony system text, buttons, panels and busy indicators; layouts,
+controller/touch targets and per-theme saved ordering follow Legacy. L1 remains
+a vertical scrolling list. Hardware/software video, artwork, photos and camera
+pixels retain their existing GPU path beneath the native controls.
+
+Hold **L1 + R1 while starting** to save and recover to Legacy if a firmware/PAF
+problem prevents normal use. A detected initialization/widget error uses the
+existing renderer automatically. Physical Vita acceptance is still required.

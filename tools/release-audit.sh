@@ -44,6 +44,8 @@ if [[ $check_history -eq 1 ]]; then
   fi
 fi
 
+python3 tools/audit-native-vita.py
+
 require_file release/DEPENDENCIES.lock
 require_file release/VitaMediaDeck.spdx
 require_file licenses/REAVPLAYER_PROVENANCE.md

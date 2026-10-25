@@ -1,6 +1,7 @@
 #ifndef VMD_PAGE_MOTION_H
 #define VMD_PAGE_MOTION_H
 #include <math.h>
+#include "settings/preferences.h"
 #include <stdint.h>
 #include <string.h>
 /* Pure, bounded viewport physics. Selection and data are never delayed. */
@@ -16,11 +17,11 @@ typedef struct {
 } UiPageView;
 typedef struct {float scroll_seconds,menu_us;int menu_from_right;} UiThemeMotionProfile;
 static inline UiThemeMotionProfile ui_theme_motion_profile(int theme) {
-    /* Legacy, Ghost Mesh, Deck 90, Signal, Aperture, Relay, Mosaic. */
-    static const UiThemeMotionProfile profiles[7]={
-        {.17f,60000,0},{.22f,70000,1},{.16f,42000,0},{.19f,50000,1},
-        {.25f,85000,0},{.20f,60000,0},{.23f,80000,1}};
-    return profiles[theme>=0&&theme<7?theme:0];
+    /* Legacy Vita inherits the Legacy motion profile at stable ID 7. */
+    static const UiThemeMotionProfile profiles[8] = {
+        {.17f, 60000, 0}, {.22f, 70000, 1}, {.16f, 42000, 0}, {.19f, 50000, 1},
+        {.25f, 85000, 0}, {.20f, 60000, 0}, {.23f, 80000, 1}, {.17f, 60000, 0}};
+    return profiles[theme >= 0 && theme < 8 ? theme : 0];
 }
 static inline void ui_page_rebase(UiPageMotion *motion,int before,int after) {
     if(motion->ready && motion->columns>0)
@@ -95,7 +96,10 @@ static inline UiPageView ui_page_update(UiPageMotion *m, uint64_t now, int theme
     if(view.first>view.end)view.first=view.end;
     view.dy=(target-m->row)*step;
     float camera=m->camera;
-    view.dx=camera*(theme==0?.35f:theme==2?1.4f:theme==3?-.9f:1);
+    view.dx = camera * (vt_ui_theme_legacy_layout(theme) ? .35f
+                        : theme == 2                     ? 1.4f
+                        : theme == 3                     ? -.9f
+                                                         : 1);
     if(theme==1)view.dy+=camera*.35f;
     if(theme==4)view.dy+=camera*.5f;
     if(theme==5)view.dy-=camera*.25f;

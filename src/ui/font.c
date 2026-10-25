@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/font.h"
 
 #include <stdarg.h>
@@ -429,6 +432,13 @@ void ui_font_set_system_preference(int preference) {
 int ui_font_draw_text(vita2d_font *latin_font, int x, int y,
 	                  unsigned int color, unsigned int size,
 	                  const char *text) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+	if (ui_native_vita_active()) {
+		int width = ui_font_text_width(latin_font, size, text);
+		if (ui_native_vita_text(x, y, width, size, color, text))
+			return width;
+	}
+#endif
 	return mixed_layout(latin_font, 1, x, y, color, size, text, NULL);
 }
 

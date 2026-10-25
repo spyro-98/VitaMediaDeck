@@ -11,8 +11,10 @@ SFTP; authenticated SMB2/3; Navidrome music and Immich photos. Radio Browser,
 public podcast directories/RSS, HTTP(S)/QR downloads and compatible HLS/DASH
 IPTV are integrated. Catalogues do not grant rights to a provider's media.
 
-Seven selectable themes: Legacy (default), Ghost Mesh, Deck 90, Signal,
-Aperture, Relay and Mosaic. New themes have native GXM geometry/materials,
+Eight selectable themes: Legacy (default), Ghost Mesh, Deck 90, Signal,
+Aperture, Relay, Mosaic and Legacy Vita. Legacy Vita uses real Sony PAF
+components through the common presentation backend across all screens, while
+media remains in its existing GPU path. It inherits Legacy navigation. Other new themes have native GXM geometry/materials,
 independent layouts and shared theme coverage; Legacy retains its own shell.
 Home ordering persists per theme. List/page/menu motion uses continuous bounded
 transforms rather than replaying each item's entrance. Reduced motion is honored.

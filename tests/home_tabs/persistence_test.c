@@ -32,5 +32,7 @@ int main(void){
  t=order[0];order[0]=order[1];order[1]=t;rename_failure=1;CHECK(save_order()<0);rename_failure=0;
  loaded=0;load();CHECK(!memcmp(order,before,6));
  unsigned char global[6];CHECK(!order_read(ORDER_PATH,global)&&!memcmp(global,old,6));
- puts("Per-theme tab positions: migration, seven independent orders, theme switching, failed-save rollback and backup recovery passed");return 0;
+ puts("Per-theme tab positions: migration, eight independent orders, theme switching, failed-save "
+      "rollback and backup recovery passed");
+ return 0;
 }

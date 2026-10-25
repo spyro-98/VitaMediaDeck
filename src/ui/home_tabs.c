@@ -106,12 +106,15 @@ static void carousel_tick(void) {
  if (fabsf(target - scroll) < .1f) scroll = target;
 }
 int ui_home_tabs_touch_hit(const UiTouchEvent *t) {
- if(t&&ui_theme_id()!=VT_UI_THEME_LEGACY){
-  for(int i=0;i<HOME_TAB_COUNT;i++){
-   UiThemeRect r=ui_theme_home_tab_rect(ui_theme_id(),i,expanded_home);
-   if(t->down_x>=r.x&&t->down_x<r.x+r.w&&t->down_y>=r.y&&t->down_y<r.y+r.h)return 1;
-  }return 0;
- }
+    if (t && !vt_ui_theme_legacy_layout(ui_theme_id())) {
+        for (int i = 0; i < HOME_TAB_COUNT; i++) {
+            UiThemeRect r = ui_theme_home_tab_rect(ui_theme_id(), i, expanded_home);
+            if (t->down_x >= r.x && t->down_x < r.x + r.w && t->down_y >= r.y &&
+                t->down_y < r.y + r.h)
+                return 1;
+        }
+        return 0;
+    }
  return t && t->down_x >= UI_HOME_TABS_X && t->down_x < UI_HOME_TABS_RIGHT &&
         t->down_y >= UI_HOME_TABS_Y && t->down_y < UI_HOME_TABS_BOTTOM;
 }
@@ -132,13 +135,16 @@ int ui_home_tabs_input(unsigned nav,unsigned flags,const UiTouchEvent *t,int foc
   int p=position()+(nav&SCE_CTRL_LEFT?-1:1);
   if(p>=0&&p<HOME_TAB_COUNT){active=order[p];podcast_offline=0;reveal();}
  }
- if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-  if((flags&UI_TOUCH_EVENT_TAP)&&ui_home_tabs_touch_hit(t))
-   for(int i=0;i<HOME_TAB_COUNT;i++){
-    UiThemeRect r=ui_theme_home_tab_rect(ui_theme_id(),i,expanded_home);
-    if(t->x>=r.x&&t->x<r.x+r.w&&t->y>=r.y&&t->y<r.y+r.h){active=order[i];podcast_offline=0;}
-   }
-  return active!=before||podcast_offline!=before_offline;
+ if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+     if ((flags & UI_TOUCH_EVENT_TAP) && ui_home_tabs_touch_hit(t))
+         for (int i = 0; i < HOME_TAB_COUNT; i++) {
+             UiThemeRect r = ui_theme_home_tab_rect(ui_theme_id(), i, expanded_home);
+             if (t->x >= r.x && t->x < r.x + r.w && t->y >= r.y && t->y < r.y + r.h) {
+                 active = order[i];
+                 podcast_offline = 0;
+             }
+         }
+     return active != before || podcast_offline != before_offline;
  }
  if((flags&UI_TOUCH_EVENT_TAP) && ui_home_tabs_touch_hit(t) &&
     t->y>=UI_HOME_TABS_Y && t->y<UI_HOME_TABS_BOTTOM &&
@@ -165,11 +171,14 @@ void ui_home_tabs_draw(int focused){
 }
 void ui_home_tabs_draw_with_focus(int focused,UiFocusMotion *motion){
  load();
- if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-  {const char *labels[HOME_TAB_COUNT];
-   for(int i=0;i<HOME_TAB_COUNT;i++)labels[i]=label(order[i]);
-   ui_theme_home_menu(ui_theme_id(),position(),labels,order,focused,motion);
-  }return;
+ if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+     {
+         const char *labels[HOME_TAB_COUNT];
+         for (int i = 0; i < HOME_TAB_COUNT; i++)
+             labels[i] = label(order[i]);
+         ui_theme_home_menu(ui_theme_id(), position(), labels, order, focused, motion);
+     }
+     return;
  }
  carousel_tick();vita2d_font *f=ui_runtime_font(UI_FONT_SMALL);
  vita2d_set_clip_rectangle(UI_HOME_TABS_X,UI_HOME_TABS_Y-2,UI_HOME_TABS_RIGHT,UI_HOME_TABS_BOTTOM+2);

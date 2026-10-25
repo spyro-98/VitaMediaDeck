@@ -212,3 +212,14 @@ PackageLicenseConcluded: OFL-1.1
 PackageLicenseDeclared: OFL-1.1
 PackageCopyrightText: Copyright 2017 IBM Corp.
 Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-IBMPlexMono
+
+PackageName: psp2cxml-tool
+SPDXID: SPDXRef-Package-Psp2CxmlTool
+PackageVersion: d971a9a9892c122b4edef15d335326b2a551fec4
+PackageDownloadLocation: https://github.com/Princess-of-Sleeping/psp2cxml-tool
+FilesAnalyzed: false
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+PackageSourceInfo: Build-time compiler for original app XML; not linked or packaged as a runtime binary. Complete pinned source is included in Corresponding Source.
+Relationship: SPDXRef-Package-Psp2CxmlTool BUILD_TOOL_OF SPDXRef-Package-VitaMediaDeck

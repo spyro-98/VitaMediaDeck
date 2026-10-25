@@ -197,6 +197,21 @@ if(VITAMEDIADECK_ENABLE_LTO)
   set(CMAKE_RANLIB "${CMAKE_C_COMPILER_RANLIB}")
 endif()
 
+# PAF is loaded lazily from the console firmware, never bundled in the VPK.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(VMD_PAF_STUB_DIR "${CMAKE_CURRENT_BINARY_DIR}/native-paf-imports")
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate-paf-stubs.py"
+  --metadata "${CMAKE_CURRENT_SOURCE_DIR}/release/paf-imports.json"
+  --output "${VMD_PAF_STUB_DIR}" --generator "${VITASDK}/bin/vita-libs-gen"
+  RESULT_VARIABLE VMD_PAF_STUB_RESULT)
+if(NOT VMD_PAF_STUB_RESULT EQUAL 0)
+  message(FATAL_ERROR "Failed to generate native PAF imports")
+endif()
+enable_language(ASM)
+file(GLOB VMD_PAF_STUB_SOURCES "${VMD_PAF_STUB_DIR}/*.S")
+add_library(vmd_native_paf_imports STATIC ${VMD_PAF_STUB_SOURCES})
+target_compile_definitions(vmd_native_paf_imports PRIVATE GEN_WEAK_EXPORTS=1)
+
 ## Load VitaSDK's packaging macros after project(). The verified module name is
 ## vita.cmake, not VitaSDK.cmake.
 include("${VITASDK}/share/vita.cmake" REQUIRED)
@@ -303,6 +318,7 @@ add_executable(${PROJECT_NAME}
   src/library/search.c
   src/ui/library_screen.c
   src/ui/home_dashboard.c
+  src/ui/native_vita.c
   src/history/playback_history.c
   src/media/podcast_resume.c
   src/settings/preferences.c
@@ -392,6 +408,9 @@ target_link_options(${PROJECT_NAME} PRIVATE
   -Wl,--gc-sections)
 set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/tools/vita-sce-metadata.ld")
+target_compile_definitions(${PROJECT_NAME} PRIVATE VMD_ENABLE_PAF_NATIVE=1)
+target_link_options(${PROJECT_NAME} PRIVATE
+  -Wl,--wrap=vita2d_start_drawing,--wrap=vita2d_end_drawing,--wrap=sceCommonDialogUpdate,--wrap=vita2d_set_clip_rectangle,--wrap=vita2d_enable_clipping,--wrap=vita2d_disable_clipping,--wrap=vita2d_draw_rectangle,--wrap=vita2d_draw_texture_scale,--wrap=vita2d_draw_texture_part_scale,--wrap=vita2d_draw_texture_scale_rotate_hotspot)
 if(VITAMEDIADECK_ENABLE_LTO)
   foreach(vmd_lto_target IN ITEMS ${PROJECT_NAME} vita_hw_decoder vita_sw_decoder
                                    vita_https vitamediadeck_iptv_source)
@@ -408,6 +427,7 @@ endif()
 ## resolution order on the Vita linker.
 target_link_libraries(${PROJECT_NAME}
   vitamediadeck_iptv_source
+  vmd_native_paf_imports
   SceDisplay_stub     # psvDebugScreenPrintf() in src/common/debugScreen.c
   SceCtrl_stub        # controller sampling
   SceNet_stub         # sceNet and the BSD-compatible socket layer

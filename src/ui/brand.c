@@ -68,7 +68,9 @@
 #define COLOR_TEXT    VT_THEME_TEXT
 #define COLOR_MUTED   VT_THEME_TEXT_MUTED
 #define COLOR_BLUE    VT_THEME_BLUE_BRIGHT
-#define COLOR_FIELD   (ui_theme_id()==VT_UI_THEME_LEGACY ? RGBA8(6,17,19,248) : ui_theme_alpha(VT_THEME_SURFACE,248))
+#define COLOR_FIELD                                                                                \
+	(vt_ui_theme_legacy_layout(ui_theme_id()) ? RGBA8(6, 17, 19, 248)                              \
+	                                          : ui_theme_alpha(VT_THEME_SURFACE, 248))
 /* Status indicators: same palette family as the rest of the topbar. */
 #define COLOR_DIM     VT_THEME_BORDER
 #define COLOR_BATT_OK   RGBA8(76, 217, 100, 255)
@@ -221,8 +223,12 @@ static void draw_battery(const header_status *st, float opacity) {
 	unsigned int level_color = st->battery_pct >= 50 ? COLOR_BATT_OK
 	                        : (st->battery_pct >= 20 ? COLOR_BATT_WARN
 	                                                 : COLOR_BATT_LOW);
-	if(ui_theme_id()!=VT_UI_THEME_LEGACY)level_color=st->battery_pct>=50?VT_THEME_SIGNAL_BRIGHT:st->battery_pct>=20?VT_THEME_WARNING:VT_THEME_DANGER;
-    if (st->battery_charging) level_color = ui_theme_id()==VT_UI_THEME_LEGACY?COLOR_BATT_OK:VT_THEME_SUCCESS;
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		level_color = st->battery_pct >= 50   ? VT_THEME_SIGNAL_BRIGHT
+		              : st->battery_pct >= 20 ? VT_THEME_WARNING
+		                                      : VT_THEME_DANGER;
+	if (st->battery_charging)
+		level_color = vt_ui_theme_legacy_layout(ui_theme_id()) ? COLOR_BATT_OK : VT_THEME_SUCCESS;
 	level_color = status_color_alpha(level_color, opacity);
 	unsigned int muted_color = status_color_alpha(COLOR_MUTED, opacity);
 	unsigned int text_color = status_color_alpha(COLOR_TEXT, opacity);
@@ -302,7 +308,8 @@ static int draw_wifi(const header_status *st, int clock_left, float opacity) {
 	if (x < min_x) x = min_x;
 	if (!st->wifi_valid) return x;  /* reserve its stable group position */
 
-	unsigned int on_color = ui_theme_id()==VT_UI_THEME_LEGACY?COLOR_BLUE:VT_THEME_SIGNAL_BRIGHT;
+	unsigned int on_color =
+	    vt_ui_theme_legacy_layout(ui_theme_id()) ? COLOR_BLUE : VT_THEME_SIGNAL_BRIGHT;
 	if (!st->wifi_strength_known) {
 		/* Connecting, or connected with unknown signal strength. */
 		on_color = COLOR_MUTED;
@@ -405,10 +412,11 @@ void ui_brand_draw_status_indicators(void) {
 
 static void draw_gradient_bar(void) {
  int theme=ui_theme_id();
- if(theme==VT_UI_THEME_LEGACY){
-  vita2d_draw_rectangle(0,0,SCREEN_WIDTH,UI_BRAND_HEADER_HEIGHT,VT_THEME_SURFACE);
-  vita2d_draw_rectangle(708,8,1,38,VT_THEME_BORDER_DIM);
-  vita2d_draw_rectangle(0,UI_BRAND_HEADER_HEIGHT-1,SCREEN_WIDTH,1,VT_THEME_BORDER_DIM);return;
+ if (vt_ui_theme_legacy_layout(theme)) {
+	 vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, UI_BRAND_HEADER_HEIGHT, VT_THEME_SURFACE);
+	 vita2d_draw_rectangle(708, 8, 1, 38, VT_THEME_BORDER_DIM);
+	 vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT - 1, SCREEN_WIDTH, 1, VT_THEME_BORDER_DIM);
+	 return;
  }
  vita2d_draw_rectangle(0,0,960,54,VT_THEME_BG);
  switch(theme){
@@ -445,15 +453,19 @@ static void draw_gradient_bar(void) {
 }
 
 static void draw_logo(void) {
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-        unsigned fill=ui_theme_id()==VT_UI_THEME_SIGNAL?VT_THEME_SIGNAL_BRIGHT:VT_THEME_SURFACE_RAISED;
-        vita2d_draw_rectangle(18,10,36,34,fill);
-        vita2d_draw_rectangle(18,10,2,34,VT_THEME_SIGNAL_BRIGHT);
-        vita2d_font *font=ui_runtime_font(UI_FONT_SMALL);
-        if(font){unsigned color=ui_theme_id()==VT_UI_THEME_SIGNAL?VT_THEME_BG:VT_THEME_SIGNAL_BRIGHT;
-            ui_font_draw_text(font,25,33,color,UI_FONT_SMALL,"L1");}
-        return;
-    }
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		unsigned fill =
+		    ui_theme_id() == VT_UI_THEME_SIGNAL ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_SURFACE_RAISED;
+		vita2d_draw_rectangle(18, 10, 36, 34, fill);
+		vita2d_draw_rectangle(18, 10, 2, 34, VT_THEME_SIGNAL_BRIGHT);
+		vita2d_font *font = ui_runtime_font(UI_FONT_SMALL);
+		if (font) {
+			unsigned color =
+			    ui_theme_id() == VT_UI_THEME_SIGNAL ? VT_THEME_BG : VT_THEME_SIGNAL_BRIGHT;
+			ui_font_draw_text(font,25,33,color,UI_FONT_SMALL,"L1");
+		}
+		return;
+	}
 	vita2d_texture *logo = ui_runtime_logo();
 	if (logo) {
 		unsigned int w = vita2d_texture_get_width(logo);
@@ -675,7 +687,8 @@ void ui_brand_draw_header(const char *query) {
 void ui_brand_draw_home_header(void) {
  draw_gradient_bar();
  draw_logo();
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)ui_breadcrumb_draw(HEADER_NAME_X,696,NULL,NULL,NULL,1);
+ if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+	 ui_breadcrumb_draw(HEADER_NAME_X, 696, NULL, NULL, NULL, 1);
  ui_brand_draw_status_indicators();
  g_brand_loading = 0;
 }

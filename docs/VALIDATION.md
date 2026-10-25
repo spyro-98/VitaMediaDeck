@@ -3,6 +3,15 @@
 This is the current suite/acceptance index. Historical reports keep their own
 build IDs and dates; see [documentation index](README.md).
 
+## Legacy Vita / PAF
+
+Run `bash tests/native_paf/run-host-tests.sh` for the actual adapter with mocked
+firmware boundaries. This checks command/state ownership, typed pool bounds,
+clipping, modal/media occlusion and failure handling; it does not render Sony
+firmware. The [PAF report](legacy-vita-paf-2026-10-25.md) records integration and
+physical-console acceptance. Existing host UI fixtures cover all eight layouts,
+using their host renderer rather than native Sony rasterization.
+
 ## Evidence levels
 
 | Evidence | Establishes | Does not establish |

@@ -27,7 +27,7 @@ cycles items within a component, and **Triangle** opens global search. Full
 collections are deliberate drill-downs rather than interchangeable Home lists.
 
 Search matches indexed titles, filenames, artists and albums, with worker-prepared
-results, cache and progressive loading. L1 scrolls only in the vertical Legacy,
+results, cache and progressive loading. L1 scrolls only in the vertical Legacy, Legacy Vita,
 Deck 90 and Aperture menus; the other wheels/grids remain fixed and use spatial
 navigation. LTO now covers all app-owned decoder/HTTPS/IPTV targets as well as the
 application and the existing FFmpeg C objects, with compiler-matched archive tools.
@@ -42,12 +42,12 @@ Connect/Add/Edit/Remove options as the other personal-media providers. See
 [Jellyfin provider navigation](docs/jellyfin-provider-2026-10-24.md).
 
 Navidrome music and Immich photos are available as dedicated **L1** sections
-in all seven themes, and as Home entries in Library, Audio and Images. Add each
+in all eight themes, and as Home entries in Library, Audio and Images. Add each
 server from its section; use Navidrome credentials or an Immich API key. See
 [configuration, supported media and Vita tests](docs/personal-media-2026-10-23.md).
 The six newer themes include native animated lighting and material effects;
 Legacy groups L1 into active tasks, content/services and application tools.
-All seven L1 menus now scroll with animated focus following, larger targets,
+Vertical L1 menus scroll with animated focus following, larger targets,
 touch dragging and fixed headers/footers. The wheel, grids and individual theme
 layouts remain distinct. See [scrollable L1 navigation](docs/l1-scroll-2026-10-24.md).
 See [native UI changes and validation limits](docs/game-ui-2026-10-23.md) and
@@ -58,7 +58,7 @@ independently saved Home tab positions for each theme.
 
 The [continuous page-motion revision](docs/theme-motion-2026-10-23.md) adds
 coherent list transitions, persistent menu focus and effects specific to each
-of the seven themes. This work and the
+of the eight themes. This work and the
 [utility-screen theme coverage](docs/theme-coverage-2026-10-23.md) are integrated
 in standard 1.4.1. Console animation/performance acceptance remains distinct
 from host rendering checks.
@@ -66,7 +66,7 @@ from host rendering checks.
 ## Current version: 1.4.1
 
 Standard build: **VitaMediaDeck**, Vita `APP_VER` **01.05**, title ID
-`VMDK00001`. Includes the updated seven themes, personal-media services,
+`VMDK00001`. Includes the updated eight themes, personal-media services,
 cached browsing, decoder improvements and the MP4/subtitle seek fixes. This
 patch integrates continuous list/menu motion, theme-specific focus effects,
 QR/editor/loading coverage, badge contrast and cached destination enumeration.
@@ -85,7 +85,7 @@ The [provider-navigation follow-up](docs/provider-navigation-2026-10-24.md) adds
 explicit Add/Remove favourite actions for radio and podcasts, including Home;
 retains nested catalogue Back history; separates provider tabs from Home inputs;
 clarifies IPTV saved/favourite actions; and gives Navidrome/Immich a consistent
-R1 Options menu for managing local connections. These controls apply to all seven
+R1 Options menu for managing local connections. These controls apply to all eight
 themes. Favourite removal preserves downloaded files and remote content.
 
 Press **L1** or tap the app logo to open sections. Use **Network** for media
@@ -108,8 +108,13 @@ Subsequent console-feedback fixes and four targeted Vita checks are documented
 in [Home, thumbnails, image controls and seek](docs/ui-feedback-2026-10-22.md).
 The [visual research and grid correction](docs/ui-style-research-2026-10-22.md)
 compares new interface directions and records the equal-row layout checks.
-Seven [native themes and shared navigation](docs/themes-navigation-2026-10-23.md) are available in Settings → Interface → Theme:
-Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic.
+Eight [themes and shared navigation](docs/themes-navigation-2026-10-23.md) are available in Settings → Interface → Theme:
+Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay, Mosaic and **Legacy Vita**.
+Legacy Vita keeps Legacy navigation and uses actual Sony PAF text, buttons,
+panels and busy indicators throughout the app, including the player HUD, QR,
+guide, dialogs and less-used screens. Media textures keep their existing GPU
+path. This native integration requires console acceptance; hold L1+R1 while
+starting the app to recover to Legacy. See the [PAF report](docs/legacy-vita-paf-2026-10-25.md).
 Ghost Mesh uses the right stick for its wheel and the left stick/D-pad for content;
 non-Legacy themes retain their own shell in radio, podcasts and discovery.
 
@@ -406,7 +411,7 @@ section or item to select it.
 
 | Theme | Choose a section | Enter results / return to sections |
 | --- | --- | --- |
-| Legacy | Up from the first result row, then left/right on the top tabs | Down enters; Up from the first row returns |
+| Legacy / Legacy Vita | Up from the first result row, then left/right on the top tabs | Down enters; Up from the first row returns |
 | Ghost Mesh | Right stick aims at the section wheel | D-pad/left stick always controls the left list; X opens its item |
 | Deck 90 | Up/down in the left menu | Right or X enters; Left returns |
 | Signal | Left/right on the top tabs | Down or X enters; Up from the first row returns |

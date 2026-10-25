@@ -115,3 +115,19 @@ the app identity is 1.4.1 and the linked FFmpeg for both decoders remains patche
 n6.0. Decoder documentation commits do not alter their 2.0.0 ABI or third-party
 licenses. See [release record](docs/releases/1.4.1.md) and
 [package integration](mds/PACKAGE_INTEGRATION.md).
+
+## Native Legacy Vita / PAF
+
+Legacy Vita calls PAF already installed in the console firmware. Sony code,
+firmware resources, artwork and SDK headers are not distributed. The app-owned
+C bindings record factual symbols, NIDs and ARM layouts from the public
+[ScePaf-RE ABI reference](https://github.com/GrapheneCt/ScePaf-RE), pinned in the
+lock file. No reference implementation/header is copied into the app.
+
+The original resource XML is compiled using
+[psp2cxml-tool](https://github.com/Princess-of-Sleeping/psp2cxml-tool), commit
+`d971a9a9892c122b4edef15d335326b2a551fec4`, under GPL-3.0. It is a build tool,
+not a runtime library. Its complete source and license are preserved in the
+corresponding-source bundle. Rebuild with `tools/regenerate-native-vita.py`;
+normal app builds use the audited, embedded original resource. The firmware
+supplies its own common button/text/loading resources when the app runs.

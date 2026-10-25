@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/focus_glow.h"
 #include <string.h>
 #include <math.h>
@@ -49,52 +52,61 @@ void ui_theme_fx_focus(float x,float y,float w,float h) {
  int theme=ui_theme_id(),reduced=vt_preferences_reduce_motion();
  float phase=reduced?.5f:(float)(sceKernelGetProcessTimeWide()%4200000ULL)/4200000;
  float sweep=reduced?.5f:.5f-.5f*cosf(phase*6.28318530718f);
- int layers=theme==VT_UI_THEME_LEGACY?2:3;
+ int layers = vt_ui_theme_legacy_layout(theme) ? 2 : 3;
  unsigned hot=VT_THEME_FOCUS,cold=VT_THEME_COLD_LIGHT;
  /* Feathered edge geometry, not a bloom framebuffer or full-card wash. */
  for(int i=layers;i>=1;i--){
-  unsigned color=focus_alpha(hot,(unsigned)(theme==VT_UI_THEME_LEGACY?32/i:48/i));
-  vita2d_draw_rectangle(x-i,y-i,w+i*2,1,color);
-  vita2d_draw_rectangle(x-i,y+h+i-1,w+i*2,1,color);
-  vita2d_draw_rectangle(x-i,y-i,1,h+i*2,color);
-  vita2d_draw_rectangle(x+w+i-1,y-i,1,h+i*2,color);
+	 unsigned color =
+		 focus_alpha(hot, (unsigned)(vt_ui_theme_legacy_layout(theme) ? 32 / i : 48 / i));
+	 vita2d_draw_rectangle(x - i, y - i, w + i * 2, 1, color);
+	 vita2d_draw_rectangle(x - i, y + h + i - 1, w + i * 2, 1, color);
+	 vita2d_draw_rectangle(x - i, y - i, 1, h + i * 2, color);
+	 vita2d_draw_rectangle(x + w + i - 1, y - i, 1, h + i * 2, color);
  }
  float length=fminf(w*.35f,38),head=x+4+sweep*fmaxf(0,w-length-8);
  unsigned light=focus_alpha(hot,170);
- if(theme==VT_UI_THEME_LEGACY){
-  vita2d_draw_rectangle(head,y-1,length,1,light);
-  vita2d_draw_rectangle(x+w-4-sweep*fmaxf(0,w-length-8)-length,y+h-1,length,1,light);
- }else if(theme==VT_UI_THEME_GHOST_MESH){
-  vita2d_draw_rectangle(head,y-1,length,2,light);
-  vita2d_draw_rectangle(x+w-1,y+4+sweep*fmaxf(0,h-20),2,fminf(16,h-8),focus_alpha(cold,160));
- }else if(theme==VT_UI_THEME_DECK_90){
-  vita2d_draw_rectangle(x+1,y+3,2,h-6,focus_alpha(hot,90));
-  vita2d_draw_rectangle(head,y+h-2,length,2,light);
- }else if(theme==VT_UI_THEME_SIGNAL){
-  for(int i=0;i<5;i++){
-   vita2d_draw_rectangle(x+w-11+i*2,y-2+i*2,7,1,focus_alpha(hot,170-i*20));
-   vita2d_draw_rectangle(x+2+i*2,y+h-9+i*2,7,1,focus_alpha(cold,100-i*12));
-  }
- }else if(theme==VT_UI_THEME_APERTURE){
-  float split=fminf(w*.18f,48)*(1-sweep*.3f);
-  vita2d_draw_rectangle(x+w*.5f-split-8,y-2,split,2,light);
-  vita2d_draw_rectangle(x+w*.5f+8,y-2,split,2,light);
-  vita2d_draw_rectangle(x+2,y+4,2,fminf(20,h-8),focus_alpha(cold,130));
- }else if(theme==VT_UI_THEME_RELAY){
-  vita2d_draw_rectangle(head,y+h-1,length,2,light);
-  vita2d_draw_rectangle(x+w-2,y+4,2,fminf(12,h-8),focus_alpha(cold,140));
-  vita2d_draw_rectangle(x+w-13,y+4,12,2,focus_alpha(cold,140));
- }else{
-  vita2d_draw_rectangle(head,y-1,length,2,light);
-  vita2d_draw_rectangle(x+w-12,y+2,10,1,focus_alpha(cold,160));
-  vita2d_draw_rectangle(x+w-2,y+2,1,fminf(10,h-4),focus_alpha(cold,160));
+ if (vt_ui_theme_legacy_layout(theme)) {
+	 vita2d_draw_rectangle(head, y - 1, length, 1, light);
+	 vita2d_draw_rectangle(x + w - 4 - sweep * fmaxf(0, w - length - 8) - length, y + h - 1, length,
+		                   1, light);
+ } else if (theme == VT_UI_THEME_GHOST_MESH) {
+	 vita2d_draw_rectangle(head, y - 1, length, 2, light);
+	 vita2d_draw_rectangle(x + w - 1, y + 4 + sweep * fmaxf(0, h - 20), 2, fminf(16, h - 8),
+		                   focus_alpha(cold, 160));
+ } else if (theme == VT_UI_THEME_DECK_90) {
+	 vita2d_draw_rectangle(x + 1, y + 3, 2, h - 6, focus_alpha(hot, 90));
+	 vita2d_draw_rectangle(head, y + h - 2, length, 2, light);
+ } else if (theme == VT_UI_THEME_SIGNAL) {
+	 for (int i = 0; i < 5; i++) {
+		 vita2d_draw_rectangle(x + w - 11 + i * 2, y - 2 + i * 2, 7, 1,
+			                   focus_alpha(hot, 170 - i * 20));
+		 vita2d_draw_rectangle(x + 2 + i * 2, y + h - 9 + i * 2, 7, 1,
+			                   focus_alpha(cold, 100 - i * 12));
+	 }
+ } else if (theme == VT_UI_THEME_APERTURE) {
+	 float split = fminf(w * .18f, 48) * (1 - sweep * .3f);
+	 vita2d_draw_rectangle(x + w * .5f - split - 8, y - 2, split, 2, light);
+	 vita2d_draw_rectangle(x + w * .5f + 8, y - 2, split, 2, light);
+	 vita2d_draw_rectangle(x + 2, y + 4, 2, fminf(20, h - 8), focus_alpha(cold, 130));
+ } else if (theme == VT_UI_THEME_RELAY) {
+	 vita2d_draw_rectangle(head, y + h - 1, length, 2, light);
+	 vita2d_draw_rectangle(x + w - 2, y + 4, 2, fminf(12, h - 8), focus_alpha(cold, 140));
+	 vita2d_draw_rectangle(x + w - 13, y + 4, 12, 2, focus_alpha(cold, 140));
+ } else {
+	 vita2d_draw_rectangle(head, y - 1, length, 2, light);
+	 vita2d_draw_rectangle(x + w - 12, y + 2, 10, 1, focus_alpha(cold, 160));
+	 vita2d_draw_rectangle(x + w - 2, y + 2, 1, fminf(10, h - 4), focus_alpha(cold, 160));
  }
 }
 
 void ui_focus_outline_draw(const UiFocusMotion *m) {
 	if(!m || !m->initialized || m->width<=0 || m->height<=0) return;
 	float x=m->x,y=m->y,w=m->width,h=m->height;
-    ui_theme_fx_focus(x,y,w,h);
+#ifdef VMD_ENABLE_PAF_NATIVE
+	if (ui_native_vita_focus(x, y, w, h))
+		return;
+#endif
+	ui_theme_fx_focus(x, y, w, h);
 	vita2d_draw_rectangle(x,y,w,2,VT_THEME_FOCUS);
 	vita2d_draw_rectangle(x,y+h-2,w,2,VT_THEME_FOCUS);
 	vita2d_draw_rectangle(x,y,3,h,VT_THEME_FOCUS);

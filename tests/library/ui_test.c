@@ -181,7 +181,7 @@ int main(int argc, char **argv) {
         vt_library_started(&fixture[i]);
         vt_library_progress(fixture[i].history_id, 60000 + i * 90000, 3600000);
     }
-    for (int theme = 0; theme < 7; theme++)
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++)
         for (int mode = 0; mode < 4; mode++) {
             ui_theme_apply(theme);
             loaded = 1;
@@ -203,7 +203,7 @@ int main(int argc, char **argv) {
         }
     /* Loading coexists with cached content; all shells get compact activity
      * without covering their wheel, sidebar, bottom tabs or mini-player. */
-    for (int theme = 0; theme < 7; theme++) {
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++) {
         ui_theme_apply(theme);
         for (loading_fixture = 1; loading_fixture <= 2; loading_fixture++) {
             view = 3;
@@ -241,7 +241,7 @@ int main(int argc, char **argv) {
     /* Dashboard is one heterogeneous surface, with every group visible and
      * reachable. The backend is deliberately synthetic, including empty state. */
     const unsigned directions[] = {SCE_CTRL_UP, SCE_CTRL_DOWN, SCE_CTRL_LEFT, SCE_CTRL_RIGHT};
-    for (int theme = 0; theme < 7; theme++)
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++)
         for (int bottom = 472; bottom <= 536; bottom += 64) {
             UiDashboardLayout l = ui_dashboard_layout(theme, bottom);
             int reachable[UI_DASH_COUNT] = {1};
@@ -265,7 +265,7 @@ int main(int argc, char **argv) {
         }
     loading_fixture = 0;
     progressive = 0;
-    for (int theme = 0; theme < 7; theme++)
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++)
         for (dashboard_empty = 0; dashboard_empty <= 1; dashboard_empty++) {
             ui_theme_apply(theme);
             dashboard_sources = !dashboard_empty;
@@ -390,7 +390,7 @@ int main(int argc, char **argv) {
     CHECK(artwork_requests > 0 && search_calls >= 28);
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
-    printf("Unified Home UI: %u checks; 56 host layouts, integrated dashboard/navigation, "
+    printf("Unified Home UI: %u checks; 64 host layouts, integrated dashboard/navigation, "
            "animated/reduced-motion loading, all "
            "themes, covers, mini-player space, "
            "progressive focus and player return passed.\n",

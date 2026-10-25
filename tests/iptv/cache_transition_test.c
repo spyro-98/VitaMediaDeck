@@ -41,15 +41,41 @@ int main(int argc,char**argv){
  lazy_tick(6);query=g_lazy_thread;fail_fetch=1;finish(query);lazy_tick(6);
  CHECK(!strcmp(g_query.items[0].title,"Cached")&&g_episodes);fail_fetch=0;
  /* Every media row asks for its thumbnail in each compact native theme. */
- for(int theme=1;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mini=0;mini<2;mini++)for(int kind=VT_ONLINE_RADIO;kind<=VT_ONLINE_EPISODE;kind++){
-  ui_theme_apply(theme);ui_home_tab_set(kind==VT_ONLINE_RADIO?HOME_RADIO:HOME_PODCAST);mini_top=mini?472:544;memset(&g_query,0,sizeof(g_query));g_query.kind=kind;g_query.count=8;
-  g_home=1;g_catalog=g_menu=0;g_episodes=kind==VT_ONLINE_EPISODE;g_tab=kind==VT_ONLINE_RADIO?kind:VT_ONLINE_FEED;g_top=g_selected=0;
-  for(int i=0;i<8;i++){g_query.items[i].kind=kind;strcpy(g_query.items[i].title,"Long podcast or radio title for layout");strcpy(g_query.items[i].detail,"Publisher and programme");strcpy(g_query.items[i].artwork_path,"fixture.png");}
-  UiSectionsSidebar side;ui_sections_sidebar_init(&side,UI_SECTION_LOCAL_MEDIA);UiContextMenu menu={0};UiFocusMotion focus={0};
-  artwork_requests=0;frame=0;draw_themed_online(1,&focus,&side,&menu);
-  CHECK(artwork_requests>=(unsigned)HOME_LAYOUT.rows);
-  if(!mini&&language){char name[80];snprintf(name,sizeof(name),"compact-covers-%d-kind%d",theme,kind);png(name);}
- }
+ for (int theme = 1; theme < VT_UI_THEME_LEGACY_VITA; theme++)
+     for (language = 0; language < 2; language++)
+         for (int mini = 0; mini < 2; mini++)
+             for (int kind = VT_ONLINE_RADIO; kind <= VT_ONLINE_EPISODE; kind++) {
+                 ui_theme_apply(theme);
+                 ui_home_tab_set(kind == VT_ONLINE_RADIO ? HOME_RADIO : HOME_PODCAST);
+                 mini_top = mini ? 472 : 544;
+                 memset(&g_query, 0, sizeof(g_query));
+                 g_query.kind = kind;
+                 g_query.count = 8;
+                 g_home = 1;
+                 g_catalog = g_menu = 0;
+                 g_episodes = kind == VT_ONLINE_EPISODE;
+                 g_tab = kind == VT_ONLINE_RADIO ? kind : VT_ONLINE_FEED;
+                 g_top = g_selected = 0;
+                 for (int i = 0; i < 8; i++) {
+                     g_query.items[i].kind = kind;
+                     strcpy(g_query.items[i].title, "Long podcast or radio title for layout");
+                     strcpy(g_query.items[i].detail, "Publisher and programme");
+                     strcpy(g_query.items[i].artwork_path, "fixture.png");
+                 }
+                 UiSectionsSidebar side;
+                 ui_sections_sidebar_init(&side, UI_SECTION_LOCAL_MEDIA);
+                 UiContextMenu menu = {0};
+                 UiFocusMotion focus = {0};
+                 artwork_requests = 0;
+                 frame = 0;
+                 draw_themed_online(1, &focus, &side, &menu);
+                 CHECK(artwork_requests >= (unsigned)HOME_LAYOUT.rows);
+                 if (!mini && language) {
+                     char name[80];
+                     snprintf(name, sizeof(name), "compact-covers-%d-kind%d", theme, kind);
+                     png(name);
+                 }
+             }
  /* Leaving an IPTV page never waits for an unfinished artwork request. */
  memset(&catalog,0,sizeof(catalog));catalog.count=1;saved_view=0;hide_unavailable=0;
  strcpy(catalog.items[0].logo,"https://example.org/old.png");strcpy(catalog.items[0].url,"https://example.org/old");

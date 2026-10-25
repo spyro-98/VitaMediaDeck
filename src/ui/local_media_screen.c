@@ -75,7 +75,8 @@ static int local_viewport_bottom(void) {
 }
 
 static int local_list_visible_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)return HOME_LAYOUT.rows;
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return HOME_LAYOUT.rows;
 	int rows = (local_viewport_bottom() - LIST_Y + 6) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -83,7 +84,8 @@ static int local_list_visible_rows(void) {
 }
 
 static int local_list_render_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)return HOME_LAYOUT.rows;
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return HOME_LAYOUT.rows;
 	int rows = (local_viewport_bottom() - LIST_Y + ROW_H - 1) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -1000,18 +1002,24 @@ static void tick_right_drawer(int open, int cursor, float *animation,
 
 static UiPageView home_page(int filter,int top,int count,int grid,int storage,int sort,int flat) {
     char key[96];snprintf(key,sizeof(key),"%d:%d:%d:%d:%d",ui_home_tab(),filter,storage,sort,flat);
-    int themed=ui_theme_id()!=VT_UI_THEME_LEGACY;
-    int columns=themed?HOME_LAYOUT.columns:grid?GRID_COLS:1;
-    int slots=themed?HOME_LAYOUT.rows:grid?local_grid_render_rows()*columns:local_list_render_rows();
-    float step=themed?HOME_LAYOUT.step:grid?GRID_CARD_H+GRID_GAP_Y:ROW_H;
-    return ui_theme_page(UI_SCENE_HOME,"local-home",key,!themed&&grid?top*columns:top,count,columns,slots,step);
+	int themed = !vt_ui_theme_legacy_layout(ui_theme_id());
+	int columns = themed ? HOME_LAYOUT.columns : grid ? GRID_COLS : 1;
+	int slots = themed ? HOME_LAYOUT.rows
+	            : grid ? local_grid_render_rows() * columns
+	                   : local_list_render_rows();
+	float step = themed ? HOME_LAYOUT.step : grid ? GRID_CARD_H + GRID_GAP_Y : ROW_H;
+	return ui_theme_page(UI_SCENE_HOME, "local-home", key, !themed && grid ? top * columns : top,
+	                     count, columns, slots, step);
 }
 static UiThemeRect home_item_rect(int index,int top,int grid) {
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY)return ui_theme_home_item_rect(ui_theme_id(),index-top,local_viewport_bottom());
-    UiThemeRect r=grid?(UiThemeRect){LIST_X+index%GRID_COLS*(GRID_CARD_W+GRID_GAP_X),
-        LIST_Y+(index/GRID_COLS-top)*(GRID_CARD_H+GRID_GAP_Y),GRID_CARD_W,GRID_CARD_H}:
-        (UiThemeRect){LIST_X,LIST_Y+(index-top)*ROW_H,LIST_W,ROW_H-6};
-    return ui_theme_page_rect(UI_SCENE_HOME,r);
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return ui_theme_home_item_rect(ui_theme_id(), index - top, local_viewport_bottom());
+	UiThemeRect r =
+	    grid ? (UiThemeRect){LIST_X + index % GRID_COLS * (GRID_CARD_W + GRID_GAP_X),
+		                     LIST_Y + (index / GRID_COLS - top) * (GRID_CARD_H + GRID_GAP_Y),
+		                     GRID_CARD_W, GRID_CARD_H}
+		     : (UiThemeRect){LIST_X, LIST_Y + (index - top) * ROW_H, LIST_W, ROW_H - 6};
+	return ui_theme_page_rect(UI_SCENE_HOME, r);
 }
 
 static void draw_screen(int filter, int selected, int top, int grid_mode,
@@ -1029,7 +1037,8 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
 	ui_brand_set_loading(g_scan_job.thid >= 0 && !g_scan_job.done);
-	if(ui_theme_id()==VT_UI_THEME_LEGACY)ui_brand_draw_home_header();
+	if (vt_ui_theme_legacy_layout(ui_theme_id()))
+		ui_brand_draw_home_header();
 	else ui_brand_draw_header(NULL);
 	int page_has_focus = !ui_mini_player_input_locked() &&
 	                     right_animation <= 0.01f &&
@@ -1041,34 +1050,62 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	int count = screen_count(filter, flattened);
 	int viewport_bottom = local_viewport_bottom();
     UiPageView page=home_page(filter,top,count,grid_mode,storage_filter,sort_mode,flattened);
-	if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-  const VtLocalMediaItem *current=count?screen_item(filter,selected,flattened,NULL):NULL;
-  ui_theme_home_heading(ui_home_tab_label(),media_location_label(current),viewport_bottom);
-  if(ui_theme_id()==VT_UI_THEME_APERTURE){
-   const char *preview=current?media_preview_path(current):NULL;
-   uint64_t size=current?media_preview_size(current,preview):0;
-   vita2d_texture *art=preview?(vt_image_supported_path(preview)?
-       vt_image_thumbnail_get_priority(preview,size,100):vt_video_thumbnail_get_priority(preview,size,100)):NULL;
-   ui_theme_home_preview(art,current?current->name:NULL,viewport_bottom,current?current->source:0);
-  }
-  if(!count)ui_text_line(LIST_X,LIST_Y+26,LIST_W,vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY),VT_THEME_TEXT_MUTED,UI_FONT_BODY);
-  vita2d_set_clip_rectangle(0,HOME_LAYOUT.y-4,960,viewport_bottom);vita2d_enable_clipping();
-  for(int pos=page.first;pos<page.end;pos++){
-   LocalMediaRoot *root=NULL;const VtLocalMediaItem *item=screen_item(filter,pos,flattened,&root);
-   if(!item)continue;
-   char detail[160],size[32];ui_format_file_size(item->size,size,sizeof(size));
-   if(item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)snprintf(detail,sizeof(detail),"%s",vt_i18n_str(item->source==VT_LOCAL_MEDIA_SOURCE_NAVIDROME?VT_STR_HOME_NAVIDROME_DETAIL:VT_STR_HOME_IMMICH_DETAIL));
-   else if(root)snprintf(detail,sizeof(detail),vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_DETAILS),root->visible_count,size);
-   else snprintf(detail,sizeof(detail),"%s - %s",media_type_name(item),size);
-   const char *preview=media_preview_path(item);uint64_t preview_size=media_preview_size(item,preview);
-   vita2d_texture *art=preview?(vt_image_supported_path(preview)?vt_image_thumbnail_get_priority(preview,preview_size,pos==selected?100:60):vt_video_thumbnail_get_priority(preview,preview_size,pos==selected?100:60)):NULL;
-   ui_theme_home_row_art(pos-top,pos,item->name,detail,pos==selected,content_has_focus,viewport_bottom,art,item->is_directory?"DIR":"...");
-   if(!art&&item->source!=VT_LOCAL_MEDIA_SOURCE_FILE)ui_theme_home_service(pos-top,viewport_bottom,item->source);
-  }
-  vita2d_disable_clipping();
-  ui_theme_home_footer_with_focus(media_location_label(current),viewport_bottom,focus_tabs);
-  ui_theme_home_position(selected,count,viewport_bottom);
- }else if (count == 0) {
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		const VtLocalMediaItem *current =
+		    count ? screen_item(filter, selected, flattened, NULL) : NULL;
+		ui_theme_home_heading(ui_home_tab_label(), media_location_label(current), viewport_bottom);
+		if (ui_theme_id() == VT_UI_THEME_APERTURE) {
+			const char *preview = current ? media_preview_path(current) : NULL;
+			uint64_t size = current ? media_preview_size(current, preview) : 0;
+			vita2d_texture *art = preview
+			                          ? (vt_image_supported_path(preview)
+			                                 ? vt_image_thumbnail_get_priority(preview, size, 100)
+			                                 : vt_video_thumbnail_get_priority(preview, size, 100))
+			                          : NULL;
+			ui_theme_home_preview(art, current ? current->name : NULL, viewport_bottom,
+			                      current ? current->source : 0);
+		}
+		if (!count)
+			ui_text_line(LIST_X, LIST_Y + 26, LIST_W, vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY),
+			             VT_THEME_TEXT_MUTED, UI_FONT_BODY);
+		vita2d_set_clip_rectangle(0, HOME_LAYOUT.y - 4, 960, viewport_bottom);
+		vita2d_enable_clipping();
+		for (int pos = page.first; pos < page.end; pos++) {
+			LocalMediaRoot *root = NULL;
+			const VtLocalMediaItem *item = screen_item(filter, pos, flattened, &root);
+			if (!item)
+				continue;
+			char detail[160], size[32];
+			ui_format_file_size(item->size, size, sizeof(size));
+			if (item->source != VT_LOCAL_MEDIA_SOURCE_FILE)
+				snprintf(detail, sizeof(detail), "%s",
+				         vt_i18n_str(item->source == VT_LOCAL_MEDIA_SOURCE_NAVIDROME
+				                         ? VT_STR_HOME_NAVIDROME_DETAIL
+										 : VT_STR_HOME_IMMICH_DETAIL));
+			else if (root)
+				snprintf(detail, sizeof(detail), vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_DETAILS),
+				         root->visible_count, size);
+			else
+				snprintf(detail, sizeof(detail), "%s - %s", media_type_name(item), size);
+			const char *preview = media_preview_path(item);
+			uint64_t preview_size = media_preview_size(item, preview);
+			vita2d_texture *art =
+			    preview ? (vt_image_supported_path(preview)
+			                   ? vt_image_thumbnail_get_priority(preview, preview_size,
+			                                                     pos == selected ? 100 : 60)
+			                   : vt_video_thumbnail_get_priority(preview, preview_size,
+			                                                     pos == selected ? 100 : 60))
+			            : NULL;
+			ui_theme_home_row_art(pos - top, pos, item->name, detail, pos == selected,
+			                      content_has_focus, viewport_bottom, art,
+			                      item->is_directory ? "DIR" : "...");
+			if (!art && item->source != VT_LOCAL_MEDIA_SOURCE_FILE)
+				ui_theme_home_service(pos - top, viewport_bottom, item->source);
+		}
+		vita2d_disable_clipping();
+		ui_theme_home_footer_with_focus(media_location_label(current), viewport_bottom, focus_tabs);
+		ui_theme_home_position(selected, count, viewport_bottom);
+	} else if (count == 0) {
 		ui_panel(208, 202, 544, 140, VT_THEME_SURFACE,
 		         VT_THEME_BLUE_LIGHT, 0);
 		if (body) ui_font_draw_text(body, 244, 254, VT_THEME_TEXT,
@@ -1078,7 +1115,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		                                UI_FONT_SMALL,
 		                                vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY_DETAIL));
 	} else if (!grid_mode) {
-        int list_x=LIST_X+(int)roundf(page.dx);
+		int list_x = LIST_X + (int)roundf(page.dx);
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
 		int visible_limit = top + local_list_visible_rows();
@@ -1236,9 +1273,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		                                : VT_STR_LOCAL_MEDIA_FOLDER_HIERARCHY));
 		const char *actions[6];
 		int action_count = 0;
-		if(ui_theme_id()==VT_UI_THEME_LEGACY)actions[action_count++] = vt_i18n_str(
-		    grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_LIST
-		              : VT_STR_LOCAL_MEDIA_VIEW_GRID);
+		if (vt_ui_theme_legacy_layout(ui_theme_id()))
+			actions[action_count++] = vt_i18n_str(grid_mode ? VT_STR_LOCAL_MEDIA_VIEW_LIST
+			                                                : VT_STR_LOCAL_MEDIA_VIEW_GRID);
 		/* Storage and sort operate on the folder catalogue. In flattened mode the
 		 * indexed collection intentionally stays paged in on-disk order, so do not
 		 * present controls that would imply an in-memory global sort. */
@@ -1254,11 +1291,11 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTIONS);
 		for (int i = 0; i < action_count; i++) {
 			int ay = 124 + i * 62;
-			ui_action_button((int)panel_x + 22, ay, 384, 52,
-			                 VT_THEME_SURFACE,
-			                 i+(ui_theme_id()!=VT_UI_THEME_LEGACY) < (flattened ? 2 : 4) ? "Left/Right" : "Cross",
-			                 actions[i],
-			                 0);
+			ui_action_button((int)panel_x + 22, ay, 384, 52, VT_THEME_SURFACE,
+			                 i + (!vt_ui_theme_legacy_layout(ui_theme_id())) < (flattened ? 2 : 4)
+			                     ? "Left/Right"
+								 : "Cross",
+			                 actions[i], 0);
 		}
 		if(right_open){UiFocusMotion focus={.x=panel_x+22,.y=124+right_focus*62,.width=384,.height=52,.initialized=1};ui_focus_outline_draw(&focus);}
 	}
@@ -1340,7 +1377,8 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		              : filter == 2 ? vt_preferences_local_music_grid()
 		              : filter == 3 ? image_grid
 		                            : vt_preferences_local_video_grid();
-		if(ui_theme_id()!=VT_UI_THEME_LEGACY)grid_mode=0;
+		if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+			grid_mode = 0;
 		ui_mini_player_handle_buttons(&pressed);
 		if (ui_mini_player_input_locked()) {
 			pressed = 0;
@@ -1388,7 +1426,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			float panel_x = 960.0f - 430.0f * right_animation;
 			const VtLocalMediaItem *focused_item=screen_item(filter,selected,flattened,NULL);
             int file_selected=flattened && focused_item && focused_item->source==VT_LOCAL_MEDIA_SOURCE_FILE && !focused_item->is_directory;
-			int themed_home=ui_theme_id()!=VT_UI_THEME_LEGACY;
+			int themed_home = !vt_ui_theme_legacy_layout(ui_theme_id());
 			int drawer_row_count = (flattened ? (file_selected ? 5 : 4) : 6)-themed_home;
 			if (right_cursor >= drawer_row_count) right_cursor = drawer_row_count - 1;
 			if (flags & UI_TOUCH_EVENT_TAP) {
@@ -1504,21 +1542,36 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		int old_filter = filter;
 		unsigned int nav=0;int changed_tab=0;
   int tab_touch=flags&&ui_home_tabs_touch_hit(&touch);
-  if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-   UiHomeControlSample input={.pressed=pressed,.held=ctrl.buttons,.touch_flags=flags,
-    .lx=ctrl.lx,.ly=ctrl.ly,.rx=ctrl.rx,.ry=ctrl.ry,.selected=selected,
-    .count=screen_count(filter,flattened),.bottom=local_viewport_bottom(),
-    .focus_sections=focus_tabs,.blocked=overlay_owns_input,.touch=&touch};
-   UiHomeControlResult result=ui_home_controls_update(&input);
-   pressed=result.pressed;nav=result.content_nav;focus_tabs=result.focus_sections;changed_tab=result.sections_changed;
-  }else{
-   nav=ui_nav_repeat_update(&page_repeat,pressed,overlay_owns_input?0:ctrl.buttons,
-      overlay_owns_input?128:ctrl.lx,overlay_owns_input?128:ctrl.ly,
-      SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
-   unsigned tab_nav=ui_home_tabs_navigation(pressed,focus_tabs&&!overlay_owns_input?ctrl.buttons:0,
-       focus_tabs&&!overlay_owns_input?ctrl.lx:128,128);
-   changed_tab=ui_home_tabs_input(tab_nav,flags,&touch,focus_tabs);
-   if(changed_tab)focus_tabs=1;
+  if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+	  UiHomeControlSample input = {.pressed = pressed,
+			                       .held = ctrl.buttons,
+			                       .touch_flags = flags,
+			                       .lx = ctrl.lx,
+			                       .ly = ctrl.ly,
+			                       .rx = ctrl.rx,
+			                       .ry = ctrl.ry,
+			                       .selected = selected,
+			                       .count = screen_count(filter, flattened),
+			                       .bottom = local_viewport_bottom(),
+			                       .focus_sections = focus_tabs,
+			                       .blocked = overlay_owns_input,
+			                       .touch = &touch};
+	  UiHomeControlResult result = ui_home_controls_update(&input);
+	  pressed = result.pressed;
+	  nav = result.content_nav;
+	  focus_tabs = result.focus_sections;
+	  changed_tab = result.sections_changed;
+  } else {
+	  nav = ui_nav_repeat_update(&page_repeat, pressed, overlay_owns_input ? 0 : ctrl.buttons,
+			                     overlay_owns_input ? 128 : ctrl.lx,
+			                     overlay_owns_input ? 128 : ctrl.ly,
+			                     SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
+	  unsigned tab_nav =
+		  ui_home_tabs_navigation(pressed, focus_tabs && !overlay_owns_input ? ctrl.buttons : 0,
+			                      focus_tabs && !overlay_owns_input ? ctrl.lx : 128, 128);
+	  changed_tab = ui_home_tabs_input(tab_nav, flags, &touch, focus_tabs);
+	  if (changed_tab)
+		  focus_tabs = 1;
   }
   if(changed_tab){
    if(ui_home_tab_online()){
@@ -1538,19 +1591,21 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			          : filter == 2 ? vt_preferences_local_music_grid()
 			          : filter == 3 ? image_grid
 			                        : vt_preferences_local_video_grid();
-			if(ui_theme_id()!=VT_UI_THEME_LEGACY)grid_mode=0;
+			if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+				grid_mode = 0;
 		}
 		int count = screen_count(filter, flattened);
 		/* An empty result set has no page item that can own focus. Keep the
 		 * selector on the filters instead of leaving an invisible focus target. */
 		if (count == 0 && ui_theme_id()!=VT_UI_THEME_GHOST_MESH) focus_tabs = 1;
-		if (ui_theme_id()==VT_UI_THEME_LEGACY && !focus_tabs && (nav & SCE_CTRL_UP) &&
+		if (vt_ui_theme_legacy_layout(ui_theme_id()) && !focus_tabs && (nav & SCE_CTRL_UP) &&
 		    (selected < (grid_mode ? 3 : 1))) {
 			focus_tabs = 1;
 			nav &= ~SCE_CTRL_UP;
 		}
 
-		if (ui_theme_id()==VT_UI_THEME_LEGACY && count > 0 && focus_tabs && (nav & SCE_CTRL_DOWN)) {
+		if (vt_ui_theme_legacy_layout(ui_theme_id()) && count > 0 && focus_tabs &&
+		    (nav & SCE_CTRL_DOWN)) {
 			focus_tabs = 0;
 			nav &= ~SCE_CTRL_DOWN;
 		}
@@ -1560,15 +1615,19 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if ((nav & SCE_CTRL_UP) && selected >= 3) selected -= 3;
 			if ((nav & SCE_CTRL_DOWN) && selected + 3 < count) selected += 3;
 		} else if (!focus_tabs) {
-   int columns=ui_theme_id()==VT_UI_THEME_LEGACY?1:HOME_LAYOUT.columns;
-   if((nav&SCE_CTRL_UP)&&selected>=columns)selected-=columns;
-   if((nav&SCE_CTRL_DOWN)&&selected+columns<count)selected+=columns;
-   if((nav&SCE_CTRL_LEFT)&&selected%columns)selected--;
-   if((nav&SCE_CTRL_RIGHT)&&selected%columns+1<columns&&selected+1<count)selected++;
+			int columns = vt_ui_theme_legacy_layout(ui_theme_id()) ? 1 : HOME_LAYOUT.columns;
+			if ((nav & SCE_CTRL_UP) && selected >= columns)
+				selected -= columns;
+			if ((nav & SCE_CTRL_DOWN) && selected + columns < count)
+				selected += columns;
+			if ((nav & SCE_CTRL_LEFT) && selected % columns)
+				selected--;
+			if ((nav & SCE_CTRL_RIGHT) && selected % columns + 1 < columns && selected + 1 < count)
+				selected++;
 		}
-		if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-   top=ui_theme_home_top(ui_theme_id(),selected,top,local_viewport_bottom());
-  }else if (!grid_mode) {
+		if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+			top = ui_theme_home_top(ui_theme_id(), selected, top, local_viewport_bottom());
+		} else if (!grid_mode) {
 			int visible = local_list_visible_rows();
 			if (selected < top) top = selected;
 			if (selected >= top + visible) top = selected - visible + 1;
@@ -1586,8 +1645,11 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 				                                   : UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER);
 		}
 		if(pressed&SCE_CTRL_CIRCLE){
-   if(ui_theme_id()!=VT_UI_THEME_LEGACY&&!focus_tabs){focus_tabs=1;pressed&=~SCE_CTRL_CIRCLE;}
-   else return local_media_leave(UI_LOCAL_MEDIA_ACTION_BACK);
+			if (!vt_ui_theme_legacy_layout(ui_theme_id()) && !focus_tabs) {
+				focus_tabs = 1;
+				pressed &= ~SCE_CTRL_CIRCLE;
+			} else
+				return local_media_leave(UI_LOCAL_MEDIA_ACTION_BACK);
   }
 		if ((flags & UI_TOUCH_EVENT_UP) && !(flags & UI_TOUCH_EVENT_TAP) &&
 		    !focus_tabs && count > 0) {
@@ -1597,14 +1659,15 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			else if (dy > 36) selected -= step;
 			if (selected < 0) selected = 0;
 			if (selected >= count) selected = count - 1;
-			if(ui_theme_id()!=VT_UI_THEME_LEGACY){
-    top=ui_theme_home_top(ui_theme_id(),selected,top,local_viewport_bottom());
-   }else if (!grid_mode) {
+			if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+				top = ui_theme_home_top(ui_theme_id(), selected, top, local_viewport_bottom());
+			} else if (!grid_mode) {
 				int visible = local_list_visible_rows();
 				if (selected < top) top = selected;
 				if (selected >= top + visible)
 					top = selected - visible + 1;
-			} else top = grid_top_for_selection(selected);
+			} else
+				top = grid_top_for_selection(selected);
 		}
 		if (flags & UI_TOUCH_EVENT_TAP) {
             UiPageView visible=home_page(filter,top,count,grid_mode,storage_filter,sort_mode,flattened);
