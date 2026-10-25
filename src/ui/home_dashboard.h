@@ -15,5 +15,6 @@ typedef struct {
     int title_y, subtitle_y, footer_y;
 } UiDashboardLayout;
 UiDashboardLayout ui_dashboard_layout(int theme, int bottom);
+UiDashboardLayout ui_dashboard_compose(int theme, int bottom, const int counts[4]);
 int ui_dashboard_move(const UiDashboardLayout *, int selected, unsigned direction);
 #endif

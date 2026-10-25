@@ -1,5 +1,11 @@
 # Complete Legacy Vita theme / Sony PAF — 25 October 2026
 
+**Console correction:** the first physical selection crashed during Framework
+creation because the 8 MiB global heap consumed the 9 MiB dialog partition.
+See the [dump diagnosis and correction](paf-crash-home-2026-10-25.md).
+The heap now uses application memory and graphics limits are explicit. The
+original host results below did not validate native initialization on firmware.
+
 Legacy Vita is the eighth selectable theme. It preserves Legacy layout and
 navigation while the shared presentation backend supplies actual Sony PAF
 Text, Button, Plane and BusyIndicator widgets throughout the app. It is not a

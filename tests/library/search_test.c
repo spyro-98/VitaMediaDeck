@@ -332,6 +332,19 @@ int main(void) {
     source_count = 0;
     vt_library_search_begin("", NULL);
     wait_results(out, &state, 1);
+    VtLibraryResult *home_media = calloc(16, sizeof(*home_media));
+    CHECK(home_media);
+    int media_count = vt_library_search_home_media(home_media, 16);
+    CHECK(media_count > 0 && media_count <= 16);
+    CHECK(has_provider(home_media, media_count, VT_LIBRARY_LOCAL));
+    CHECK(has_provider(home_media, media_count, VT_LIBRARY_RADIO));
+    for (int i = 0; i < media_count; i++) {
+        CHECK(home_media[i].item.kind < VT_LIBRARY_FOLDER);
+        if (home_media[i].item.provider == VT_LIBRARY_LOCAL)
+            CHECK(!home_media[i].started && !home_media[i].position_ms);
+    }
+    CHECK(!vt_library_search_home_media(NULL, 16));
+    free(home_media);
     VtLibraryItem *home = calloc(VT_LIBRARY_HOME_FAVOURITES, sizeof(*home));
     CHECK(home);
     int favourites = vt_library_search_home_favourites(home, VT_LIBRARY_HOME_FAVOURITES, &state);

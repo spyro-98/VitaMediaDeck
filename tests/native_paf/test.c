@@ -12,6 +12,7 @@ static unsigned checks;
         assert(x);                                                                                 \
     } while (0)
 static int host_theme, host_scene, host_loaded, host_load_error, host_ctor_missing, host_foreign;
+static int host_checkpoints;
 static int host_loads, host_updates, host_creates, host_strings, host_fail_create, host_fail_text;
 static int host_plugin_missing, host_alloc_fail, host_real_common, host_bad_target;
 static void *host_instance, *host_allocated[32];
@@ -29,6 +30,11 @@ int vt_i18n_current_language(void) {
 void log_printf(const char *format, ...) {
     CHECK(format && !strstr(format, "password"));
 }
+int log_save(const char *path) {
+    CHECK(path && strstr(path, "ux0:data/VitaMediaDeck/") && !host_scene);
+    host_checkpoints++;
+    return 0;
+}
 int sceSysmoduleIsLoadedInternal(unsigned which) {
     CHECK(which == SCE_SYSMODULE_INTERNAL_PAF);
     return host_loaded ? 0 : -1;
@@ -37,7 +43,7 @@ int sceSysmoduleLoadModuleInternalWithArg(unsigned which, unsigned bytes, void *
                                           const SceSysmoduleOpt *opt) {
     CHECK(which == SCE_SYSMODULE_INTERNAL_PAF && bytes == 24 && !host_scene);
     uint32_t *v = args;
-    CHECK(v[0] == 8 * 1024 * 1024 && v[3] == 1);
+    CHECK(v[0] == 8 * 1024 * 1024 && v[3] == 0);
     host_loads++;
     *opt->result = host_load_error;
     host_loaded = !host_load_error;
@@ -64,6 +70,10 @@ void *vmd_paf_fw_instance(void) {
 void vmd_paf_fw_create(void *self, const void *p) {
     CHECK(!host_scene);
     const uint32_t *v = p;
+    /* The actual retail crash exhausted a 9 MiB dialog partition. The global
+     * heap must not use it; graphics heaps must be explicit and bounded. */
+    CHECK(v[0] == 256 * 1024 && v[1] == 1024 * 1024 && v[2] == 1);
+    CHECK(v[4] == 1024 * 1024 && v[5] == 4 * 1024 * 1024);
     CHECK(v[3] == 2 * 1024 * 1024 && v[6] == 1024 * 1024);
     CHECK(v[28] == 5 && v[29] == 1 && v[30] == 5 && v[42] == 1);
     const unsigned char *b = p;
@@ -282,6 +292,7 @@ static void reset(void) {
     for (unsigned i = 0; i < host_alloc_count; i++)
         free(host_allocated[i]);
     host_alloc_count = 0;
+    host_checkpoints = 0;
     host_theme = VT_UI_THEME_LEGACY_VITA;
     host_scene = host_loaded = host_load_error = host_ctor_missing = host_foreign = 0;
     host_loads = host_updates = host_creates = host_strings = host_fail_create = host_fail_text = 0;
@@ -331,12 +342,14 @@ int main(void) {
     __wrap_vita2d_end_drawing();
     CHECK(host_updates == 1 && host_creates == 3 && host_strings == 2 && visible);
     int creates = host_creates, strings = host_strings;
+    CHECK(host_checkpoints == 6);
+    int checkpoints = host_checkpoints;
     for (int tick = 0; tick < 30; tick++) {
         __wrap_vita2d_start_drawing();
         fixture();
         __wrap_vita2d_end_drawing();
     }
-    CHECK(host_creates == creates && host_strings == strings);
+    CHECK(host_creates == creates && host_strings == strings && host_checkpoints == checkpoints);
     __wrap_vita2d_start_drawing();
     __wrap_vita2d_end_drawing();
     CHECK(!visible && host_updates == 32);

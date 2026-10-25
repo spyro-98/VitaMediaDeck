@@ -6,6 +6,7 @@
 #include "ui/theme.h"
 #include "i18n/i18n.h"
 #include "common/text_log.h"
+#include "app_paths.h"
 #include <psp2/common_dialog.h>
 #include <psp2/sysmodule.h>
 #include <vita2d.h>
@@ -54,10 +55,18 @@ static void put32(void *p, unsigned at, uint32_t value) {
 static void putptr(void *p, unsigned at, const void *value) {
     memcpy((char *)p + at, &value, sizeof(value));
 }
+/* Initialization can abort inside firmware, before an error can be returned.
+ * Persist only these rare boundaries, respecting the disk diagnostics setting;
+ * no writes are added to frame, media or playback callbacks. */
+static void checkpoint(const char *stage) {
+    log_printf("native PAF: init %s", stage);
+    log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+}
 static void log_failure(int code) {
     error_code = code;
     state = -1;
     log_printf("native PAF: unavailable 0x%08X", (unsigned)code);
+    checkpoint("fallback");
 }
 unsigned ui_native_vita_utf16(const char *text, uint16_t *out, unsigned capacity) {
     unsigned used = 0;
@@ -137,7 +146,12 @@ int ui_native_vita_prepare(void) {
     if (sceSysmoduleIsLoadedInternal(SCE_SYSMODULE_INTERNAL_PAF) < 0) {
         struct {
             uint32_t heap, timeout, stack, dialog, heap_opt1, heap_opt2;
-        } init = {PAF_HEAP_BYTES, 60000, 0x40000, 1, 0, 0};
+        } init = {PAF_HEAP_BYTES, 60000, 0x40000, 0, 0, 0};
+        /* The module heap belongs in application memory. On retail firmware the
+         * entire dialog partition is 9 MiB: an 8 MiB global heap there starves
+         * Framework's first 1 MiB allocation (real 3.65 crash, 2026-10-25).
+         * Framework Mode_CommonDialog still selects the shared framebuffer. */
+        checkpoint("module; global heap in application memory");
         int result = -1;
         SceSysmoduleOpt opt = {0};
         opt.result = &result;
@@ -160,6 +174,13 @@ int ui_native_vita_prepare(void) {
         log_failure(-0x5042);
         return 0;
     } /* An unresolved weak constructor is a no-op. */
+    /* Bound the graphics heaps as well; do not inherit standalone-app defaults
+     * while sharing vita2d's framebuffer and the small dialog partition. */
+    put32(fw_params, 0, 256u * 1024u);       /* display list */
+    put32(fw_params, 4, 1024u * 1024u);      /* parameter buffer */
+    put32(fw_params, 8, 1);                  /* parameter buffer in LPDDR */
+    put32(fw_params, 16, 1024u * 1024u);     /* graphics main heap */
+    put32(fw_params, 20, 4u * 1024u * 1024u); /* graphics video heap */
     put32(fw_params, 12, 2u * 1024u * 1024u); /* surface pool */
     put32(fw_params, 24, 1024u * 1024u);      /* text surfaces */
     put32(fw_params, 104, 960);
@@ -175,11 +196,13 @@ int ui_native_vita_prepare(void) {
         log_failure(-0x5043);
         return 0;
     }
+    checkpoint("framework; bounded graphics heaps");
     vmd_paf_fw_create(framework, fw_params);
     if (vmd_paf_fw_instance() != framework) {
         log_failure(-0x5044);
         return 0;
     }
+    checkpoint("common resources");
     vmd_paf_fw_common(framework, NULL);
     vmd_paf_plugin_params(plugin_params);
     /* All parameter storage lives until process exit. Strings are allocated with
@@ -199,6 +222,7 @@ int ui_native_vita_prepare(void) {
     putptr(plugin_params, 56, vmd_native_vita_resource);
     put32(plugin_params, 60, sizeof(vmd_native_vita_resource));
     put32(plugin_params, 64, vt_i18n_current_language() == VT_LANG_IT ? 5 : 1);
+    checkpoint("plugin");
     vmd_paf_plugin_load(plugin_params, loaded, 1);
     if (!plugin) {
         log_failure(-0x5045);
@@ -207,6 +231,7 @@ int ui_native_vita_prepare(void) {
     uint32_t page_params[PAGE_PARAMS_BYTES / 4];
     vmd_paf_page_params(page_params);
     VtPafId menu = id("menu");
+    checkpoint("page");
     page = vmd_paf_page_open(plugin, &menu, page_params);
     if (!page) {
         log_failure(-0x5046);
@@ -226,6 +251,7 @@ int ui_native_vita_prepare(void) {
     }
     show(page, 0);
     state = 1;
+    checkpoint("ready");
     log_printf("native PAF: ready; Sony widgets; global heap=%u surface=%u text=%u", PAF_HEAP_BYTES,
                fw_params[3], fw_params[6]);
     return 1;

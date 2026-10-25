@@ -1,11 +1,14 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Current Home/L1/LTO update: [integrated dashboard and complete app LTO](home-dashboard-lto-2026-10-24.md).
+Current follow-up: [console PAF crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
+Previous Home/L1/LTO update: [integrated dashboard and complete app LTO](home-dashboard-lto-2026-10-24.md).
 
 Current app **1.4.1**, Vita package **01.05**, standard bubble **VitaMediaDeck**.
 This index covers all maintained Markdown documents in the app repository.
 Decoder packages have independent 2.0.0 ABI versions and their own runtime,
 performance, validation and change records.
+
+- [PAF console crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
 
 ## Start here
 
@@ -70,6 +73,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [docs/iptv-availability.md](iptv-availability.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/iptv-plan.md](iptv-plan.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/online-audio-preview.md](online-audio-preview.md) | Dated implementation/research snapshot; current integration linked above it |
+| [docs/paf-crash-home-2026-10-25.md](paf-crash-home-2026-10-25.md) | Actual console crash, correction and content-first Home acceptance |
 | [docs/personal-media-2026-10-23.md](personal-media-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/player-fixes-2026-10-23.md](player-fixes-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/quality-audit-2026-10-22.md](quality-audit-2026-10-22.md) | Dated implementation/research snapshot; current integration linked above it |

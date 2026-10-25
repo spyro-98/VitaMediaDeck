@@ -5,6 +5,10 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
+The first physical PAF test crashed; see the [console diagnosis and corrected
+Home](paf-crash-home-2026-10-25.md). The corrected build still needs physical
+acceptance. Host mocks did not establish firmware constructor compatibility.
+
 Run `bash tests/native_paf/run-host-tests.sh` for the actual adapter with mocked
 firmware boundaries. This checks command/state ownership, typed pool bounds,
 clipping, modal/media occlusion and failure handling; it does not render Sony
