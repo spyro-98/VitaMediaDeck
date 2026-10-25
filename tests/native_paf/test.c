@@ -12,7 +12,7 @@ static unsigned checks;
         assert(x);                                                                                 \
     } while (0)
 static int host_theme, host_scene, host_loaded, host_load_error, host_ctor_missing, host_foreign;
-static int host_checkpoints;
+static int host_checkpoints, host_saved_theme, host_persist_error, host_fail_geometry;
 static int host_loads, host_updates, host_creates, host_strings, host_fail_create, host_fail_text;
 static int host_plugin_missing, host_alloc_fail, host_real_common, host_bad_target;
 static void *host_instance, *host_allocated[32];
@@ -23,6 +23,12 @@ static int host_nodes_used;
 static char host_last_text[512];
 int ui_theme_id(void) {
     return host_theme;
+}
+void ui_theme_apply(int theme) { host_theme = theme; }
+int vt_preferences_set_interface_theme(int theme) {
+    CHECK(theme == VT_UI_THEME_LEGACY);
+    host_saved_theme = theme;
+    return host_persist_error;
 }
 int vt_i18n_current_language(void) {
     return VT_LANG_IT;
@@ -104,6 +110,10 @@ uint32_t vmd_paf_id_hash(VtPafId *self, const VtPafString *name) {
 void *vmd_paf_widget_create(void *self, void *parent, const char *type, const VtPafId *name,
                             const VtPafId *style) {
     CHECK(self == host_nodes && parent == host_nodes + 1 && type && name->hash && style->hash);
+    /* Reproduce the real case-sensitive factory, rather than accepting any
+     * arbitrary C++ type name as the old mock did. */
+    if (strcmp(type, "text") && strcmp(type, "button") && strcmp(type, "plane"))
+        return NULL;
     host_creates++;
     if (host_fail_create)
         return NULL;
@@ -123,7 +133,7 @@ int vmd_paf_widget_size(void *self, const float v[4], void *timer, int id, int o
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10004);
     CHECK(v[0] > 0 && v[1] > 0);
     host_width[(unsigned char *)self-host_nodes]=v[0];
-    return 0;
+    return host_fail_geometry ? -1 : 0;
 }
 int vmd_paf_widget_show(void *self, void *timer, int opt, float delay, void *cb) {
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
@@ -292,7 +302,8 @@ static void reset(void) {
     for (unsigned i = 0; i < host_alloc_count; i++)
         free(host_allocated[i]);
     host_alloc_count = 0;
-    host_checkpoints = 0;
+    host_checkpoints = host_persist_error = host_fail_geometry = 0;
+    host_saved_theme = VT_UI_THEME_LEGACY_VITA;
     host_theme = VT_UI_THEME_LEGACY_VITA;
     host_scene = host_loaded = host_load_error = host_ctor_missing = host_foreign = 0;
     host_loads = host_updates = host_creates = host_strings = host_fail_create = host_fail_text = 0;
@@ -305,7 +316,7 @@ static void reset(void) {
     memset(fw_params, 0, sizeof(fw_params));
     state = error_code = visible = updating = capturing = clip_enabled = overflow_logged = 0;
     command_count = previous_order_count = 0;
-    media_text = 0;
+    media_text = rendered_once = 0;
 }
 static void fixture(void) {
     CHECK(ui_native_vita_panel(12, 60, 420, 360, 0xff502010, 0));
@@ -342,7 +353,7 @@ int main(void) {
     __wrap_vita2d_end_drawing();
     CHECK(host_updates == 1 && host_creates == 3 && host_strings == 2 && visible);
     int creates = host_creates, strings = host_strings;
-    CHECK(host_checkpoints == 6);
+    CHECK(host_checkpoints == 8);
     int checkpoints = host_checkpoints;
     for (int tick = 0; tick < 30; tick++) {
         __wrap_vita2d_start_drawing();
@@ -435,7 +446,36 @@ int main(void) {
     __wrap_vita2d_start_drawing();
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(state == -1 && ui_native_vita_error());
+    CHECK(state == -1 && ui_native_vita_error() && !host_updates);
+    CHECK(host_theme == VT_UI_THEME_LEGACY && host_saved_theme == VT_UI_THEME_LEGACY);
+    int failed_creates = host_creates;
+    for (int i = 0; i < 3; i++) {
+        __wrap_vita2d_start_drawing();
+        __wrap_vita2d_end_drawing();
+    }
+    CHECK(!host_updates && host_creates == failed_creates);
+    host_theme = VT_UI_THEME_LEGACY_VITA;
+    CHECK(!ui_native_vita_prepare() && host_theme == VT_UI_THEME_LEGACY);
+    CHECK(!host_updates && host_creates == failed_creates);
+    reset();
+    host_fail_text = 1;
+    __wrap_vita2d_start_drawing();
+    fixture();
+    __wrap_vita2d_end_drawing();
+    CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+    reset();
+    host_fail_geometry = 1;
+    __wrap_vita2d_start_drawing();
+    fixture();
+    __wrap_vita2d_end_drawing();
+    CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+    reset();
+    host_fail_create = 1;
+    host_persist_error = -1;
+    __wrap_vita2d_start_drawing();
+    fixture();
+    __wrap_vita2d_end_drawing();
+    CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
     reset();
     host_bad_target = 1;
     __wrap_vita2d_start_drawing();

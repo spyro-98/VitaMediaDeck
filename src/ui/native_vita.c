@@ -45,7 +45,7 @@ static NativeCommand commands[NATIVE_COMMANDS];
 static unsigned command_count, previous_order_count;
 static void *previous_order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
                             UI_NATIVE_BUSY_LIMIT];
-static int media_text;
+static int media_text, rendered_once;
 static int state, error_code, visible, updating, capturing, clip_enabled, overflow_logged;
 static int clip_box[4] = {0, 0, 960, 544};
 static uint32_t fw_params[FW_PARAMS_BYTES / 4], plugin_params[PLUGIN_PARAMS_BYTES / 4];
@@ -66,7 +66,14 @@ static void log_failure(int code) {
     error_code = code;
     state = -1;
     log_printf("native PAF: unavailable 0x%08X", (unsigned)code);
-    checkpoint("fallback");
+    /* A failed native graph must never be submitted again. Restore the real
+     * Legacy renderer and persist it so the next launch does not retry PAF. */
+    visible = capturing = updating = 0;
+    ui_theme_apply(VT_UI_THEME_LEGACY);
+    int saved = vt_preferences_set_interface_theme(VT_UI_THEME_LEGACY);
+    if (saved < 0)
+        log_printf("native PAF: cannot persist Legacy recovery 0x%08X", (unsigned)saved);
+    checkpoint("fallback to Legacy");
 }
 unsigned ui_native_vita_utf16(const char *text, uint16_t *out, unsigned capacity) {
     unsigned used = 0;
@@ -137,8 +144,11 @@ static int place(void *widget, float x, float y, float w, float h) {
                : 0;
 }
 int ui_native_vita_prepare(void) {
-    if (state)
+    if (state) {
+        if (state < 0 && ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
+            log_failure(error_code);
         return state > 0;
+    }
     if (ui_theme_id() != VT_UI_THEME_LEGACY_VITA)
         return 0;
     /* Never initialize AppUtil/CommonDialog, replace a foreign PAF framework,
@@ -394,12 +404,21 @@ int ui_native_vita_focus(float x, float y, float w, float h) {
 int ui_native_vita_busy(float x, float y, float size) {
     return enqueue(NATIVE_BUSY, x - size * .5f, y - size * .5f, size, size, 0xffffffff, 0, "", 0);
 }
+static int widget_failure(const char *operation, int kind, unsigned slot, int rc) {
+    /* Never log media labels, source URLs or credentials. The operation and
+     * typed slot identify the firmware boundary that failed. */
+    log_printf("native PAF: widget failure kind=%d slot=%u operation=%s rc=0x%08X", kind,
+               slot, operation, (unsigned)rc);
+    return -1;
+}
 static int present(void) {
     unsigned at[NATIVE_KINDS] = {0}, order_count = 0;
     void *order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
                 UI_NATIVE_BUSY_LIMIT];
     int any = 0;
-    const char *types[] = {"Text", "Button", "Plane", "BusyIndicator"};
+    /* CreateWidget consumes case-sensitive resource factory keys, not C++ class
+     * names. The shipped firmware resource/sample uses these lowercase tags. */
+    const char *types[] = {"text", "button", "plane", "busyindicator"};
     const char *styles[] = {"_common_default_style_text", "_common_default_style_button",
                             "vmd_white", "_common_style_busyindicator_8"};
     for (unsigned i = 0; i < command_count; i++) {
@@ -417,7 +436,7 @@ static int present(void) {
             } else
                 slot->widget = create(types[c->kind], name, styles[c->kind]);
             if (!slot->widget)
-                return -1;
+                return widget_failure("create", c->kind, at[c->kind], -1);
         }
         void *w = slot->widget;
         NativeCommand *old = &slot->prior;
@@ -427,9 +446,10 @@ static int present(void) {
              * Logical size/visible position below preserve its original text
              * layout while scrolling clips through a header or a later modal. */
             const float *v = c->clip;
-            if ((c->kind == NATIVE_TEXT ? place(w, v[0], v[1], v[2], v[3])
-                                        : place(w, c->x, c->y, c->w, c->h)) < 0)
-                return -1;
+            int rc = c->kind == NATIVE_TEXT ? place(w, v[0], v[1], v[2], v[3])
+                                            : place(w, c->x, c->y, c->w, c->h);
+            if (rc < 0)
+                return widget_failure("geometry", c->kind, at[c->kind], rc);
         }
         int text_changed = fresh || strcmp(old->label, c->label);
         if (c->kind == NATIVE_TEXT || c->kind == NATIVE_BUTTON) {
@@ -440,18 +460,18 @@ static int present(void) {
                 int rc = c->kind == NATIVE_BUTTON ? vmd_paf_button_text(w, &value, 0)
                                                   : vmd_paf_widget_text(w, &value, 0);
                 if (rc < 0)
-                    return -1;
+                    return widget_failure("string", c->kind, at[c->kind], rc);
             }
             if (c->kind == NATIVE_TEXT) {
                 if (fresh || old->size != c->size || text_changed)
                     if (vmd_paf_text_size(w, 1, 0, count, (float)c->size) < 0)
-                        return -1;
+                        return widget_failure("text-size", c->kind, at[c->kind], -1);
                 if (fresh || old->color != c->color || old->alpha != c->alpha || text_changed) {
                     float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                                       ((c->color >> 16) & 255) / 255.f,
                                       ((c->color >> 24) & 255) / 255.f * c->alpha};
                     if (vmd_paf_text_color(w, 2, 0, count, color) < 0)
-                        return -1;
+                        return widget_failure("text-color", c->kind, at[c->kind], -1);
                 }
                 if (fresh) {
                     if (vmd_paf_text_layout_int(w, 0, 0) < 0 ||
@@ -460,12 +480,12 @@ static int present(void) {
                         vmd_paf_text_layout_bool(w, 12, 0) < 0 ||
                         vmd_paf_text_layout_bool(w, 14, 1) < 0 ||
                         vmd_paf_text_layout_bool(w, 10, 1) < 0)
-                        return -1;
+                        return widget_failure("text-layout", c->kind, at[c->kind], -1);
                 }
                 if (fresh || old->w != c->w || old->h != c->h) {
                     float logical[2] = {c->w, c->h};
                     if (vmd_paf_text_layout_vec(w, 5, logical) < 0)
-                        return -1;
+                        return widget_failure("text-size-layout", c->kind, at[c->kind], -1);
                 }
                 if (fresh || memcmp(old->clip, c->clip, sizeof(c->clip)) || old->x != c->x ||
                     old->y != c->y) {
@@ -473,7 +493,7 @@ static int present(void) {
                           extent[2] = {c->clip[2], c->clip[3]};
                     if (vmd_paf_text_layout_vec(w, 6, origin) < 0 ||
                         vmd_paf_text_layout_vec(w, 7, extent) < 0)
-                        return -1;
+                        return widget_failure("text-visible-layout", c->kind, at[c->kind], -1);
                 }
             } else if (fresh || old->selected != c->selected)
                 vmd_paf_button_state(w, c->selected ? 2 : 0);
@@ -482,7 +502,7 @@ static int present(void) {
             float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                               ((c->color >> 16) & 255) / 255.f, ((c->color >> 24) & 255) / 255.f};
             if (vmd_paf_widget_color(w, color, NULL, 0x10001, 0, 0, NULL, NULL) < 0)
-                return -1;
+                return widget_failure("panel-color", c->kind, at[c->kind], -1);
         }
         order[order_count++] = w;
         if (!slot->shown) {
@@ -562,16 +582,25 @@ void __wrap_vita2d_end_drawing(void) {
         return;
     int changed = present();
     if (changed < 0) {
-        show(page, 0);
+        /* The console log showed failure followed by a crash in ScePaf.
+         * Do not Hide, flush or Update this partially constructed graph. The
+         * next vita2d frame clears the buffer and draws the Legacy interface. */
         log_failure(-0x5048);
-        changed = 1;
+        return;
     }
     if (changed) {
+        int first = !rendered_once;
+        if (first)
+            checkpoint("first-frame render");
         updating = 1;
         int rc = vita2d_common_dialog_update();
         updating = 0;
         if (rc < 0)
             log_failure(rc);
+        else if (first) {
+            rendered_once = 1;
+            checkpoint("first-frame complete");
+        }
     }
 }
 

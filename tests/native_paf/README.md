@@ -21,3 +21,10 @@ initialization-only disk checkpoints. Firmware allocation/rendering needs a Vita
 
 Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/native_paf/test_core_reader.py` for
 synthetic raw/gzip/core-validation tests of the read-only dump helper.
+
+The second console regression checks case-sensitive lowercase factory keys, zero
+native updates after a presentation failure, persisted Legacy recovery, repeated
+frame/re-selection safety, and first-frame-only checkpoint writes. See the
+[second PAF crash report](../../docs/paf-widget-recovery-2026-10-25.md). The dump
+reader requires explicit `--allow-partial` for unfinished cores and labels missing
+segments rather than interpreting absent memory as zero.

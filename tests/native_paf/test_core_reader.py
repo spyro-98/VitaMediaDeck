@@ -46,6 +46,22 @@ class CoreReaderTests(unittest.TestCase):
                 path.write_bytes(data)
                 with self.assertRaises(ValueError):
                     reader.read_core(path)
+    def test_explicit_partial_opt_in(self):
+        raw = core_fixture()
+        header = bytearray(raw[:52])
+        struct.pack_into("<HH", header, 42, 32, 2)
+        note = raw[84:]
+        first = struct.pack("<8I", 4, 116, 0, 0, len(note), 0, 0, 4)
+        missing = struct.pack("<8I", 1, 116 + len(note), 0x81000000, 0, 4096, 4096, 0, 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "unfinished.psp2dmp.tmp"
+            path.write_bytes(gzip.compress(bytes(header) + first + missing + note))
+            with self.assertRaises(ValueError):
+                reader.analyze(path)
+            result = reader.analyze(path, allow_partial=True)
+            self.assertTrue(result["partial_core"])
+            self.assertEqual(result["missing_segments"], 1)
+            self.assertEqual(result["threads"][0]["name"], "sample")
     def test_invalid_architecture(self):
         with tempfile.TemporaryDirectory() as tmp:
             raw = bytearray(core_fixture())
