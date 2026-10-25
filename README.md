@@ -21,8 +21,9 @@ synchronization, and rendering run directly on the console.
 
 **Home** is now one integrated dashboard: unfinished media takes priority,
 saved connections open directly, and favourites, recent activity and access to
-sources/history stay visible together. Components use different sizes and
-presentations in each theme. D-pad/left stick moves between them; **R1/Square**
+sources/history stay visible together. The primary cover, compact server rows, favourite shelf and
+activity rows follow each theme; empty collections yield their space to media.
+Indexed local files appear even before anything has been played. D-pad/left stick moves between them; **R1/Square**
 cycles items within a component, and **Triangle** opens global search. Full
 collections are deliberate drill-downs rather than interchangeable Home lists.
 
@@ -62,6 +63,11 @@ of the eight themes. This work and the
 [utility-screen theme coverage](docs/theme-coverage-2026-10-23.md) are integrated
 in standard 1.4.1. Console animation/performance acceptance remains distinct
 from host rendering checks.
+
+The first physical Legacy Vita / PAF test exposed an initialization-memory crash.
+The corrected build moves PAF's global heap out of the small Sony dialog partition
+and bounds graphics allocations; native firmware acceptance remains pending. See
+the [actual console diagnosis, Home changes and retest checklist](docs/paf-crash-home-2026-10-25.md).
 
 ## Current version: 1.4.1
 

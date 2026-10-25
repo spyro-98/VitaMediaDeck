@@ -134,8 +134,11 @@ static int local_item(const VtLocalMediaItem *item, void *ctx) {
             vt_library_import(&v, p, d, order);
         }
     }
-    if (job->query[0] || order)
+    if (job->query[0] || order || job->local_matches < 24) {
         publish(job, &v);
+        if (!job->query[0] && !order)
+            job->local_matches++;
+    }
     if (job->query[0] && ++job->local_matches >= 24)
         return 0;
     return 1;
@@ -565,6 +568,29 @@ int vt_library_search_home_favourites(VtLibraryItem *out, int capacity, VtLibrar
     memcpy(out, home_favourites, (size_t)count * sizeof(*out));
     pthread_mutex_unlock(&search_mutex);
     return count;
+}
+int vt_library_search_home_media(VtLibraryResult *out, int capacity) {
+    if (!out || capacity <= 0)
+        return 0;
+    int written = 0;
+    pthread_mutex_lock(&search_mutex);
+    /* One bounded scan, then a round-robin quota. A large local collection
+     * cannot hide slower providers. No allocation or sort on the UI thread. */
+    int indices[VT_LIBRARY_PROVIDER_COUNT][24], counts[VT_LIBRARY_PROVIDER_COUNT] = {0};
+    for (int i = 0; i < snapshot_count; i++) {
+        const VtLibraryItem *v = &snapshot_results[i].item;
+        int provider = v->provider;
+        if (provider >= 0 && provider < VT_LIBRARY_PROVIDER_COUNT &&
+            v->kind < VT_LIBRARY_FOLDER && counts[provider] < 24)
+            indices[provider][counts[provider]++] = i;
+    }
+    for (int rank = 0; rank < 24 && written < capacity; rank++)
+        for (int provider = 0; provider < VT_LIBRARY_PROVIDER_COUNT && written < capacity;
+             provider++)
+            if (rank < counts[provider])
+                out[written++] = snapshot_results[indices[provider][rank]];
+    pthread_mutex_unlock(&search_mutex);
+    return written;
 }
 void vt_library_search_cover(const VtLibraryItem *v) {
     if (!v || !v->artwork_url[0] || v->artwork[0])

@@ -22,7 +22,8 @@ sidebar adds **Active player** above Home; selecting it restores the full player
 ## Integrated Home and global search
 
 The **Home** tab presents unfinished media, saved connections, favourites and
-recent activity together. The larger resume widget has priority; sources/history
+recent activity together. The larger media cover prioritizes resume, or cached library media when no
+resume exists. Empty collections reclaim their space; sources/history
 are secondary actions. No R1 cycle replaces the Home with another list.
 
 | Control | Home dashboard |
@@ -32,8 +33,9 @@ are secondary actions. No R1 cycle replaces the Home with another list.
 | R1 / Square | Next / previous item within that component, keeping Home visible. |
 | Triangle | Search across providers. |
 | Circle | Focus the category tabs; Ghost's right stick keeps controlling its wheel. |
-| Touch | Open a component; individual favourite cover previews open that item. |
+| Touch | Open a component; each visible server/activity row and favourite cover opens that item. |
 
+On a completely empty Home, the primary action opens local files directly.
 Explore sources and History open full collections. In those detail pages and
 search, **R1 returns Home**; Circle goes up a folder/feed and then returns Home.
 Square filters providers only in global search. Search keeps cached results and

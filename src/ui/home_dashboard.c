@@ -82,6 +82,74 @@ UiDashboardLayout ui_dashboard_layout(int theme, int bottom) {
     l.cards[5] = (UiThemeRect){x + (w + gap) / 2, limit - actions, (w - gap) / 2, actions};
     return l;
 }
+/* Reclaim empty collections instead of presenting four empty category boxes.
+ * Role identities remain stable for controller focus and accessibility. */
+UiDashboardLayout ui_dashboard_compose(int theme, int bottom, const int counts[4]) {
+    UiDashboardLayout l = ui_dashboard_layout(theme, bottom);
+    if (!counts)
+        return l;
+    int gap = theme == VT_UI_THEME_GHOST_MESH ? 6 : 8;
+    if (!counts[1] && !counts[2] && !counts[3]) {
+        l.cards[0] = (UiThemeRect){l.content.x, l.content.y, l.content.w,
+                                 l.cards[4].y - gap - l.content.y};
+        for (int i = 1; i < 4; i++)
+            l.cards[i].h = 0;
+        return l;
+    }
+    if (theme == VT_UI_THEME_GHOST_MESH) {
+        if (!counts[1] && !counts[2]) {
+            l.cards[0].h = l.cards[1].y + l.cards[1].h - l.cards[0].y;
+            l.cards[1].h = l.cards[2].h = 0;
+        } else {
+            if (!counts[1]) {
+                l.cards[2].x = l.content.x;
+                l.cards[2].w = l.content.w;
+                l.cards[1].h = 0;
+            }
+            if (!counts[2]) {
+                l.cards[1].w = l.content.w;
+                l.cards[2].h = 0;
+            }
+            if (!counts[3])
+                for (int i = 1; i <= 2; i++)
+                    if (l.cards[i].h)
+                        l.cards[i].h = l.cards[3].y + l.cards[3].h - l.cards[i].y;
+        }
+        if (!counts[3]) l.cards[3].h = 0;
+        return l;
+    }
+    /* Signal's full composition deliberately staggers its lower columns.
+     * Align column edges before vertically merging an absent collection. */
+    if (theme == VT_UI_THEME_SIGNAL && (!counts[1] || !counts[2] || !counts[3])) {
+        l.cards[3].w = l.cards[0].w;
+        l.cards[2].x = l.cards[1].x;
+        l.cards[2].w = l.cards[1].w;
+    }
+    int left_lower = theme == VT_UI_THEME_SIGNAL || theme == VT_UI_THEME_MOSAIC ? 3 : 2;
+    int right_lower = left_lower == 3 ? 2 : 3;
+    if (!counts[left_lower]) {
+        l.cards[0].h = l.cards[left_lower].y + l.cards[left_lower].h - l.cards[0].y;
+        l.cards[left_lower].h = 0;
+    }
+    if (!counts[1] && counts[right_lower]) {
+        l.cards[right_lower].h += l.cards[right_lower].y - l.cards[1].y;
+        l.cards[right_lower].y = l.cards[1].y;
+        l.cards[1].h = 0;
+    } else if (!counts[right_lower]) {
+        l.cards[1].h = l.cards[right_lower].y + l.cards[right_lower].h - l.cards[1].y;
+        l.cards[right_lower].h = 0;
+    }
+    if (!counts[1] && !counts[right_lower]) {
+        l.cards[0].x = l.content.x;
+        l.cards[0].w = l.content.w;
+        if (l.cards[left_lower].h) {
+            l.cards[left_lower].x = l.content.x;
+            l.cards[left_lower].w = l.content.w;
+        }
+        l.cards[1].h = 0;
+    }
+    return l;
+}
 int ui_dashboard_move(const UiDashboardLayout *l, int selected, unsigned nav) {
     if (!l || selected < 0 || selected >= UI_DASH_COUNT)
         return 0;
@@ -89,7 +157,7 @@ int ui_dashboard_move(const UiDashboardLayout *l, int selected, unsigned nav) {
     float x = from.x + from.w * .5f, y = from.y + from.h * .5f, best = 1e9f;
     int result = selected;
     for (int i = 0; i < UI_DASH_COUNT; i++)
-        if (i != selected) {
+        if (i != selected && l->cards[i].h > 0) {
             UiThemeRect to = l->cards[i];
             float dx = to.x + to.w * .5f - x, dy = to.y + to.h * .5f - y;
             int vertical = !!(nav & (SCE_CTRL_UP | SCE_CTRL_DOWN));

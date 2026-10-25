@@ -266,7 +266,7 @@ enum { LIBRARY_HOME = 4, LIBRARY_OPEN_DETAIL = -10, LIBRARY_RETURN_HOME = -11 };
 typedef struct {
     VtLibraryResult resume[DASH_CONTINUE_MAX], recent[DASH_RECENT_MAX];
     VtLibraryItem favourites[VT_LIBRARY_HOME_FAVOURITES], connections[VT_NETWORK_MAX_SOURCES];
-    int count[4];
+    int count[4], resuming, discovering;
 } DashboardData;
 static int dash_selected, dash_offset[4];
 static char dash_anchor[4][16];
@@ -307,6 +307,8 @@ static void dashboard_refresh(DashboardData *d, VtLibrarySearchStatus *status, i
     int role = dash_selected;
     int had_prior = keep_focus && role < 4 && dashboard_item(d, role, dash_offset[role], &prior);
     d->count[0] = vt_library_query("", VT_LIBRARY_CONTINUE, d->resume, DASH_CONTINUE_MAX);
+    d->resuming = d->count[0] > 0;
+    d->discovering = 0;
     int recent = vt_library_query("", VT_LIBRARY_RECENT, d->recent, DASH_RECENT_MAX), used = 0;
     for (int i = 0; i < recent; i++) {
         int duplicate = 0;
@@ -319,6 +321,27 @@ static void dashboard_refresh(DashboardData *d, VtLibrarySearchStatus *status, i
     d->count[3] = used;
     d->count[2] =
         vt_library_search_home_favourites(d->favourites, VT_LIBRARY_HOME_FAVOURITES, status);
+    /* A new install or an empty resume queue must still show real media.
+     * Use cached worker metadata, never a synchronous provider fetch. */
+    VtLibraryResult picks[DASH_RECENT_MAX];
+    int picks_count = vt_library_search_home_media(picks, DASH_RECENT_MAX);
+    if (!d->count[0]) {
+        for (int i = 0; i < recent && d->count[0] < DASH_CONTINUE_MAX; i++)
+            d->resume[d->count[0]++] = d->recent[i];
+        for (int i = 0; i < picks_count && d->count[0] < DASH_CONTINUE_MAX; i++) {
+            int duplicate = 0;
+            for (int k = 0; k < d->count[0]; k++)
+                duplicate |= !strcmp(picks[i].item.id, d->resume[k].item.id);
+            if (!duplicate)
+                d->resume[d->count[0]++] = picks[i];
+        }
+    }
+    if (!d->count[3]) {
+        d->discovering = 1;
+        for (int i = 0; i < picks_count && d->count[3] < DASH_RECENT_MAX; i++)
+            if (!d->count[0] || strcmp(picks[i].item.id, d->resume[0].item.id))
+                d->recent[d->count[3]++] = picks[i];
+    }
     if (had_prior) {
         int found = 0;
         for (int i = 0; i < d->count[role]; i++) {
@@ -376,108 +399,171 @@ static vita2d_texture *dashboard_cover(LibraryArtworkSources *sources, const VtL
         return remote_artwork(sources, item, priority);
     return NULL;
 }
+static void dashboard_backdrop(UiThemeRect r, vita2d_texture *art) {
+    vita2d_draw_rectangle(r.x, r.y, r.w, r.h, VT_THEME_SURFACE_RAISED);
+    if (art) {
+        float w = vita2d_texture_get_width(art), h = vita2d_texture_get_height(art);
+        if (w > 0 && h > 0) {
+            float scale = fmaxf(r.w / w, r.h / h);
+            vita2d_set_clip_rectangle(r.x, r.y, r.x + r.w, r.y + r.h);
+            vita2d_enable_clipping();
+            vita2d_draw_texture_scale(art, r.x + (r.w - w * scale) * .5f,
+                                     r.y + (r.h - h * scale) * .5f, scale, scale);
+            vita2d_disable_clipping();
+        }
+    } else {
+        /* Original vector media motif; useful even before artwork is cached. */
+        for (int i = 0; i < 12; i++) {
+            int h = (int)(r.h * (.15f + (i % 5) * .08f));
+            vita2d_draw_rectangle(r.x + r.w * .5f + i * r.w / 26, r.y + (r.h - h) / 2,
+                                  r.w / 40, h, VT_THEME_COLD_DIM);
+        }
+    }
+    /* Bounded, static contrast veil: 18 quads, no offscreen texture/blur. */
+    for (int i = 0; i < 18; i++) {
+        int y = r.y + r.h * i / 18, next = r.y + r.h * (i + 1) / 18;
+        unsigned alpha = 50 + (unsigned)(i * 11);
+        vita2d_draw_rectangle(r.x, y, r.w, next - y, RGBA8(0, 0, 0, alpha));
+    }
+}
+static int dashboard_favourite_size(UiThemeRect r, int count) {
+    int previews = count < 3 ? count : 3;
+    int size = r.h >= 150 ? r.h - 78 : r.h - 42;
+    int max = r.h >= 150 ? 96 : 64;
+    if (size > max) size = max;
+    if (previews && size > (r.w - 20) / previews - 12)
+        size = (r.w - 20) / previews - 12;
+    return size;
+}
 static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, int available,
                            int count, int offset, int selected, LibraryArtworkSources *sources,
                            const DashboardData *data) {
-    int theme = ui_theme_id(), action = role >= 4, hero = role == UI_DASH_CONTINUE;
-    ui_theme_scene_card(UI_SCENE_HOME, r, selected, role);
-    ui_theme_fx_surface(r.x + 2, r.y + 2, r.w - 4, r.h - 4,
-                        selected ? VT_THEME_SURFACE_RAISED : VT_THEME_SURFACE, selected);
-    if (action) {
-        ui_text_line(r.x + 12, r.y + r.h / 2 + 6, r.w - 30, dashboard_label(role),
-                     selected ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_TEXT, UI_FONT_SMALL);
+    if (r.h <= 0)
+        return;
+    const char *heading = dashboard_label(role);
+    if (role == UI_DASH_CONTINUE && !data->resuming)
+        heading = available ? tr("From your library", "Dalla tua libreria")
+                            : tr("Make yourself at home", "La tua libreria inizia qui");
+    if (role == UI_DASH_RECENT && data->discovering)
+        heading = tr("Explore your library", "Scopri la tua libreria");
+    if (role >= 4) {
+        ui_action_button(r.x, r.y, r.w, r.h, VT_THEME_SURFACE, "", heading, selected);
         return;
     }
+    if (role == UI_DASH_CONTINUE) {
+        vita2d_texture *art = available ? dashboard_cover(sources, &v->item, 100) : NULL;
+        ui_theme_scene_card(UI_SCENE_HOME, r, selected, role);
+        UiThemeRect image = {r.x + 4, r.y + 4, r.w - 8, r.h - 8};
+        dashboard_backdrop(image, art);
+        int compact = r.h < 125;
+        ui_text_line(r.x + 14, r.y + 22, r.w - 28, heading,
+                     RGBA8(208, 233, 238, 255), UI_FONT_SMALL);
+        const char *title = available ? v->item.title
+                                      : tr("What would you like to play?", "Cosa vuoi guardare o ascoltare?");
+        int title_y = compact ? r.y + 47 : r.y + r.h - 83;
+        ui_text_line(r.x + 14, title_y, r.w - 28, title, RGBA8(255, 255, 255, 255),
+                     r.w > 440 && !compact ? UI_FONT_DISPLAY : UI_FONT_BODY);
+        if (!compact) {
+            char detail[512];
+            if (available)
+                describe(v, 0, detail, sizeof(detail));
+            else
+                snprintf(detail, sizeof(detail), "%s",
+                         tr("Open local files or connect a server. Your media will appear here.",
+                            "Apri i file locali o collega un server: qui troverai i tuoi contenuti."));
+            ui_text_line(r.x + 14, title_y + 23, r.w - 28, detail,
+                         RGBA8(213, 223, 232, 255), UI_FONT_SMALL);
+        }
+        int button_y = r.y + r.h - 39;
+        const char *action = !available ? tr("Local files", "File locali")
+                             : data->resuming ? tr("Continue", "Riprendi")
+                                              : tr("Open", "Apri");
+        ui_action_button(r.x + 12, button_y, r.w > 320 ? 160 : 130, 28, VT_THEME_SURFACE, "X", action, selected);
+        if (count > 1) {
+            char more[64];
+            snprintf(more, sizeof(more), "%d / %d  ·  R1", offset + 1, count);
+            ui_text_line(r.x + r.w - 130, r.y + r.h - 20, 116, more,
+                         RGBA8(232, 240, 246, 255), UI_FONT_SMALL);
+        }
+        if (available && data->resuming && v->duration_ms && v->position_ms) {
+            float fraction = fminf(1, (float)v->position_ms / (float)v->duration_ms);
+            vita2d_draw_rectangle(r.x, r.y + r.h - 3, r.w, 3, VT_THEME_BORDER_DIM);
+            vita2d_draw_rectangle(r.x, r.y + r.h - 3, r.w * fraction, 3, VT_THEME_SIGNAL_BRIGHT);
+        }
+        return;
+    }
+    /* Collections have different visual roles: server rows, cover shelf and
+     * activity rows. No repeated giant placeholders for empty categories. */
     int compact = r.h < 62;
-    char heading[128];
-    snprintf(heading, sizeof(heading), "%s",
-             role == UI_DASH_CONNECTIONS && r.w < 260 ? tr("Connections", "Connessioni")
-                                                      : dashboard_label(role));
-    if (!compact)
-        ui_text_line(r.x + 12, r.y + 21, r.w - 24 - (count > 1 ? 62 : 0), heading,
-                     VT_THEME_COLD_LIGHT, UI_FONT_SMALL);
-    const char *empty =
-        role == UI_DASH_CONTINUE ? tr("Find something to play", "Scegli cosa guardare o ascoltare")
-        : role == UI_DASH_CONNECTIONS ? tr("Connect your library", "Collega la tua libreria")
-        : role == UI_DASH_FAVOURITES
-            ? tr("Save your favourite media", "Salva i tuoi contenuti preferiti")
-            : tr("Your recent media appears here", "Qui troverai gli ultimi contenuti");
-    int art_size = compact ? r.h - 12 : r.h - 40;
-    if (art_size > 130)
-        art_size = 130;
-    if (art_size > r.w / 3)
-        art_size = r.w / 3;
-    if (art_size < 26)
-        art_size = 26;
-    int ay = compact ? r.y + 6 : r.y + 30, tx = r.x + art_size + 24, tw = r.w - art_size - 36;
-    vita2d_texture *art = available && role != UI_DASH_CONNECTIONS
-                              ? dashboard_cover(sources, &v->item, selected ? 100 : 40)
-                              : NULL;
-    int film = role == UI_DASH_FAVOURITES && available && r.w >= 300 && r.h >= 66;
-    if (film) {
-        art_size = r.h - 42;
-        if (art_size > 64)
-            art_size = 64;
+    ui_text_line(r.x + 8, r.y + 20, compact ? 68 : r.w - 16,
+                 compact ? tr("Library", "Libreria") : heading, VT_THEME_COLD_LIGHT, UI_FONT_SMALL);
+    if (role == UI_DASH_FAVOURITES && available && r.w >= 300 && r.h >= 66) {
+        int size = dashboard_favourite_size(r, count);
         int previews = count < 3 ? count : 3;
+        int cell = (r.w - 20) / previews;
         for (int k = 0; k < previews; k++) {
             const VtLibraryItem *item = &data->favourites[(offset + k) % count];
             vita2d_texture *cover = dashboard_cover(sources, item, selected ? 90 : 40);
-            ui_artwork_tile(r.x + 10 + k * (art_size + 8), ay, art_size, cover,
-                            media_label(item->kind));
+            int x = r.x + 10 + cell * k;
+            ui_artwork_tile(x, r.y + 30, size, cover, media_label(item->kind));
             if (!k)
-                vita2d_draw_rectangle(r.x + 10, ay + art_size + 2, art_size, 2,
-                                      VT_THEME_SIGNAL_BRIGHT);
+                vita2d_draw_rectangle(x, r.y + 30 + size + 2, size, 2,
+                                      selected ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_COLD_DIM);
+            if (r.h >= 150) {
+                ui_text_line(x, r.y + 30 + size + 19, cell - 8, item->title,
+                             VT_THEME_TEXT, UI_FONT_SMALL);
+                ui_text_line(x, r.y + 30 + size + 39, cell - 8,
+                             vt_library_provider_name(item->provider), VT_THEME_TEXT_MUTED,
+                             UI_FONT_SMALL);
+            } else if (cell > size + 70) {
+                ui_text_line(x + size + 8, r.y + 49, cell - size - 14, item->title,
+                             VT_THEME_TEXT, UI_FONT_SMALL);
+                ui_text_line(x + size + 8, r.y + 69, cell - size - 14,
+                             vt_library_provider_name(item->provider), VT_THEME_TEXT_MUTED,
+                             UI_FONT_SMALL);
+            }
         }
-        tx = r.x + previews * (art_size + 8) + 18;
-        tw = r.x + r.w - tx - 12;
-    } else {
-        if (compact && role == UI_DASH_RECENT) {
-            ui_text_line(r.x + 10, r.y + 20, 68, tr("Recent", "Recenti"), VT_THEME_COLD_LIGHT,
-                         UI_FONT_SMALL);
-            ui_artwork_tile(r.x + 82, ay, art_size, art,
-                            available ? media_label(v->item.kind) : "+");
-            tx = r.x + art_size + 94;
-            tw = r.x + r.w - tx - 12;
-        } else
-            ui_artwork_tile(r.x + 10, ay, art_size, art,
-                            role == UI_DASH_CONNECTIONS ? "NET"
-                            : available                 ? media_label(v->item.kind)
-                                                        : "+");
+        return;
     }
-    unsigned title_size = hero && r.w > 440 && r.h > 112 ? UI_FONT_BODY : UI_FONT_SMALL;
-    int title_y = compact ? r.y + 21 : r.y + 49;
-    ui_text_line(tx, title_y, tw, available ? v->item.title : empty, VT_THEME_TEXT, title_size);
-    if (available) {
-        char line[512];
-        describe(v, 0, line, sizeof(line));
-        if (role == UI_DASH_CONNECTIONS)
-            snprintf(line, sizeof(line), "%s", vt_library_provider_name(v->item.provider));
-        if (compact || r.h >= 76)
-            ui_text_line(tx, title_y + (compact ? 18 : 24), tw, line, VT_THEME_TEXT_MUTED,
-                         UI_FONT_SMALL);
-        if (hero && v->duration_ms && v->position_ms) {
-            float fraction = fminf(1, (float)v->position_ms / (float)v->duration_ms);
-            vita2d_draw_rectangle(tx, r.y + r.h - 14, tw, 3, VT_THEME_BORDER_DIM);
-            vita2d_draw_rectangle(tx, r.y + r.h - 14, tw * fraction, 3, VT_THEME_SIGNAL_BRIGHT);
-        }
-    } else if (r.h > 90) {
-        ui_text_line(tx, title_y + 25, tw,
-                     role == UI_DASH_CONTINUE
-                         ? tr("Triangle: search", "Triangolo: cerca")
-                         : tr("Cross: explore sources", "Croce: esplora le sorgenti"),
+    if (!available) {
+        ui_text_line(r.x + 8, r.y + (compact ? 40 : 49), r.w - 16,
+                     role == UI_DASH_CONNECTIONS ? tr("Add a server", "Collega un server")
+                     : role == UI_DASH_FAVOURITES ? tr("Explore and save favourites", "Esplora e salva preferiti")
+                                                  : tr("Open playback history", "Apri la cronologia"),
                      VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
+        return;
     }
-    if (count > 1 && !compact) {
-        char counter[32];
-        snprintf(counter, sizeof(counter), "%d / %d", offset + 1, count);
-        ui_text_line(r.x + r.w - 68, r.y + 21, 56, counter, VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
-    }
-    if (theme == VT_UI_THEME_APERTURE) {
-        for (int x = r.x + 8; x < r.x + r.w - 8; x += 24)
-            vita2d_draw_rectangle(x, r.y + r.h - 4, 10, 2, VT_THEME_COLD_DIM);
-    } else if (theme == VT_UI_THEME_DECK_90 && hero) {
-        for (int y = r.y + 28; y < r.y + r.h - 6; y += 6)
-            vita2d_draw_rectangle(r.x + 4, y, r.w - 8, 1, RGBA8(0, 0, 0, 12));
+    int rows = (r.h - 27) / 48;
+    if (rows < 1)
+        rows = 1;
+    if (rows > 3)
+        rows = 3;
+    if (rows > count)
+        rows = count;
+    for (int k = 0; k < rows; k++) {
+        VtLibraryResult item;
+        dashboard_item(data, role, offset + k, &item);
+        int y = compact ? r.y + 4 : r.y + 28 + k * 48;
+        int size = compact ? r.h - 8 : 40;
+        if (size > 40)
+            size = 40;
+        int x = r.x + 8, tx = x + size + 10, tw = r.w - size - 26;
+        if (compact) {
+            tx = x + 82 + size;
+            tw = r.x + r.w - tx - 8;
+            x += 76;
+        }
+        if (selected && !k)
+            vita2d_draw_rectangle(r.x + 3, y, 2, size, VT_THEME_SIGNAL_BRIGHT);
+        if (role == UI_DASH_CONNECTIONS)
+            ui_theme_service_icon(x, y, size, size,
+                                   item.item.provider == VT_LIBRARY_IMMICH ? 2 : 1);
+        else
+            ui_artwork_tile(x, y, size, dashboard_cover(sources, &item.item, selected ? 90 : 40),
+                             media_label(item.item.kind));
+        ui_text_line(tx, y + 16, tw, item.item.title, VT_THEME_TEXT, UI_FONT_SMALL);
+        ui_text_line(tx, y + 35, tw, vt_library_provider_name(item.item.provider),
+                     VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
     }
 }
 static int dashboard_search(void) {
@@ -537,7 +623,9 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         }
         int bottom =
             ui_mini_player_top() < UI_CONTENT_BOTTOM ? ui_mini_player_top() : UI_CONTENT_BOTTOM;
-        UiDashboardLayout layout = ui_dashboard_layout(ui_theme_id(), bottom);
+        UiDashboardLayout layout = ui_dashboard_compose(ui_theme_id(), bottom, data->count);
+        if (layout.cards[dash_selected].h <= 0)
+            dash_selected = UI_DASH_CONTINUE;
         sceCtrlPeekBufferPositive(0, &ctrl, 1);
         unsigned pressed = ctrl.buttons & ~previous.buttons;
         previous = ctrl;
@@ -623,19 +711,31 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         if (flags & UI_TOUCH_EVENT_TAP) {
             for (int i = 0; i < UI_DASH_COUNT; i++) {
                 UiThemeRect r = layout.cards[i];
-                if (ui_touch_hit_rect(touch.x, touch.y, r.x, r.y, r.w, r.h)) {
+                if (r.h > 0 && ui_touch_hit_rect(touch.x, touch.y, r.x, r.y, r.w, r.h)) {
                     dash_selected = i;
                     focus_sections = 0;
                     if (i == UI_DASH_FAVOURITES && data->count[i] && r.w >= 300 && r.h >= 66) {
-                        int size = r.h - 42;
-                        if (size > 64)
-                            size = 64;
-                        int k = (touch.x - r.x - 10) / (size + 8),
+                        int previews_count = data->count[i] < 3 ? data->count[i] : 3;
+                        int cell = (r.w - 20) / previews_count;
+                        int k = (touch.x - r.x - 10) / cell,
                             previews = data->count[i] < 3 ? data->count[i] : 3;
                         if (touch.x >= r.x + 10 && k >= 0 && k < previews && touch.y >= r.y + 30 &&
-                            touch.y < r.y + 30 + size) {
+                            touch.y < r.y + r.h - 6) {
                             dash_offset[i] = (dash_offset[i] + k) % data->count[i];
                             snprintf(dash_anchor[i], 16, "%s", data->favourites[dash_offset[i]].id);
+                        }
+                    }
+                    if (i < 4 && i != UI_DASH_CONTINUE && data->count[i] > 1 &&
+                        !(i == UI_DASH_FAVOURITES && r.w >= 300 && r.h >= 66) && r.h >= 62) {
+                        int row = (touch.y - r.y - 28) / 48;
+                        int rows = (r.h - 27) / 48;
+                        if (rows > 3) rows = 3;
+                        if (rows > data->count[i]) rows = data->count[i];
+                        if (touch.y >= r.y + 28 && row >= 0 && row < rows) {
+                            dash_offset[i] = (dash_offset[i] + row) % data->count[i];
+                            VtLibraryResult hit;
+                            dashboard_item(data, i, dash_offset[i], &hit);
+                            snprintf(dash_anchor[i], 16, "%s", hit.item.id);
                         }
                     }
                     pressed |= SCE_CTRL_CROSS;
@@ -670,6 +770,10 @@ static int dashboard_screen(VtLibraryItem *chosen) {
                 navigation.valid = 0;
                 query[0] = 0;
                 result = LIBRARY_OPEN_DETAIL;
+                break;
+            }
+            if (!exists && dash_selected == UI_DASH_CONTINUE) {
+                result = UI_LIBRARY_LOCAL;
                 break;
             }
             if (!exists) {

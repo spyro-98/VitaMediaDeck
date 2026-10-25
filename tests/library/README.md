@@ -31,3 +31,7 @@ The saved-connection contract suite extracts the production direct-entry functio
 and checks rejected/accepted SSH/TLS trust, failed pin persistence, authentication
 failure, restored browser navigation and section propagation using host adapters.
 It does not authenticate to real accounts.
+
+Home also covers cached files without playback history, fair provider sampling,
+all collection-availability combinations and individual visible server-row touch
+targets. The UI script renders 72 synthetic host references across eight themes.

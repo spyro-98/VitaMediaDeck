@@ -5,13 +5,13 @@
 #include "../iptv/ui_test.c"
 #undef main
 #include "../../src/ui/home_tabs.c"
-static int dashboard_empty, dashboard_sources, dashboard_drop_resume;
+static int dashboard_empty, dashboard_sources, dashboard_drop_resume, dashboard_cold;
 static int fixture_library_query(const char *, int, VtLibraryResult *, int);
 #define vt_library_query fixture_library_query
 #include "../../src/ui/library_screen.c"
 #undef vt_library_query
 static int fixture_library_query(const char *q, int type, VtLibraryResult *out, int cap) {
-    if (view == LIBRARY_HOME && dashboard_empty)
+    if (view == LIBRARY_HOME && (dashboard_empty || (dashboard_cold && type != VT_LIBRARY_ALL)))
         return 0;
     int count = vt_library_query(q, type, out, cap);
     if (dashboard_drop_resume && view == LIBRARY_HOME && type == VT_LIBRARY_CONTINUE &&
@@ -43,6 +43,11 @@ int vt_library_search_home_favourites(VtLibraryItem *out, int cap, VtLibrarySear
     for (int i = 0; i < count; i++)
         out[i] = fixture[saved[i]];
     return count;
+}
+int vt_library_search_home_media(VtLibraryResult *out, int cap) {
+    if (dashboard_empty)
+        return 0;
+    return vt_library_query("", VT_LIBRARY_ALL, out, cap);
 }
 void vt_library_search_cancel(void) {}
 unsigned vt_library_search_revision(void) {
@@ -263,6 +268,30 @@ int main(int argc, char **argv) {
                 }
             }
         }
+    /* Every collection-availability combination keeps visible targets disjoint
+     * and reachable, including the mini-player's shorter viewport. */
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++)
+        for (int bottom = 472; bottom <= 536; bottom += 64)
+            for (int mask = 0; mask < 16; mask++) {
+                int counts[4];
+                for (int i = 0; i < 4; i++) counts[i] = !!(mask & (1 << i));
+                UiDashboardLayout l = ui_dashboard_compose(theme, bottom, counts);
+                int reached[UI_DASH_COUNT] = {1};
+                for (int n = 0; n < UI_DASH_COUNT; n++)
+                    for (int i = 0; i < UI_DASH_COUNT; i++) if (reached[i])
+                        for (int d = 0; d < 4; d++)
+                            reached[ui_dashboard_move(&l, i, directions[d])] = 1;
+                for (int i = 0; i < UI_DASH_COUNT; i++) {
+                    UiThemeRect a = l.cards[i];
+                    if (!a.h) continue;
+                    CHECK(reached[i]);
+                    for (int j = 0; j < i; j++) {
+                        UiThemeRect b = l.cards[j];
+                        if (!b.h) continue;
+                        CHECK(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+                    }
+                }
+            }
     loading_fixture = 0;
     progressive = 0;
     for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++)
@@ -285,7 +314,31 @@ int main(int argc, char **argv) {
                      dashboard_empty ? "empty" : "populated");
             png(name);
         }
+    /* Unplayed indexed media must populate Home without inventing history. */
     dashboard_empty = 0;
+    dashboard_cold = 1;
+    dashboard_sources = 0;
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++) {
+        ui_theme_apply(theme);
+        view = LIBRARY_HOME;
+        DashboardData *cold = calloc(1, sizeof(*cold));
+        VtLibrarySearchStatus cold_status;
+        dashboard_refresh(cold, &cold_status, 0);
+        CHECK(cold->count[0] > 0 && !cold->resuming);
+        CHECK(cold->count[3] > 0 && cold->discovering);
+        free(cold);
+        dash_selected = UI_DASH_CONTINUE;
+        memset(dash_offset, 0, sizeof(dash_offset));
+        memset(dash_anchor, 0, sizeof(dash_anchor));
+        script_exit();
+        VtLibraryItem picked;
+        CHECK(ui_library_screen(&picked) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
+        memcpy(pixels, first_pixels, sizeof(pixels));
+        char name[80];
+        snprintf(name, sizeof(name), "home-dashboard-%d-no-history", theme);
+        png(name);
+    }
+    dashboard_cold = 0;
     dashboard_sources = 1;
     mini_top = 536;
     ui_theme_apply(VT_UI_THEME_LEGACY);
@@ -333,7 +386,7 @@ int main(int argc, char **argv) {
     if (cover_size > 64)
         cover_size = 64;
     tap_frame = 2;
-    tap_x = favourite.x + 10 + (cover_size + 8) + cover_size / 2;
+    tap_x = favourite.x + 10 + (favourite.w - 20) / 3 + cover_size / 2;
     tap_y = favourite.y + 30 + cover_size / 2;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_PLAY);
     CHECK(!strcmp(connection.id, fixture[6].id));
@@ -346,6 +399,21 @@ int main(int argc, char **argv) {
     input_script[6] = SCE_CTRL_CIRCLE;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
     CHECK(view == LIBRARY_HOME);
+    dashboard_sources = 0;
+    /* A visible secondary server row opens that server, not the first row. */
+    dashboard_sources = 1;
+    view = LIBRARY_HOME;
+    dash_selected = UI_DASH_CONNECTIONS;
+    memset(dash_offset, 0, sizeof(dash_offset));
+    memset(dash_anchor, 0, sizeof(dash_anchor));
+    UiDashboardLayout server_layout = ui_dashboard_layout(VT_UI_THEME_LEGACY, 536);
+    tap_frame = 2;
+    tap_x = server_layout.cards[UI_DASH_CONNECTIONS].x + 100;
+    tap_y = server_layout.cards[UI_DASH_CONNECTIONS].y + 28 + 48 + 12;
+    script_exit();
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
+    CHECK(connection.provider == VT_LIBRARY_JELLYFIN);
+    tap_frame = -1;
     dashboard_sources = 0;
     /* Actual UI retains focused identity when a sorted progressive result arrives. */
     ui_theme_apply(VT_UI_THEME_LEGACY);
@@ -390,7 +458,7 @@ int main(int argc, char **argv) {
     CHECK(artwork_requests > 0 && search_calls >= 28);
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
-    printf("Unified Home UI: %u checks; 64 host layouts, integrated dashboard/navigation, "
+    printf("Unified Home UI: %u checks; 72 host layouts, integrated dashboard/navigation, "
            "animated/reduced-motion loading, all "
            "themes, covers, mini-player space, "
            "progressive focus and player return passed.\n",

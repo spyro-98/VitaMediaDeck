@@ -14,3 +14,10 @@ overflow, theme switching, idle update suppression and failure fallback.
 Existing eight-theme UI suites separately check actual app geometry/input with
 host rendering, including QR/editor/logs. Physical Vita acceptance is listed in
 [the PAF report](../../docs/legacy-vita-paf-2026-10-25.md).
+
+The regression from the 25 October console dump requires the module heap in
+application memory (not the 9 MiB dialog partition), explicit graphics limits and
+initialization-only disk checkpoints. Firmware allocation/rendering needs a Vita.
+
+Run `PYTHONDONTWRITEBYTECODE=1 python3 tests/native_paf/test_core_reader.py` for
+synthetic raw/gzip/core-validation tests of the read-only dump helper.
