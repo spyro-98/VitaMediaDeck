@@ -1,5 +1,10 @@
 # Complete Legacy Vita theme / Sony PAF — 25 October 2026
 
+**Later console evidence:** the next build passed native initialization but
+crashed after a widget-preparation error. See the [second crash, factory and
+recovery correction](paf-widget-recovery-2026-10-25.md). Native rendering has not
+yet received physical acceptance.
+
 **Console correction:** the first physical selection crashed during Framework
 creation because the 8 MiB global heap consumed the 9 MiB dialog partition.
 See the [dump diagnosis and correction](paf-crash-home-2026-10-25.md).

@@ -5,7 +5,9 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
-The first physical PAF test crashed; see the [console diagnosis and corrected
+The first physical PAF test crashed; the next run passed initialization but
+failed during native presentation. See the [second crash diagnosis and recovery
+correction](paf-widget-recovery-2026-10-25.md) and [earlier memory correction and
 Home](paf-crash-home-2026-10-25.md). The corrected build still needs physical
 acceptance. Host mocks did not establish firmware constructor compatibility.
 

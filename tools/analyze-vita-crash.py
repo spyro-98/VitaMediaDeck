@@ -39,7 +39,7 @@ def word(data, at):
 def name(data, at, size):
     return bounded(data, at, size).split(b"\0", 1)[0].decode("ascii", "replace")
 
-def notes(data):
+def notes(data, allow_partial=False):
     phoff = word(data, 28)
     size, count = struct.unpack_from("<HH", data, 42)
     if size != 32:
@@ -47,6 +47,10 @@ def notes(data):
     found = {}
     for i in range(count):
         h = struct.unpack("<8I", bounded(data, phoff + i * size, size))
+        if h[4] and h[1] + h[4] > len(data):
+            if allow_partial:
+                continue
+            raise ValueError("incomplete core segment; use --allow-partial for available notes")
         if h[0] != 4:
             continue
         block = bounded(data, h[1], h[4])
@@ -62,9 +66,9 @@ def notes(data):
                 found[label] = desc
     return found
 
-def analyze(path):
+def analyze(path, allow_partial=False):
     data = read_core(path)
-    records = notes(data)
+    records = notes(data, allow_partial)
     modules = []
     b = records.get("MODULE_INFO", b"\0" * 8)
     at = 8
@@ -117,15 +121,23 @@ def analyze(path):
             if label.startswith(("ScePaf", "SceCommonDialog")):
                 blocks.append({"name": label, "type": "0x%08x" % word(entry, 40),
                                "address": "0x%08x" % word(entry, 44), "bytes": word(entry, 48)})
+    phoff = word(data, 28)
+    _, phcount = struct.unpack_from("<HH", data, 42)
+    missing = sum(1 for i in range(phcount)
+                  if (lambda h: h[4] and h[1] + h[4] > len(data))(
+                      struct.unpack("<8I", bounded(data, phoff + i * 32, 32))))
     return {"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "partial_core": bool(missing), "missing_segments": missing,
             "threads": threads, "paf_memory_blocks": blocks,
             "note": "Registers and module offsets only; no inferred backtrace or application strings."}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dump", type=Path)
+    parser.add_argument("--allow-partial", action="store_true",
+                        help="read only complete notes from an unfinished .tmp core; report missing segments")
     args = parser.parse_args()
     try:
-        print(json.dumps(analyze(args.dump), indent=2))
+        print(json.dumps(analyze(args.dump, args.allow_partial), indent=2))
     except (ValueError, OSError, struct.error) as error:
         parser.exit(1, "Invalid/unreadable core: %s\n" % error)

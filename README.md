@@ -66,7 +66,11 @@ from host rendering checks.
 
 The first physical Legacy Vita / PAF test exposed an initialization-memory crash.
 The corrected build moves PAF's global heap out of the small Sony dialog partition
-and bounds graphics allocations; native firmware acceptance remains pending. See
+and bounds graphics allocations. A second console run passed initialization but
+exposed incorrect widget factory keys and a failed-frame recovery that still
+submitted PAF rendering. The [second correction](docs/paf-widget-recovery-2026-10-25.md)
+fixes both and restores Legacy on detected errors; native firmware acceptance
+remains pending. See
 the [actual console diagnosis, Home changes and retest checklist](docs/paf-crash-home-2026-10-25.md).
 
 ## Current version: 1.4.1

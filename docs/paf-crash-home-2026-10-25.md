@@ -1,5 +1,10 @@
 # Console PAF crash and content-first Home — 25 October 2026
 
+**Later console evidence:** the next build passed native initialization but
+crashed after a widget-preparation error. See the [second crash, factory and
+recovery correction](paf-widget-recovery-2026-10-25.md). Native rendering has not
+yet received physical acceptance.
+
 ## Actual console evidence
 
 The user reproduced a crash immediately after selecting Legacy Vita. The dump is
