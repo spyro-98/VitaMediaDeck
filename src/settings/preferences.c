@@ -133,6 +133,7 @@ _Static_assert(sizeof(VtPreferencesDiskV3) == 40,
 #define VT_APERTURE_BROWSER_LIST (1u << 26)
 #define VT_RELAY_BROWSER_GRID (1u << 27)
 #define VT_MOSAIC_BROWSER_LIST (1u << 28)
+#define VT_NATIVE_BROWSER_LIST (1u << 29)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -457,12 +458,15 @@ static uint32_t interface_browser_bit(void){
   case VT_UI_THEME_APERTURE:return VT_APERTURE_BROWSER_LIST;
   case VT_UI_THEME_RELAY:return VT_RELAY_BROWSER_GRID;
   case VT_UI_THEME_MOSAIC:return VT_MOSAIC_BROWSER_LIST;
+  case VT_UI_THEME_LEGACY_VITA:
+	  return VT_NATIVE_BROWSER_LIST;
   default:return 0;
  }
 }
 static int interface_browser_defaults_grid(void){
  int theme=vt_preferences_interface_theme();
- return theme==VT_UI_THEME_GHOST_MESH||theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC;
+ return theme == VT_UI_THEME_GHOST_MESH || theme == VT_UI_THEME_APERTURE ||
+	    theme == VT_UI_THEME_MOSAIC || theme == VT_UI_THEME_LEGACY_VITA;
 }
 int vt_preferences_file_browser_grid(void) {
 	if (!g_loaded) vt_preferences_init();

@@ -42,7 +42,7 @@ static VtOnlineQuery g_return_query;
 static char g_country_name[160] = "";
 static int g_home, g_mode_changed=1, g_menu;
 void ui_online_audio_set_home(int favorites_only) {g_home=!!favorites_only;g_mode_changed=1;}
-#define THEMED (ui_theme_id()!=VT_UI_THEME_LEGACY)
+#define THEMED (!vt_ui_theme_legacy_layout(ui_theme_id()))
 #define HOME_LAYOUT (ui_theme_home_layout(ui_theme_id(),ui_mini_player_top()<UI_CONTENT_BOTTOM?ui_mini_player_top():UI_CONTENT_BOTTOM))
 #define PODCAST_HOME (!THEMED && g_home && g_tab==VT_ONLINE_FEED && !g_episodes)
 #define THEMED_OFFLINE (THEMED && g_home && g_tab==VT_ONLINE_FEED && !g_episodes && !g_menu && !g_catalog)

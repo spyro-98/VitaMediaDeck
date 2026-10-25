@@ -195,7 +195,7 @@ static void search_activity(const VtLibrarySearchStatus *s, int filter, int x, i
     }
 }
 static UiThemeRect heading_rect(int theme, int bottom) {
-    if (theme == VT_UI_THEME_LEGACY)
+    if (vt_ui_theme_legacy_layout(theme))
         return (UiThemeRect){18, 62, 924, 46};
     UiThemeHomeLayout l = ui_theme_home_layout(theme, bottom);
     int baseline = theme == VT_UI_THEME_SIGNAL       ? 162
@@ -710,7 +710,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         ui_theme_scene_begin(UI_SCENE_HOME, "integrated-home");
         ui_text_line(layout.content.x, layout.title_y, layout.content.w,
                      tr("Your media, together", "I tuoi contenuti, insieme"), VT_THEME_TEXT,
-                     ui_theme_id() == VT_UI_THEME_LEGACY ? UI_FONT_BODY : UI_FONT_DISPLAY);
+                     vt_ui_theme_legacy_layout(ui_theme_id()) ? UI_FONT_BODY : UI_FONT_DISPLAY);
         if (layout.subtitle_y)
             ui_text_line(layout.content.x, layout.subtitle_y, layout.content.w,
                          tr("Continue · saved connections · favourites",
@@ -852,7 +852,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         int bottom =
             ui_mini_player_top() < UI_CONTENT_BOTTOM ? ui_mini_player_top() : UI_CONTENT_BOTTOM;
         UiThemeHomeLayout layout = ui_theme_home_layout(ui_theme_id(), bottom);
-        int legacy = ui_theme_id() == VT_UI_THEME_LEGACY, offset = legacy ? 1 : 0,
+        int legacy = vt_ui_theme_legacy_layout(ui_theme_id()), offset = legacy ? 1 : 0,
             visible = layout.rows - offset;
         if (visible < 1)
             visible = 1;

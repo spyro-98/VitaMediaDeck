@@ -51,3 +51,16 @@ reavplayer-module.sha256=8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466
 vita-hw-decoder.commit=cd3ee51ca2c1072a57ac85878f50d646a864679e
 vita-sw-decoder.commit=f895684f2bfa2f20b815ebc8121d3880d2160230
 vita-https.commit=a67dc3154ae38158283a53e54d9baea56c61948d
+
+# Native Legacy Vita theme: firmware imports only, no Sony binary is packaged.
+paf-abi-reference.url=https://github.com/GrapheneCt/ScePaf-RE
+paf-abi-reference.commit=b76d6ae00516b107d37e7e8a1a16211e3b729a07
+# This reference supplies ABI facts, not redistributed source/header code.
+psp2cxml-tool.url=https://github.com/Princess-of-Sleeping/psp2cxml-tool
+psp2cxml-tool.commit=d971a9a9892c122b4edef15d335326b2a551fec4
+psp2cxml-tool.role=build-time-only
+psp2cxml-tool.license=GPL-3.0-only
+psp2cxml-tool.source.sha256=a8b63375f8763c66fd6082af145cd8a18b1682b24b8e2243dfdfe8cc8dbb313f
+paf-resource.xml.sha256=66fb7b90723389616c3ce6287a1dc7e22058853cfc30cadb456fe991ec3263f2
+paf-resource.embedded.sha256=6e20ed22c70122740526a9e7ded3b1ec24c43a1b455501eda5ed9dfca76d6c06
+paf-imports.sha256=53bd39f5c44cada6ea43433f7fec34164643c8ed4e8e31c9bf3f55924c9a8740

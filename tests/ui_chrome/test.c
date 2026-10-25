@@ -70,7 +70,12 @@ int main(int argc,char **argv){
   ui_theme_apply(theme);frame=0;script_count=2;input_script[0]=0;input_script[1]=SCE_CTRL_CIRCLE;capture_frame=0;
   ui_home_tabs_configure();memcpy(pixels,first_pixels,sizeof(pixels));char name[80];snprintf(name,sizeof(name),"theme-positions-%d",theme);png(name);
  }
- FT_Done_Face(face);FT_Done_FreeType(ft);printf("Production theme chrome: %u checks, 7 themes, IT/EN, 12h/24h, live activities, unknown status and command decks passed.\n",checks);return 0;
+ FT_Done_Face(face);
+ FT_Done_FreeType(ft);
+ printf("Production theme chrome: %u checks, 8 themes, IT/EN, 12h/24h, live activities, unknown "
+        "status and command decks passed.\n",
+        checks);
+ return 0;
 }
 
 #endif

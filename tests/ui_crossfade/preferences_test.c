@@ -53,18 +53,27 @@ int main(void){
  }
  assert(vt_preferences_set_interface_theme(-1)<0&&vt_preferences_set_interface_theme(VT_UI_THEME_COUNT)<0);
  fail_write=1;assert(vt_preferences_set_interface_theme(0)<0);
- assert(vt_preferences_interface_theme()==VT_UI_THEME_MOSAIC);
- fail_write=0;g_loaded=0;vt_preferences_init();assert(vt_preferences_interface_theme()==VT_UI_THEME_MOSAIC);
+ assert(vt_preferences_interface_theme() == VT_UI_THEME_COUNT - 1);
+ fail_write = 0;
+ g_loaded = 0;
+ vt_preferences_init();
+ assert(vt_preferences_interface_theme() == VT_UI_THEME_COUNT - 1);
  /* Each theme remembers its local/remote browser choice without changing Legacy. */
  assert(!persist_subtitle_pair(0,0));
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
   assert(!vt_preferences_set_interface_theme(theme));
-  assert(vt_preferences_file_browser_grid()==(theme<2||theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC));
-  assert(!vt_preferences_set_file_browser_grid(!(theme<2||theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC)));
+  assert(vt_preferences_file_browser_grid() ==
+         (theme < 2 || theme == VT_UI_THEME_APERTURE || theme == VT_UI_THEME_MOSAIC ||
+          theme == VT_UI_THEME_LEGACY_VITA));
+  assert(!vt_preferences_set_file_browser_grid(!(theme < 2 || theme == VT_UI_THEME_APERTURE ||
+                                                 theme == VT_UI_THEME_MOSAIC ||
+                                                 theme == VT_UI_THEME_LEGACY_VITA)));
  }
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
   assert(!vt_preferences_set_interface_theme(theme));g_loaded=0;vt_preferences_init();
-  assert(vt_preferences_file_browser_grid()==!(theme<2||theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC));
+  assert(vt_preferences_file_browser_grid() ==
+         !(theme < 2 || theme == VT_UI_THEME_APERTURE || theme == VT_UI_THEME_MOSAIC ||
+           theme == VT_UI_THEME_LEGACY_VITA));
  }
  /* Old V3 IDs retain their exact interpretation when the high bit is zero. */
  for(int old=0;old<4;old++){
@@ -72,7 +81,9 @@ int main(void){
   assert(vt_preferences_interface_theme()==old);
  }
  assert(!persist_subtitle_pair(playback,VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH));
- g_loaded=0;vt_preferences_init();assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY);
+ g_loaded = 0;
+ vt_preferences_init();
+ assert(vt_preferences_interface_theme() == VT_UI_THEME_LEGACY_VITA);
  puts("Per-theme browser defaults and independent saved grid/list choices passed");
  puts("Interface themes: default Legacy, all choices persisted, unrelated bits and failed-write rollback passed");
  puts("Audio layout settings: persistence, unrelated flags, invalid values, write failure and V1/V2 migration passed");

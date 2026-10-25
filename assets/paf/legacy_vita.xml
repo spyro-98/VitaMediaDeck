@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resource version="0.1" type="normal" id="vmd_legacy_vita">
+  <pagetable><page id="menu"><plane style="vmd_transparent" id="canvas"><layout_hint size="960, 544" /></plane><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_1" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_2" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_3" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_4" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator></page></pagetable>
+  <templatetable />
+  <styletable>
+    <style_plane color="0, 0, 0, 0" planeobj="transparent_plane" id="vmd_transparent"><planeobj id="transparent_plane" /></style_plane>
+    <style_plane color="0.025, 0.15, 0.29, 0.98" planeobj="panel_plane" id="vmd_panel"><planeobj id="panel_plane" /></style_plane>
+    <style_plane color="1, 1, 1, 1" planeobj="white_plane" id="vmd_white"><planeobj id="white_plane" /></style_plane>
+  </styletable>
+  <stringtable /><texturetable /><filetable />
+</resource>

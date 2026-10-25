@@ -401,7 +401,8 @@ static void draw_flow_background(const unsigned colors[5], uint64_t now,
 	        ? 0.0f : (float)(now % 90000000ULL) / 1000000.0f;
 	vita2d_draw_rectangle(0, UI_BRAND_HEADER_HEIGHT, 960,
 	                      544 - UI_BRAND_HEADER_HEIGHT, VT_THEME_BG);
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY)ui_theme_fx_background(VT_THEME_BG);
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		ui_theme_fx_background(VT_THEME_BG);
 	if (theme == VT_MUSIC_THEME_NONE) return;
 	/* Apple Music-inspired ambient artwork: a few very large, feathered colour
 	 * fields drift behind the cover. Concentric low-alpha discs approximate a
@@ -1145,16 +1146,24 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		MOVE_LAYOUT(cover_x);MOVE_LAYOUT(cover_y);MOVE_LAYOUT(cover_size);
 		MOVE_LAYOUT(text_x);MOVE_LAYOUT(text_width);MOVE_LAYOUT(title_y);
 #undef MOVE_LAYOUT
-		int centered=ui_theme_id()==VT_UI_THEME_LEGACY?(!cover || audio_layout==VT_AUDIO_LAYOUT_CENTER):
-            (audio_layout==VT_AUDIO_LAYOUT_CENTER&&(ui_theme_id()==VT_UI_THEME_APERTURE||ui_theme_id()==VT_UI_THEME_GHOST_MESH));
-        if(ui_theme_id()!=VT_UI_THEME_LEGACY) {
-            float cx=layout.cover_x+layout.cover_size*.5f,cy=layout.cover_y+layout.cover_size*.5f;
-            ui_theme_scene_model(UI_SCENE_AUDIO,cx,cy,layout.cover_size*1.4f,1,snapshot.state==VT_BACKGROUND_PLAYING);
-        }
+		int centered = vt_ui_theme_legacy_layout(ui_theme_id())
+		                   ? (!cover || audio_layout == VT_AUDIO_LAYOUT_CENTER)
+		                   : (audio_layout == VT_AUDIO_LAYOUT_CENTER &&
+		                      (ui_theme_id() == VT_UI_THEME_APERTURE ||
+		                       ui_theme_id() == VT_UI_THEME_GHOST_MESH));
+		if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+			float cx = layout.cover_x + layout.cover_size * .5f,
+			      cy = layout.cover_y + layout.cover_size * .5f;
+			ui_theme_scene_model(UI_SCENE_AUDIO, cx, cy, layout.cover_size * 1.4f, 1,
+			                     snapshot.state == VT_BACKGROUND_PLAYING);
+		}
 		if(cover){
-            if(ui_theme_id()==VT_UI_THEME_LEGACY)draw_cover(cover,layout.cover_x,layout.cover_y,layout.cover_size,foreground);
-            else ui_theme_scene_art(cover,layout.cover_x,layout.cover_y,layout.cover_size,snapshot.state==VT_BACKGROUND_PLAYING);
-        }
+			if (vt_ui_theme_legacy_layout(ui_theme_id()))
+				draw_cover(cover, layout.cover_x, layout.cover_y, layout.cover_size, foreground);
+			else
+				ui_theme_scene_art(cover, layout.cover_x, layout.cover_y, layout.cover_size,
+				                   snapshot.state == VT_BACKGROUND_PLAYING);
+		}
 		draw_music_state(&snapshot,foreground,now,hud_opacity,centered?18:layout.text_x);
 		vita2d_font *display=ui_runtime_font(UI_FONT_DISPLAY);
 		vita2d_font *body=ui_runtime_font(UI_FONT_BODY);

@@ -10,7 +10,7 @@ panels, status indicators and focus drawing. Platform readings, file I/O and the
 camera texture are substituted. ASan/UBSan are enabled. Deck 90 uses the real
 IBM Plex Mono face; other themes use Inter.
 
-Checks cover seven QR states, seven themes, Italian/English and reduced motion
+Checks cover seven QR states, eight themes, Italian/English and reduced motion
 (196 compositions), unchanged crop coordinates/scale, every displayed camera
 pixel, cancel geometry, pairwise distinct themes, the input backdrop and log
 list/content. Reduced-motion text editing must stay identical across frames.

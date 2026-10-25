@@ -1,4 +1,7 @@
 #include "ui/sections_sidebar.h"
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
@@ -120,7 +123,9 @@ static int sidebar_active_slot(const UiSectionsSidebar *sidebar) {
         if (sidebar_section_at(sidebar, i) == sidebar->active) return i;
     return sidebar->player_available + sidebar->download_available;
 }
-static int sidebar_view_top(void) { return ui_theme_id()==VT_UI_THEME_LEGACY?104:148; }
+static int sidebar_view_top(void) {
+	return vt_ui_theme_legacy_layout(ui_theme_id()) ? 104 : 148;
+}
 static int sidebar_view_bottom(void) { return 478; }
 static float sidebar_row_y(const UiSectionsSidebar *sidebar,float slot) {
     int live=sidebar->player_available+sidebar->download_available;
@@ -140,12 +145,12 @@ static float sidebar_row_y(const UiSectionsSidebar *sidebar,float slot) {
 static int sidebar_row_height(void) { return 42; }
 static int sidebar_vertical(void) {
 	int theme = ui_theme_id();
-	return theme == VT_UI_THEME_LEGACY || theme == VT_UI_THEME_DECK_90 ||
+	return vt_ui_theme_legacy_layout(theme) || theme == VT_UI_THEME_DECK_90 ||
 	       theme == VT_UI_THEME_APERTURE;
 }
 static UiThemeRect sidebar_content_rect(const UiSectionsSidebar *sidebar,int slot) {
     int theme=ui_theme_id(),live=sidebar->player_available+sidebar->download_available;
-	if (theme == VT_UI_THEME_LEGACY) {
+	if (vt_ui_theme_legacy_layout(theme)) {
 		return (UiThemeRect){ITEM_X, (int)sidebar_row_y(sidebar, (float)slot), ITEM_W,
 		                     sidebar_row_height()};
 	}
@@ -256,25 +261,31 @@ static float sidebar_offset(const UiSectionsSidebar *sidebar) {
  int theme=ui_theme_id();UiThemeMotionProfile profile=ui_theme_motion_profile(theme);
  if(theme==VT_UI_THEME_GHOST_MESH||theme==VT_UI_THEME_SIGNAL||theme==VT_UI_THEME_RELAY)travel*=travel;
  else if(theme==VT_UI_THEME_APERTURE||theme==VT_UI_THEME_MOSAIC)travel*=.6f+.4f*travel;
- return (profile.menu_from_right?1:-1)*(theme==VT_UI_THEME_LEGACY?SIDEBAR_WIDTH:960)*travel;
+ return (profile.menu_from_right ? 1 : -1) *
+	    (vt_ui_theme_legacy_layout(theme) ? SIDEBAR_WIDTH : 960) * travel;
 }
 static int sidebar_clip_body(float ox) {
-    int legacy=ui_theme_id()==VT_UI_THEME_LEGACY;
-    int left=(int)ox+(legacy?0:48),right=(int)ox+(legacy?SIDEBAR_WIDTH:912);
-    if(left<0)left=0;
-    if(right>960)right=960;
-    if(right<=left)return 0;
-    vita2d_set_clip_rectangle(left,sidebar_view_top(),right,sidebar_view_bottom());
-    vita2d_enable_clipping();return 1;
+	int legacy = vt_ui_theme_legacy_layout(ui_theme_id());
+	int left = (int)ox + (legacy ? 0 : 48), right = (int)ox + (legacy ? SIDEBAR_WIDTH : 912);
+	if (left < 0)
+		left = 0;
+	if (right > 960)
+		right = 960;
+	if (right <= left)
+		return 0;
+	vita2d_set_clip_rectangle(left, sidebar_view_top(), right, sidebar_view_bottom());
+	vita2d_enable_clipping();return 1;
 }
 static void sidebar_group_headings(const UiSectionsSidebar *sidebar,float ox) {
-    int live=sidebar->player_available+sidebar->download_available,legacy=ui_theme_id()==VT_UI_THEME_LEGACY;
-    const int starts[]={0,live,live+SIDEBAR_CONTENT_COUNT};
-    const VtStringId labels[]={VT_STR_SECTIONS_GROUP_LIVE,VT_STR_SECTIONS_GROUP_CONTENT,VT_STR_SECTIONS_GROUP_APP};
-    for(int group=live?0:1;group<3;group++) {
-        UiThemeRect r=sidebar_slot_rect(sidebar,starts[group]);
-        int x=legacy?34:r.x+18;
-        if(ui_theme_id()==VT_UI_THEME_GHOST_MESH)x=group==2?716:64;
+	int live = sidebar->player_available + sidebar->download_available,
+	    legacy = vt_ui_theme_legacy_layout(ui_theme_id());
+	const int starts[] = {0, live, live + SIDEBAR_CONTENT_COUNT};
+	const VtStringId labels[] = {VT_STR_SECTIONS_GROUP_LIVE, VT_STR_SECTIONS_GROUP_CONTENT,
+	                             VT_STR_SECTIONS_GROUP_APP};
+	for (int group = live ? 0 : 1; group < 3; group++) {
+		UiThemeRect r = sidebar_slot_rect(sidebar, starts[group]);
+		int x = legacy ? 34 : r.x + 18;
+		if(ui_theme_id()==VT_UI_THEME_GHOST_MESH)x=group==2?716:64;
         if(ui_theme_id()==VT_UI_THEME_SIGNAL)x=group==2?664:64;
         int y=r.y-14;
         if (!legacy && sidebar_vertical() && live && group == 1) y = r.y - 8;
@@ -298,12 +309,12 @@ static void sidebar_group_headings(const UiSectionsSidebar *sidebar,float ox) {
 		const char *label=vt_i18n_str(labels[group]);
         ui_text_line(ox+x,y,legacy?350:group==2&&ui_theme_id()==VT_UI_THEME_GHOST_MESH?184:832-x+64,
                      label,legacy?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
-    }
+	}
 }
 static void sidebar_scroll_chrome(const UiSectionsSidebar *sidebar,float ox) {
-    int legacy=ui_theme_id()==VT_UI_THEME_LEGACY;
-    float maximum=sidebar_scroll_max(sidebar);
-    int left=legacy?28:64,width=legacy?272:704;
+	int legacy = vt_ui_theme_legacy_layout(ui_theme_id());
+	float maximum = sidebar_scroll_max(sidebar);
+	int left = legacy ? 28 : 64, width = legacy ? 272 : 704;
 	ui_text_line(
 	    ox + left, 503, width,
 	    vt_i18n_str(sidebar_vertical() ? VT_STR_SECTIONS_SCROLL_HINT : VT_STR_SECTIONS_SPATIAL_HINT),
@@ -507,6 +518,10 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 	if (*pressed & SCE_CTRL_LTRIGGER) {
 		sidebar->open = !sidebar->open;
         if(sidebar->open)ui_theme_scene_enter(UI_SCENE_MENU,"sections");
+#ifdef VMD_ENABLE_PAF_NATIVE
+		if (sidebar->open && ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
+			ui_native_vita_prepare();
+#endif
 		if(sidebar->open) {
 			sidebar->cursor=sidebar_active_slot(sidebar);
 			sidebar->focus_cursor=(float)(sidebar->audio_layout_page?sidebar->audio_layout_cursor:sidebar->cursor);
@@ -526,7 +541,10 @@ int ui_sections_sidebar_handle_buttons(UiSectionsSidebar *sidebar,
 	UiNavRepeat repeat = { sidebar->repeat_button, sidebar->repeat_next_us };
 	unsigned int navigated = ui_nav_repeat_update(
 	    &repeat, *pressed, held_buttons, 128, analog_y,
-	    SCE_CTRL_UP | SCE_CTRL_DOWN | ((ui_theme_id()!=VT_UI_THEME_LEGACY&&!sidebar->audio_layout_available)?SCE_CTRL_LEFT|SCE_CTRL_RIGHT:0));
+	    SCE_CTRL_UP | SCE_CTRL_DOWN |
+	        ((!vt_ui_theme_legacy_layout(ui_theme_id()) && !sidebar->audio_layout_available)
+	             ? SCE_CTRL_LEFT | SCE_CTRL_RIGHT
+	             : 0));
 	sidebar->repeat_button = repeat.direction;
 	sidebar->repeat_next_us = repeat.repeat_next_us;
 	if(sidebar->audio_layout_available && sidebar->audio_layout_page) {
@@ -563,9 +581,9 @@ int ui_sections_sidebar_handle_touch(UiSectionsSidebar *sidebar,
                                      unsigned int flags,int x,int y) {
     if(!sidebar||!sidebar->open)return UI_SECTION_NONE;
     sync_live_slots(sidebar);
-    int ox=(int)sidebar_offset(sidebar),legacy=ui_theme_id()==VT_UI_THEME_LEGACY;
-    int left=ox+(legacy?0:48),right=ox+(legacy?SIDEBAR_WIDTH:912);
-    int in_body=x>=left&&x<right&&y>=sidebar_view_top()&&y<sidebar_view_bottom();
+	int ox = (int)sidebar_offset(sidebar), legacy = vt_ui_theme_legacy_layout(ui_theme_id());
+	int left = ox + (legacy ? 0 : 48), right = ox + (legacy ? SIDEBAR_WIDTH : 912);
+	int in_body = x >= left && x < right && y >= sidebar_view_top() && y < sidebar_view_bottom();
 	if (!sidebar->audio_layout_page && sidebar_vertical()) {
 		if ((flags & UI_TOUCH_EVENT_DOWN) && in_body) {
 			sidebar->touch_active = 1;
@@ -694,8 +712,18 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		vt_i18n_str(VT_STR_SECTIONS_ABOUT),
 		"Navidrome", "Immich", "Jellyfin"
 	};
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY){sidebar_themed_draw(sidebar,items);return;}
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		sidebar_themed_draw(sidebar, items);
+		return;
+	}
 	float ox = sidebar_offset(sidebar);
+#ifdef VMD_ENABLE_PAF_NATIVE
+	if (ui_theme_id() == VT_UI_THEME_LEGACY_VITA && ui_native_vita_error())
+		ui_text_line(446, 508, 490,
+		             vt_i18n_current_language() == VT_LANG_IT ? "PAF non disponibile: layout Legacy"
+		                                                      : "PAF unavailable: Legacy layout",
+		             VT_THEME_WARNING, UI_FONT_SMALL);
+#endif
 	vita2d_set_clip_rectangle(0,0,960,544);vita2d_enable_clipping();
 	/* The signal index is modal and full height. The veil follows the same
 	 * interpolation so the page recedes as the rail enters. */

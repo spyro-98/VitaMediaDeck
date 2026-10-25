@@ -99,12 +99,12 @@ static void fx_frame(float x,float y,float w,float h,unsigned color){
 }
 void ui_theme_fx_background(unsigned base){
  int theme=ui_theme_id();
- if(theme==VT_UI_THEME_LEGACY){
-  float phase=fx_phase(10000000ULL);
-  unsigned alpha=(unsigned)(10+6*(1-cosf(phase*6.28318530718f)));
-  vita2d_draw_rectangle(0,54,1,490,fx_alpha(VT_THEME_COLD,alpha));
-  vita2d_draw_rectangle(959,54,1,490,fx_alpha(VT_THEME_FOCUS,alpha));
-  return;
+ if (vt_ui_theme_legacy_layout(theme)) {
+     float phase = fx_phase(10000000ULL);
+     unsigned alpha = (unsigned)(10 + 6 * (1 - cosf(phase * 6.28318530718f)));
+     vita2d_draw_rectangle(0, 54, 1, 490, fx_alpha(VT_THEME_COLD, alpha));
+     vita2d_draw_rectangle(959, 54, 1, 490, fx_alpha(VT_THEME_FOCUS, alpha));
+     return;
  }
  unsigned accent=VT_THEME_SIGNAL_BRIGHT;
  /* The light horizon and floor share a vanishing point: real spatial structure
@@ -153,23 +153,28 @@ void ui_theme_fx_background(unsigned base){
  vita2d_draw_rectangle(957,54,3,490,fx_alpha(VT_THEME_COLD,38));
 }
 void ui_theme_fx_surface(float x,float y,float w,float h,unsigned fill,int selected){
- int theme=ui_theme_id();if(theme==VT_UI_THEME_LEGACY||w<60||h<30)return;
- fx_shadow(x,y,w,h,theme==VT_UI_THEME_SIGNAL);
- unsigned tint=theme==VT_UI_THEME_DECK_90?VT_THEME_SIGNAL_BRIGHT:VT_THEME_COLD;
- for(int i=0;i<5;i++)vita2d_draw_rectangle(x,y+i*(h/5),w,h/5+1,
-     fx_mix(fill,tint,(unsigned)((selected?22:10)*(5-i)/5)));
- vita2d_draw_line(x+7,y,x+w-10,y,fx_alpha(VT_THEME_TEXT,selected?100:42));
- vita2d_draw_line(x+w-1,y+8,x+w-1,y+h-5,RGBA8(0,0,0,80));
- if(theme==VT_UI_THEME_DECK_90){
-  vita2d_draw_rectangle(x+2,y+2,2,h-4,RGBA8(0,0,0,100));
-  vita2d_draw_rectangle(x+5,y+h-3,w-10,1,fx_alpha(tint,60));
- }else{
-  /* Faceted specular lip: a narrow reflection, independent of text/artwork. */
-  for(int i=0;i<4;i++)vita2d_draw_rectangle(x+8+i*3,y+2+i,w-24-i*6,1,
-      fx_alpha(VT_THEME_TEXT,(unsigned)(selected?38-i*7:16-i*3)));
-  vita2d_draw_line(x,y+9,x+9,y,fx_alpha(tint,selected?210:75));
-  vita2d_draw_line(x+w-10,y+h-1,x+w-1,y+h-10,fx_alpha(tint,90));
- }
+    int theme = ui_theme_id();
+    if (vt_ui_theme_legacy_layout(theme) || w < 60 || h < 30)
+        return;
+    fx_shadow(x, y, w, h, theme == VT_UI_THEME_SIGNAL);
+    unsigned tint = theme == VT_UI_THEME_DECK_90 ? VT_THEME_SIGNAL_BRIGHT : VT_THEME_COLD;
+    for (int i = 0; i < 5; i++)
+        vita2d_draw_rectangle(x, y + i * (h / 5), w, h / 5 + 1,
+                              fx_mix(fill, tint, (unsigned)((selected ? 22 : 10) * (5 - i) / 5)));
+    vita2d_draw_line(x + 7, y, x + w - 10, y, fx_alpha(VT_THEME_TEXT, selected ? 100 : 42));
+    vita2d_draw_line(x + w - 1, y + 8, x + w - 1, y + h - 5, RGBA8(0, 0, 0, 80));
+    if (theme == VT_UI_THEME_DECK_90) {
+        vita2d_draw_rectangle(x + 2, y + 2, 2, h - 4, RGBA8(0, 0, 0, 100));
+        vita2d_draw_rectangle(x + 5, y + h - 3, w - 10, 1, fx_alpha(tint, 60));
+    } else {
+        /* Faceted specular lip: a narrow reflection, independent of text/artwork. */
+        for (int i = 0; i < 4; i++)
+            vita2d_draw_rectangle(
+                x + 8 + i * 3, y + 2 + i, w - 24 - i * 6, 1,
+                fx_alpha(VT_THEME_TEXT, (unsigned)(selected ? 38 - i * 7 : 16 - i * 3)));
+        vita2d_draw_line(x, y + 9, x + 9, y, fx_alpha(tint, selected ? 210 : 75));
+        vita2d_draw_line(x + w - 10, y + h - 1, x + w - 1, y + h - 10, fx_alpha(tint, 90));
+    }
  if(selected){
   float pulse=fx_impulse();float sweep=vt_preferences_reduce_motion()?0.5f:fx_phase(3600000ULL);
   vita2d_draw_rectangle(x+8+sweep*(w-44),y+h-2,28,2,fx_alpha(tint,180));
@@ -502,7 +507,9 @@ const char *ui_theme_home_controls_hint(int sections_focused){
   {VT_STR_HOME_HELP_RELAY_CONTENT,VT_STR_HOME_HELP_SIDE_TABS},
   {VT_STR_HOME_HELP_MOSAIC_CONTENT,VT_STR_HOME_HELP_TOP_TABS}
  };
- return vt_i18n_str(hints[ui_theme_id()][!!sections_focused]);
+ return vt_i18n_str(
+     hints[vt_ui_theme_legacy_layout(ui_theme_id()) ? VT_UI_THEME_LEGACY : ui_theme_id()]
+          [!!sections_focused]);
 }
 void ui_theme_home_footer_with_focus(const char *path,int bottom,int sections_focused){
  UiThemeHomeLayout l=ui_theme_home_layout(ui_theme_id(),bottom);

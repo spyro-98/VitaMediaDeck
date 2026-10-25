@@ -1,3 +1,4 @@
+#include <psp2/ctrl.h>
 #include "library/catalog.h"
 #include "library/search.h"
 #include "ui/library_screen.h"
@@ -1059,6 +1060,14 @@ int main(int argc, char *argv[]) {
 	g_startup_started_us = sceKernelGetProcessTimeWide();
 	uint64_t stage_started_us = g_startup_started_us;
 	vt_preferences_init();
+	SceCtrlData startup_controls = {0};
+	sceCtrlPeekBufferPositive(0, &startup_controls, 1);
+	if ((startup_controls.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER)) ==
+	        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER) &&
+	    vt_preferences_interface_theme() == VT_UI_THEME_LEGACY_VITA) {
+		vt_preferences_set_interface_theme(VT_UI_THEME_LEGACY);
+		log_printf("native PAF: startup L1+R1 recovery selected Legacy");
+	}
 	vt_i18n_init();
 	log_printf("startup stage: preferences/i18n=%llu ms",
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -

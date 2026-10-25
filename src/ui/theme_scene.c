@@ -209,7 +209,7 @@ void ui_theme_page_finish(UiThemeScene scene,int x,int top,int width,int bottom)
         vita2d_draw_rectangle(x+3,y,2,24,color);
 }
 void ui_theme_scene_begin(UiThemeScene scene, const char *identity) {
-    if (scene < 0 || scene >= UI_SCENE_COUNT || ui_theme_id() == VT_UI_THEME_LEGACY)
+    if (scene < 0 || scene >= UI_SCENE_COUNT || vt_ui_theme_legacy_layout(ui_theme_id()))
         return;
     uint64_t hash = 1469598103934665603ULL;
     if (identity)
@@ -227,7 +227,7 @@ void ui_theme_scene_begin(UiThemeScene scene, const char *identity) {
     }
 }
 void ui_theme_scene_enter(UiThemeScene scene, const char *identity) {
-    if (scene < 0 || scene >= UI_SCENE_COUNT || ui_theme_id() == VT_UI_THEME_LEGACY)
+    if (scene < 0 || scene >= UI_SCENE_COUNT || vt_ui_theme_legacy_layout(ui_theme_id()))
         return;
     scene_state[scene].ready = 0;
     ui_theme_scene_begin(scene, identity);
@@ -255,7 +255,7 @@ static float scene_reveal_amount(UiThemeScene scene, int slot) {
                                                : 1 - (1 - t) * (1 - t) * (1 - t);
 }
 UiThemeRect ui_theme_scene_reveal(UiThemeScene scene, UiThemeRect r, int slot) {
-    if (ui_theme_id() == VT_UI_THEME_LEGACY)
+    if (vt_ui_theme_legacy_layout(ui_theme_id()))
         return r;
     float k = 1 - scene_reveal_amount(scene, slot);
     int theme = ui_theme_id();
@@ -281,7 +281,7 @@ UiThemeRect ui_theme_scene_reveal(UiThemeScene scene, UiThemeRect r, int slot) {
 void ui_theme_scene_model(UiThemeScene scene, float x, float y, float size, float opacity,
                           int running) {
     int theme = ui_theme_id();
-    if (theme == VT_UI_THEME_LEGACY || opacity <= .01f || scene < 0 || scene >= UI_SCENE_COUNT)
+    if (vt_ui_theme_legacy_layout(theme) || opacity <= .01f || scene < 0 || scene >= UI_SCENE_COUNT)
         return;
     uint64_t now = sceKernelGetProcessTimeWide();
     if (scene_state[scene].last && now >= scene_state[scene].last &&
@@ -354,7 +354,7 @@ void ui_theme_scene_model(UiThemeScene scene, float x, float y, float size, floa
     scene_flush();
 }
 void ui_theme_scene_background(void) {
-    if (ui_theme_id() == VT_UI_THEME_LEGACY || ui_theme_id() == VT_UI_THEME_GHOST_MESH)
+    if (vt_ui_theme_legacy_layout(ui_theme_id()) || ui_theme_id() == VT_UI_THEME_GHOST_MESH)
         return;
     int theme = ui_theme_id();
     /* Peripheral stage keeps type/thumbnail surfaces opaque and the scene visible. */
@@ -370,7 +370,7 @@ void ui_theme_scene_background(void) {
 }
 static void scene_card_motion(UiThemeScene role, UiThemeRect r, int selected, int slot) {
     int theme = ui_theme_id();
-    if (theme == VT_UI_THEME_LEGACY)
+    if (vt_ui_theme_legacy_layout(theme))
         return;
     /* A shallow extruded object, fitted strictly inside its interaction rectangle. */
     scene_count = 0;
@@ -421,7 +421,7 @@ UiThemeHomeLayout ui_theme_browser_layout(int theme, int bottom, int grid) {
         l = (UiThemeHomeLayout){52, 134, 380, 134, 4, 2};
     else if (theme == VT_UI_THEME_MOSAIC)
         l = (UiThemeHomeLayout){30, 140, 164, bottom-210>298?298:bottom-210, 5, 5};
-    if (!grid && theme != VT_UI_THEME_LEGACY) {
+    if (!grid && !vt_ui_theme_legacy_layout(theme)) {
         l.w = theme == VT_UI_THEME_DECK_90 ? 816 : 928 - l.x;
         l.columns = 1;
         l.step = 54;
@@ -450,7 +450,7 @@ UiThemeRect ui_theme_browser_rect(int theme, int slot, int bottom, int grid) {
 UiAudioLayout ui_theme_audio_layout(int layout, int has_cover) {
     UiAudioLayout l = ui_audio_layout(layout, has_cover);
     int theme = ui_theme_id();
-    if (theme == VT_UI_THEME_LEGACY)
+    if (vt_ui_theme_legacy_layout(theme))
         return l;
     if (layout == VT_AUDIO_LAYOUT_CENTER) {
         if (theme == VT_UI_THEME_DECK_90)
@@ -476,7 +476,7 @@ UiAudioLayout ui_theme_audio_layout(int layout, int has_cover) {
 }
 void ui_theme_scene_transport(float x, float y, float w, float h, int selected, float opacity) {
     int theme = ui_theme_id();
-    if (theme == VT_UI_THEME_LEGACY || opacity <= .01f)
+    if (vt_ui_theme_legacy_layout(theme) || opacity <= .01f)
         return;
     unsigned hot = scene_alpha(VT_THEME_SIGNAL_BRIGHT, opacity),
              cold = scene_alpha(VT_THEME_COLD, opacity * .65f);
@@ -594,7 +594,7 @@ UiThemeVideoLayout ui_theme_video_layout(void) {
 static void scene_picture(vita2d_texture *art, float x, float y, float size, float pitch, float yaw, float roll) {
     if (!art)
         return;
-    if (ui_theme_id() == VT_UI_THEME_LEGACY)
+    if (vt_ui_theme_legacy_layout(ui_theme_id()))
         return;
     SceneVec plane[4] = {{-size * .5f, -size * .5f, 0},
                          {size * .5f, -size * .5f, 0},

@@ -1,0 +1,217 @@
+{
+  "reference": "https://github.com/GrapheneCt/ScePaf-RE",
+  "revision": "b76d6ae00516b107d37e7e8a1a16211e3b729a07",
+  "reference_kind": "ABI facts only; no reference code or binary is redistributed",
+  "functions": [
+    {
+      "name": "vmd_paf_fw_params",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf9Framework9InitParamC1Ev",
+      "nid": "0xA5560E60"
+    },
+    {
+      "name": "vmd_paf_fw_create",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf9FrameworkC1ERKNS0_9InitParamE",
+      "nid": "0xE2860A99"
+    },
+    {
+      "name": "vmd_paf_fw_instance",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf9Framework8InstanceEv",
+      "nid": "0xF72FC59E"
+    },
+    {
+      "name": "vmd_paf_fw_update",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf9Framework6UpdateEPv",
+      "nid": "0x01EFE482"
+    },
+    {
+      "name": "vmd_paf_fw_common",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf9Framework22LoadCommonResourceSyncEPFvvE",
+      "nid": "0x947332B7"
+    },
+    {
+      "name": "vmd_paf_plugin_params",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf6Plugin9InitParamC1Ev",
+      "nid": "0x400F84CE"
+    },
+    {
+      "name": "vmd_paf_plugin_load",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf6Plugin8LoadSyncERKNS0_9InitParamEPFvPS0_Ei",
+      "nid": "0xBE479650"
+    },
+    {
+      "name": "vmd_paf_page_params",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf6Plugin13PageOpenParamC1Ev",
+      "nid": "0x34FE1331"
+    },
+    {
+      "name": "vmd_paf_page_open",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf6Plugin8PageOpenERKNS_7IDParamERKNS0_13PageOpenParamE",
+      "nid": "0x30B442D9"
+    },
+    {
+      "name": "vmd_paf_widget_create",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf6Plugin12CreateWidgetEPNS_2ui6WidgetEPKcRKNS_7IDParamES8_",
+      "nid": "0x923F763A"
+    },
+    {
+      "name": "vmd_paf_id_hash",
+      "library": "ScePafResource",
+      "library_nid": "0x2836DC9B",
+      "symbol": "_ZN3paf7IDParam9ID2IDHashERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE",
+      "nid": "0x5F05DE68"
+    },
+    {
+      "name": "vmd_paf_allocate",
+      "library": "ScePafStdc",
+      "library_nid": "0xA7D28DAE",
+      "symbol": "sce_paf_malloc",
+      "nid": "0x0886C1E3"
+    },
+    {
+      "name": "vmd_paf_widget_pos",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget6SetPosERKNS_4math2v4EPNS_5TimerEiifPFvS7_PNS0_12AnimListenerEPvSA_SA_ESA_",
+      "nid": "0xE29AB31F"
+    },
+    {
+      "name": "vmd_paf_widget_size",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget7SetSizeERKNS_4math2v4EPNS_5TimerEiifPFvS7_PNS0_12AnimListenerEPvSA_SA_ESA_",
+      "nid": "0x046AA07D"
+    },
+    {
+      "name": "vmd_paf_widget_show",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget4ShowEPNS_5TimerEifPFvS3_PNS0_12AnimListenerEPvS6_S6_E",
+      "nid": "0xFF5BC957"
+    },
+    {
+      "name": "vmd_paf_widget_hide",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget4HideEPNS_5TimerEifPFvS3_PNS0_12AnimListenerEPvS6_S6_E",
+      "nid": "0x4588699E"
+    },
+    {
+      "name": "vmd_paf_widget_alpha",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget12SetShowAlphaEfPNS_5TimerEiifPFvS3_PNS0_12AnimListenerEPvS6_S6_E",
+      "nid": "0x1D697704"
+    },
+    {
+      "name": "vmd_paf_button_text",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui10ButtonBase9SetStringERKNS_12basic_stringIwNS_11char_traitsIwEENS_9allocatorIwEEEEi",
+      "nid": "0xD149484A"
+    },
+    {
+      "name": "vmd_paf_button_state",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Button17ChangeButtonStateENS0_10ButtonBase11ButtonStateE",
+      "nid": "0xA0EEE146"
+    },
+    {
+      "name": "vmd_paf_widget_text",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui4Text9SetStringERKNS_12basic_stringIwNS_11char_traitsIwEENS_9allocatorIwEEEEi",
+      "nid": "0x922FF349"
+    },
+    {
+      "name": "vmd_paf_widget_color",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget8SetColorERKNS_4math2v4EPNS_5TimerEiifPFvS7_PNS0_12AnimListenerEPvSA_SA_ESA_",
+      "nid": "0x627CDA4E"
+    },
+    {
+      "name": "vmd_paf_widget_order",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget12ReorderChildEPS1_S2_",
+      "nid": "0x300564A9"
+    },
+    {
+      "name": "vmd_paf_text_size",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui4Text17SetStyleAttributeENS_5graph18TextStyleAttributeEjjf",
+      "nid": "0x39B15B98"
+    },
+    {
+      "name": "vmd_paf_text_color",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui4Text17SetStyleAttributeENS_5graph18TextStyleAttributeEjjRKNS_4math2v4E",
+      "nid": "0xCD20EF38"
+    },
+    {
+      "name": "vmd_paf_text_layout_int",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui4Text18SetLayoutAttributeENS_5graph19TextLayoutAttributeEi",
+      "nid": "0x44C56F46"
+    },
+    {
+      "name": "vmd_paf_text_layout_bool",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui4Text18SetLayoutAttributeENS_5graph19TextLayoutAttributeEb",
+      "nid": "0x88AAD8BC"
+    },
+    {
+      "name": "vmd_paf_text_layout_vec",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui4Text18SetLayoutAttributeENS_5graph19TextLayoutAttributeERKNS_4math2v2E",
+      "nid": "0x7062377C"
+    },
+    {
+      "name": "vmd_paf_busy_start",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui13BusyIndicator5StartEv",
+      "nid": "0x04310E14"
+    },
+    {
+      "name": "vmd_paf_busy_stop",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui13BusyIndicator4StopEv",
+      "nid": "0x73D27A1B"
+    },
+    {
+      "name": "vmd_paf_widget_find",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget9FindChildERKNS_7IDParamEi",
+      "nid": "0x9D304F4A"
+    }
+  ]
+}

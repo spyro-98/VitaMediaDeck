@@ -84,43 +84,86 @@ static void exit_via_sidebar(unsigned after){
 int main(int argc,char **argv){
  CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));loaded=1;
  FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));
- for(int theme=1;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mini=0;mini<2;mini++)for(int kind=0;kind<6;kind++){
-  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;mini_top=mini?472:544;
-  fixture(kind);exit_via_sidebar(0);capture_frame=0;
-  int result=ui_online_audio_screen();CHECK(result==UI_SECTION_NETWORK||result==UI_SECTION_IPTV);
-  CHECK(!compact_home_labels);CHECK(ui_theme_id()==theme);
-  memcpy(pixels,first_pixels,sizeof(pixels));char name[100];
-  snprintf(name,sizeof(name),"theme-online-%d-%d-%s%s",theme,kind,language?"it":"en",mini?"-mini":"");png(name);
-  /* A return from discovery must go to the same themed Home. */
-  if(kind==2){fixture(kind);input_script[1]=SCE_CTRL_CIRCLE;script_count=2;
-   CHECK(ui_online_audio_screen()==UI_SECTION_LOCAL_MEDIA&&g_home);
-   CHECK(!compact_home_labels);UiThemeRect tab=ui_theme_home_tab_rect(theme,3,0);CHECK(tab.y>=62);
-  }
-  /* An episode's parent is restored without exposing the legacy toolbar. */
-  if(kind==5){fixture(kind);g_return_valid=1;g_return_query=g_query;g_return_query.kind=VT_ONLINE_FEED;
-   g_return_query.count=2;g_return_selected=g_return_top=g_return_catalog=0;g_return_pages=1;g_return_sizes[0]=2;
-   input_script[1]=SCE_CTRL_CIRCLE;exit_via_sidebar(2);capture_frame=2;
-   result=ui_online_audio_screen();CHECK(result==UI_SECTION_NETWORK);
-   CHECK(!g_episodes&&g_query.kind==VT_ONLINE_FEED&&!g_return_valid&&!compact_home_labels);
-  }
- }
- for(int theme=1;theme<VT_UI_THEME_COUNT;theme++){
-  ui_theme_apply(theme);fixture(1);mini_top=544;
-  g_selected=g_query.count;g_top=vt_catalog_top(g_selected,0,CATALOG_COLUMNS,CATALOG_ROWS);
-  UiThemeRect hit=online_item_rect(g_selected-g_top);
-  tap_frame=0;tap_x=hit.x+20;tap_y=hit.y+20;script_count=2;
-  CHECK(ui_online_audio_screen()==UI_SECTION_LOCAL_MEDIA);
-  CHECK(!ui_home_tab_online()&&ui_home_tab()==HOME_PODCAST&&!compact_home_labels);
+ for (int theme = 1; theme < VT_UI_THEME_LEGACY_VITA; theme++)
+     for (language = 0; language < 2; language++)
+         for (int mini = 0; mini < 2; mini++)
+             for (int kind = 0; kind < 6; kind++) {
+                 ui_theme_apply(theme);
+                 face = theme == VT_UI_THEME_DECK_90 ? mono : inter;
+                 mini_top = mini ? 472 : 544;
+                 fixture(kind);
+                 exit_via_sidebar(0);
+                 capture_frame = 0;
+                 int result = ui_online_audio_screen();
+                 CHECK(result == UI_SECTION_NETWORK || result == UI_SECTION_IPTV);
+                 CHECK(!compact_home_labels);
+                 CHECK(ui_theme_id() == theme);
+                 memcpy(pixels, first_pixels, sizeof(pixels));
+                 char name[100];
+                 snprintf(name, sizeof(name), "theme-online-%d-%d-%s%s", theme, kind,
+                          language ? "it" : "en", mini ? "-mini" : "");
+                 png(name);
+                 /* A return from discovery must go to the same themed Home. */
+                 if (kind == 2) {
+                     fixture(kind);
+                     input_script[1] = SCE_CTRL_CIRCLE;
+                     script_count = 2;
+                     CHECK(ui_online_audio_screen() == UI_SECTION_LOCAL_MEDIA && g_home);
+                     CHECK(!compact_home_labels);
+                     UiThemeRect tab = ui_theme_home_tab_rect(theme, 3, 0);
+                     CHECK(tab.y >= 62);
+                 }
+                 /* An episode's parent is restored without exposing the legacy toolbar. */
+                 if (kind == 5) {
+                     fixture(kind);
+                     g_return_valid = 1;
+                     g_return_query = g_query;
+                     g_return_query.kind = VT_ONLINE_FEED;
+                     g_return_query.count = 2;
+                     g_return_selected = g_return_top = g_return_catalog = 0;
+                     g_return_pages = 1;
+                     g_return_sizes[0] = 2;
+                     input_script[1] = SCE_CTRL_CIRCLE;
+                     exit_via_sidebar(2);
+                     capture_frame = 2;
+                     result = ui_online_audio_screen();
+                     CHECK(result == UI_SECTION_NETWORK);
+                     CHECK(!g_episodes && g_query.kind == VT_ONLINE_FEED && !g_return_valid &&
+                           !compact_home_labels);
+                 }
+             }
+ for (int theme = 1; theme < VT_UI_THEME_LEGACY_VITA; theme++) {
+     ui_theme_apply(theme);
+     fixture(1);
+     mini_top = 544;
+     g_selected = g_query.count;
+     g_top = vt_catalog_top(g_selected, 0, CATALOG_COLUMNS, CATALOG_ROWS);
+     UiThemeRect hit = online_item_rect(g_selected - g_top);
+     tap_frame = 0;
+     tap_x = hit.x + 20;
+     tap_y = hit.y + 20;
+     script_count = 2;
+     CHECK(ui_online_audio_screen() == UI_SECTION_LOCAL_MEDIA);
+     CHECK(!ui_home_tab_online() && ui_home_tab() == HOME_PODCAST && !compact_home_labels);
  }
  /* Returning from the real playback branch keeps the same themed section. */
  allow_audio_fullscreen=1;
- for(int theme=1;theme<VT_UI_THEME_COUNT;theme++)for(int kind=0;kind<2;kind++){
-  ui_theme_apply(theme);fixture(kind?5:0);mini_top=544;capture_frame=2;
-  UiThemeRect hit=online_item_rect(0);tap_frame=1;tap_x=hit.x+20;tap_y=hit.y+20;
-  exit_via_sidebar(2);unsigned before=audio_returns;
-  CHECK(ui_online_audio_screen()==UI_SECTION_NETWORK);
-  CHECK(audio_returns==before+1&&ui_theme_id()==theme&&g_query.count==6&&!compact_home_labels);
- }
+ for (int theme = 1; theme < VT_UI_THEME_LEGACY_VITA; theme++)
+     for (int kind = 0; kind < 2; kind++) {
+         ui_theme_apply(theme);
+         fixture(kind ? 5 : 0);
+         mini_top = 544;
+         capture_frame = 2;
+         UiThemeRect hit = online_item_rect(0);
+         tap_frame = 1;
+         tap_x = hit.x + 20;
+         tap_y = hit.y + 20;
+         exit_via_sidebar(2);
+         unsigned before = audio_returns;
+         CHECK(ui_online_audio_screen() == UI_SECTION_NETWORK);
+         CHECK(audio_returns == before + 1 && ui_theme_id() == theme && g_query.count == 6 &&
+               !compact_home_labels);
+     }
  allow_audio_fullscreen=0;
  /* Held right stick: Radio -> Podcast -> Images in the actual online loop. */
  ui_theme_apply(VT_UI_THEME_GHOST_MESH);fixture(0);mini_top=544;
@@ -167,7 +210,9 @@ int main(int argc,char **argv){
  }
  clear_history();face=inter;FT_Done_Face(mono);ui_theme_apply(VT_UI_THEME_LEGACY);
  FT_Done_Face(face);FT_Done_FreeType(ft);
- printf("Themed online flows: %u checks, seven themes, favourite removal/failure/empty state, isolated provider inputs and nested flows passed\n",checks);
+ printf("Themed online flows: %u checks, eight themes, favourite removal/failure/empty state, "
+        "isolated provider inputs and nested flows passed\n",
+        checks);
 }
 
 int vt_online_query_cache_read(VtOnlineQuery *q){(void)q;return -1;}

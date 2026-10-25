@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/subtitle.h"
 #include <math.h>
 #include <stdio.h>
@@ -216,6 +219,9 @@ void ui_subtitle_draw(const char *text, float vx, float vy, float vw, float vh) 
 		                      widest + 24 * scale, reserved * line_height + 5 * scale,
 		                      background);
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+	ui_native_vita_media_text(1);
+#endif
 	for (int line = 0; line < count; line++, y += line_height) {
 		int width = widths[line];
 		int x = (int)(vx + (vw - width) / 2);
@@ -231,4 +237,7 @@ void ui_subtitle_draw(const char *text, float vx, float vy, float vw, float vh) 
 		}
 		ui_font_draw_text(font, x, y, foreground, size, fitted[line]);
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+	ui_native_vita_media_text(0);
+#endif
 }

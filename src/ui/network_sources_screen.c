@@ -48,7 +48,10 @@
 #define SOURCE_LIST_Y 118
 #define SOURCE_LIST_W 604
 #define SOURCE_ROW_H 58
-#define BROWSER_GRID_COLS (ui_theme_id()==VT_UI_THEME_LEGACY?UI_GRID_COLS:ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),1).columns)
+#define BROWSER_GRID_COLS                                                                          \
+	(vt_ui_theme_legacy_layout(ui_theme_id())                                                      \
+	     ? UI_GRID_COLS                                                                            \
+		 : ui_theme_browser_layout(ui_theme_id(), network_viewport_bottom(), 1).columns)
 #define BROWSER_GRID_CARD_W UI_GRID_CARD_W
 #define BROWSER_GRID_CARD_H (ui_media_grid_layout(LIST_Y, network_viewport_bottom()).card_h)
 #define BROWSER_GRID_GAP_X 9
@@ -178,7 +181,8 @@ static int network_viewport_bottom(void) {
 }
 
 static int visible_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)return ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),0).rows;
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return ui_theme_browser_layout(ui_theme_id(), network_viewport_bottom(), 0).rows;
 	int rows = (network_viewport_bottom() - LIST_Y + 6) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -186,7 +190,8 @@ static int visible_rows(void) {
 }
 
 static int render_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY)return ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),0).rows;
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return ui_theme_browser_layout(ui_theme_id(), network_viewport_bottom(), 0).rows;
 	int rows = (network_viewport_bottom() - LIST_Y + ROW_H - 1) / ROW_H;
 	if (rows < 1) rows = 1;
 	if (rows > VISIBLE_ROWS) rows = VISIBLE_ROWS;
@@ -194,12 +199,18 @@ static int render_rows(void) {
 }
 
 static int browser_grid_visible_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),1);return l.rows/l.columns;}
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		UiThemeHomeLayout l = ui_theme_browser_layout(ui_theme_id(), network_viewport_bottom(), 1);
+		return l.rows / l.columns;
+	}
  return ui_media_grid_layout(LIST_Y, network_viewport_bottom()).rows;
 }
 
 static int browser_grid_render_rows(void) {
- if(ui_theme_id()!=VT_UI_THEME_LEGACY){UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),1);return l.rows/l.columns;}
+	if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		UiThemeHomeLayout l = ui_theme_browser_layout(ui_theme_id(), network_viewport_bottom(), 1);
+		return l.rows / l.columns;
+	}
  return ui_media_grid_layout(LIST_Y, network_viewport_bottom()).rows;
 }
 
@@ -801,18 +812,26 @@ static int show_jellyfin_metadata(const VtNetworkSource *source,
 static UiPageView remote_page(const VtNetworkSource *source,const char *path,int top,int count,int grid) {
     int columns=grid?BROWSER_GRID_COLS:1;
     UiThemeHomeLayout layout=ui_theme_browser_layout(ui_theme_id(),network_viewport_bottom(),grid);
-    int slots=ui_theme_id()==VT_UI_THEME_LEGACY?(grid?browser_grid_render_rows()*columns:render_rows()):layout.rows;
-    float step=ui_theme_id()==VT_UI_THEME_LEGACY?(grid?BROWSER_GRID_CARD_H+BROWSER_GRID_GAP_Y:ROW_H):layout.step;
-    return ui_theme_page(UI_SCENE_BROWSER,source->host,path,grid?top*columns:top,count,columns,slots,step);
+	int slots = vt_ui_theme_legacy_layout(ui_theme_id())
+	                ? (grid ? browser_grid_render_rows() * columns : render_rows())
+	                : layout.rows;
+	float step = vt_ui_theme_legacy_layout(ui_theme_id())
+	                 ? (grid ? BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y : ROW_H)
+	                 : layout.step;
+	return ui_theme_page(UI_SCENE_BROWSER, source->host, path, grid ? top * columns : top, count,
+	                     columns, slots, step);
 }
 static UiThemeRect remote_item_rect(int index,int top,int grid) {
     int columns=grid?BROWSER_GRID_COLS:1,first=grid?top*columns:top;
-    if(ui_theme_id()!=VT_UI_THEME_LEGACY)
-        return ui_theme_browser_rect(ui_theme_id(),index-first,network_viewport_bottom(),grid);
-    UiThemeRect r=grid?(UiThemeRect){LIST_X+index%columns*(BROWSER_GRID_CARD_W+BROWSER_GRID_GAP_X),
-        LIST_Y+(index/columns-top)*(BROWSER_GRID_CARD_H+BROWSER_GRID_GAP_Y),BROWSER_GRID_CARD_W,BROWSER_GRID_CARD_H}:
-        (UiThemeRect){LIST_X,LIST_Y+(index-top)*ROW_H,LIST_W,ROW_H-6};
-    return ui_theme_page_rect(UI_SCENE_BROWSER,r);
+	if (!vt_ui_theme_legacy_layout(ui_theme_id()))
+		return ui_theme_browser_rect(ui_theme_id(), index - first, network_viewport_bottom(), grid);
+	UiThemeRect r =
+	    grid ? (UiThemeRect){LIST_X + index % columns * (BROWSER_GRID_CARD_W + BROWSER_GRID_GAP_X),
+		                     LIST_Y + (index / columns - top) *
+		                                  (BROWSER_GRID_CARD_H + BROWSER_GRID_GAP_Y),
+		                     BROWSER_GRID_CARD_W, BROWSER_GRID_CARD_H}
+		     : (UiThemeRect){LIST_X, LIST_Y + (index - top) * ROW_H, LIST_W, ROW_H - 6};
+	return ui_theme_page_rect(UI_SCENE_BROWSER, r);
 }
 
 static void draw_browser(const VtNetworkSource *source, const char *path,
@@ -865,23 +884,31 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 			                             UI_FONT_BODY, vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER));
 		if (small) ui_font_draw_text(small, 280, 290, VT_THEME_TEXT,
 			                              UI_FONT_SMALL, vt_i18n_str(VT_STR_NETWORK_EMPTY_FOLDER_DETAIL));
-	} else if(ui_theme_id()!=VT_UI_THEME_LEGACY) {
-  ui_theme_scene_begin(UI_SCENE_BROWSER,path);
-  int bottom=network_viewport_bottom();UiThemeHomeLayout l=ui_theme_browser_layout(ui_theme_id(),bottom,grid_mode);
-  int first=grid_mode?top*l.columns:top;
-  vita2d_set_clip_rectangle(0,LIST_Y,960,bottom);vita2d_enable_clipping();
-  for(int i=page.first;i<page.end;i++) {
-   int slot=i-first;const VtNetworkEntry *entry=&entries[i];
-   vita2d_texture *preview=(entry->is_video||entry->is_audio||entry->is_image)?
-      vt_video_thumbnail_get_remote_priority(source,credential,entry->path,entry->size,
-        thumbnail_viewport_priority(i,selected,first,first+l.rows)):NULL;
-   char detail[64];format_browser_entry_detail(source,entry,detail,sizeof(detail));
-   UiThemeRect tile=ui_theme_browser_rect(ui_theme_id(),slot,bottom,grid_mode);
-   ui_theme_browser_tile(UI_SCENE_BROWSER,tile,slot,i==selected,preview,personal_entry_title(source,entry),detail,entry->is_directory);
-  }
-  vita2d_disable_clipping();
+	} else if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
+		ui_theme_scene_begin(UI_SCENE_BROWSER, path);
+		int bottom = network_viewport_bottom();
+		UiThemeHomeLayout l = ui_theme_browser_layout(ui_theme_id(), bottom, grid_mode);
+		int first = grid_mode ? top * l.columns : top;
+		vita2d_set_clip_rectangle(0, LIST_Y, 960, bottom);
+		vita2d_enable_clipping();
+		for (int i = page.first; i < page.end; i++) {
+			int slot = i - first;
+			const VtNetworkEntry *entry = &entries[i];
+			vita2d_texture *preview =
+			    (entry->is_video || entry->is_audio || entry->is_image)
+			        ? vt_video_thumbnail_get_remote_priority(
+			              source, credential, entry->path, entry->size,
+			              thumbnail_viewport_priority(i, selected, first, first + l.rows))
+			        : NULL;
+			char detail[64];
+			format_browser_entry_detail(source, entry, detail, sizeof(detail));
+			UiThemeRect tile = ui_theme_browser_rect(ui_theme_id(), slot, bottom, grid_mode);
+			ui_theme_browser_tile(UI_SCENE_BROWSER, tile, slot, i == selected, preview,
+			                      personal_entry_title(source, entry), detail, entry->is_directory);
+		}
+		vita2d_disable_clipping();
 	} else if (!grid_mode) {
-        int list_x=LIST_X+(int)roundf(page.dx);
+		int list_x = LIST_X + (int)roundf(page.dx);
 		int viewport_bottom = network_viewport_bottom();
 		vita2d_set_clip_rectangle(0, LIST_Y, 960, viewport_bottom);
 		vita2d_enable_clipping();
@@ -983,11 +1010,11 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 		}
 		vita2d_disable_clipping();
 	}
-    ui_theme_page_finish(UI_SCENE_BROWSER,LIST_X,LIST_Y,LIST_W,network_viewport_bottom());
-    if(count && !right_open) {
-        UiThemeRect r=remote_item_rect(selected,top,grid_mode);
-        ui_focus_motion_tick(focus_motion,r.x,r.y,r.w,r.h);
-    }
+	ui_theme_page_finish(UI_SCENE_BROWSER, LIST_X, LIST_Y, LIST_W, network_viewport_bottom());
+	if (count && !right_open) {
+		UiThemeRect r = remote_item_rect(selected, top, grid_mode);
+		ui_focus_motion_tick(focus_motion, r.x, r.y, r.w, r.h);
+	}
 	if(count && focus_motion && !right_open && !ui_mini_player_input_locked() &&
      (!sidebar || (!sidebar->open && sidebar->animation<=.01f)))
   ui_focus_glow_draw(focus_motion->x,focus_motion->y,focus_motion->width,focus_motion->height,

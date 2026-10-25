@@ -9,6 +9,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Complete Legacy Vita / PAF integration](legacy-vita-paf-2026-10-25.md): native shared components, media composition, validation and console acceptance.
+
 - [Unified library and global search](unified-library-2026-10-24.md): common Home, local state, progressive provider results and acceptance checks.
 
 - [Scrollable L1 menus](l1-scroll-2026-10-24.md): roomier targets, per-theme motion, touch and focus preservation.
@@ -56,6 +58,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [design/theme-exploration/motion.md](../design/theme-exploration/motion.md) | Historical concept or research; not release implementation proof |
 | [design/theme-exploration/screen-inventory.md](../design/theme-exploration/screen-inventory.md) | Historical concept or research; not release implementation proof |
 | [design/theme-exploration/validation.md](../design/theme-exploration/validation.md) | Historical concept or research; not release implementation proof |
+| [docs/legacy-vita-paf-2026-10-25.md](legacy-vita-paf-2026-10-25.md) | Complete native PAF theme, evidence and console acceptance |
 | [docs/VALIDATION.md](VALIDATION.md) | Current reference, policy or build instructions |
 | [docs/cache-and-ghost-2026-10-23.md](cache-and-ghost-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/console-validation-playerfix-2026-10-23.md](console-validation-playerfix-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |

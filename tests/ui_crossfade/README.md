@@ -43,7 +43,7 @@ keeps cached data, and every compact media row requests its thumbnail.
 ## Continuous page transitions
 
 `run-host-tests.sh` also runs `page_motion_test.c` against the production physics.
-`run-motion.sh` renders browser/Home reference frames for all seven themes with
+`run-motion.sh` renders browser/Home reference frames for all eight themes with
 rapid reversals, cache append and touch during command-deck motion. It checks
 bounded overscan, shared transforms and non-overlapping hit regions. Set
 `VMD_MOTION_OUTPUT` to choose its output directory. These are synthetic host

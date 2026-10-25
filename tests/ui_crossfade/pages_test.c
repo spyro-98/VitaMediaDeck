@@ -121,7 +121,8 @@ int main(int argc,char **argv) {
   CHECK(ui_theme_id()==i%VT_UI_THEME_COUNT);
  }
  CHECK(theme_prepares==VT_UI_THEME_COUNT);theme_write_failure=1;
- CHECK(apply_row(TAB_INTERFACE,4,1)<0&&ui_theme_id()==VT_UI_THEME_LEGACY&&theme_prepares==VT_UI_THEME_COUNT);
+ CHECK(apply_row(TAB_INTERFACE, 4, 1) < 0 && vt_ui_theme_legacy_layout(ui_theme_id()) &&
+       theme_prepares == VT_UI_THEME_COUNT);
  theme_write_failure=0;
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mini=0;mini<2;mini++)for(int tab=0;tab<TAB_COUNT;tab++){
   ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;mini_top=mini?472:544;

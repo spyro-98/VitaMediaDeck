@@ -67,5 +67,7 @@ int main(int argc,char **argv){
  CHECK(ui_touch_hit_rect(500,480,UI_QR_CANCEL_X,UI_QR_CANCEL_Y,UI_QR_CANCEL_W,UI_QR_CANCEL_H));
  CHECK(!ui_touch_hit_rect(240,280,UI_QR_CANCEL_X,UI_QR_CANCEL_Y,UI_QR_CANCEL_W,UI_QR_CANCEL_H));
  FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);
- printf("Native utility coverage: %u checks, %u QR states; 7 distinct themes, IT/EN, reduced motion, full camera crop intact, text editor and logs passed.\n",checks,rendered);
+ printf("Native utility coverage: %u checks, %u QR states; 8 distinct themes, IT/EN, reduced "
+        "motion, full camera crop intact, text editor and logs passed.\n",
+        checks, rendered);
 }
