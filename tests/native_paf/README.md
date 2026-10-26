@@ -36,3 +36,9 @@ firmware error code, recover to Legacy and never update a failed native graph.
 The [layout report](../../docs/paf-layout-2026-10-26.md) distinguishes the host
 contract tests, private firmware setter probes and incomplete emulator runs from
 physical UI acceptance.
+
+The subsequent console error 0x80AF4101 requires class-specific string targets:
+Text object 0 and Button label object 1. The mock tracks created widget classes
+and rejects a wrong target with that error. Regressions cover both old invalid
+targets, updates, clearing/restoring a cached button label, and no widget rebuild.
+See the [button-label report](../../docs/paf-button-label-2026-10-26.md).

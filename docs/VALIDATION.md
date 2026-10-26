@@ -5,13 +5,16 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
-The latest console log identifies a rejected vector attribute while sizing the
-first text. The [retail layout correction](paf-layout-2026-10-26.md) updates typed
-attribute IDs, Vector2 storage and error diagnostics; 8,318 adapter host checks
-passed. Private setter probes do not establish physical rendering. Vita3K reached
-Framework initialization but did not complete a native frame; host crash attempts
-are explicitly recorded as failures. The new standard build still needs Vita
-acceptance.
+The latest console log reports a Button string-target error (0x80AF4101).
+The [button-label correction](paf-button-label-2026-10-26.md) targets Button's
+label object 1 while Text retains object 0. Typed mocks and reuse/clear/restore
+regressions pass 9,121 adapter ASan/UBSan assertions. No further emulator or JIT
+experiments were launched. Full physical native-rendering acceptance is pending.
+
+The preceding [retail layout correction](paf-layout-2026-10-26.md) remains in
+place. Its seven private setter probes and incomplete Vita3K attempts establish
+only their explicitly documented boundaries. Reaching a later operation on the
+console does not establish complete native text or frame rendering.
 
 The first physical PAF test crashed; the next run passed initialization but
 failed during native presentation. See the [second crash diagnosis and recovery

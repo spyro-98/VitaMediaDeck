@@ -22,6 +22,7 @@ static int host_plugin_missing, host_alloc_fail, host_real_common, host_bad_targ
 static void *host_instance, *host_allocated[32];
 static unsigned host_alloc_count;
 static unsigned char host_nodes[1024];
+static int host_node_kinds[1024], host_bad_text_targets;
 static float host_left[1024],host_width[1024];
 static int host_nodes_used;
 static char host_last_text[512];
@@ -132,7 +133,10 @@ void *vmd_paf_widget_create(void *self, void *parent, const char *type, const Vt
     if (host_fail_create)
         return NULL;
     CHECK(host_nodes_used < 1000);
-    return host_nodes + 2 + host_nodes_used++;
+    unsigned node = 2 + host_nodes_used++;
+    host_node_kinds[node] = !strcmp(type, "button") ? NATIVE_BUTTON
+                              : !strcmp(type, "text") ? NATIVE_TEXT : NATIVE_PANEL;
+    return host_nodes + node;
 }
 int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int opt, float delay,
                        void *cb, void *data) {
@@ -163,8 +167,8 @@ int vmd_paf_widget_alpha(void *self, float alpha, void *timer, int id, int opt, 
           !host_scene);
     return 0;
 }
-static int set_text(void *self, const VtPafString *text, int obj) {
-    CHECK(self && text && obj == 0 && !host_scene);
+static int set_text(void *self, const VtPafString *text) {
+    CHECK(self && text && !host_scene);
     host_strings++;
     const uint16_t *v = text->data;
     for (unsigned i = 0; i < text->count && i < sizeof(host_last_text) - 1; i++)
@@ -173,10 +177,22 @@ static int set_text(void *self, const VtPafString *text, int obj) {
     return host_fail_text ? -1 : 0;
 }
 int vmd_paf_button_text(void *self, const VtPafString *text, int obj) {
-    return set_text(self, text, obj);
+    CHECK(self && host_node_kinds[(unsigned char *)self - host_nodes] == NATIVE_BUTTON);
+    /* Actual Button OBJ_BG=0 is a PlaneObj; SetString requires OBJ_LABEL=1.
+     * Return the console's exact error instead of accepting every object. */
+    if (obj != 1) {
+        host_bad_text_targets++;
+        return (int)0x80af4101u;
+    }
+    return set_text(self, text);
 }
 int vmd_paf_widget_text(void *self, const VtPafString *text, int obj) {
-    return set_text(self, text, obj);
+    CHECK(self && host_node_kinds[(unsigned char *)self - host_nodes] == NATIVE_TEXT);
+    if (obj != 0) {
+        host_bad_text_targets++;
+        return (int)0x80af4101u;
+    }
+    return set_text(self, text);
 }
 uint32_t vmd_paf_button_state(void *self, int s) {
     CHECK(self && (s == 0 || s == 2) && !host_scene);
@@ -329,7 +345,8 @@ static void reset(void) {
     host_loads = host_updates = host_creates = host_strings = host_fail_create = host_fail_text = 0;
     host_plugin_missing = host_alloc_fail = host_real_common = host_bad_target = 0;
     host_instance = NULL;
-    host_nodes_used = 0;
+    host_nodes_used = host_bad_text_targets = 0;
+    memset(host_node_kinds, 0, sizeof(host_node_kinds));
     framework = plugin = page = NULL;
     memset(slots, 0, sizeof(slots));
     memset(commands, 0, sizeof(commands));
@@ -518,6 +535,30 @@ int main(void) {
         CHECK(host_saved_theme == VT_UI_THEME_LEGACY);
         CHECK(host_failure_code == (unsigned)-12345);
         CHECK(!strcmp(host_failure_operation, layout_ops[n]));
+    }
+    /* A button's text object differs from Text's, including empty labels on
+     * reused panel/button slots. Replay the precise console error explicitly. */
+    reset();
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_button(24, 112, 384, 42, "First label", 1));
+    CHECK(ui_native_vita_text(28, 94, 340, 24, 0xffffffff, "Plain text"));
+    __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && !host_bad_text_targets && host_updates == 1);
+    void *button_widget = slots[NATIVE_BUTTON][0].widget;
+    void *text_widget = slots[NATIVE_TEXT][0].widget;
+    VtPafString empty = {(const uint16_t[]){0}, 0, 0};
+    CHECK(vmd_paf_button_text(button_widget, &empty, 0) == (int)0x80af4101u);
+    CHECK(vmd_paf_widget_text(text_widget, &empty, 1) == (int)0x80af4101u);
+    CHECK(host_bad_text_targets == 2);
+    int stable_creates = host_creates;
+    for (int n = 0; n < 3; n++) {
+        const char *labels[] = {"Updated", "", "Restored"};
+        __wrap_vita2d_start_drawing();
+        CHECK(ui_native_vita_button(24, 112, 384, 42, labels[n], n != 1));
+        __wrap_vita2d_end_drawing();
+        CHECK(state == 1 && host_updates == n + 2 && host_creates == stable_creates);
+        CHECK(host_bad_text_targets == 2 && slots[NATIVE_BUTTON][0].widget == button_widget);
+        CHECK(!strcmp(host_last_text, labels[n]));
     }
     uint16_t text[8];
     CHECK(ui_native_vita_utf16("citt\xc3\xa0", text, 8) == 5 && text[4] == 0xe0);
