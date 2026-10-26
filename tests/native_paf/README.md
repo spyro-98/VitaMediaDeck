@@ -28,3 +28,11 @@ frame/re-selection safety, and first-frame-only checkpoint writes. See the
 [second PAF crash report](../../docs/paf-widget-recovery-2026-10-25.md). The dump
 reader requires explicit `--allow-partial` for unfinished cores and labels missing
 segments rather than interpreting absent memory as zero.
+
+The text-layout regression from 26 October checks retail vector IDs 6/7/8,
+boolean IDs 11/13/15, and 16-byte aligned/padded Vector2 arguments. Injected
+failures at each of those six stages must preserve the exact operation and
+firmware error code, recover to Legacy and never update a failed native graph.
+The [layout report](../../docs/paf-layout-2026-10-26.md) distinguishes the host
+contract tests, private firmware setter probes and incomplete emulator runs from
+physical UI acceptance.

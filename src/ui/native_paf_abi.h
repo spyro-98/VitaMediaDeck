@@ -10,6 +10,24 @@ typedef struct {
     const void *data;
     uint32_t count, allocator_padding;
 } VtPafString;
+/* Retail PAF uses a SIMD-sized Vector2 reference, not an 8-byte float pair.
+ * Layout IDs below were checked against the loaded firmware. The pinned RE
+ * header omits an integer attribute and shifts every later ID down by one. */
+typedef struct {
+    _Alignas(16) float lane[4];
+} VtPafVec2;
+_Static_assert(sizeof(VtPafVec2) == 16 && _Alignof(VtPafVec2) == 16, "PAF Vector2 ABI");
+enum {
+    VMD_PAF_LAYOUT_ALIGN_X = 0,
+    VMD_PAF_LAYOUT_ALIGN_Y = 1,
+    VMD_PAF_LAYOUT_TEXT_ALIGN = 2,
+    VMD_PAF_LAYOUT_SIZE = 6,
+    VMD_PAF_LAYOUT_VISIBLE_POS = 7,
+    VMD_PAF_LAYOUT_VISIBLE_SIZE = 8,
+    VMD_PAF_LAYOUT_CONDENSE_X = 11,
+    VMD_PAF_LAYOUT_WORD_WRAP = 13,
+    VMD_PAF_LAYOUT_ELLIPSIS = 15
+};
 typedef struct {
     VtPafString name;
     uint32_t hash;
@@ -49,7 +67,7 @@ int vmd_paf_text_size(void *self, int attr, unsigned start, unsigned count, floa
 int vmd_paf_text_color(void *self, int attr, unsigned start, unsigned count, const float value[4]);
 int vmd_paf_text_layout_int(void *self, int attr, int value);
 int vmd_paf_text_layout_bool(void *self, int attr, int value);
-int vmd_paf_text_layout_vec(void *self, int attr, const float value[2]);
+int vmd_paf_text_layout_vec(void *self, int attr, const VtPafVec2 *value);
 void *vmd_paf_widget_find(void *self, const VtPafId *name, int options);
 void vmd_paf_busy_start(void *self);
 void vmd_paf_busy_stop(void *self);

@@ -5,6 +5,14 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
+The latest console log identifies a rejected vector attribute while sizing the
+first text. The [retail layout correction](paf-layout-2026-10-26.md) updates typed
+attribute IDs, Vector2 storage and error diagnostics; 8,318 adapter host checks
+passed. Private setter probes do not establish physical rendering. Vita3K reached
+Framework initialization but did not complete a native frame; host crash attempts
+are explicitly recorded as failures. The new standard build still needs Vita
+acceptance.
+
 The first physical PAF test crashed; the next run passed initialization but
 failed during native presentation. See the [second crash diagnosis and recovery
 correction](paf-widget-recovery-2026-10-25.md) and [earlier memory correction and

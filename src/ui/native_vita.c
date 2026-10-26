@@ -411,6 +411,17 @@ static int widget_failure(const char *operation, int kind, unsigned slot, int rc
                slot, operation, (unsigned)rc);
     return -1;
 }
+static int layout_bool(void *widget, int attr, int value, const char *operation,
+                       unsigned slot) {
+    int rc = vmd_paf_text_layout_bool(widget, attr, value);
+    return rc < 0 ? widget_failure(operation, NATIVE_TEXT, slot, rc) : 0;
+}
+static int layout_vec(void *widget, int attr, float x, float y, const char *operation,
+                      unsigned slot) {
+    VtPafVec2 value = {{x, y, 0, 0}};
+    int rc = vmd_paf_text_layout_vec(widget, attr, &value);
+    return rc < 0 ? widget_failure(operation, NATIVE_TEXT, slot, rc) : 0;
+}
 static int present(void) {
     unsigned at[NATIVE_KINDS] = {0}, order_count = 0;
     void *order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
@@ -474,26 +485,32 @@ static int present(void) {
                         return widget_failure("text-color", c->kind, at[c->kind], -1);
                 }
                 if (fresh) {
-                    if (vmd_paf_text_layout_int(w, 0, 0) < 0 ||
-                        vmd_paf_text_layout_int(w, 1, 0) < 0 ||
-                        vmd_paf_text_layout_int(w, 2, 0) < 0 ||
-                        vmd_paf_text_layout_bool(w, 12, 0) < 0 ||
-                        vmd_paf_text_layout_bool(w, 14, 1) < 0 ||
-                        vmd_paf_text_layout_bool(w, 10, 1) < 0)
-                        return widget_failure("text-layout", c->kind, at[c->kind], -1);
+                    for (int attr = VMD_PAF_LAYOUT_ALIGN_X; attr <= VMD_PAF_LAYOUT_TEXT_ALIGN;
+                         attr++) {
+                        int rc = vmd_paf_text_layout_int(w, attr, 0);
+                        if (rc < 0)
+                            return widget_failure("text-layout-align", c->kind, at[c->kind], rc);
+                    }
+                    if (layout_bool(w, VMD_PAF_LAYOUT_WORD_WRAP, 0, "text-layout-word-wrap",
+                                    at[c->kind]) < 0 ||
+                        layout_bool(w, VMD_PAF_LAYOUT_ELLIPSIS, 1, "text-layout-ellipsis",
+                                    at[c->kind]) < 0 ||
+                        layout_bool(w, VMD_PAF_LAYOUT_CONDENSE_X, 1, "text-layout-condense",
+                                    at[c->kind]) < 0)
+                        return -1;
                 }
                 if (fresh || old->w != c->w || old->h != c->h) {
-                    float logical[2] = {c->w, c->h};
-                    if (vmd_paf_text_layout_vec(w, 5, logical) < 0)
-                        return widget_failure("text-size-layout", c->kind, at[c->kind], -1);
+                    if (layout_vec(w, VMD_PAF_LAYOUT_SIZE, c->w, c->h, "text-size-layout",
+                                   at[c->kind]) < 0)
+                        return -1;
                 }
                 if (fresh || memcmp(old->clip, c->clip, sizeof(c->clip)) || old->x != c->x ||
                     old->y != c->y) {
-                    float origin[2] = {c->clip[0] - c->x, c->clip[1] - c->y},
-                          extent[2] = {c->clip[2], c->clip[3]};
-                    if (vmd_paf_text_layout_vec(w, 6, origin) < 0 ||
-                        vmd_paf_text_layout_vec(w, 7, extent) < 0)
-                        return widget_failure("text-visible-layout", c->kind, at[c->kind], -1);
+                    if (layout_vec(w, VMD_PAF_LAYOUT_VISIBLE_POS, c->clip[0] - c->x,
+                                   c->clip[1] - c->y, "text-visible-position", at[c->kind]) < 0 ||
+                        layout_vec(w, VMD_PAF_LAYOUT_VISIBLE_SIZE, c->clip[2], c->clip[3],
+                                   "text-visible-size", at[c->kind]) < 0)
+                        return -1;
                 }
             } else if (fresh || old->selected != c->selected)
                 vmd_paf_button_state(w, c->selected ? 2 : 0);
