@@ -49,20 +49,37 @@ typedef struct {
 } NativeSlot;
 static void *framework, *plugin, *page;
 static SceUID renderer_thread = -1;
-static atomic_int renderer_exited, renderer_result;
+/* Only the owner creates or mutates PAF objects and enters Run. The app
+ * thread records commands and supplies the documented OneFrame Update only.
+ * In particular it must NEVER unlock PAF's main-thread mutex on behalf of Run. */
+static atomic_int renderer_exited, renderer_result, renderer_ready, renderer_abort;
+static atomic_int renderer_error, renderer_visible;
+static atomic_uint requested_generation, applied_generation;
+static SceUID renderer_owner = -1;
+static int native_language;
+static int initialize_owner(void);
+static void apply_commands(void *unused);
 static unsigned renderer_running(void) {
-    return framework ? __atomic_load_n(&((VtPafFrameworkPrefix *)framework)->run_loop_count,
-                                       __ATOMIC_ACQUIRE) : 0;
+    if (!atomic_load_explicit(&renderer_ready, memory_order_acquire))
+        return 0;
+    return __atomic_load_n(&((VtPafFrameworkPrefix *)framework)->run_loop_count, __ATOMIC_ACQUIRE);
 }
 static int renderer_main(SceSize args, void *argp) {
     (void)args;
     (void)argp;
-    int rc = vmd_paf_fw_run(framework);
+    renderer_owner = sceKernelGetThreadId();
+    int rc = initialize_owner();
+    if (rc > 0 && !atomic_load(&renderer_abort)) {
+        vmd_paf_main_task_register(apply_commands, NULL);
+        atomic_store_explicit(&renderer_ready, 1, memory_order_release);
+        rc = vmd_paf_fw_run(framework);
+    }
     atomic_store(&renderer_result, rc);
     atomic_store(&renderer_exited, 1);
     return rc;
 }
 static int start_renderer(void) {
+    native_language = vt_i18n_current_language() == VT_LANG_IT ? 5 : 1;
     renderer_thread = sceKernelCreateThread("VMDNativePaf", renderer_main, 0x10000100,
                                             0x40000, 0, 0, NULL);
     if (renderer_thread < 0)
@@ -73,18 +90,19 @@ static int start_renderer(void) {
         renderer_thread = -1;
         return rc;
     }
-    /* Run increments its count under PAF's update mutex, then waits for
-     * Update. Waiting for this ABI-defined prefix prevents the first Update
-     * from silently doing target setup only. No firmware object is modified.
-     * One bounded initialization wait; no polling during playback or idle. */
-    for (unsigned attempt = 0; attempt < 2000; attempt++) {
+    /* Acquire publishes the complete owner-created graph, never half an init.
+     * A late owner observes abort before entering Run or applying commands;
+     * retained native storage is never freed underneath an in-flight init. */
+    for (unsigned attempt = 0; attempt < 5000; attempt++) {
         if (atomic_load(&renderer_exited))
             break;
         if (renderer_running())
             return 0;
         sceKernelDelayThread(1000);
     }
-    return -0x5049;
+    atomic_store(&renderer_abort, 1);
+    rc = atomic_load(&renderer_result);
+    return atomic_load(&renderer_exited) && rc < 0 ? rc : -0x5049;
 }
 static NativeSlot slots[NATIVE_KINDS][UI_NATIVE_TEXT_LIMIT];
 static NativeCommand commands[NATIVE_COMMANDS];
@@ -114,7 +132,8 @@ static void log_failure(int code) {
     log_printf("native PAF: unavailable 0x%08X", (unsigned)code);
     /* A failed native graph must never be submitted again. Restore the real
      * Legacy renderer and persist it so the next launch does not retry PAF. */
-    visible = capturing = updating = 0;
+    capturing = updating = 0;
+    atomic_store(&renderer_abort, 1);
     ui_theme_apply(VT_UI_THEME_LEGACY);
     int saved = vt_preferences_set_interface_theme(VT_UI_THEME_LEGACY);
     if (saved < 0)
@@ -190,18 +209,24 @@ static int place(void *widget, float x, float y, float w, float h) {
                : 0;
 }
 int ui_native_vita_prepare(void) {
-    if (state) {
-        if (state > 0 && (atomic_load(&renderer_exited) || !renderer_running())) {
-            log_printf("native PAF: renderer stopped rc=0x%08X",
-                       (unsigned)atomic_load(&renderer_result));
-            log_failure(-0x5049);
+    if (!state && ui_theme_id() == VT_UI_THEME_LEGACY_VITA) {
+        int rc = start_renderer();
+        if (rc < 0)
+            log_failure(rc);
+        else {
+            state = 1;
+            checkpoint("ready; single PAF owner");
         }
-        if (state < 0 && ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
-            log_failure(error_code);
-        return state > 0;
     }
-    if (ui_theme_id() != VT_UI_THEME_LEGACY_VITA)
-        return 0;
+    if (state > 0 && (atomic_load(&renderer_error) || atomic_load(&renderer_exited) ||
+                      !renderer_running()))
+        log_failure(atomic_load(&renderer_error) ? atomic_load(&renderer_error) : -0x5049);
+    if (state < 0 && ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
+        log_failure(error_code);
+    return state > 0;
+}
+/* Called once by VMDNativePaf, before Run, on the same kernel thread. */
+static int initialize_owner(void) {
     /* Never initialize AppUtil/CommonDialog, replace a foreign PAF framework,
      * alter the global SDK or load a copy of Sony's firmware from app0:. */
     if (sceSysmoduleIsLoadedInternal(SCE_SYSMODULE_INTERNAL_PAF) < 0) {
@@ -219,21 +244,18 @@ int ui_native_vita_prepare(void) {
         int ret = sceSysmoduleLoadModuleInternalWithArg(SCE_SYSMODULE_INTERNAL_PAF, sizeof(init),
                                                         &init, &opt);
         if (ret < 0 || result < 0) {
-            log_failure(ret < 0 ? ret : result);
-            return 0;
+            return ret < 0 ? ret : result;
         }
     }
     if (vmd_paf_fw_instance()) {
-        log_failure(-0x5041);
-        return 0;
+        return -0x5041;
     }
     vmd_paf_fw_params(fw_params);
     int initialized = 0;
     for (unsigned i = 0; i < FW_PARAMS_BYTES / 4; i++)
         initialized |= fw_params[i] != 0;
     if (!initialized) {
-        log_failure(-0x5042);
-        return 0;
+        return -0x5042;
     } /* An unresolved weak constructor is a no-op. */
     /* Bound the graphics heaps as well; do not inherit standalone-app defaults
      * while sharing vita2d's framebuffer and the small dialog partition. */
@@ -249,19 +271,17 @@ int ui_native_vita_prepare(void) {
     put32(fw_params, 112, 5); /* Mode_CommonDialog: caller-provided framebuffer */
     put32(fw_params, 116, 1); /* OneFrameMode: the app retains its event loop */
     put32(fw_params, 168, 1); /* CommonDialog sound mode; no common SE initialization */
-    put32(fw_params, 120, vt_i18n_current_language() == VT_LANG_IT ? 5 : 1);
+    put32(fw_params, 120, native_language);
     ((unsigned char *)fw_params)[128] = 0; /* no PAF controller navigation */
     ((unsigned char *)fw_params)[130] = 1; /* external app control */
     framework = vmd_paf_allocate(FW_BYTES);
     if (!framework) {
-        log_failure(-0x5043);
-        return 0;
+        return -0x5043;
     }
     checkpoint("framework; bounded graphics heaps");
     vmd_paf_fw_create(framework, fw_params);
     if (vmd_paf_fw_instance() != framework) {
-        log_failure(-0x5044);
-        return 0;
+        return -0x5044;
     }
     checkpoint("common resources");
     vmd_paf_fw_common(framework, NULL);
@@ -273,8 +293,7 @@ int ui_native_vita_prepare(void) {
         size_t n = strlen(names[i]);
         void *s = vmd_paf_allocate(n + 1);
         if (!s) {
-            log_failure(-0x5043);
-            return 0;
+            return -0x5043;
         }
         memcpy(s, names[i], n + 1);
         putptr(plugin_params, i * 12, s);
@@ -282,12 +301,11 @@ int ui_native_vita_prepare(void) {
     }
     putptr(plugin_params, 56, vmd_native_vita_resource);
     put32(plugin_params, 60, sizeof(vmd_native_vita_resource));
-    put32(plugin_params, 64, vt_i18n_current_language() == VT_LANG_IT ? 5 : 1);
+    put32(plugin_params, 64, native_language);
     checkpoint("plugin");
     vmd_paf_plugin_load(plugin_params, loaded, 1);
     if (!plugin) {
-        log_failure(-0x5045);
-        return 0;
+        return -0x5045;
     }
     uint32_t page_params[PAGE_PARAMS_BYTES / 4];
     vmd_paf_page_params(page_params);
@@ -295,8 +313,7 @@ int ui_native_vita_prepare(void) {
     checkpoint("page");
     page = vmd_paf_page_open(plugin, &menu, page_params);
     if (!page) {
-        log_failure(-0x5046);
-        return 0;
+        return -0x5046;
     }
     for (unsigned n = 1; n <= UI_NATIVE_BUSY_LIMIT; n++) {
         char name[40];
@@ -304,23 +321,13 @@ int ui_native_vita_prepare(void) {
         VtPafId busy = id(name);
         void *w = vmd_paf_widget_find(page, &busy, 0);
         if (!w) {
-            log_failure(-0x5047);
-            return 0;
+            return -0x5047;
         }
         vmd_paf_busy_stop(w);
         show(w, 0);
     }
     show(page, 0);
-    checkpoint("renderer thread; OneFrameMode handshake");
-    int rc = start_renderer();
-    if (rc < 0) {
-        log_failure(rc);
-        return 0;
-    }
-    state = 1;
-    checkpoint("ready");
-    log_printf("native PAF: ready; Sony widgets; global heap=%u surface=%u text=%u", PAF_HEAP_BYTES,
-               fw_params[3], fw_params[6]);
+    checkpoint("owner graph ready; entering Run");
     return 1;
 }
 int ui_native_vita_error(void) {
@@ -623,6 +630,28 @@ static int present(void) {
     }
     return 0;
 }
+/* PAF's main-thread call list runs on the framework owner. Commands are
+ * immutable from release publication until Update returns and acknowledges
+ * this generation. No disk/network work, theme mutation or polling here. */
+static void apply_commands(void *unused) {
+    (void)unused;
+    if (atomic_load(&renderer_error) || atomic_load(&renderer_abort))
+        return;
+    unsigned generation = atomic_load_explicit(&requested_generation, memory_order_acquire);
+    if (generation == atomic_load_explicit(&applied_generation, memory_order_relaxed))
+        return;
+    int rc = sceKernelGetThreadId() == renderer_owner ? present() : -0x504a;
+    if (rc < 0) {
+        /* Root was validated at initialization. Hide it on its owner so a
+         * failed child update cannot be painted by the current Run cycle. */
+        if (sceKernelGetThreadId() == renderer_owner)
+            show(page, 0);
+        visible = 0;
+        atomic_store(&renderer_error, rc == -0x504a ? rc : -0x5048);
+    }
+    atomic_store(&renderer_visible, visible);
+    atomic_store_explicit(&applied_generation, generation, memory_order_release);
+}
 /* libvita2d supplies its real framebuffer stride and sync object. Translate
  * its CommonDialog format into PAF's smaller OnUpdateData format. The wrapper
  * runs during the explicit flush after sceGxmEndScene, before the display swap. */
@@ -657,8 +686,21 @@ int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
     }
     if (atomic_load(&renderer_exited) || !renderer_running())
         return -0x5049;
+    /* Publish only after validating the real target. Even an early startup
+     * task cannot consume commands from a rejected frame. */
+    unsigned generation = atomic_fetch_add_explicit(&requested_generation, 1, memory_order_release) + 1;
     vmd_paf_fw_update(framework, &frame);
-    return atomic_load(&renderer_exited) ? -0x5049 : 0;
+    /* Run's active count precedes its first condition wait. Its initial
+     * signal may acknowledge startup without painting. One extra first-frame
+     * handshake removes that race, without doubling every later frame. */
+    if (!rendered_once && !atomic_load(&renderer_exited) && !atomic_load(&renderer_error))
+        vmd_paf_fw_update(framework, &frame);
+    if (atomic_load(&renderer_error))
+        return atomic_load(&renderer_error);
+    if (atomic_load(&renderer_exited) ||
+        atomic_load_explicit(&applied_generation, memory_order_acquire) != generation)
+        return -0x5049;
+    return 0;
 }
 void __real_vita2d_start_drawing(void);
 void __wrap_vita2d_start_drawing(void) {
@@ -680,27 +722,23 @@ void __wrap_vita2d_end_drawing(void) {
     capturing = 0;
     if (state != 1)
         return;
-    int changed = present();
-    if (changed < 0) {
-        /* The console log showed failure followed by a crash in ScePaf.
-         * Do not Hide, flush or Update this partially constructed graph. The
-         * next vita2d frame clears the buffer and draws the Legacy interface. */
-        log_failure(-0x5048);
+    if (!command_count && !atomic_load(&renderer_visible))
+        return;
+    if (atomic_load(&renderer_error) || atomic_load(&renderer_exited)) {
+        log_failure(atomic_load(&renderer_error) ? atomic_load(&renderer_error) : -0x5049);
         return;
     }
-    if (changed) {
-        int first = !rendered_once;
-        if (first)
-            checkpoint("first-frame render");
-        updating = 1;
-        int rc = vita2d_common_dialog_update();
-        updating = 0;
-        if (rc < 0)
-            log_failure(rc);
-        else if (first) {
-            rendered_once = 1;
-            checkpoint("first-frame complete");
-        }
+    int first = !rendered_once;
+    if (first)
+        checkpoint("first-frame render; owner command publication");
+    updating = 1;
+    int rc = vita2d_common_dialog_update();
+    updating = 0;
+    if (rc < 0)
+        log_failure(rc);
+    else if (first) {
+        rendered_once = 1;
+        checkpoint("first-frame complete; owner commands acknowledged");
     }
 }
 

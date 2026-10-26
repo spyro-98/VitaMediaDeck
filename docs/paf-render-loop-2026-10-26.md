@@ -1,5 +1,11 @@
 # Legacy Vita: blank native layer and render-loop correction — 26 October 2026
 
+**Superseded for thread ownership:** the subsequent console run crashed in
+RMutex::Unlock. The [new ownership diagnosis and adapter-wide correction](paf-thread-ownership-2026-10-26.md)
+records the failed main-init/worker-Run split below and the missing test contract.
+This document retains the original implementation snapshot; it is not current
+physical acceptance evidence.
+
 ## Physical evidence and scope
 
 The user's three photographs show the app's blue base, thumbnails, immediate
