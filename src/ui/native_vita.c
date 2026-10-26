@@ -10,6 +10,7 @@
 #include <psp2/common_dialog.h>
 #include <psp2/sysmodule.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/kernel/processmgr.h>
 #include <stdatomic.h>
 #include <vita2d.h>
 #include <math.h>
@@ -53,8 +54,16 @@ static SceUID renderer_thread = -1;
  * thread records commands and supplies the documented OneFrame Update only.
  * In particular it must NEVER unlock PAF's main-thread mutex on behalf of Run. */
 static atomic_int renderer_exited, renderer_result, renderer_ready, renderer_abort;
-static atomic_int renderer_error, renderer_visible;
-static atomic_uint requested_generation, applied_generation;
+static atomic_int renderer_error, renderer_visible, native_frame_window;
+static atomic_uint requested_generation, applied_generation, owner_callbacks;
+/* App-private mailbox, never PAF's mutex. Try-lock copies only: no waiting,
+ * allocations, widget calls or disk work while holding it. Latest frame wins. */
+static atomic_flag mailbox_lock = ATOMIC_FLAG_INIT;
+#define NATIVE_TASK_TIMEOUT_US 2000000ULL
+#define NATIVE_ACTIVE_GAP_US 250000ULL
+static uint64_t progress_since_us, last_update_us;
+static unsigned progress_generation, submitted_frames;
+static int progress_started, handshake_primed;
 static SceUID renderer_owner = -1;
 static int native_language;
 static int initialize_owner(void);
@@ -105,11 +114,14 @@ static int start_renderer(void) {
     return atomic_load(&renderer_exited) && rc < 0 ? rc : -0x5049;
 }
 static NativeSlot slots[NATIVE_KINDS][UI_NATIVE_TEXT_LIMIT];
-static NativeCommand commands[NATIVE_COMMANDS];
+static NativeCommand commands[NATIVE_COMMANDS]; /* app capture only */
+static NativeCommand pending_commands[NATIVE_COMMANDS]; /* mailbox copy */
+static NativeCommand owner_commands[NATIVE_COMMANDS]; /* PAF owner only */
+static unsigned pending_count, owner_count;
 static unsigned command_count, previous_order_count;
 static void *previous_order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
                             UI_NATIVE_BUSY_LIMIT];
-static int media_text, rendered_once;
+static int media_text, rendered_once, drawing_scene;
 static int state, error_code, visible, updating, capturing, clip_enabled, overflow_logged;
 static int clip_box[4] = {0, 0, 960, 544};
 static uint32_t fw_params[FW_PARAMS_BYTES / 4], plugin_params[PLUGIN_PARAMS_BYTES / 4];
@@ -126,10 +138,32 @@ static void checkpoint(const char *stage) {
     log_printf("native PAF: init %s", stage);
     log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 }
+static const char *failure_reason(int code) {
+    switch (code) {
+    case -0x5041: return "foreign-framework";
+    case -0x5042: return "missing-parameter-constructor";
+    case -0x5043: return "native-allocation";
+    case -0x5044: return "framework-constructor";
+    case -0x5045: return "plugin-load";
+    case -0x5046: return "page-open";
+    case -0x5047: return "initial-widget";
+    case -0x5048: return "widget-update";
+    case -0x5049: return "renderer-unavailable";
+    case -0x504a: return "wrong-widget-thread";
+    case -0x504b: return "task-no-progress";
+    case -0x504c: return "invalid-frame";
+    default: return "platform-initialization";
+    }
+}
 static void log_failure(int code) {
     error_code = code;
     state = -1;
-    log_printf("native PAF: unavailable 0x%08X", (unsigned)code);
+    log_printf("native PAF: unavailable 0x%08X reason=%s", (unsigned)code, failure_reason(code));
+    log_printf("native PAF: recovery run=%u exited=%d result=0x%08X requested=%u applied=%u "
+               "callbacks=%u frames=%u primed=%d", renderer_running(),
+               atomic_load(&renderer_exited), (unsigned)atomic_load(&renderer_result),
+               atomic_load(&requested_generation), atomic_load(&applied_generation),
+               atomic_load(&owner_callbacks), submitted_frames, handshake_primed);
     /* A failed native graph must never be submitted again. Restore the real
      * Legacy renderer and persist it so the next launch does not retry PAF. */
     capturing = updating = 0;
@@ -195,14 +229,12 @@ static void *create(const char *type, const char *name, const char *style) {
     VtPafId n = id(name), s = id(style);
     return vmd_paf_widget_create(plugin, page, type, &n, &s);
 }
-static void show(void *widget, int enabled) {
-    if (enabled)
-        vmd_paf_widget_show(widget, NULL, 0, 0, NULL);
-    else
-        vmd_paf_widget_hide(widget, NULL, 0, 0, NULL);
+static int show(void *widget, int enabled) {
+    return enabled ? vmd_paf_widget_show(widget, NULL, 0, 0, NULL)
+                   : vmd_paf_widget_hide(widget, NULL, 0, 0, NULL);
 }
 static int place(void *widget, float x, float y, float w, float h) {
-    float size[4] = {w, h, 0, 0}, pos[4] = {x + w * .5f - 480, 272 - y - h * .5f, 0, 0};
+    _Alignas(16) float size[4] = {w, h, 0, 0}, pos[4] = {x + w * .5f - 480, 272 - y - h * .5f, 0, 0};
     return vmd_paf_widget_size(widget, size, NULL, 0x10004, 0, 0, NULL, NULL) < 0 ||
                    vmd_paf_widget_pos(widget, pos, NULL, 0x10000, 0, 0, NULL, NULL) < 0
                ? -1
@@ -210,6 +242,8 @@ static int place(void *widget, float x, float y, float w, float h) {
 }
 int ui_native_vita_prepare(void) {
     if (!state && ui_theme_id() == VT_UI_THEME_LEGACY_VITA) {
+        if (drawing_scene)
+            return 0; /* Defer first initialization to the next pre-scene boundary. */
         int rc = start_renderer();
         if (rc < 0)
             log_failure(rc);
@@ -324,9 +358,11 @@ static int initialize_owner(void) {
             return -0x5047;
         }
         vmd_paf_busy_stop(w);
-        show(w, 0);
+        if (show(w, 0) < 0)
+            return -0x5047;
     }
-    show(page, 0);
+    if (show(page, 0) < 0)
+        return -0x5047;
     checkpoint("owner graph ready; entering Run");
     return 1;
 }
@@ -496,8 +532,8 @@ static int present(void) {
     const char *types[] = {"text", "button", "plane", "busyindicator"};
     const char *styles[] = {"_common_default_style_text", "_common_default_style_button",
                             "vmd_white", "_common_style_busyindicator_8"};
-    for (unsigned i = 0; i < command_count; i++) {
-        NativeCommand *c = &commands[i];
+    for (unsigned i = 0; i < owner_count; i++) {
+        NativeCommand *c = &owner_commands[i];
         if (c->hidden)
             continue;
         NativeSlot *slot = &slots[c->kind][at[c->kind]++];
@@ -543,7 +579,7 @@ static int present(void) {
                     if (vmd_paf_text_size(w, 1, 0, count, (float)c->size) < 0)
                         return widget_failure("text-size", c->kind, at[c->kind], -1);
                 if (fresh || old->color != c->color || old->alpha != c->alpha || text_changed) {
-                    float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
+                    _Alignas(16) float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                                       ((c->color >> 16) & 255) / 255.f,
                                       ((c->color >> 24) & 255) / 255.f * c->alpha};
                     if (vmd_paf_text_color(w, 2, 0, count, color) < 0)
@@ -581,21 +617,26 @@ static int present(void) {
                 vmd_paf_button_state(w, c->selected ? 2 : 0);
         }
         if (c->kind == NATIVE_PANEL && (fresh || old->color != c->color)) {
-            float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
+            _Alignas(16) float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                               ((c->color >> 16) & 255) / 255.f, ((c->color >> 24) & 255) / 255.f};
             if (vmd_paf_widget_color(w, color, NULL, 0x10001, 0, 0, NULL, NULL) < 0)
                 return widget_failure("panel-color", c->kind, at[c->kind], -1);
         }
         order[order_count++] = w;
         if (!slot->shown) {
-            show(w, 1);
+            int rc = show(w, 1);
+            if (rc < 0)
+                return widget_failure("show", c->kind, at[c->kind], rc);
             if (c->kind == NATIVE_BUSY)
                 vmd_paf_busy_start(w);
         }
         /* Show may reset the widget's show alpha: apply the requested fade
          * afterwards, including reused widgets becoming visible again. */
-        if (c->kind != NATIVE_TEXT && (fresh || !slot->shown || old->alpha != c->alpha))
-            vmd_paf_widget_alpha(w, c->alpha, NULL, 0x10002, 0, 0, NULL);
+        if (c->kind != NATIVE_TEXT && (fresh || !slot->shown || old->alpha != c->alpha)) {
+            int rc = vmd_paf_widget_alpha(w, c->alpha, NULL, 0x10002, 0, 0, NULL);
+            if (rc < 0)
+                return widget_failure("alpha", c->kind, at[c->kind], rc);
+        }
         slot->shown = 1;
         slot->prior = *c;
         any = 1;
@@ -604,7 +645,9 @@ static int present(void) {
         for (unsigned n = at[kind]; n < limits[kind]; n++) {
             NativeSlot *s = &slots[kind][n];
             if (s->shown) {
-                show(s->widget, 0);
+                int rc = show(s->widget, 0);
+                if (rc < 0)
+                    return widget_failure("hide", kind, n + 1, rc);
                 if (kind == NATIVE_BUSY)
                     vmd_paf_busy_stop(s->widget);
                 s->shown = 0;
@@ -612,45 +655,92 @@ static int present(void) {
         }
     if (order_count != previous_order_count ||
         memcmp(order, previous_order, order_count * sizeof(void *))) {
+        /* ReorderChild returns a bool, not an errno. False may mean no move. */
         for (unsigned n = 0; n < order_count; n++)
             vmd_paf_widget_order(page, order[n], NULL);
         memcpy(previous_order, order, order_count * sizeof(void *));
         previous_order_count = order_count;
     }
     if (any) {
-        if (!visible)
-            show(page, 1);
+        if (!visible) {
+            int rc = show(page, 1);
+            if (rc < 0)
+                return widget_failure("page-show", NATIVE_PANEL, 0, rc);
+        }
         visible = 1;
         return 1;
     }
     if (visible) {
-        show(page, 0);
+        int rc = show(page, 0);
+        if (rc < 0)
+            return widget_failure("page-hide", NATIVE_PANEL, 0, rc);
         visible = 0;
         return 1;
     }
     return 0;
 }
-/* PAF's main-thread call list runs on the framework owner. Commands are
- * immutable from release publication until Update returns and acknowledges
- * this generation. No disk/network work, theme mutation or polling here. */
+/* A PAF main-thread task is scheduler work, not a per-Update completion
+ * fence. Preserve independent app/mailbox/owner snapshots across delayed or
+ * skipped visits. Neither side waits for the other's copy/PAF mutations. */
 static void apply_commands(void *unused) {
     (void)unused;
-    if (atomic_load(&renderer_error) || atomic_load(&renderer_abort))
+    atomic_fetch_add(&owner_callbacks, 1);
+    if (atomic_load(&renderer_error) || atomic_load(&renderer_abort) ||
+        !atomic_load_explicit(&native_frame_window, memory_order_acquire))
+        return; /* Scheduler visits outside the app's post-scene flush are idle. */
+    if (sceKernelGetThreadId() != renderer_owner) {
+        atomic_store(&renderer_error, -0x504a);
         return;
-    unsigned generation = atomic_load_explicit(&requested_generation, memory_order_acquire);
-    if (generation == atomic_load_explicit(&applied_generation, memory_order_relaxed))
+    }
+    if (atomic_flag_test_and_set_explicit(&mailbox_lock, memory_order_acquire))
         return;
-    int rc = sceKernelGetThreadId() == renderer_owner ? present() : -0x504a;
+    unsigned generation = atomic_load_explicit(&requested_generation, memory_order_relaxed);
+    if (generation == atomic_load_explicit(&applied_generation, memory_order_relaxed)) {
+        atomic_flag_clear_explicit(&mailbox_lock, memory_order_release);
+        return;
+    }
+    owner_count = pending_count;
+    memcpy(owner_commands, pending_commands, owner_count * sizeof(*owner_commands));
+    atomic_flag_clear_explicit(&mailbox_lock, memory_order_release);
+    int rc = present();
     if (rc < 0) {
-        /* Root was validated at initialization. Hide it on its owner so a
-         * failed child update cannot be painted by the current Run cycle. */
-        if (sceKernelGetThreadId() == renderer_owner)
-            show(page, 0);
+        int hidden = show(page, 0);
+        if (hidden < 0)
+            widget_failure("recovery-hide", NATIVE_PANEL, 0, hidden);
         visible = 0;
-        atomic_store(&renderer_error, rc == -0x504a ? rc : -0x5048);
+        atomic_store(&renderer_error, -0x5048);
     }
     atomic_store(&renderer_visible, visible);
     atomic_store_explicit(&applied_generation, generation, memory_order_release);
+}
+/* Copy publication only. The app's next capture never aliases owner memory.
+ * A busy mailbox drops this obsolete UI snapshot, not a playback operation. */
+static void publish_commands(void) {
+    if (atomic_flag_test_and_set_explicit(&mailbox_lock, memory_order_acquire))
+        return;
+    pending_count = command_count;
+    memcpy(pending_commands, commands, pending_count * sizeof(*pending_commands));
+    atomic_fetch_add_explicit(&requested_generation, 1, memory_order_release);
+    atomic_flag_clear_explicit(&mailbox_lock, memory_order_release);
+}
+static int task_progress(void) {
+    unsigned applied = atomic_load_explicit(&applied_generation, memory_order_acquire);
+    unsigned requested = atomic_load(&requested_generation);
+    uint64_t now = sceKernelGetProcessTimeWide();
+    int inactive = !progress_started || now < last_update_us ||
+                   now - last_update_us > NATIVE_ACTIVE_GAP_US;
+    last_update_us = now;
+    if (inactive || applied != progress_generation || applied == requested) {
+        progress_started = 1;
+        progress_generation = applied;
+        progress_since_us = now;
+        return 0;
+    }
+    /* Time without progress during active updates, not frame-count equality.
+     * A suspend/idle gap starts a fresh window. No sleeps, extra firmware
+     * frames or disk writes for a normal delayed task. */
+    return now >= progress_since_us && now - progress_since_us >= NATIVE_TASK_TIMEOUT_US
+               ? -0x504b : 0;
 }
 /* libvita2d supplies its real framebuffer stride and sync object. Translate
  * its CommonDialog format into PAF's smaller OnUpdateData format. The wrapper
@@ -660,7 +750,7 @@ int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
     if (!updating)
         return __real_sceCommonDialogUpdate(params);
     if (!params || !params->renderTarget.colorSurfaceData || !params->displaySyncObject)
-        return -1;
+        return -0x504c;
     const SceCommonDialogRenderTargetInfo *target = &params->renderTarget;
     /* The app and its PAF environment use a fixed 960x544 output. Reject a
      * malformed target before firmware can assert inside render-target setup. */
@@ -668,7 +758,7 @@ int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
         target->strideInPixels < target->width || target->strideInPixels > 4096) {
         log_printf("native PAF: rejected frame width=%u height=%u pitch=%u", target->width,
                    target->height, target->strideInPixels);
-        return -1;
+        return -0x504c;
     }
     VtPafFrameUpdate frame = {.pitch_pixels = target->strideInPixels,
                               .width = target->width,
@@ -678,7 +768,7 @@ int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
                               .color_data = target->colorSurfaceData,
                               .depth_data = target->depthSurfaceData,
                               .display_sync = params->displaySyncObject};
-    if (!rendered_once) {
+    if (!handshake_primed) {
         log_printf("native PAF: frame width=%u height=%u pitch=%u format=0x%08X type=0x%08X depth=%d",
                    frame.width, frame.height, frame.pitch_pixels, frame.color_format,
                    frame.surface_type, frame.depth_data != NULL);
@@ -686,21 +776,21 @@ int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
     }
     if (atomic_load(&renderer_exited) || !renderer_running())
         return -0x5049;
-    /* Publish only after validating the real target. Even an early startup
-     * task cannot consume commands from a rejected frame. */
-    unsigned generation = atomic_fetch_add_explicit(&requested_generation, 1, memory_order_release) + 1;
+    /* A rejected target cannot publish commands even during early Run visits. */
+    atomic_store_explicit(&native_frame_window, 1, memory_order_release);
+    publish_commands();
+    submitted_frames++;
     vmd_paf_fw_update(framework, &frame);
-    /* Run's active count precedes its first condition wait. Its initial
-     * signal may acknowledge startup without painting. One extra first-frame
-     * handshake removes that race, without doubling every later frame. */
-    if (!rendered_once && !atomic_load(&renderer_exited) && !atomic_load(&renderer_error))
+    /* Prime Run's initial condition signal once, separately from task delivery. */
+    if (!handshake_primed && !atomic_load(&renderer_exited) && !atomic_load(&renderer_error))
         vmd_paf_fw_update(framework, &frame);
+    atomic_store_explicit(&native_frame_window, 0, memory_order_release);
+    handshake_primed = 1;
     if (atomic_load(&renderer_error))
         return atomic_load(&renderer_error);
-    if (atomic_load(&renderer_exited) ||
-        atomic_load_explicit(&applied_generation, memory_order_acquire) != generation)
+    if (atomic_load(&renderer_exited) || !renderer_running())
         return -0x5049;
-    return 0;
+    return task_progress();
 }
 void __real_vita2d_start_drawing(void);
 void __wrap_vita2d_start_drawing(void) {
@@ -715,30 +805,32 @@ void __wrap_vita2d_start_drawing(void) {
     clip_box[3] = 544;
     capturing = state == 1 && ui_theme_id() == VT_UI_THEME_LEGACY_VITA;
     __real_vita2d_start_drawing();
+    drawing_scene = 1;
 }
 void __real_vita2d_end_drawing(void);
 void __wrap_vita2d_end_drawing(void) {
     __real_vita2d_end_drawing();
+    drawing_scene = 0;
     capturing = 0;
     if (state != 1)
         return;
-    if (!command_count && !atomic_load(&renderer_visible))
+    if (!command_count && !atomic_load(&renderer_visible) &&
+        atomic_load(&requested_generation) == atomic_load(&applied_generation))
         return;
     if (atomic_load(&renderer_error) || atomic_load(&renderer_exited)) {
         log_failure(atomic_load(&renderer_error) ? atomic_load(&renderer_error) : -0x5049);
         return;
     }
-    int first = !rendered_once;
-    if (first)
-        checkpoint("first-frame render; owner command publication");
+    if (!handshake_primed)
+        checkpoint("first-frame render; owner mailbox publication");
     updating = 1;
     int rc = vita2d_common_dialog_update();
     updating = 0;
     if (rc < 0)
         log_failure(rc);
-    else if (first) {
+    else if (!rendered_once && atomic_load_explicit(&applied_generation, memory_order_acquire)) {
         rendered_once = 1;
-        checkpoint("first-frame complete; owner commands acknowledged");
+        checkpoint("first-frame complete; owner snapshot acknowledged");
     }
 }
 

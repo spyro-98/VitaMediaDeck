@@ -5,17 +5,19 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
-The latest console run crashes in the PAF renderer with **0x80028186 /
-LW_MUTEX_NOT_OWNED**. The [ownership report](paf-thread-ownership-2026-10-26.md)
-replaces the previous main-initialization/worker-Run split with one owner for
-initialization, widgets and Run. App commands use a generation-acknowledged
-main-thread task; the external app retains framebuffer Update. 10,628 adapter
-checks with real POSIX ownership/mutex controls, 1,467 native dispatch checks,
-ARM syntax/callback ABI checks and eight-theme chrome/utility suites pass before
-the build. The previous tests modeled signaling but missed mutex ownership.
-Native rendering remains unverified until the replacement is installed/tested
-on Vita. The [prior lifecycle report](paf-render-loop-2026-10-26.md) remains a
-historical failed implementation snapshot, not successful acceptance evidence.
+The latest standard console session completes a native frame, then explicitly
+restores Legacy with the app's generic -0x5049 code. It does not identify whether
+the renderer exited or the old same-frame task check fired. The [complete PAF
+contract audit](paf-contract-audit-2026-10-26.md) reviews all 32 imports and shared
+integration paths against six pinned reference repositories. It corrects task
+lifetime/synchronization assumptions, adds bounded independent snapshots,
+post-scene phase gates, return-type/status checks and cause-specific diagnostics.
+14,204 adapter checks, independent ARM ABI/syntax checks, native dispatch and
+eight-theme suites pass before the build. The console's independent illegal
+worker priority is fixed for podcast/library/search; their host suites pass.
+Native rendering and the exact old recovery branch still need device evidence.
+The [previous ownership report](paf-thread-ownership-2026-10-26.md) retains the
+preceding real mutex crash and its necessary single-owner correction.
 
 The preceding console crash occurs at first-frame update with GXM invalid-value in
 r0. The [extended frame audit](paf-frame-audit-2026-10-26.md) identifies a direct

@@ -6,6 +6,7 @@
 #define VMD_NATIVE_PAF_ABI_H
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 typedef struct {
     const void *data;
     uint32_t count, allocator_padding;
@@ -89,11 +90,11 @@ int vmd_paf_widget_text(void *self, const VtPafString *text, int object);
 
 int vmd_paf_widget_color(void *self, const float color[4], void *timer, int id, int options,
                          float delay, void *finished, void *data);
-int vmd_paf_widget_order(void *self, void *child, void *sibling);
+bool vmd_paf_widget_order(void *self, void *child, void *sibling);
 int vmd_paf_text_size(void *self, int attr, unsigned start, unsigned count, float value);
 int vmd_paf_text_color(void *self, int attr, unsigned start, unsigned count, const float value[4]);
 int vmd_paf_text_layout_int(void *self, int attr, int value);
-int vmd_paf_text_layout_bool(void *self, int attr, int value);
+int vmd_paf_text_layout_bool(void *self, int attr, bool value);
 int vmd_paf_text_layout_vec(void *self, int attr, const VtPafVec2 *value);
 void *vmd_paf_widget_find(void *self, const VtPafId *name, int options);
 void vmd_paf_busy_start(void *self);

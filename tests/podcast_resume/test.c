@@ -44,7 +44,7 @@ int sceIoRename(const char *a,const char *b){if(fail_rename&&strstr(a,"podcast_r
 int sceIoMkdir(const char *p,int m){return mkdir(p,m);}
 int sceIoGetstat(const char *p,SceIoStat *s){struct stat st;int ret=stat(p,&st);if(!ret)s->st_size=st.st_size;return ret;}
 int sceKernelCreateThread(const char *n,SceKernelThreadEntry e,int priority,unsigned stack,unsigned a,int cpu,void *opt){
- (void)n;(void)a;(void)cpu;(void)opt;CHECK(priority==0x10000140&&stack==0x8000);entry=e;return thread_enabled?99:-1;
+ (void)n;(void)a;(void)cpu;(void)opt;CHECK(priority >= 176 && priority <= 191&&stack==0x8000);entry=e;return thread_enabled?99:-1;
 }
 static void *thread_main(void *ctx){(void)ctx;entry(0,NULL);return NULL;}
 int sceKernelStartThread(SceUID id,SceSize size,void *arg){(void)size;(void)arg;CHECK(id==99);return pthread_create(&worker_thread,NULL,thread_main,NULL);}

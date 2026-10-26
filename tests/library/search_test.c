@@ -41,7 +41,7 @@ int sceKernelCreateThread(const char *name, SceKernelThreadEntry entry, int prio
     (void)flags;
     (void)cpu;
     (void)opt;
-    CHECK(priority == 0x10000140 && stack == 0x40000);
+    CHECK(priority >= 176 && priority <= 191 && stack == 0x40000);
     entries[created] = entry;
     return ++created;
 }

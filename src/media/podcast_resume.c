@@ -150,7 +150,7 @@ int vt_podcast_resume_init(VtPodcastResumeSample sample) {
         }
         break;
     }
-    saver=sceKernelCreateThread("VMDPodcastResume",worker,0x10000140,0x8000,0,0,NULL);
+    saver=sceKernelCreateThread("VMDPodcastResume",worker,191 /* lowest user priority; 0x10000140 is rejected on retail */,0x8000,0,0,NULL);
     if(saver<0)return saver;
     int ret=sceKernelStartThread(saver,0,NULL);
     if(ret<0){sceKernelDeleteThread(saver);saver=-1;}

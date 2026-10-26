@@ -1,5 +1,10 @@
 # Legacy Vita: PAF thread-ownership crash — 26 October 2026
 
+**Subsequent result:** this build completes its first native frame but returns
+to Legacy through the generic app recovery code. The [full contract audit](paf-contract-audit-2026-10-26.md)
+replaces the same-frame task assumption described below and records the new
+uncertainty, diagnostics and independent snapshot protocol.
+
 ## New physical evidence
 
 The installed standard eboot matches commit `3b988d0` and VPK SHA-256

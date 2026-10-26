@@ -200,6 +200,10 @@ endif()
 # PAF is loaded lazily from the console firmware, never bundled in the VPK.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(VMD_PAF_STUB_DIR "${CMAKE_CURRENT_BINARY_DIR}/native-paf-imports")
+# Import edits must regenerate the app-local stubs before the next link.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/release/paf-imports.json"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate-paf-stubs.py")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate-paf-stubs.py"
   --metadata "${CMAKE_CURRENT_SOURCE_DIR}/release/paf-imports.json"
   --output "${VMD_PAF_STUB_DIR}" --generator "${VITASDK}/bin/vita-libs-gen"

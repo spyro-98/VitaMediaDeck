@@ -496,7 +496,7 @@ int vt_library_init(VtLibrarySample sample) {
     journal_bytes = 0;
     sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
     repair = load() < 0;
-    worker = sceKernelCreateThread("LibraryCheckpoint", saver, 0x10000140, 0x10000, 0, 0, NULL);
+    worker = sceKernelCreateThread("LibraryCheckpoint", saver, 191 /* lowest user priority; 0x10000140 is rejected on retail */, 0x10000, 0, 0, NULL);
     if (worker < 0)
         return -1;
     if (sceKernelStartThread(worker, 0, NULL) < 0) {

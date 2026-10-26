@@ -658,7 +658,7 @@ int vt_library_search_init(void) {
     for (int i = 0; i < WORKERS; i++) {
         worker_indices[i] = i;
         threads[i] =
-            sceKernelCreateThread("LibrarySearch", worker, 0x10000140, 0x40000, 0, 0, NULL);
+            sceKernelCreateThread("LibrarySearch", worker, 191 /* lowest user priority; 0x10000140 is rejected on retail */, 0x40000, 0, 0, NULL);
         if (threads[i] >= 0) {
             if (sceKernelStartThread(threads[i], sizeof(worker_indices[i]), &worker_indices[i]) <
                 0) {

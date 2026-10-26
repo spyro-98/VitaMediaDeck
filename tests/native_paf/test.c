@@ -16,6 +16,8 @@
     fprintf(stderr, "Contract failed: %s (%s:%d)\n", #condition, __FILE__, __LINE__); \
     exit(EXIT_FAILURE); } } while (0)
 static atomic_uint checks;
+static uint64_t host_clock_us;
+uint64_t sceKernelGetProcessTimeWide(void) { return host_clock_us; }
 static pthread_t host_runner;
 static pthread_t host_paf_owner;
 static int host_owner_valid, host_protocol_probe, host_page_shown, host_failed_graph_draws;
@@ -40,7 +42,7 @@ static pthread_mutex_t host_runner_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t host_runner_cond = PTHREAD_COND_INITIALIZER;
 static SceKernelThreadEntry host_runner_entry;
 static int host_thread_live, host_thread_creates, host_thread_create_error, host_thread_start_error;
-static int host_run_behavior, host_frame_requested, host_frames_drawn;
+static int host_run_behavior, host_frame_requested, host_frames_drawn, host_idle_visit;
 static atomic_int host_runner_stop, host_delays;
 static void *host_thread_main(void *arg) {
     (void)arg;
@@ -100,13 +102,20 @@ int vmd_paf_fw_run(void *self) {
     host_paf_task(NULL);
     /* OneFrameMode Run stays alive and waits. Update alone does not paint. */
     while (!atomic_load(&host_runner_stop)) {
-        while (host_frame_requested == host_frames_drawn && !atomic_load(&host_runner_stop))
+        while (host_frame_requested == host_frames_drawn && !host_idle_visit && !atomic_load(&host_runner_stop))
             pthread_cond_wait(&host_runner_cond, &host_runner_mutex);
         if (atomic_load(&host_runner_stop)) break;
+        if (host_idle_visit) {
+            host_paf_task(NULL);
+            host_idle_visit = 0;
+            pthread_cond_broadcast(&host_runner_cond);
+            continue;
+        }
         /* The public main-thread task is called by Run, never by Update.
          * Like retail's startup signal, behavior 4 first returns without paint. */
         if (!(host_run_behavior == 4 && !host_frames_drawn)) {
-            if (host_run_behavior != 5) host_paf_task(NULL);
+            if (host_run_behavior != 5 &&
+                (host_run_behavior != 6 || host_frames_drawn % 3 == 2)) host_paf_task(NULL);
             /* Reproduce retail Run's owner-only release/reacquire. An init on
              * the app thread would return EPERM here, as the console did. */
             assert(!pthread_mutex_unlock(&host_paf_mutex));
@@ -138,7 +147,7 @@ static void host_stop_runner(void) {
 static int host_frame_variant;
 static SceCommonDialogUpdateParam host_expected_frame;
 static const void *host_source_frame;
-static int host_fail_layout;
+static int host_fail_layout, host_fail_show, host_fail_hide, host_fail_alpha;
 static unsigned host_failure_code;
 static char host_failure_operation[64];
 #define CHECK(x)                                                                                   \
@@ -292,7 +301,7 @@ int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int op
                        void *cb, void *data) {
     host_owner_check();
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10000);
-    CHECK(isfinite(v[0]) && isfinite(v[1]));
+    CHECK(isfinite(v[0]) && isfinite(v[1]) && !((uintptr_t)v & 15));
     unsigned node=(unsigned)((unsigned char *)self-host_nodes);
     host_left[node]=v[0]+480-host_width[node]*.5f;
     return 0;
@@ -301,28 +310,28 @@ int vmd_paf_widget_size(void *self, const float v[4], void *timer, int id, int o
                         void *cb, void *data) {
     host_owner_check();
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10004);
-    CHECK(v[0] > 0 && v[1] > 0);
+    CHECK(v[0] > 0 && v[1] > 0 && !((uintptr_t)v & 15));
     host_width[(unsigned char *)self-host_nodes]=v[0];
     return host_fail_geometry ? -1 : 0;
 }
 int vmd_paf_widget_show(void *self, void *timer, int opt, float delay, void *cb) {
     host_owner_check();
-    if (self == page) host_page_shown = 1;
+    if (self == page && !host_fail_show) host_page_shown = 1;
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
-    return 0;
+    return host_fail_show ? -12346 : 0;
 }
 int vmd_paf_widget_hide(void *self, void *timer, int opt, float delay, void *cb) {
     host_owner_check();
-    if (self == page) host_page_shown = 0;
+    if (self == page && !host_fail_hide) host_page_shown = 0;
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
-    return 0;
+    return host_fail_hide ? -12347 : 0;
 }
 int vmd_paf_widget_alpha(void *self, float alpha, void *timer, int id, int opt, float delay,
                          void *cb) {
     host_owner_check();
     CHECK(self && alpha >= 0 && alpha <= 1 && !timer && id == 0x10002 && !opt && !delay && !cb &&
           !host_scene);
-    return 0;
+    return host_fail_alpha ? -12348 : 0;
 }
 static int set_text(void *self, const VtPafString *text) {
     CHECK(self && text && !host_scene);
@@ -367,6 +376,7 @@ void vmd_paf_fw_update(void *self, const VtPafFrameUpdate *v) {
     CHECK(v->color_data == t->colorSurfaceData && v->depth_data == t->depthSurfaceData &&
           v->display_sync == host_expected_frame.displaySyncObject);
     host_updates++;
+    host_clock_us += 16000;
     pthread_mutex_lock(&host_runner_mutex);
     if (__atomic_load_n(&((VtPafFrameworkPrefix *)self)->run_loop_count, __ATOMIC_ACQUIRE)) {
         host_frame_requested++;
@@ -423,13 +433,13 @@ int vmd_paf_widget_color(void *w, const float c[4], void *timer, int id, int opt
                          void *cb, void *data) {
     host_owner_check();
     CHECK(w && !host_scene && !timer && id == 0x10001 && !opt && !delay && !cb && !data &&
-          c[3] >= 0 && c[3] <= 1);
+          c[3] >= 0 && c[3] <= 1 && !((uintptr_t)c & 15));
     return 0;
 }
-int vmd_paf_widget_order(void *parent, void *w, void *sibling) {
+bool vmd_paf_widget_order(void *parent, void *w, void *sibling) {
     host_owner_check();
     CHECK(parent == page && w && !sibling && !host_scene);
-    return 1;
+    return false; /* A no-op reorder is not a firmware error. */
 }
 int vmd_paf_text_size(void *w, int attr, unsigned start, unsigned count, float value) {
     host_owner_check();
@@ -438,7 +448,8 @@ int vmd_paf_text_size(void *w, int attr, unsigned start, unsigned count, float v
 }
 int vmd_paf_text_color(void *w, int attr, unsigned start, unsigned count, const float c[4]) {
     host_owner_check();
-    CHECK(w && !host_scene && attr == 2 && !start && count < 512 && c[3] >= 0 && c[3] <= 1);
+    CHECK(w && !host_scene && attr == 2 && !start && count < 512 && c[3] >= 0 && c[3] <= 1 &&
+          !((uintptr_t)c & 15));
     return 0;
 }
 int vmd_paf_text_layout_int(void *w, int attr, int value) {
@@ -446,7 +457,7 @@ int vmd_paf_text_layout_int(void *w, int attr, int value) {
     CHECK(w && !host_scene && attr >= 0 && attr <= 2 && !value);
     return 0;
 }
-int vmd_paf_text_layout_bool(void *w, int attr, int value) {
+int vmd_paf_text_layout_bool(void *w, int attr, bool value) {
     host_owner_check();
     CHECK(w && !host_scene && (attr == 11 || attr == 13 || attr == 15) &&
           (value == 0 || value == 1));
@@ -544,6 +555,18 @@ static void reset(void) {
     host_paf_mutex_live = 1;
     host_paf_locked = host_owner_valid = host_protocol_probe = 0;
     host_page_shown = host_failed_graph_draws = host_callback_wrong_thread = 0;
+    host_fail_show = host_fail_hide = host_fail_alpha = 0;
+    host_clock_us = 0;
+    atomic_flag_clear(&mailbox_lock);
+    atomic_store(&owner_callbacks, 0);
+    atomic_store(&native_frame_window, 0);
+    drawing_scene = host_idle_visit = 0;
+    progress_since_us = last_update_us = 0;
+    progress_generation = submitted_frames = 0;
+    progress_started = handshake_primed = 0;
+    pending_count = owner_count = 0;
+    memset(pending_commands, 0, sizeof(pending_commands));
+    memset(owner_commands, 0, sizeof(owner_commands));
     host_paf_task = NULL;
     atomic_store(&renderer_ready, 0);
     atomic_store(&renderer_abort, 0);
@@ -876,9 +899,96 @@ int main(void) {
         __wrap_vita2d_start_drawing(); fixture();
         host_callback_wrong_thread = wrong_thread;
         __wrap_vita2d_end_drawing();
+        if (!wrong_thread) {
+            CHECK(state == 1 && !rendered_once && host_updates == 2 && handshake_primed);
+            int checkpoints = host_checkpoints;
+            for (int n = 0; n < 130 && state == 1; n++) {
+                __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+            }
+            CHECK(host_checkpoints == checkpoints + 1); /* fallback only, not per frame */
+        }
         CHECK(state == -1 && !rendered_once && host_theme == VT_UI_THEME_LEGACY);
-        CHECK(ui_native_vita_error() == (wrong_thread ? -0x504a : -0x5049));
+        CHECK(ui_native_vita_error() == (wrong_thread ? -0x504a : -0x504b));
         CHECK(!host_creates && !host_failed_graph_draws);
+    }
+    /* Scheduler visits are asynchronous. Skip two frames repeatedly and
+     * coalesce obsolete UI states for >2 seconds without false Legacy recovery. */
+    reset();
+    host_run_behavior = 6;
+    for (int n = 0; n < 150; n++) {
+        __wrap_vita2d_start_drawing();
+        char label[32]; snprintf(label, sizeof(label), "Snapshot %d", n);
+        CHECK(ui_native_vita_text(20, 40, 200, 20, 0xffffffff, label));
+        __wrap_vita2d_end_drawing();
+        CHECK(state == 1 && host_theme == VT_UI_THEME_LEGACY_VITA);
+        if (n == 0) CHECK(!rendered_once && host_checkpoints == 9);
+    }
+    CHECK(rendered_once && host_checkpoints == 10 && host_clock_us > NATIVE_TASK_TIMEOUT_US);
+    /* Never read the capture array while native delivery is pending. */
+    reset(); host_run_behavior = 5;
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && pending_count == 3 && owner_count == 0);
+    strcpy(commands[1].label, "Reused app capture");
+    CHECK(!strcmp(pending_commands[1].label, "Jellyfin"));
+    /* Theme changes replace pending native data with an empty snapshot;
+     * no obsolete native screen may appear later over Legacy. */
+    host_theme = VT_UI_THEME_LEGACY; host_run_behavior = 0;
+    __wrap_vita2d_start_drawing(); __wrap_vita2d_end_drawing();
+    CHECK(!visible && !owner_count && !host_creates &&
+          atomic_load(&applied_generation) == atomic_load(&requested_generation));
+    int idle_updates = host_updates;
+    __wrap_vita2d_start_drawing(); __wrap_vita2d_end_drawing();
+    CHECK(host_updates == idle_updates);
+    /* A suspended/idle process must not inherit a stale task deadline. */
+    reset(); host_run_behavior = 5;
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    host_clock_us += 3600000000ULL;
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && !rendered_once && !ui_native_vita_error());
+    host_run_behavior = 0;
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && rendered_once);
+    /* A scheduler visit during an app-owned GXM scene cannot mutate PAF. */
+    reset(); host_run_behavior = 5;
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    CHECK(!atomic_load(&applied_generation) && atomic_load(&requested_generation) == 1);
+    __wrap_vita2d_start_drawing();
+    pthread_mutex_lock(&host_runner_mutex);
+    host_idle_visit = 1;
+    pthread_cond_broadcast(&host_runner_cond);
+    while (host_idle_visit) pthread_cond_wait(&host_runner_cond, &host_runner_mutex);
+    pthread_mutex_unlock(&host_runner_mutex);
+    CHECK(!host_creates && !atomic_load(&applied_generation) && host_scene);
+    fixture(); host_run_behavior = 0; __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && rendered_once && host_creates == 3);
+    /* A request to initialize inside an already-open scene is deferred. */
+    reset(); host_theme = VT_UI_THEME_LEGACY;
+    __wrap_vita2d_start_drawing(); host_theme = VT_UI_THEME_LEGACY_VITA;
+    CHECK(!ui_native_vita_prepare() && !host_thread_creates);
+    __wrap_vita2d_end_drawing();
+    __wrap_vita2d_start_drawing(); CHECK(ui_native_vita_active());
+    fixture(); __wrap_vita2d_end_drawing(); CHECK(rendered_once);
+    /* Try-lock contention drops a stale snapshot; neither side spins. */
+    reset(); __wrap_vita2d_start_drawing(); fixture();
+    CHECK(!atomic_flag_test_and_set(&mailbox_lock));
+    __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && !rendered_once && !host_creates);
+    atomic_flag_clear(&mailbox_lock);
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && rendered_once && host_creates == 3);
+    /* Native visibility/alpha failures must reach owner-side recovery, too. */
+    for (int kind = 0; kind < 3; kind++) {
+        reset(); CHECK(ui_native_vita_prepare());
+        host_fail_show = kind == 0;
+        host_fail_alpha = kind == 1;
+        __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+        if (kind == 2) {
+            CHECK(state == 1 && visible);
+            host_fail_hide = 1;
+            __wrap_vita2d_start_drawing(); __wrap_vita2d_end_drawing();
+        }
+        CHECK(state == -1 && host_theme == VT_UI_THEME_LEGACY &&
+              ui_native_vita_error() == -0x5048);
     }
     /* Error-check mutex models the exact error class without crashing macOS. */
     reset();
@@ -892,6 +1002,6 @@ int main(void) {
     reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
            "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "
-           "UTF-16, single-owner PAF APIs, mutex ownership and generation acknowledgments passed. Sony pixels remain unverified.\n",
+           "UTF-16, single-owner PAF APIs, bounded asynchronous snapshots, timed progress, native setter failures and mutex ownership passed. Sony pixels remain unverified.\n",
            checks);
 }
