@@ -362,7 +362,7 @@ void ui_theme_apply(int theme){
 int ui_theme_id(void){return current_theme;}
 const char *ui_theme_name(int theme){
     static const char *const names[] = {"Legacy",   "Ghost Mesh", "Deck 90", "Signal",
-                                        "Aperture", "Relay",      "Mosaic",  "Legacy Vita"};
+                                        "Aperture", "Relay",      "Mosaic",  "VMD"};
     return names[theme >= 0 && theme < VT_UI_THEME_COUNT ? theme : 0];
 }
 const unsigned int *ui_theme_media_begin(void){

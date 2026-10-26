@@ -1,12 +1,21 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
-The installed standard binary is verified, but the retained console log is older.
-Search workers now use POSIX creation/join with the Vita cancellation/TLS context
-required by their condition waits. Startup checkpoints now cover Legacy as well
-as PAF. Physical startup and native-theme acceptance remain pending.
+Latest interface update: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
+VMD (formerly Legacy Vita, stable ID 7) is the default for fresh profiles;
+saved choices and Legacy recovery remain valid. Native captions use explicit
+bounds, menus retain their widgets, and the integrated Home opens sources/files
+without the former indexed Home. The preceding console build now displays the
+native UI; this revision still requires physical visual/performance acceptance.
+The provisional icon is the darker PAF media hub, shared by the bubble and
+in-app branding; VMD has a restrained animated dark blue wave backdrop.
 
-Current follow-up: [complete PAF contract review and Legacy recovery](paf-contract-audit-2026-10-26.md).
+Previous startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
+That report records the earlier loading hang. Its POSIX search-worker and
+startup-checkpoint corrections remain integrated; the subsequent console
+session reaches Home and acknowledges the native first frame. See the latest
+interface report above for remaining physical acceptance.
+
+Previous follow-up: [complete PAF contract review and Legacy recovery](paf-contract-audit-2026-10-26.md).
 Previous follow-up: [PAF mutex ownership crash and single-owner correction](paf-thread-ownership-2026-10-26.md).
 Previous follow-up: [blank native layer, Run/Update lifecycle and native finishes](paf-render-loop-2026-10-26.md).
 Previous follow-up: [first-frame crash, extended PAF audit and framebuffer ABI](paf-frame-audit-2026-10-26.md).
@@ -25,7 +34,7 @@ performance, validation and change records.
 
 ## Start here
 
-- [Complete Legacy Vita / PAF integration](legacy-vita-paf-2026-10-25.md): native shared components, media composition, validation and console acceptance.
+- [Complete VMD / PAF integration](legacy-vita-paf-2026-10-25.md): native shared components, media composition, validation and console acceptance.
 
 - [Unified library and global search](unified-library-2026-10-24.md): common Home, local state, progressive provider results and acceptance checks.
 

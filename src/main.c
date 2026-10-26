@@ -741,7 +741,6 @@ static int play_library_remote(const VtLibraryItem *v) {
 }
 static int browse_local(void) {
 	if(ui_home_tab_online()){ui_online_audio_set_home(1);return UI_SECTION_ONLINE_AUDIO;}
-	int library_local = 0;
 	int folder_browser = 0;
 	int folder_resume = 0;
 	char folder_root[VT_LOCAL_MEDIA_PATH_MAX] = "";
@@ -749,7 +748,7 @@ static int browse_local(void) {
 	for (;;) {
 		VtLocalMediaItem item = {0};
 		int library_action = -1;
-		if (ui_home_tab() == HOME_LIBRARY && !folder_browser && !library_local) {
+		if (ui_home_tab() == HOME_LIBRARY && !folder_browser) {
 			VtLibraryItem chosen;
 			int action = ui_library_screen(&chosen);
 			if (action >= UI_LIBRARY_SECTION_BASE) {
@@ -759,7 +758,12 @@ static int browse_local(void) {
 				return section;
 			}
 			if (action == UI_LIBRARY_LOCAL) {
-				library_local = 1;
+                /* The unified Home opens the filesystem directly; never enter
+                 * the old indexed Home while its Home tab remains selected. */
+                folder_browser = 1;
+                folder_resume = 0;
+                folder_root[0] = '\0';
+                folder_filter = 0;
 				continue;
 			}
 			if (action == UI_LIBRARY_TAB) {
@@ -866,7 +870,6 @@ static int browse_local(void) {
 				folder_root[0] = '\0';
 				continue;
 			}
-			library_local = 0;
 			if (ui_home_tab() == HOME_PODCAST)
 				ui_home_podcast_set_offline(0);
 			return UI_SECTION_LOCAL_MEDIA;

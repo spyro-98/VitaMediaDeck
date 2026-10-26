@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "library/catalog.h"
 #include "ui/theme_scene.h"
 #include "ui/local_media_screen.h"
@@ -1253,6 +1256,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		    sceKernelGetProcessTimeWide(),LIST_Y,viewport_bottom);
 	ui_mini_player_draw();
 	if (right_animation > 0.01f) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+        int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
+#endif
 		/* Modal drawers cover the complete display edge, including the brand bar.
 		 * This prevents the panel from reading as a detached card. */
 		float panel_x = 960.0f - 430.0f * right_animation;
@@ -1298,6 +1304,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 			                 actions[i], 0);
 		}
 		if(right_open){UiFocusMotion focus={.x=panel_x+22,.y=124+right_focus*62,.width=384,.height=52,.initialized=1};ui_focus_outline_draw(&focus);}
+#ifdef VMD_ENABLE_PAF_NATIVE
+        ui_native_vita_scope(native_scope);
+#endif
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);

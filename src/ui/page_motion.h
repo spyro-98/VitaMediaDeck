@@ -17,7 +17,7 @@ typedef struct {
 } UiPageView;
 typedef struct {float scroll_seconds,menu_us;int menu_from_right;} UiThemeMotionProfile;
 static inline UiThemeMotionProfile ui_theme_motion_profile(int theme) {
-    /* Legacy Vita inherits the Legacy motion profile at stable ID 7. */
+    /* VMD inherits the Legacy motion profile at stable ID 7. */
     static const UiThemeMotionProfile profiles[8] = {
         {.17f, 60000, 0}, {.22f, 70000, 1}, {.16f, 42000, 0}, {.19f, 50000, 1},
         {.25f, 85000, 0}, {.20f, 60000, 0}, {.23f, 80000, 1}, {.17f, 60000, 0}};

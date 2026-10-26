@@ -4,6 +4,9 @@
 #define main previous_iptv_main
 #include "../iptv/ui_test.c"
 #undef main
+#undef CHECK
+#define CHECK(x) do { ++checks; if (!(x)) { \
+    fprintf(stderr, "Contract failed: %s (%s:%d)\n", #x, __FILE__, __LINE__); exit(1); } } while (0)
 #include "../../src/ui/home_tabs.c"
 static int dashboard_empty, dashboard_sources, dashboard_drop_resume, dashboard_cold;
 static int fixture_library_query(const char *, int, VtLibraryResult *, int);
@@ -314,6 +317,27 @@ int main(int argc, char **argv) {
                      dashboard_empty ? "empty" : "populated");
             png(name);
         }
+    /* Empty hero opens unified sources, never the old indexed Home. */
+    dashboard_empty = 1;
+    dashboard_sources = 0;
+    for (int theme = 0; theme < VT_UI_THEME_COUNT; theme++) {
+        ui_theme_apply(theme);
+        ui_home_tab_set(HOME_LIBRARY);
+        view = LIBRARY_HOME;
+        navigation.valid = 0;
+        dash_selected = UI_DASH_CONTINUE;
+        script_exit();
+        input_script[1] = SCE_CTRL_CROSS;
+        input_script[6] = SCE_CTRL_CIRCLE;
+        VtLibraryItem picked;
+        CHECK(ui_library_screen(&picked) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
+        CHECK(view == LIBRARY_HOME && ui_home_tab() == HOME_LIBRARY);
+        if (vt_ui_theme_legacy_layout(theme)) {
+            UiDashboardLayout layout = ui_dashboard_layout(theme, 536);
+            CHECK(layout.content.y == 104 && layout.title_y == 86);
+            CHECK(layout.content.y - UI_HOME_TABS_BOTTOM < 64);
+        }
+    }
     /* Unplayed indexed media must populate Home without inventing history. */
     dashboard_empty = 0;
     dashboard_cold = 1;

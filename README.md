@@ -1,10 +1,19 @@
 # VitaMediaDeck
 
-Latest startup follow-up: [loading hang and Vita search-thread contract](docs/startup-search-threads-2026-10-26.md).
-The installed standard binary is verified, but the retained console log is older.
-Search workers now use POSIX creation/join with the Vita cancellation/TLS context
-required by their condition waits. Startup checkpoints now cover Legacy as well
-as PAF. Physical startup and native-theme acceptance remain pending.
+Latest interface update: [VMD native text, tiles, menu reuse and Home](docs/vmd-native-ui-2026-10-26.md).
+VMD (formerly Legacy Vita, stable ID 7) is the default for fresh profiles;
+saved choices and Legacy recovery remain valid. Native captions use explicit
+bounds, menus retain their widgets, and the integrated Home opens sources/files
+without the former indexed Home. The preceding console build now displays the
+native UI; this revision still requires physical visual/performance acceptance.
+The provisional icon is the darker PAF media hub, shared by the bubble and
+in-app branding; VMD has a restrained animated dark blue wave backdrop.
+
+Previous startup follow-up: [loading hang and Vita search-thread contract](docs/startup-search-threads-2026-10-26.md).
+That report records the earlier loading hang. Its POSIX search-worker and
+startup-checkpoint corrections remain integrated; the subsequent console
+session reaches Home and acknowledges the native first frame. See the latest
+interface report above for remaining physical acceptance.
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
@@ -34,7 +43,7 @@ cycles items within a component, and **Triangle** opens global search. Full
 collections are deliberate drill-downs rather than interchangeable Home lists.
 
 Search matches indexed titles, filenames, artists and albums, with worker-prepared
-results, cache and progressive loading. L1 scrolls only in the vertical Legacy, Legacy Vita,
+results, cache and progressive loading. L1 scrolls only in the vertical Legacy, VMD,
 Deck 90 and Aperture menus; the other wheels/grids remain fixed and use spatial
 navigation. LTO now covers all app-owned decoder/HTTPS/IPTV targets as well as the
 application and the existing FFmpeg C objects, with compiler-matched archive tools.
@@ -70,10 +79,10 @@ of the eight themes. This work and the
 in standard 1.4.1. Console animation/performance acceptance remains distinct
 from host rendering checks.
 
-The latest console test reaches target setup but shows no native text or
+An earlier console test reached target setup but showed no native text or
 finishes. The [render-loop correction](docs/paf-render-loop-2026-10-26.md)
 starts the missing PAF Run loop, synchronized with each Update, and checks its
-startup/failure lifecycle. L1 rows now use native buttons and shared panels
+startup/failure lifecycle. L1 rows use native buttons and shared panels
 avoid duplicate Legacy borders. Threaded adapter, native UI dispatch, ARM ABI
 and eight-theme suites passed before building. Actual Sony pixels still need
 console acceptance.
@@ -85,7 +94,7 @@ fields explicitly and validates the target. Independent ARM layout probes,
 adapter and eight-theme utility/chrome suites passed before creating the VPK.
 Full physical acceptance of the Sony renderer remains pending.
 
-The first physical Legacy Vita / PAF test exposed an initialization-memory crash.
+The first physical VMD / PAF test exposed an initialization-memory crash.
 The corrected build moves PAF's global heap out of the small Sony dialog partition
 and bounds graphics allocations. A second console run passed initialization but
 exposed incorrect widget factory keys and a failed-frame recovery that still
@@ -140,8 +149,8 @@ in [Home, thumbnails, image controls and seek](docs/ui-feedback-2026-10-22.md).
 The [visual research and grid correction](docs/ui-style-research-2026-10-22.md)
 compares new interface directions and records the equal-row layout checks.
 Eight [themes and shared navigation](docs/themes-navigation-2026-10-23.md) are available in Settings → Interface → Theme:
-Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay, Mosaic and **Legacy Vita**.
-Legacy Vita keeps Legacy navigation and uses actual Sony PAF text, buttons,
+Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay, Mosaic and **VMD**.
+VMD keeps Legacy navigation and uses actual Sony PAF text, buttons,
 panels and busy indicators throughout the app, including the player HUD, QR,
 guide, dialogs and less-used screens. Media textures keep their existing GPU
 path. The latest [PAF contract audit](docs/paf-contract-audit-2026-10-26.md) reviews all native boundaries, retains a single owner for initialization/widgets/Run, and corrects asynchronous task delivery and Legacy recovery. This native integration requires console acceptance; hold L1+R1 while
@@ -442,7 +451,7 @@ section or item to select it.
 
 | Theme | Choose a section | Enter results / return to sections |
 | --- | --- | --- |
-| Legacy / Legacy Vita | Up from the first result row, then left/right on the top tabs | Down enters; Up from the first row returns |
+| Legacy / VMD | Up from the first result row, then left/right on the top tabs | Down enters; Up from the first row returns |
 | Ghost Mesh | Right stick aims at the section wheel | D-pad/left stick always controls the left list; X opens its item |
 | Deck 90 | Up/down in the left menu | Right or X enters; Left returns |
 | Signal | Left/right on the top tabs | Down or X enters; Up from the first row returns |

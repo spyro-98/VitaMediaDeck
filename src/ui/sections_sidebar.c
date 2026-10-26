@@ -720,6 +720,7 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
     int native = 0;
 #ifdef VMD_ENABLE_PAF_NATIVE
     native = ui_native_vita_active();
+    int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_SECTIONS);
 	if (ui_theme_id() == VT_UI_THEME_LEGACY_VITA && ui_native_vita_error())
 		ui_text_line(446, 508, 490,
 		             vt_i18n_current_language() == VT_LANG_IT ? "PAF non disponibile: layout Legacy"
@@ -755,7 +756,7 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		ui_font_draw_text(small, (int)ox + 76, 38, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, "VitaMediaDeck");
 	}
-	if (!font) {vita2d_disable_clipping();return;}
+	if (!font) goto sidebar_draw_done;
 	ui_font_draw_text(font, (int)ox + 28, 80, sidebar->audio_layout_page?VT_THEME_TEXT_MUTED:VT_THEME_TEXT,
 	                      UI_FONT_BODY, vt_i18n_str(VT_STR_SECTIONS_TITLE));
 	if(sidebar->audio_layout_available) {
@@ -776,9 +777,9 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 			ui_font_draw_text(small,(int)ox+20,478,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,vt_i18n_str(VT_STR_MUSIC_LAYOUT_APPLIES));
 			ui_font_draw_text(small,(int)ox+20,514,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,vt_i18n_str(VT_STR_MUSIC_LAYOUT_UNCHANGED));
 		}
-		vita2d_disable_clipping();return;
+        goto sidebar_draw_done;
 	}
-	if(!sidebar_clip_body(ox)){vita2d_disable_clipping();return;}
+	if(!sidebar_clip_body(ox)) goto sidebar_draw_done;
 	int has_focus = focus_cursor >= 0.0f;
 	if (has_focus && !native) {
 		vita2d_draw_rectangle(ox + ITEM_X, sidebar_row_y(sidebar, focus_cursor)-sidebar->scroll,
@@ -814,5 +815,9 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
     sidebar_group_headings(sidebar,ox);
     vita2d_set_clip_rectangle(0,0,960,544);
     sidebar_scroll_chrome(sidebar,ox);
+sidebar_draw_done:
     vita2d_disable_clipping();
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_scope(native_scope);
+#endif
 }

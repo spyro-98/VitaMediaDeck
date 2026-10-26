@@ -40,7 +40,8 @@ typedef struct {
     float x, y, w, h, alpha;
     float clip[4];
     unsigned color, size;
-    int kind, selected, hidden;
+    int kind, selected, hidden, text_align;
+    unsigned identity;
     char label[NATIVE_LABEL_BYTES];
 } NativeCommand;
 typedef struct {
@@ -119,6 +120,13 @@ static NativeCommand pending_commands[NATIVE_COMMANDS]; /* mailbox copy */
 static NativeCommand owner_commands[NATIVE_COMMANDS]; /* PAF owner only */
 static unsigned pending_count, owner_count;
 static unsigned command_count, previous_order_count;
+static unsigned capture_scope, scope_counts[3][NATIVE_KINDS];
+int ui_native_vita_scope(int scope) {
+    int previous = (int)capture_scope;
+    if (scope >= UI_NATIVE_SCOPE_CONTENT && scope <= UI_NATIVE_SCOPE_ACTIONS)
+        capture_scope = (unsigned)scope;
+    return previous;
+}
 static void *previous_order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
                             UI_NATIVE_BUSY_LIMIT];
 static int media_text, rendered_once, drawing_scene;
@@ -392,15 +400,16 @@ static void occlude(float x, float y, float w, float h, unsigned alpha, int medi
         /* Media cutouts retain the immediate panel base, preventing Sony
          * button decoration from painting over artwork/camera/video pixels. */
         if (media && c->kind != NATIVE_TEXT) {
-            c->hidden = 1;
+            float bottom = v[1] + v[3], start = fmaxf(v[1], y + h);
+            if (bottom - start >= 24) {
+                v[3] = bottom - start;
+                v[1] = start;
+            } else
+                c->hidden = 1;
             continue;
         }
         if (alpha < 255) {
             c->alpha *= 1 - alpha / 255.f;
-            continue;
-        }
-        if (c->kind != NATIVE_TEXT) {
-            c->hidden = 1;
             continue;
         }
         float right = v[0] + v[2], bottom = v[1] + v[3];
@@ -417,10 +426,15 @@ static void occlude(float x, float y, float w, float h, unsigned alpha, int medi
             c->hidden = 1;
     }
 }
+void ui_native_vita_cover(float x, float y, float w, float h, unsigned color) {
+    occlude(x, y, w, h, color >> 24, 0);
+}
 static int enqueue(int kind, float x, float y, float w, float h, unsigned color, unsigned size,
                    const char *label, int selected) {
     if (!ui_native_vita_active())
         return 0;
+    unsigned identity = 1 + capture_scope * (NATIVE_COMMANDS + 1) +
+                        scope_counts[capture_scope][kind]++;
     if (!isfinite(x) || !isfinite(y) || !isfinite(w) || !isfinite(h) || w <= 0 || h <= 0)
         return 1;
     float left = fmaxf(x, clip_enabled ? clip_box[0] : 0),
@@ -429,8 +443,6 @@ static int enqueue(int kind, float x, float y, float w, float h, unsigned color,
           bottom = fminf(y + h, clip_enabled ? clip_box[3] : 544);
     if (left >= right || top >= bottom)
         return 1;
-    if (kind != NATIVE_TEXT && (left > x || top > y || right < x + w || bottom < y + h))
-        return 0;
     /* Reclaim fully hidden commands before refusing a new native widget. */
     unsigned live = 0;
     for (unsigned i = 0; i < command_count; i++)
@@ -453,7 +465,8 @@ static int enqueue(int kind, float x, float y, float w, float h, unsigned color,
                          .color = color,
                          .size = size,
                          .kind = kind,
-                         .selected = selected};
+                         .selected = selected,
+                         .identity = identity};
     snprintf(c->label, sizeof(c->label), "%s", label ? label : "");
     return 1;
 }
@@ -471,29 +484,54 @@ int ui_native_vita_text(float x, float baseline, float width, unsigned size, uns
                    text, 0);
 }
 int ui_native_vita_button(float x, float y, float w, float h, const char *label, int selected) {
-    return enqueue(NATIVE_BUTTON, x, y, w, h, 0xffffffff, 20, label, selected);
+    unsigned before = command_count;
+    int result = enqueue(NATIVE_BUTTON, x, y, w, h, 0xffffffff, 20, "", selected);
+    if (!result || command_count == before || !label || !label[0])
+        return result;
+    unsigned identity = 2166136261u;
+    for (const unsigned char *p = (const unsigned char *)label; *p; p++)
+        identity = (identity ^ *p) * 16777619u;
+    identity = capture_scope ? 0x80000000u | (capture_scope << 29) | (identity & 0x1fffffffu)
+                             : commands[before].identity;
+    commands[before].identity = identity;
+    /* A Sony button's default label has its own font/padding rules. Keep its
+     * native nine-slice, but use our bounded native Text path for the caption. */
+    float padding = w > 64 ? 12 : 6;
+    unsigned size = (unsigned)fmaxf(10, fminf(20, h - 12));
+    unsigned caption = command_count;
+    if (!enqueue(NATIVE_TEXT, x + padding, y + 4,
+                 fmaxf(1, w - padding * 2), fmaxf(1, h - 8), VT_THEME_TEXT, size, label, 0)) {
+        command_count = before;
+        return 0;
+    }
+    scope_counts[capture_scope][NATIVE_TEXT]--;
+    if (command_count > caption) {
+        commands[caption].text_align = 1;
+        commands[caption].identity = identity | 0x40000000u;
+    }
+    return 1;
 }
 int ui_native_vita_button_fade(float x, float y, float w, float h, const char *label, int selected,
                                float alpha) {
     unsigned before = command_count;
     int result = ui_native_vita_button(x, y, w, h, label, selected);
-    if (result && command_count > before)
-        commands[command_count - 1].alpha = fmaxf(0, fminf(1, alpha));
+    if (result)
+        for (unsigned i = before; i < command_count; i++)
+            commands[i].alpha = fmaxf(0, fminf(1, alpha));
     return result;
 }
 void ui_native_vita_media_text(int active) {
     media_text = active;
 }
 int ui_native_vita_panel(float x, float y, float w, float h, unsigned color, int selected) {
-    return enqueue(h <= 96 && w >= 150 ? NATIVE_BUTTON : NATIVE_PANEL, x, y, w, h, color, 20, "",
-                   selected);
+    return enqueue(NATIVE_PANEL, x, y, w, h, color, 20, "", selected);
 }
 int ui_native_vita_focus(float x, float y, float w, float h) {
     if (!ui_native_vita_active())
         return 0;
     for (unsigned n = command_count; n > 0; n--) {
         NativeCommand *c = &commands[n - 1];
-        if (!c->hidden && c->kind == NATIVE_BUTTON && fabsf(c->x - x) < 12 &&
+        if (!c->hidden && (c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL) && fabsf(c->x - x) < 12 &&
             fabsf(c->y - y) < 12 && fabsf(c->w - w) < 24 && fabsf(c->h - h) < 24) {
             c->selected = 1;
             return 1;
@@ -523,94 +561,128 @@ static int layout_vec(void *widget, int attr, float x, float y, const char *oper
     return rc < 0 ? widget_failure(operation, NATIVE_TEXT, slot, rc) : 0;
 }
 static int present(void) {
-    unsigned at[NATIVE_KINDS] = {0}, order_count = 0;
+    unsigned order_count = 0;
+    unsigned char used[NATIVE_KINDS][UI_NATIVE_TEXT_LIMIT] = {{0}};
+    int mapping[NATIVE_COMMANDS];
+    /* Reserve identities before allocating: an overlay must never steal a
+     * content slot that appears later in this same owner snapshot. */
+    for (unsigned i = 0; i < owner_count; i++) {
+        NativeCommand *c = &owner_commands[i];
+        mapping[i] = -1;
+        if (c->hidden) continue;
+        for (unsigned n = 0; n < limits[c->kind]; n++)
+            if (!used[c->kind][n] && slots[c->kind][n].widget &&
+                slots[c->kind][n].prior.identity == c->identity) {
+                mapping[i] = (int)n;
+                used[c->kind][n] = 1;
+                break;
+            }
+    }
+    for (unsigned i = 0; i < owner_count; i++) {
+        NativeCommand *c = &owner_commands[i];
+        if (c->hidden || mapping[i] >= 0) continue;
+        int best = -1, score = 4;
+        for (unsigned n = 0; n < limits[c->kind]; n++) {
+            NativeSlot *s = &slots[c->kind][n];
+            int candidate = !s->widget ? 0 : !s->shown ? 1 : 2;
+            if (!used[c->kind][n] && candidate < score) {
+                best = (int)n;
+                score = candidate;
+            }
+        }
+        if (best < 0) return widget_failure("identity-pool", c->kind, 0, -1);
+        mapping[i] = best;
+        used[c->kind][best] = 1;
+    }
     void *order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
                 UI_NATIVE_BUSY_LIMIT];
     int any = 0;
     /* CreateWidget consumes case-sensitive resource factory keys, not C++ class
      * names. The shipped firmware resource/sample uses these lowercase tags. */
-    const char *types[] = {"text", "button", "plane", "busyindicator"};
+    const char *types[] = {"text", "button", "button", "busyindicator"};
     const char *styles[] = {"_common_default_style_text", "_common_default_style_button",
-                            "vmd_white", "_common_style_busyindicator_8"};
+                            "_common_default_style_button", "_common_style_busyindicator_8"};
     for (unsigned i = 0; i < owner_count; i++) {
         NativeCommand *c = &owner_commands[i];
         if (c->hidden)
             continue;
-        NativeSlot *slot = &slots[c->kind][at[c->kind]++];
+        unsigned number = (unsigned)mapping[i] + 1;
+        NativeSlot *slot = &slots[c->kind][number - 1];
         int fresh = !slot->widget;
         if (fresh) {
             char name[48];
-            snprintf(name, sizeof(name), "vmd_native_%d_%u", c->kind, at[c->kind]);
+            snprintf(name, sizeof(name), "vmd_native_%d_%u", c->kind, number);
             if (c->kind == NATIVE_BUSY) {
                 VtPafId busy = id(name);
                 slot->widget = vmd_paf_widget_find(page, &busy, 0);
             } else
                 slot->widget = create(types[c->kind], name, styles[c->kind]);
             if (!slot->widget)
-                return widget_failure("create", c->kind, at[c->kind], -1);
+                return widget_failure("create", c->kind, number, -1);
         }
         void *w = slot->widget;
         NativeCommand *old = &slot->prior;
         if (fresh || old->x != c->x || old->y != c->y || old->w != c->w || old->h != c->h ||
-            (c->kind == NATIVE_TEXT && memcmp(old->clip, c->clip, sizeof(c->clip)))) {
+            memcmp(old->clip, c->clip, sizeof(c->clip))) {
             /* The native text widget occupies the physical visible window.
              * Logical size/visible position below preserve its original text
              * layout while scrolling clips through a header or a later modal. */
             const float *v = c->clip;
-            int rc = c->kind == NATIVE_TEXT ? place(w, v[0], v[1], v[2], v[3])
-                                            : place(w, c->x, c->y, c->w, c->h);
+            int rc = place(w, v[0], v[1], v[2], v[3]);
             if (rc < 0)
-                return widget_failure("geometry", c->kind, at[c->kind], rc);
+                return widget_failure("geometry", c->kind, number, rc);
         }
         int text_changed = fresh || strcmp(old->label, c->label);
-        if (c->kind == NATIVE_TEXT || c->kind == NATIVE_BUTTON) {
+        if (c->kind == NATIVE_TEXT || c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL) {
             uint16_t text[NATIVE_LABEL_BYTES];
             unsigned count = ui_native_vita_utf16(c->label, text, NATIVE_LABEL_BYTES);
             if (text_changed) {
                 VtPafString value = {text, count, 0};
-                int rc = c->kind == NATIVE_BUTTON
+                int rc = c->kind != NATIVE_TEXT
                              ? vmd_paf_button_text(w, &value, VMD_PAF_BUTTON_LABEL_OBJECT)
                              : vmd_paf_widget_text(w, &value, VMD_PAF_TEXT_OBJECT);
                 if (rc < 0)
-                    return widget_failure("string", c->kind, at[c->kind], rc);
+                    return widget_failure("string", c->kind, number, rc);
             }
             if (c->kind == NATIVE_TEXT) {
                 if (fresh || old->size != c->size || text_changed)
                     if (vmd_paf_text_size(w, 1, 0, count, (float)c->size) < 0)
-                        return widget_failure("text-size", c->kind, at[c->kind], -1);
+                        return widget_failure("text-size", c->kind, number, -1);
                 if (fresh || old->color != c->color || old->alpha != c->alpha || text_changed) {
                     _Alignas(16) float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                                       ((c->color >> 16) & 255) / 255.f,
                                       ((c->color >> 24) & 255) / 255.f * c->alpha};
                     if (vmd_paf_text_color(w, 2, 0, count, color) < 0)
-                        return widget_failure("text-color", c->kind, at[c->kind], -1);
+                        return widget_failure("text-color", c->kind, number, -1);
                 }
-                if (fresh) {
+                if (fresh || old->text_align != c->text_align) {
                     for (int attr = VMD_PAF_LAYOUT_ALIGN_X; attr <= VMD_PAF_LAYOUT_TEXT_ALIGN;
                          attr++) {
-                        int rc = vmd_paf_text_layout_int(w, attr, 0);
+                        int rc = vmd_paf_text_layout_int(w, attr,
+                            attr == VMD_PAF_LAYOUT_ALIGN_Y || attr == VMD_PAF_LAYOUT_TEXT_ALIGN
+                                ? c->text_align : 0);
                         if (rc < 0)
-                            return widget_failure("text-layout-align", c->kind, at[c->kind], rc);
+                            return widget_failure("text-layout-align", c->kind, number, rc);
                     }
                     if (layout_bool(w, VMD_PAF_LAYOUT_WORD_WRAP, 0, "text-layout-word-wrap",
-                                    at[c->kind]) < 0 ||
-                        layout_bool(w, VMD_PAF_LAYOUT_ELLIPSIS, 1, "text-layout-ellipsis",
-                                    at[c->kind]) < 0 ||
+                                    number) < 0 ||
+                        layout_bool(w, VMD_PAF_LAYOUT_ELLIPSIS, 0, "text-layout-ellipsis",
+                                    number) < 0 ||
                         layout_bool(w, VMD_PAF_LAYOUT_CONDENSE_X, 1, "text-layout-condense",
-                                    at[c->kind]) < 0)
+                                    number) < 0)
                         return -1;
                 }
                 if (fresh || old->w != c->w || old->h != c->h) {
                     if (layout_vec(w, VMD_PAF_LAYOUT_SIZE, c->w, c->h, "text-size-layout",
-                                   at[c->kind]) < 0)
+                                   number) < 0)
                         return -1;
                 }
                 if (fresh || memcmp(old->clip, c->clip, sizeof(c->clip)) || old->x != c->x ||
                     old->y != c->y) {
                     if (layout_vec(w, VMD_PAF_LAYOUT_VISIBLE_POS, c->clip[0] - c->x,
-                                   c->clip[1] - c->y, "text-visible-position", at[c->kind]) < 0 ||
+                                   c->clip[1] - c->y, "text-visible-position", number) < 0 ||
                         layout_vec(w, VMD_PAF_LAYOUT_VISIBLE_SIZE, c->clip[2], c->clip[3],
-                                   "text-visible-size", at[c->kind]) < 0)
+                                   "text-visible-size", number) < 0)
                         return -1;
                 }
             } else if (fresh || old->selected != c->selected)
@@ -620,13 +692,13 @@ static int present(void) {
             _Alignas(16) float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                               ((c->color >> 16) & 255) / 255.f, ((c->color >> 24) & 255) / 255.f};
             if (vmd_paf_widget_color(w, color, NULL, 0x10001, 0, 0, NULL, NULL) < 0)
-                return widget_failure("panel-color", c->kind, at[c->kind], -1);
+                return widget_failure("panel-color", c->kind, number, -1);
         }
         order[order_count++] = w;
         if (!slot->shown) {
             int rc = show(w, 1);
             if (rc < 0)
-                return widget_failure("show", c->kind, at[c->kind], rc);
+                return widget_failure("show", c->kind, number, rc);
             if (c->kind == NATIVE_BUSY)
                 vmd_paf_busy_start(w);
         }
@@ -635,16 +707,16 @@ static int present(void) {
         if (c->kind != NATIVE_TEXT && (fresh || !slot->shown || old->alpha != c->alpha)) {
             int rc = vmd_paf_widget_alpha(w, c->alpha, NULL, 0x10002, 0, 0, NULL);
             if (rc < 0)
-                return widget_failure("alpha", c->kind, at[c->kind], rc);
+                return widget_failure("alpha", c->kind, number, rc);
         }
         slot->shown = 1;
         slot->prior = *c;
         any = 1;
     }
     for (int kind = 0; kind < NATIVE_KINDS; kind++)
-        for (unsigned n = at[kind]; n < limits[kind]; n++) {
+        for (unsigned n = 0; n < limits[kind]; n++) {
             NativeSlot *s = &slots[kind][n];
-            if (s->shown) {
+            if (s->shown && !used[kind][n]) {
                 int rc = show(s->widget, 0);
                 if (rc < 0)
                     return widget_failure("hide", kind, n + 1, rc);
@@ -798,6 +870,8 @@ void __wrap_vita2d_start_drawing(void) {
     if (ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
         ui_native_vita_prepare();
     command_count = 0;
+    capture_scope = UI_NATIVE_SCOPE_CONTENT;
+    memset(scope_counts, 0, sizeof(scope_counts));
     media_text = 0;
     clip_enabled = 0;
     clip_box[0] = clip_box[1] = 0;

@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "media/hw_player_screen.h"
 #include "common/text_log.h"
 
@@ -617,6 +620,9 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	                                  int pending_audio_track,
 	                                  int pending_subtitle_track, int live) {
 	if (animation <= 0.01f || !status) return;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
+#endif
 	(void)cursor;
 	const float width = RIGHT_PANEL_WIDTH;
 	float x = SCREEN_WIDTH - width * animation;
@@ -740,6 +746,9 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		ui_font_draw_text(small, (int)x + 28, 518, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_PLAYER_PANEL_HINT));
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_scope(native_scope);
+#endif
 }
 
 static int player_screen_run(const VtHwPlayerScreenSource *source,

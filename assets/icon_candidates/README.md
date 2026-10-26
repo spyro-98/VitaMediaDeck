@@ -23,12 +23,21 @@ theme-specific iterations:
 Each numbered PNG is a PS Vita-ready 128x128 indexed PNG. The `masters/`
 directory contains the original first-round artwork; later high-resolution
 masters live in `assets/branding/`. Earlier candidates remain available for
-comparison. Candidate 11 is active at `sce_sys/icon0.png` and is mirrored to
-the three legacy branding filenames. Its asymmetric black iris, optical signal
-membranes, cyan particle dissolution, sparse amber telemetry, and pitch-black
-field match the current UI more closely than the previous fractured glass
-shell. The master is
-`assets/branding/vitamediadeck-memory-aperture-master.png`.
+comparison. Candidate 13, the darker PAF media hub, is the provisional active
+icon at `sce_sys/icon0.png` and is mirrored to the three legacy branding
+filenames. The runtime loads this same packaged icon once for the header,
+loading screen and other in-app branding, so it stays consistent with the
+LiveArea bubble. Its master is
+`assets/branding/vitamediadeck-paf-media-hub-master.png`, mirrored to the
+README's `assets/branding/vitamediadeck-icon.png`. The numbered prompt records
+the generation and subsequent blue-only darkening requested by the user.
+The original artwork is not a Sony asset.
+
+13. `13-paf-media-hub.png` — deeper sapphire PAF-style bubble with music, photo
+    and video cards over a library/broadcast tray; selected on 26 October 2026.
+    The PNG is the exact 128x128 indexed project export, with no transparency;
+    the BMP is retained as a companion preview. Earlier selections and masters
+    remain for comparison.
 
 `comparison.png` records the original five-concept review. Candidates 6–11
 were produced during the later Signal / Shell pass and are documented by their

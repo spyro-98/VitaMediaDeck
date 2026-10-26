@@ -15,6 +15,8 @@
 #define assert(condition) do { if (!(condition)) { \
     fprintf(stderr, "Contract failed: %s (%s:%d)\n", #condition, __FILE__, __LINE__); \
     exit(EXIT_FAILURE); } } while (0)
+static const unsigned host_colors[UI_COLOR_COUNT] = {[UI_COLOR_TEXT] = 0xffffffff};
+const unsigned *ui_theme_colors = host_colors;
 static atomic_uint checks;
 static uint64_t host_clock_us;
 uint64_t sceKernelGetProcessTimeWide(void) { return host_clock_us; }
@@ -454,13 +456,14 @@ int vmd_paf_text_color(void *w, int attr, unsigned start, unsigned count, const 
 }
 int vmd_paf_text_layout_int(void *w, int attr, int value) {
     host_owner_check();
-    CHECK(w && !host_scene && attr >= 0 && attr <= 2 && !value);
+    CHECK(w && !host_scene && attr >= 0 && attr <= 2 && (value == 0 || ((attr == 1 || attr == 2) && value == 1)));
     return 0;
 }
 int vmd_paf_text_layout_bool(void *w, int attr, bool value) {
     host_owner_check();
     CHECK(w && !host_scene && (attr == 11 || attr == 13 || attr == 15) &&
           (value == 0 || value == 1));
+    CHECK(attr != 15 || !value); /* No second native ellipsis on every label. */
     return attr == host_fail_layout ? -12345 : 0;
 }
 int vmd_paf_text_layout_vec(void *w, int attr, const VtPafVec2 *v) {
@@ -604,8 +607,16 @@ static void reset(void) {
     memset(commands, 0, sizeof(commands));
     memset(fw_params, 0, sizeof(fw_params));
     state = error_code = visible = updating = capturing = clip_enabled = overflow_logged = 0;
-    command_count = previous_order_count = 0;
+    command_count = previous_order_count = capture_scope = 0;
+    memset(scope_counts, 0, sizeof(scope_counts));
     media_text = rendered_once = 0;
+}
+static NativeSlot *text_slot(const char *label) {
+    for (unsigned i = 0; i < UI_NATIVE_TEXT_LIMIT; i++)
+        if (slots[NATIVE_TEXT][i].shown && !strcmp(slots[NATIVE_TEXT][i].prior.label, label))
+            return &slots[NATIVE_TEXT][i];
+    assert(!"visible native text slot missing");
+    return NULL;
 }
 static void fixture(void) {
     CHECK(ui_native_vita_panel(12, 60, 420, 360, 0xff502010, 0));
@@ -640,7 +651,7 @@ int main(void) {
     CHECK(ui_native_vita_active() && host_loads == 1);
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(host_updates == 2 && host_creates == 3 && host_strings == 2 && visible);
+    CHECK(host_updates == 2 && host_creates == 4 && host_strings == 4 && visible);
     int creates = host_creates, strings = host_strings;
     CHECK(host_checkpoints == 10);
     CHECK(host_thread_creates == 1 && renderer_running() == 1 && host_frames_drawn == 2);
@@ -678,21 +689,23 @@ int main(void) {
     CHECK(commands[0].clip[2] == 100);
     CHECK(ui_native_vita_text(120, 40, 200, 20, 0xffffffff, "Modal"));
     __wrap_vita2d_end_drawing();
-    CHECK(!strcmp(slots[NATIVE_TEXT][0].prior.label, "Immutable") &&
-          !strcmp(slots[NATIVE_TEXT][1].prior.label, "Modal"));
+    CHECK(text_slot("Immutable") && text_slot("Modal"));
     /* Clip state tracks each frame and never leaks to another page/theme. */
     __wrap_vita2d_start_drawing();
     __wrap_vita2d_set_clip_rectangle(50, 50, 350, 300);
     __wrap_vita2d_enable_clipping();
     CHECK(ui_native_vita_text(20, 80, 200, 20, 0xffffffff, "Clipped"));
     CHECK(commands[0].clip[0] == 50 && commands[0].clip[2] == 172);
-    CHECK(!ui_native_vita_button(20, 50, 200, 42, "Partial target", 0));
+    CHECK(ui_native_vita_button(20, 50, 200, 42, "Partial target", 0));
+    CHECK(commands[1].clip[0] == 50 && commands[1].clip[2] == 170);
+    CHECK(commands[2].text_align == 1 && !strcmp(commands[2].label, "Partial target"));
     __wrap_vita2d_disable_clipping();
+    unsigned cutout = command_count;
     CHECK(ui_native_vita_panel(400, 60, 200, 80, 0xffffffff, 0));
     __wrap_vita2d_draw_texture_scale((const vita2d_texture *)host_nodes, 440, 70, 1, 1);
-    CHECK(commands[1].hidden);
+    CHECK(commands[cutout].hidden);
     __wrap_vita2d_end_drawing();
-    unsigned clipped_node=(unsigned)((unsigned char *)slots[NATIVE_TEXT][0].widget-host_nodes);
+    unsigned clipped_node=(unsigned)((unsigned char *)text_slot("Clipped")->widget-host_nodes);
     CHECK(host_left[clipped_node]==50&&host_width[clipped_node]==172);
     __wrap_vita2d_start_drawing();
     CHECK(!clip_enabled);
@@ -814,7 +827,9 @@ int main(void) {
         __wrap_vita2d_end_drawing();
         CHECK(state == 1 && host_updates == n + 3 && host_creates == stable_creates);
         CHECK(host_bad_text_targets == 2 && slots[NATIVE_BUTTON][0].widget == button_widget);
-        CHECK(!strcmp(host_last_text, labels[n]));
+        CHECK(!slots[NATIVE_BUTTON][0].prior.label[0]);
+        if (labels[n][0]) CHECK(text_slot(labels[n]));
+        else for (unsigned i = 0; i < UI_NATIVE_TEXT_LIMIT; i++) CHECK(!slots[NATIVE_TEXT][i].shown);
     }
     /* Exercise the actual flush with both buffer descriptions, including a
      * missing depth surface, alternating sync objects and distinct format/type. */
@@ -927,9 +942,9 @@ int main(void) {
     /* Never read the capture array while native delivery is pending. */
     reset(); host_run_behavior = 5;
     __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && pending_count == 3 && owner_count == 0);
-    strcpy(commands[1].label, "Reused app capture");
-    CHECK(!strcmp(pending_commands[1].label, "Jellyfin"));
+    CHECK(state == 1 && pending_count == 4 && owner_count == 0);
+    strcpy(commands[2].label, "Reused app capture");
+    CHECK(!strcmp(pending_commands[2].label, "Jellyfin"));
     /* Theme changes replace pending native data with an empty snapshot;
      * no obsolete native screen may appear later over Legacy. */
     host_theme = VT_UI_THEME_LEGACY; host_run_behavior = 0;
@@ -960,7 +975,7 @@ int main(void) {
     pthread_mutex_unlock(&host_runner_mutex);
     CHECK(!host_creates && !atomic_load(&applied_generation) && host_scene);
     fixture(); host_run_behavior = 0; __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && rendered_once && host_creates == 3);
+    CHECK(state == 1 && rendered_once && host_creates == 4);
     /* A request to initialize inside an already-open scene is deferred. */
     reset(); host_theme = VT_UI_THEME_LEGACY;
     __wrap_vita2d_start_drawing(); host_theme = VT_UI_THEME_LEGACY_VITA;
@@ -975,7 +990,7 @@ int main(void) {
     CHECK(state == 1 && !rendered_once && !host_creates);
     atomic_flag_clear(&mailbox_lock);
     __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && rendered_once && host_creates == 3);
+    CHECK(state == 1 && rendered_once && host_creates == 4);
     /* Native visibility/alpha failures must reach owner-side recovery, too. */
     for (int kind = 0; kind < 3; kind++) {
         reset(); CHECK(ui_native_vita_prepare());
@@ -990,6 +1005,47 @@ int main(void) {
         CHECK(state == -1 && host_theme == VT_UI_THEME_LEGACY &&
               ui_native_vita_error() == -0x5048);
     }
+    /* Opening/closing a modal must not rebind the underlying content or
+     * regenerate its strings. Off-screen animation stays on the native path. */
+    reset();
+    void *content_widget = NULL;
+    int warm_creates = 0, warm_strings = 0;
+    for (int frame = 0; frame < 16; frame++) {
+        __wrap_vita2d_start_drawing();
+        CHECK(ui_native_vita_text(440, 42, 300, 20, 0xffffffff, "Home status"));
+        if (!(frame % 2)) {
+            int scope = ui_native_vita_scope(UI_NATIVE_SCOPE_SECTIONS);
+            CHECK(scope == UI_NATIVE_SCOPE_CONTENT);
+            CHECK(ui_native_vita_button_fade(-30 + frame, 100, 260, 44,
+                                             "Jellyfin provider", 1, .8f));
+            CHECK(command_count == 3 && commands[1].clip[0] == 0);
+            CHECK(commands[2].w == 236 && commands[2].text_align == 1);
+            CHECK(commands[2].y == 104 && commands[2].h == 36);
+            CHECK(commands[2].x >= commands[1].x && commands[2].x + commands[2].w <= commands[1].x + commands[1].w);
+            CHECK(!strstr(commands[2].label, "..."));
+            CHECK(ui_native_vita_scope(scope) == UI_NATIVE_SCOPE_SECTIONS);
+        }
+        __wrap_vita2d_end_drawing();
+        CHECK(state == 1 && capture_scope == UI_NATIVE_SCOPE_CONTENT);
+        if (!frame) {
+            content_widget = text_slot("Home status")->widget;
+            warm_creates = host_creates;
+            warm_strings = host_strings;
+        }
+        CHECK(text_slot("Home status")->widget == content_widget);
+        CHECK(host_creates == warm_creates && host_strings == warm_strings);
+    }
+    /* Media cutouts retain the real native caption window and rounded frame
+     * instead of suppressing every native part of a file/folder tile. */
+    reset();
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_panel(40, 60, 240, 180, 0xff502010, 0));
+    __wrap_vita2d_draw_texture_scale((const vita2d_texture *)host_nodes, 52, 72, 1, 1);
+    CHECK(!commands[0].hidden && commands[0].clip[1] > commands[0].y);
+    CHECK(ui_native_vita_focus(40, 60, 240, 180));
+    __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && slots[NATIVE_PANEL][0].shown);
+    CHECK(host_node_kinds[(unsigned char *)slots[NATIVE_PANEL][0].widget - host_nodes] == NATIVE_BUTTON);
     /* Error-check mutex models the exact error class without crashing macOS. */
     reset();
     assert(!pthread_mutex_lock(&host_paf_mutex));

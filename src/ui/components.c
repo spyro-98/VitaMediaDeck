@@ -20,6 +20,10 @@
 #include "ui/theme_home.h"
 #include "i18n/i18n.h"
 
+#ifdef VMD_ENABLE_PAF_NATIVE
+static void rounded_backing(float x, float y, float w, float h, unsigned color);
+#endif
+
 int ui_context_menu_input(UiContextMenu *menu, const UiContextAction *items, int count,
 	unsigned *pressed, unsigned held, unsigned char ly, unsigned *touches, const UiTouchEvent *touch) {
 	if (*pressed & SCE_CTRL_LTRIGGER) { menu->open=0; return -1; }
@@ -65,6 +69,9 @@ void ui_context_menu_draw(const UiContextMenu *menu, const char *title,
 	vita2d_draw_rectangle(x,0,2,544,VT_THEME_SIGNAL);
 	vita2d_font *font=ui_runtime_font(UI_FONT_SMALL);
 	if(!font)return;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
+#endif
 	float ox=x-530;
 	vita2d_set_clip_rectangle((int)x,0,960,544);
 	vita2d_enable_clipping();
@@ -89,9 +96,20 @@ void ui_context_menu_draw(const UiContextMenu *menu, const char *title,
 		focus.x+=x; ui_focus_outline_draw(&focus);
 	}
 	vita2d_disable_clipping();
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_scope(native_scope);
+#endif
 }
 /* Fixed 136x108 cell, including margins; both browser grids share this glyph. */
 void ui_folder_icon(float x,float y) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+ if (ui_native_vita_active()) {
+  rounded_backing(x+20,y+24,62,20,VT_THEME_BLUE_LIGHT);
+  rounded_backing(x+12,y+35,112,65,VT_THEME_BLUE);
+  ui_native_vita_panel(x+12,y+35,112,65,VT_THEME_BLUE,0);
+  return;
+ }
+#endif
  vita2d_draw_rectangle(x+20,y+24,62,15,VT_THEME_BLUE_LIGHT);
  vita2d_draw_rectangle(x+12,y+35,112,65,VT_THEME_BLUE);
  vita2d_draw_rectangle(x+12,y+35,112,4,VT_THEME_BLUE_BRIGHT);
@@ -133,6 +151,11 @@ void ui_text_line(float x,float baseline,float width,const char *text,unsigned c
 	vita2d_font *font=ui_runtime_font(size);
 	if(!font || !text || width<=0)return;
 	char fitted[512];ui_font_fit_text(font,size,text,fitted,sizeof(fitted),(int)width);
+#ifdef VMD_ENABLE_PAF_NATIVE
+    /* Keep the caller's available width, not the smaller fitted glyph advance.
+     * One deliberate fit is enough; PAF must not ellipsize that result again. */
+    if (ui_native_vita_text(x, baseline, width, size, color, fitted)) return;
+#endif
 	ui_font_draw_text(font,(int)x,(int)baseline,color,size,fitted);
 }
 
@@ -229,9 +252,53 @@ void ui_scene_identity(float x, float y, float width, const char *code,
 	}
 }
 
+#ifdef VMD_ENABLE_PAF_NATIVE
+static void rounded_backing(float x, float y, float w, float h, unsigned color) {
+    /* One bounded GPU batch, no heap allocation or per-corner draw calls. The
+     * firmware nine-slice owns the finish; this base serves media cutouts. */
+    static const float arc[7][2] = {
+        {0,1}, {.258819f,.965926f}, {.5f,.866025f}, {.707107f,.707107f},
+        {.866025f,.5f}, {.965926f,.258819f}, {1,0}
+    };
+    float radius = fminf(10, fminf(w, h) * .25f);
+    vita2d_color_vertex ring[28], triangles[84];
+    for (int corner = 0; corner < 4; corner++) {
+        float cx = corner < 2 ? x + w - radius : x + radius;
+        float cy = corner == 0 || corner == 3 ? y + radius : y + h - radius;
+        for (int i = 0; i < 7; i++) {
+            float sx = arc[i][0], sy = arc[i][1];
+            float dx = corner == 0 ? sx : corner == 1 ? sy : corner == 2 ? -sx : -sy;
+            float dy = corner == 0 ? -sy : corner == 1 ? sx : corner == 2 ? sy : -sx;
+            ring[corner * 7 + i] = (vita2d_color_vertex){cx + dx * radius, cy + dy * radius, .5f, color};
+        }
+    }
+    for (int i = 0; i < 28; i++) {
+        triangles[i * 3] = (vita2d_color_vertex){x + w * .5f, y + h * .5f, .5f, color};
+        triangles[i * 3 + 1] = ring[i];
+        triangles[i * 3 + 2] = ring[(i + 1) % 28];
+    }
+    ui_native_vita_cover(x, y, w, h, color);
+#ifdef __vita__
+    vita2d_color_vertex *gpu = vita2d_pool_memalign(sizeof(triangles), 16);
+    if (!gpu) {
+        vita2d_draw_rectangle(x + radius, y, w - radius * 2, h, color);
+        return;
+    }
+    memcpy(gpu, triangles, sizeof(triangles));
+    vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES, gpu, 84);
+#else
+    vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES, triangles, 84);
+#endif
+}
+#endif
+
 void ui_panel(float x, float y, float width, float height,
 	          unsigned int fill, unsigned int accent, int focused) {
-	vita2d_draw_rectangle(x, y, width, height, fill);
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if (ui_native_vita_active()) rounded_backing(x, y, width, height, fill);
+    else
+#endif
+    vita2d_draw_rectangle(x, y, width, height, fill);
 #ifdef VMD_ENABLE_PAF_NATIVE
     /* Retain the base under media cutouts, but let Sony's widget supply its
      * own edges/focus instead of drawing the Legacy border over it. */

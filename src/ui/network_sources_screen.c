@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/network_sources_screen.h"
 #include "library/catalog.h"
 #include "library/search.h"
@@ -1021,6 +1024,9 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
                     sceKernelGetProcessTimeWide(),LIST_Y,network_viewport_bottom());
 	ui_mini_player_draw();
 	if (right_open) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+        int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
+#endif
 		const int panel_x = 530;
 		vita2d_draw_rectangle(panel_x, 0, 430, 544, VT_THEME_BG_SOFT);
 		vita2d_draw_rectangle(panel_x, 0, 1, 544, VT_THEME_BORDER);
@@ -1046,6 +1052,9 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
          ui_focus_motion_tick(focus_motion,panel_x+22,124+right_cursor*62,384,52);
          ui_focus_outline_draw(focus_motion);
         }
+#ifdef VMD_ENABLE_PAF_NATIVE
+        ui_native_vita_scope(native_scope);
+#endif
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);

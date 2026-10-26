@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/music_player.h"
 
 #include <ctype.h>
@@ -599,6 +602,9 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	                                 uint16_t channels,
 	                                 uint16_t bits_per_sample) {
 	if (animation <= 0.01f) return;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
+#endif
 	const float width = MUSIC_RIGHT_PANEL_W;
 	float x = 960.0f - width * animation;
 	vita2d_draw_rectangle(x, 0, width, 544, VT_THEME_BG_SOFT);
@@ -683,6 +689,9 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 	if (small)
 		ui_font_draw_text(small, x + 28, 518, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_MUSIC_PLAYER_PANEL_HINT));
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_scope(native_scope);
+#endif
 }
 
 int ui_music_player_shuffle_enabled(void) { return g_shuffle; }
