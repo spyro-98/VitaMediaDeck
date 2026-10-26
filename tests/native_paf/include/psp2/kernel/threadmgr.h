@@ -8,4 +8,5 @@ SceUID sceKernelCreateThread(const char *, SceKernelThreadEntry, int, unsigned, 
 int sceKernelStartThread(SceUID, SceSize, void *);
 int sceKernelDeleteThread(SceUID);
 int sceKernelDelayThread(unsigned);
+int sceKernelGetThreadId(void);
 #endif

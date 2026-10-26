@@ -219,6 +219,13 @@
       "library_nid": "0x073F8C68",
       "symbol": "_ZN3paf2ui6Widget9FindChildERKNS_7IDParamEi",
       "nid": "0x9D304F4A"
+    },
+    {
+      "name": "vmd_paf_main_task_register",
+      "library": "ScePafCommon",
+      "library_nid": "0x3C1965CD",
+      "symbol": "_ZN3paf6common18MainThreadCallList8RegisterEPFvPvES2_",
+      "nid": "0x6735B503"
     }
   ]
 }

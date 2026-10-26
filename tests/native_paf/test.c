@@ -7,9 +7,35 @@
 #include <stdarg.h>
 #include <pthread.h>
 #include <time.h>
+#include <errno.h>
 #include "../../src/ui/native_vita.c"
-static unsigned checks;
+/* Contract failures exit normally with a diagnostic, never generate macOS
+ * crash reports. In particular the foreign-unlock negative control is data. */
+#undef assert
+#define assert(condition) do { if (!(condition)) { \
+    fprintf(stderr, "Contract failed: %s (%s:%d)\n", #condition, __FILE__, __LINE__); \
+    exit(EXIT_FAILURE); } } while (0)
+static atomic_uint checks;
 static pthread_t host_runner;
+static pthread_t host_paf_owner;
+static int host_owner_valid, host_protocol_probe, host_page_shown, host_failed_graph_draws;
+static int host_callback_wrong_thread;
+static pthread_mutex_t host_paf_mutex;
+static int host_paf_mutex_live, host_paf_locked;
+static void (*host_paf_task)(void *);
+static void host_owner_check(void) {
+    assert(host_protocol_probe || (host_owner_valid && pthread_equal(pthread_self(), host_paf_owner)));
+}
+int sceKernelGetThreadId(void) {
+    return host_callback_wrong_thread ? 7 :
+        host_owner_valid && pthread_equal(pthread_self(), host_paf_owner) ? 123 : 7;
+}
+void vmd_paf_main_task_register(void (*callback)(void *), void *userdata) {
+    host_owner_check();
+    assert(callback && !userdata && !host_paf_task);
+    host_paf_task = callback;
+}
+
 static pthread_mutex_t host_runner_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t host_runner_cond = PTHREAD_COND_INITIALIZER;
 static SceKernelThreadEntry host_runner_entry;
@@ -18,7 +44,13 @@ static int host_run_behavior, host_frame_requested, host_frames_drawn;
 static atomic_int host_runner_stop, host_delays;
 static void *host_thread_main(void *arg) {
     (void)arg;
+    host_paf_owner = pthread_self();
+    host_owner_valid = 1;
     host_runner_entry(0, NULL);
+    if (host_paf_locked) {
+        assert(!pthread_mutex_unlock(&host_paf_mutex));
+        host_paf_locked = 0;
+    }
     return NULL;
 }
 SceUID sceKernelCreateThread(const char *name, SceKernelThreadEntry entry, int priority,
@@ -51,7 +83,8 @@ int sceKernelDelayThread(unsigned microseconds) {
     return 0;
 }
 int vmd_paf_fw_run(void *self) {
-    assert(self && self == framework);
+    host_owner_check();
+    assert(self && self == framework && host_paf_locked);
     if (host_run_behavior == 1) return 0; /* unresolved weak Run / unexpected exit */
     pthread_mutex_lock(&host_runner_mutex);
     while (!atomic_load(&host_runner_stop) &&
@@ -62,17 +95,36 @@ int vmd_paf_fw_run(void *self) {
         return -9;
     }
     __atomic_store_n(&((VtPafFrameworkPrefix *)self)->run_loop_count, 1, __ATOMIC_RELEASE);
+    /* The scheduler can also visit tasks before its initial wait. No app
+     * commands may be read before publication of a validated frame. */
+    host_paf_task(NULL);
     /* OneFrameMode Run stays alive and waits. Update alone does not paint. */
     while (!atomic_load(&host_runner_stop)) {
         while (host_frame_requested == host_frames_drawn && !atomic_load(&host_runner_stop))
             pthread_cond_wait(&host_runner_cond, &host_runner_mutex);
         if (atomic_load(&host_runner_stop)) break;
+        /* The public main-thread task is called by Run, never by Update.
+         * Like retail's startup signal, behavior 4 first returns without paint. */
+        if (!(host_run_behavior == 4 && !host_frames_drawn)) {
+            if (host_run_behavior != 5) host_paf_task(NULL);
+            /* Reproduce retail Run's owner-only release/reacquire. An init on
+             * the app thread would return EPERM here, as the console did. */
+            assert(!pthread_mutex_unlock(&host_paf_mutex));
+            host_paf_locked = 0;
+            if (atomic_load(&renderer_error) && host_page_shown) host_failed_graph_draws++;
+            assert(!pthread_mutex_lock(&host_paf_mutex));
+            host_paf_locked = 1;
+        }
         host_frames_drawn++;
         pthread_cond_broadcast(&host_runner_cond);
     }
     __atomic_store_n(&((VtPafFrameworkPrefix *)self)->run_loop_count, 0, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&host_runner_mutex);
     return 0;
+}
+static void *host_foreign_unlock(void *unused) {
+    (void)unused;
+    return (void *)(intptr_t)pthread_mutex_unlock(&host_paf_mutex);
 }
 static void host_stop_runner(void) {
     if (!host_thread_live) return;
@@ -106,15 +158,21 @@ static float host_left[1024],host_width[1024];
 static int host_nodes_used;
 static char host_last_text[512];
 int ui_theme_id(void) {
+    assert(!host_owner_valid || !pthread_equal(pthread_self(), host_paf_owner));
     return host_theme;
 }
-void ui_theme_apply(int theme) { host_theme = theme; }
+void ui_theme_apply(int theme) {
+    assert(!host_owner_valid || !pthread_equal(pthread_self(), host_paf_owner));
+    host_theme = theme;
+}
 int vt_preferences_set_interface_theme(int theme) {
+    assert(!host_owner_valid || !pthread_equal(pthread_self(), host_paf_owner));
     CHECK(theme == VT_UI_THEME_LEGACY);
     host_saved_theme = theme;
     return host_persist_error;
 }
 int vt_i18n_current_language(void) {
+    assert(!host_owner_valid || !pthread_equal(pthread_self(), host_paf_owner));
     return VT_LANG_IT;
 }
 void log_printf(const char *format, ...) {
@@ -150,6 +208,7 @@ int sceSysmoduleLoadModuleInternalWithArg(unsigned which, unsigned bytes, void *
     return host_load_error;
 }
 void *vmd_paf_allocate(size_t n) {
+    host_owner_check();
     if (host_alloc_fail)
         return NULL;
     CHECK(host_alloc_count < 32);
@@ -159,15 +218,18 @@ void *vmd_paf_allocate(size_t n) {
     return p;
 }
 void vmd_paf_fw_params(void *p) {
+    host_owner_check();
     CHECK(!host_scene);
     memset(p, 0, 180);
     if (!host_ctor_missing)
         ((uint32_t *)p)[0] = 0x40000;
 }
 void *vmd_paf_fw_instance(void) {
+    host_owner_check();
     return host_foreign ? (void *)host_nodes : host_instance;
 }
 void vmd_paf_fw_create(void *self, const void *p) {
+    host_owner_check();
     CHECK(!host_scene);
     const uint32_t *v = p;
     /* The actual retail crash exhausted a 9 MiB dialog partition. The global
@@ -179,30 +241,39 @@ void vmd_paf_fw_create(void *self, const void *p) {
     const unsigned char *b = p;
     CHECK(!b[128] && b[130]);
     host_instance = self;
+    assert(!pthread_mutex_lock(&host_paf_mutex));
+    host_paf_locked = 1;
 }
 void vmd_paf_fw_common(void *self, void (*done)(void)) {
+    host_owner_check();
     CHECK(self == host_instance && !host_scene && !done);
 }
 void vmd_paf_plugin_params(void *p) {
+    host_owner_check();
     memset(p, 0, 148);
 }
 void vmd_paf_plugin_load(const void *p, void (*done)(void *), int options) {
+    host_owner_check();
     CHECK(p && options == 1 && !host_scene);
     done(host_plugin_missing ? NULL : host_nodes);
 }
 void vmd_paf_page_params(void *p) {
+    host_owner_check();
     memset(p, 0, 44);
 }
 void *vmd_paf_page_open(void *self, const VtPafId *which, const void *p) {
+    host_owner_check();
     CHECK(self == host_nodes && which->hash && p);
     return host_nodes + 1;
 }
 uint32_t vmd_paf_id_hash(VtPafId *self, const VtPafString *name) {
+    host_owner_check();
     CHECK(self && name->data && name->count);
     return name->count;
 }
 void *vmd_paf_widget_create(void *self, void *parent, const char *type, const VtPafId *name,
                             const VtPafId *style) {
+    host_owner_check();
     CHECK(self == host_nodes && parent == host_nodes + 1 && type && name->hash && style->hash);
     /* Reproduce the real case-sensitive factory, rather than accepting any
      * arbitrary C++ type name as the old mock did. */
@@ -219,6 +290,7 @@ void *vmd_paf_widget_create(void *self, void *parent, const char *type, const Vt
 }
 int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int opt, float delay,
                        void *cb, void *data) {
+    host_owner_check();
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10000);
     CHECK(isfinite(v[0]) && isfinite(v[1]));
     unsigned node=(unsigned)((unsigned char *)self-host_nodes);
@@ -227,21 +299,27 @@ int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int op
 }
 int vmd_paf_widget_size(void *self, const float v[4], void *timer, int id, int opt, float delay,
                         void *cb, void *data) {
+    host_owner_check();
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10004);
     CHECK(v[0] > 0 && v[1] > 0);
     host_width[(unsigned char *)self-host_nodes]=v[0];
     return host_fail_geometry ? -1 : 0;
 }
 int vmd_paf_widget_show(void *self, void *timer, int opt, float delay, void *cb) {
+    host_owner_check();
+    if (self == page) host_page_shown = 1;
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
     return 0;
 }
 int vmd_paf_widget_hide(void *self, void *timer, int opt, float delay, void *cb) {
+    host_owner_check();
+    if (self == page) host_page_shown = 0;
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
     return 0;
 }
 int vmd_paf_widget_alpha(void *self, float alpha, void *timer, int id, int opt, float delay,
                          void *cb) {
+    host_owner_check();
     CHECK(self && alpha >= 0 && alpha <= 1 && !timer && id == 0x10002 && !opt && !delay && !cb &&
           !host_scene);
     return 0;
@@ -256,6 +334,7 @@ static int set_text(void *self, const VtPafString *text) {
     return host_fail_text ? -1 : 0;
 }
 int vmd_paf_button_text(void *self, const VtPafString *text, int obj) {
+    host_owner_check();
     CHECK(self && host_node_kinds[(unsigned char *)self - host_nodes] == NATIVE_BUTTON);
     /* Actual Button OBJ_BG=0 is a PlaneObj; SetString requires OBJ_LABEL=1.
      * Return the console's exact error instead of accepting every object. */
@@ -266,6 +345,7 @@ int vmd_paf_button_text(void *self, const VtPafString *text, int obj) {
     return set_text(self, text);
 }
 int vmd_paf_widget_text(void *self, const VtPafString *text, int obj) {
+    host_owner_check();
     CHECK(self && host_node_kinds[(unsigned char *)self - host_nodes] == NATIVE_TEXT);
     if (obj != 0) {
         host_bad_text_targets++;
@@ -274,6 +354,7 @@ int vmd_paf_widget_text(void *self, const VtPafString *text, int obj) {
     return set_text(self, text);
 }
 uint32_t vmd_paf_button_state(void *self, int s) {
+    host_owner_check();
     CHECK(self && (s == 0 || s == 2) && !host_scene);
     return 0;
 }
@@ -340,32 +421,39 @@ void __real_vita2d_end_drawing(void) {
 
 int vmd_paf_widget_color(void *w, const float c[4], void *timer, int id, int opt, float delay,
                          void *cb, void *data) {
+    host_owner_check();
     CHECK(w && !host_scene && !timer && id == 0x10001 && !opt && !delay && !cb && !data &&
           c[3] >= 0 && c[3] <= 1);
     return 0;
 }
 int vmd_paf_widget_order(void *parent, void *w, void *sibling) {
+    host_owner_check();
     CHECK(parent == page && w && !sibling && !host_scene);
     return 1;
 }
 int vmd_paf_text_size(void *w, int attr, unsigned start, unsigned count, float value) {
+    host_owner_check();
     CHECK(w && !host_scene && attr == 1 && !start && count < 512 && value > 0);
     return 0;
 }
 int vmd_paf_text_color(void *w, int attr, unsigned start, unsigned count, const float c[4]) {
+    host_owner_check();
     CHECK(w && !host_scene && attr == 2 && !start && count < 512 && c[3] >= 0 && c[3] <= 1);
     return 0;
 }
 int vmd_paf_text_layout_int(void *w, int attr, int value) {
+    host_owner_check();
     CHECK(w && !host_scene && attr >= 0 && attr <= 2 && !value);
     return 0;
 }
 int vmd_paf_text_layout_bool(void *w, int attr, int value) {
+    host_owner_check();
     CHECK(w && !host_scene && (attr == 11 || attr == 13 || attr == 15) &&
           (value == 0 || value == 1));
     return attr == host_fail_layout ? -12345 : 0;
 }
 int vmd_paf_text_layout_vec(void *w, int attr, const VtPafVec2 *v) {
+    host_owner_check();
     /* Typed contract from the firmware checks, independent of the adapter's
      * named constants: 5 is not a vector attribute on retail PAF. */
     CHECK(w && !host_scene && (attr == 6 || attr == 7 || attr == 8));
@@ -374,12 +462,15 @@ int vmd_paf_text_layout_vec(void *w, int attr, const VtPafVec2 *v) {
     return attr == host_fail_layout ? -12345 : 0;
 }
 void vmd_paf_busy_start(void *w) {
+    host_owner_check();
     CHECK(w && !host_scene);
 }
 void vmd_paf_busy_stop(void *w) {
+    host_owner_check();
     CHECK(w && !host_scene);
 }
 void *vmd_paf_widget_find(void *parent, const VtPafId *name, int options) {
+    host_owner_check();
     CHECK(parent == page && name->hash && !options && !host_scene);
     return host_nodes + 900;
 }
@@ -444,6 +535,23 @@ void __real_vita2d_draw_texture_scale_rotate_hotspot(const vita2d_texture *t, fl
 }
 static void reset(void) {
     host_stop_runner();
+    if (host_paf_mutex_live) assert(!pthread_mutex_destroy(&host_paf_mutex));
+    pthread_mutexattr_t attr;
+    assert(!pthread_mutexattr_init(&attr));
+    assert(!pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK));
+    assert(!pthread_mutex_init(&host_paf_mutex, &attr));
+    assert(!pthread_mutexattr_destroy(&attr));
+    host_paf_mutex_live = 1;
+    host_paf_locked = host_owner_valid = host_protocol_probe = 0;
+    host_page_shown = host_failed_graph_draws = host_callback_wrong_thread = 0;
+    host_paf_task = NULL;
+    atomic_store(&renderer_ready, 0);
+    atomic_store(&renderer_abort, 0);
+    atomic_store(&renderer_error, 0);
+    atomic_store(&renderer_visible, 0);
+    atomic_store(&requested_generation, 0);
+    atomic_store(&applied_generation, 0);
+    renderer_owner = -1;
     renderer_thread = -1;
     atomic_store(&renderer_exited, 0);
     atomic_store(&renderer_result, 0);
@@ -509,10 +617,10 @@ int main(void) {
     CHECK(ui_native_vita_active() && host_loads == 1);
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(host_updates == 1 && host_creates == 3 && host_strings == 2 && visible);
+    CHECK(host_updates == 2 && host_creates == 3 && host_strings == 2 && visible);
     int creates = host_creates, strings = host_strings;
     CHECK(host_checkpoints == 10);
-    CHECK(host_thread_creates == 1 && renderer_running() == 1 && host_frames_drawn == 1);
+    CHECK(host_thread_creates == 1 && renderer_running() == 1 && host_frames_drawn == 2);
     int checkpoints = host_checkpoints;
     for (int tick = 0; tick < 30; tick++) {
         __wrap_vita2d_start_drawing();
@@ -523,10 +631,10 @@ int main(void) {
     CHECK(host_thread_creates == 1 && host_frames_drawn == host_updates);
     __wrap_vita2d_start_drawing();
     __wrap_vita2d_end_drawing();
-    CHECK(!visible && host_updates == 32);
+    CHECK(!visible && host_updates == 33);
     __wrap_vita2d_start_drawing();
     __wrap_vita2d_end_drawing();
-    CHECK(host_updates == 32);
+    CHECK(host_updates == 33);
     SceCommonDialogUpdateParam q = {0};
     CHECK(__wrap_sceCommonDialogUpdate(&q) == 77 && host_real_common == 1);
     __wrap_vita2d_start_drawing();
@@ -606,36 +714,36 @@ int main(void) {
     __wrap_vita2d_start_drawing();
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(state == -1 && ui_native_vita_error() && !host_updates);
+    CHECK(state == -1 && ui_native_vita_error() && host_updates == 1 && !host_failed_graph_draws);
     CHECK(host_theme == VT_UI_THEME_LEGACY && host_saved_theme == VT_UI_THEME_LEGACY);
     int failed_creates = host_creates;
     for (int i = 0; i < 3; i++) {
         __wrap_vita2d_start_drawing();
         __wrap_vita2d_end_drawing();
     }
-    CHECK(!host_updates && host_creates == failed_creates);
+    CHECK(host_updates == 1 && host_creates == failed_creates && !host_failed_graph_draws);
     host_theme = VT_UI_THEME_LEGACY_VITA;
     CHECK(!ui_native_vita_prepare() && host_theme == VT_UI_THEME_LEGACY);
-    CHECK(!host_updates && host_creates == failed_creates);
+    CHECK(host_updates == 1 && host_creates == failed_creates && !host_failed_graph_draws);
     reset();
     host_fail_text = 1;
     __wrap_vita2d_start_drawing();
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+    CHECK(state == -1 && host_updates == 1 && !host_failed_graph_draws && host_theme == VT_UI_THEME_LEGACY);
     reset();
     host_fail_geometry = 1;
     __wrap_vita2d_start_drawing();
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+    CHECK(state == -1 && host_updates == 1 && !host_failed_graph_draws && host_theme == VT_UI_THEME_LEGACY);
     reset();
     host_fail_create = 1;
     host_persist_error = -1;
     __wrap_vita2d_start_drawing();
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+    CHECK(state == -1 && host_updates == 1 && !host_failed_graph_draws && host_theme == VT_UI_THEME_LEGACY);
     reset();
     host_bad_target = 1;
     __wrap_vita2d_start_drawing();
@@ -654,7 +762,7 @@ int main(void) {
         __wrap_vita2d_start_drawing();
         fixture();
         __wrap_vita2d_end_drawing();
-        CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+        CHECK(state == -1 && host_updates == 1 && !host_failed_graph_draws && host_theme == VT_UI_THEME_LEGACY);
         CHECK(host_saved_theme == VT_UI_THEME_LEGACY);
         CHECK(host_failure_code == (unsigned)-12345);
         CHECK(!strcmp(host_failure_operation, layout_ops[n]));
@@ -666,20 +774,22 @@ int main(void) {
     CHECK(ui_native_vita_button(24, 112, 384, 42, "First label", 1));
     CHECK(ui_native_vita_text(28, 94, 340, 24, 0xffffffff, "Plain text"));
     __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && !host_bad_text_targets && host_updates == 1);
+    CHECK(state == 1 && !host_bad_text_targets && host_updates == 2);
     void *button_widget = slots[NATIVE_BUTTON][0].widget;
     void *text_widget = slots[NATIVE_TEXT][0].widget;
     VtPafString empty = {(const uint16_t[]){0}, 0, 0};
+    host_protocol_probe = 1; /* Direct mock-only typed negative control, not production. */
     CHECK(vmd_paf_button_text(button_widget, &empty, 0) == (int)0x80af4101u);
     CHECK(vmd_paf_widget_text(text_widget, &empty, 1) == (int)0x80af4101u);
     CHECK(host_bad_text_targets == 2);
+    host_protocol_probe = 0;
     int stable_creates = host_creates;
     for (int n = 0; n < 3; n++) {
         const char *labels[] = {"Updated", "", "Restored"};
         __wrap_vita2d_start_drawing();
         CHECK(ui_native_vita_button(24, 112, 384, 42, labels[n], n != 1));
         __wrap_vita2d_end_drawing();
-        CHECK(state == 1 && host_updates == n + 2 && host_creates == stable_creates);
+        CHECK(state == 1 && host_updates == n + 3 && host_creates == stable_creates);
         CHECK(host_bad_text_targets == 2 && slots[NATIVE_BUTTON][0].widget == button_widget);
         CHECK(!strcmp(host_last_text, labels[n]));
     }
@@ -691,7 +801,7 @@ int main(void) {
         __wrap_vita2d_start_drawing();
         fixture();
         __wrap_vita2d_end_drawing();
-        CHECK(state == 1 && host_updates == n + 1 && rendered_once);
+        CHECK(state == 1 && host_updates == n + 2 && rendered_once);
     }
     /* Invalid targets must not enter firmware; recovery retains its guard. */
     for (int n = 1; n <= 8; n++) {
@@ -720,6 +830,7 @@ int main(void) {
      * descriptor without Run, yet no paint occurs. The old mock conflated
      * these counters and therefore could not detect the blank native UI. */
     reset();
+    host_protocol_probe = 1;
     framework = host_instance = vmd_paf_allocate(FW_BYTES);
     host_expected_frame.renderTarget = (SceCommonDialogRenderTargetInfo){
         .width = 960, .height = 544, .strideInPixels = 960,
@@ -745,15 +856,42 @@ int main(void) {
     __wrap_vita2d_start_drawing();
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(host_frames_drawn == 1 && rendered_once && !atomic_load(&renderer_exited));
+    CHECK(host_frames_drawn == 2 && rendered_once && !atomic_load(&renderer_exited));
     host_stop_runner();
     __wrap_vita2d_start_drawing();
     CHECK(!ui_native_vita_active() && state == -1 && host_theme == VT_UI_THEME_LEGACY);
     __wrap_vita2d_end_drawing();
-    CHECK(host_frames_drawn == 1 && host_updates == 1);
+    CHECK(host_frames_drawn == 2 && host_updates == 2);
+    /* Cold startup may signal the app before the first actual frame. The
+     * bounded extra handshake must still consume the immutable generation. */
+    reset();
+    host_run_behavior = 4;
+    __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+    CHECK(state == 1 && rendered_once && host_updates == 2 &&
+          atomic_load(&applied_generation) == atomic_load(&requested_generation));
+    /* A missing weak callback or wrong callback thread cannot report success. */
+    for (int wrong_thread = 0; wrong_thread < 2; wrong_thread++) {
+        reset();
+        host_run_behavior = wrong_thread ? 0 : 5;
+        __wrap_vita2d_start_drawing(); fixture();
+        host_callback_wrong_thread = wrong_thread;
+        __wrap_vita2d_end_drawing();
+        CHECK(state == -1 && !rendered_once && host_theme == VT_UI_THEME_LEGACY);
+        CHECK(ui_native_vita_error() == (wrong_thread ? -0x504a : -0x5049));
+        CHECK(!host_creates && !host_failed_graph_draws);
+    }
+    /* Error-check mutex models the exact error class without crashing macOS. */
+    reset();
+    assert(!pthread_mutex_lock(&host_paf_mutex));
+    host_protocol_probe = 1;
+    pthread_t foreign;
+    void *unlock_status;
+    CHECK(!pthread_create(&foreign, NULL, host_foreign_unlock, NULL));
+    CHECK(!pthread_join(foreign, &unlock_status) && (intptr_t)unlock_status == EPERM);
+    CHECK(!pthread_mutex_unlock(&host_paf_mutex));
     reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
            "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "
-           "UTF-16 and threaded Run/Update handshake passed. Sony pixels remain unverified.\n",
+           "UTF-16, single-owner PAF APIs, mutex ownership and generation acknowledgments passed. Sony pixels remain unverified.\n",
            checks);
 }

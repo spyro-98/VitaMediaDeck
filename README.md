@@ -138,7 +138,7 @@ Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay, Mosaic and *
 Legacy Vita keeps Legacy navigation and uses actual Sony PAF text, buttons,
 panels and busy indicators throughout the app, including the player HUD, QR,
 guide, dialogs and less-used screens. Media textures keep their existing GPU
-path. This native integration requires console acceptance; hold L1+R1 while
+path. The latest [PAF ownership correction](docs/paf-thread-ownership-2026-10-26.md) addresses a real mutex-ownership crash by keeping initialization, widget operations and Run on one owner thread. This native integration requires console acceptance; hold L1+R1 while
 starting the app to recover to Legacy. See the [PAF report](docs/legacy-vita-paf-2026-10-25.md).
 Ghost Mesh uses the right stick for its wheel and the left stick/D-pad for content;
 non-Legacy themes retain their own shell in radio, podcasts and discovery.
