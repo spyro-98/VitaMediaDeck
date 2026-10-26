@@ -1,5 +1,6 @@
 /* Production fan-out and cache, with independently delayed provider fixtures. */
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,24 +10,71 @@
 int sceKernelDelayThread(unsigned);
 #include "library/library.h"
 static pthread_t ui_thread;
+static int registered_create(pthread_t *, const pthread_attr_t *, void *(*)(void *), void *);
+static int registered_join(pthread_t, void **);
+static int registered_wait(pthread_cond_t *, pthread_mutex_t *);
+#define pthread_create registered_create
+#define pthread_join registered_join
+#define pthread_cond_wait registered_wait
 static int observed_query(const char *, const VtLibraryItem *, VtLibraryResult *, int);
 #define vt_library_query_search observed_query
 #include "../../src/library/search.c"
 #undef vt_library_query_search
+#undef pthread_create
+#undef pthread_join
+#undef pthread_cond_wait
 static unsigned checks;
 #define CHECK(x)                                                                                   \
     do {                                                                                           \
         __atomic_add_fetch(&checks, 1, __ATOMIC_RELAXED);                                          \
-        assert(x);                                                                                 \
+        if (!(x)) { fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #x); exit(1); }                                                                                 \
     } while (0)
 static int observed_query(const char *q, const VtLibraryItem *parent, VtLibraryResult *out,
                           int cap) {
     CHECK(!pthread_equal(pthread_self(), ui_thread));
     return vt_library_query_search(q, parent, out, cap);
 }
-static pthread_t pool[3];
-static SceKernelThreadEntry entries[3];
-static int created;
+static _Thread_local int registered_context;
+static int created, joined, waiting, priority_calls, fail_create = -1;
+typedef struct { void *(*entry)(void *); void *arg; } ThreadStart;
+static void *registered_entry(void *arg) {
+    ThreadStart start = *(ThreadStart *)arg;
+    free(arg);
+    registered_context = 1;
+    return start.entry(start.arg);
+}
+static int registered_create(pthread_t *thread, const pthread_attr_t *attr,
+                              void *(*entry)(void *), void *arg) {
+    size_t stack = 0;
+    CHECK(attr && !pthread_attr_getstacksize(attr, &stack) && stack == 0x40000);
+    int index = created++;
+    if (index == fail_create || fail_create == -2)
+        return EAGAIN;
+    ThreadStart *start = malloc(sizeof(*start));
+    CHECK(start);
+    *start = (ThreadStart){entry, arg};
+    int rc = pthread_create(thread, attr, registered_entry, start);
+    if (rc) free(start);
+    return rc;
+}
+static int registered_join(pthread_t thread, void **out) {
+    joined++;
+    return pthread_join(thread, out);
+}
+static int registered_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
+    /* Vita's cancellation wait dereferences the record created by pthread_create.
+     * A kernel-thread mock must not silently manufacture that context. */
+    CHECK(registered_context);
+    __atomic_add_fetch(&waiting, 1, __ATOMIC_RELAXED);
+    return pthread_cond_wait(cond, mutex);
+}
+void log_printf(const char *format, ...) { (void)format; }
+SceUID sceKernelGetThreadId(void) { return 42; }
+int sceKernelChangeThreadPriority(SceUID id, int priority) {
+    CHECK(registered_context && id == 42 && priority == 191);
+    __atomic_add_fetch(&priority_calls, 1, __ATOMIC_RELAXED);
+    return 0;
+}
 static int remember = 1, favourites_fixture;
 int vita_https_is_connected(void) {
     return 1;
@@ -37,33 +85,18 @@ static int release_slow, slow_waiting, source_count = 3;
 static VtNetworkSource sources[3];
 int sceKernelCreateThread(const char *name, SceKernelThreadEntry entry, int priority,
                           unsigned stack, unsigned flags, int cpu, void *opt) {
-    (void)name;
-    (void)flags;
-    (void)cpu;
-    (void)opt;
-    CHECK(priority >= 176 && priority <= 191 && stack == 0x40000);
-    entries[created] = entry;
-    return ++created;
-}
-static void *pool_main(void *ctx) {
-    int i = (int)(intptr_t)ctx;
-    entries[i](sizeof(i), &i);
-    return NULL;
+    (void)name; (void)entry; (void)priority; (void)stack;
+    (void)flags; (void)cpu; (void)opt;
+    CHECK(!"Search workers must be created by pthread_create on Vita");
+    return -1;
 }
 int sceKernelStartThread(SceUID id, SceSize n, void *ctx) {
-    (void)n;
-    (void)ctx;
-    return pthread_create(&pool[id - 1], NULL, pool_main, (void *)(intptr_t)(id - 1));
+    (void)id; (void)n; (void)ctx; return -1;
 }
 int sceKernelWaitThreadEnd(SceUID id, int *a, void *b) {
-    (void)a;
-    (void)b;
-    return pthread_join(pool[id - 1], NULL);
+    (void)id; (void)a; (void)b; return -1;
 }
-int sceKernelDeleteThread(SceUID id) {
-    (void)id;
-    return 0;
-}
+int sceKernelDeleteThread(SceUID id) { (void)id; return 0; }
 int sceKernelDelayThread(unsigned us) {
     (void)us;
     usleep(1000);
@@ -248,6 +281,11 @@ int main(void) {
     sources[2].protocol = VT_NETWORK_IMMICH;
     strcpy(sources[2].host, "https://photos.example");
     CHECK(!vt_library_search_init());
+    for (int attempt = 0; attempt < 1000 && __atomic_load_n(&waiting, __ATOMIC_RELAXED) < 3; attempt++)
+        usleep(1000);
+    CHECK(__atomic_load_n(&waiting, __ATOMIC_RELAXED) == 3);
+    CHECK(__atomic_load_n(&priority_calls, __ATOMIC_RELAXED) == 3);
+    CHECK(created == 3);
     VtLibraryResult *out = calloc(VT_LIBRARY_RESULTS, sizeof(*out));
     CHECK(out);
     VtLibrarySearchStatus state;
@@ -376,6 +414,21 @@ int main(void) {
     free(home);
     vt_library_search_cancel();
     vt_library_search_shutdown();
+    CHECK(joined == 3);
+    /* Partial creation failure retains the remaining pool and joins only live
+     * threads; complete failure leaves no snapshots or invalid joins. */
+    created = joined = 0;
+    fail_create = 1;
+    CHECK(!vt_library_search_init());
+    CHECK(available_workers == 2);
+    vt_library_search_shutdown();
+    CHECK(joined == 2);
+    created = joined = 0;
+    fail_create = -2;
+    CHECK(vt_library_search_init() < 0);
+    CHECK(!available_workers && !snapshot_stage && !snapshot_results);
+    vt_library_search_shutdown();
+    CHECK(joined == 0);
     free(out);
     printf("Global search: %u checks; actual worker pool, blocked server, progressive/local/cache "
            "results, query replacement, grouping, cache pressure, auth and account isolation "

@@ -35,3 +35,11 @@ It does not authenticate to real accounts.
 Home also covers cached files without playback history, fair provider sampling,
 all collection-availability combinations and individual visible server-row touch
 targets. The UI script renders 72 synthetic host references across eight themes.
+
+The search fixture distinguishes POSIX thread registration from raw Vita kernel
+creation: it rejects the latter, checks the explicit 256 KiB stack and low native
+priority, and requires all three workers to reach their initial idle wait before
+submitting work. It also checks partial/total creation failure and matching joins.
+The previous raw-thread mock silently supplied POSIX registration, which could
+not expose the Vita pthread-embedded cancellation/TLS incompatibility. See the
+[startup investigation](../../docs/startup-search-threads-2026-10-26.md).
