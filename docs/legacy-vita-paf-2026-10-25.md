@@ -1,5 +1,11 @@
 # Complete Legacy Vita theme / Sony PAF — 25 October 2026
 
+**26 October frame correction:** a later console run reached first-frame update
+and exposed an incompatible frame-record cast. The [extended audit](paf-frame-audit-2026-10-26.md)
+supersedes the earlier unverified framebuffer-contract description below. The
+adapter now translates CommonDialog fields into PAF OnUpdateData explicitly.
+Physical native-rendering acceptance remains pending.
+
 **Later console evidence:** the next build passed native initialization but
 crashed after a widget-preparation error. See the [second crash, factory and
 recovery correction](paf-widget-recovery-2026-10-25.md). Native rendering has not

@@ -14,6 +14,12 @@
 #include <stdio.h>
 #include <string.h>
 #include "ui/native_vita_resource.inc"
+#if defined(__vita__)
+_Static_assert(sizeof(SceCommonDialogUpdateParam) == 96 &&
+                   offsetof(SceCommonDialogUpdateParam, displaySyncObject) == 60 &&
+                   offsetof(SceCommonDialogRenderTargetInfo, width) == 16,
+               "CommonDialog input ARM ABI");
+#endif
 
 /* Fixed ARM layouts checked with GCC 15.2 against the pinned public ABI.
  * Opaque storage avoids bringing another SDK's C++ runtime into the app. */
@@ -566,16 +572,39 @@ static int present(void) {
     }
     return 0;
 }
-/* libvita2d supplies its real framebuffer stride and sync object. The wrapper
- * is reached only during this explicit flush, after sceGxmEndScene. It never
- * substitutes a guessed display buffer or drives PAF from the draw callback. */
+/* libvita2d supplies its real framebuffer stride and sync object. Translate
+ * its CommonDialog format into PAF's smaller OnUpdateData format. The wrapper
+ * runs during the explicit flush after sceGxmEndScene, before the display swap. */
 int __real_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params);
 int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
     if (!updating)
         return __real_sceCommonDialogUpdate(params);
     if (!params || !params->renderTarget.colorSurfaceData || !params->displaySyncObject)
         return -1;
-    vmd_paf_fw_update(framework, (void *)params);
+    const SceCommonDialogRenderTargetInfo *target = &params->renderTarget;
+    /* The app and its PAF environment use a fixed 960x544 output. Reject a
+     * malformed target before firmware can assert inside render-target setup. */
+    if (target->width != 960 || target->height != 544 ||
+        target->strideInPixels < target->width || target->strideInPixels > 4096) {
+        log_printf("native PAF: rejected frame width=%u height=%u pitch=%u", target->width,
+                   target->height, target->strideInPixels);
+        return -1;
+    }
+    VtPafFrameUpdate frame = {.pitch_pixels = target->strideInPixels,
+                              .width = target->width,
+                              .height = target->height,
+                              .color_format = target->colorFormat,
+                              .surface_type = target->surfaceType,
+                              .color_data = target->colorSurfaceData,
+                              .depth_data = target->depthSurfaceData,
+                              .display_sync = params->displaySyncObject};
+    if (!rendered_once) {
+        log_printf("native PAF: frame width=%u height=%u pitch=%u format=0x%08X type=0x%08X depth=%d",
+                   frame.width, frame.height, frame.pitch_pixels, frame.color_format,
+                   frame.surface_type, frame.depth_data != NULL);
+        log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+    }
+    vmd_paf_fw_update(framework, &frame);
     return 0;
 }
 void __real_vita2d_start_drawing(void);

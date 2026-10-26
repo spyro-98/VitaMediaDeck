@@ -64,11 +64,12 @@ of the eight themes. This work and the
 in standard 1.4.1. Console animation/performance acceptance remains distinct
 from host rendering checks.
 
-The latest console log identifies a Button label assignment targeting its
-background object. The [button-label correction](docs/paf-button-label-2026-10-26.md)
-uses the class-specific text object and passes 9,121 host assertions, including
-label clearing and widget reuse. The preceding [retail layout correction](docs/paf-layout-2026-10-26.md)
-remains integrated. Full physical acceptance of the PAF renderer is pending.
+The latest console crash reaches native first-frame update. An [extended audit
+against public PAF examples](docs/paf-frame-audit-2026-10-26.md) identifies the
+incompatible CommonDialog/PAF frame records; the adapter now translates all eight
+fields explicitly and validates the target. Independent ARM layout probes,
+adapter and eight-theme utility/chrome suites passed before creating the VPK.
+Full physical acceptance of the Sony renderer remains pending.
 
 The first physical Legacy Vita / PAF test exposed an initialization-memory crash.
 The corrected build moves PAF's global heap out of the small Sony dialog partition

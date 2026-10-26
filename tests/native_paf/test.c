@@ -7,6 +7,9 @@
 #include <stdarg.h>
 #include "../../src/ui/native_vita.c"
 static unsigned checks;
+static int host_frame_variant;
+static SceCommonDialogUpdateParam host_expected_frame;
+static const void *host_source_frame;
 static int host_fail_layout;
 static unsigned host_failure_code;
 static char host_failure_operation[64];
@@ -198,11 +201,14 @@ uint32_t vmd_paf_button_state(void *self, int s) {
     CHECK(self && (s == 0 || s == 2) && !host_scene);
     return 0;
 }
-void vmd_paf_fw_update(void *self, void *p) {
-    const SceCommonDialogUpdateParam *v = p;
-    CHECK(self == host_instance && !host_scene);
-    CHECK(v->renderTarget.colorSurfaceData == host_nodes &&
-          v->displaySyncObject == host_nodes + 1 && v->renderTarget.strideInPixels == 1024);
+void vmd_paf_fw_update(void *self, const VtPafFrameUpdate *v) {
+    const SceCommonDialogRenderTargetInfo *t = &host_expected_frame.renderTarget;
+    CHECK(self == host_instance && !host_scene && v && (const void *)v != host_source_frame);
+    CHECK(v->pitch_pixels == t->strideInPixels && v->width == t->width &&
+          v->height == t->height);
+    CHECK(v->color_format == t->colorFormat && v->surface_type == t->surfaceType);
+    CHECK(v->color_data == t->colorSurfaceData && v->depth_data == t->depthSurfaceData &&
+          v->display_sync == host_expected_frame.displaySyncObject);
     host_updates++;
 }
 int __real_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *p) {
@@ -212,12 +218,32 @@ int __real_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *p) {
 }
 int vita2d_common_dialog_update(void) {
     SceCommonDialogUpdateParam v = {0};
-    v.renderTarget.colorSurfaceData = host_bad_target ? NULL : host_nodes;
-    v.displaySyncObject = host_nodes + 1;
+    /* Distinct markers expose field swaps and accidental reserved-area reads. */
+    memset(v.renderTarget.reserved, 0xa5, sizeof(v.renderTarget.reserved));
+    memset(v.reserved, 0x5a, sizeof(v.reserved));
+    v.renderTarget.colorSurfaceData = host_nodes + 64 * host_frame_variant;
+    v.renderTarget.depthSurfaceData = host_frame_variant ? NULL : host_nodes + 16;
+    v.displaySyncObject = host_nodes + 32 + 64 * host_frame_variant;
     v.renderTarget.width = 960;
     v.renderTarget.height = 544;
-    v.renderTarget.strideInPixels = 1024;
-    return __wrap_sceCommonDialogUpdate(&v);
+    v.renderTarget.strideInPixels = host_frame_variant ? 960 : 1024;
+    v.renderTarget.colorFormat = host_frame_variant ? 0x1000 : 0;
+    v.renderTarget.surfaceType = host_frame_variant ? 1 : 0;
+    switch (host_bad_target) {
+    case 1: v.renderTarget.colorSurfaceData = NULL; break;
+    case 2: v.displaySyncObject = NULL; break;
+    case 3: v.renderTarget.width = 0; break;
+    case 4: v.renderTarget.height = 0; break;
+    case 5: v.renderTarget.strideInPixels = 959; break;
+    case 6: v.renderTarget.strideInPixels = 4097; break;
+    case 7: v.renderTarget.width = 1920; break;
+    case 8: v.renderTarget.height = 1088; break;
+    }
+    host_expected_frame = v;
+    host_source_frame = &v;
+    int rc = __wrap_sceCommonDialogUpdate(&v);
+    host_source_frame = NULL;
+    return rc;
 }
 void __real_vita2d_start_drawing(void) {
     CHECK(!host_scene);
@@ -337,6 +363,9 @@ static void reset(void) {
         free(host_allocated[i]);
     host_alloc_count = 0;
     host_checkpoints = host_persist_error = host_fail_geometry = host_fail_layout = 0;
+    host_frame_variant = 0;
+    host_source_frame = NULL;
+    memset(&host_expected_frame, 0, sizeof(host_expected_frame));
     host_failure_code = 0;
     host_failure_operation[0] = 0;
     host_saved_theme = VT_UI_THEME_LEGACY_VITA;
@@ -390,7 +419,7 @@ int main(void) {
     __wrap_vita2d_end_drawing();
     CHECK(host_updates == 1 && host_creates == 3 && host_strings == 2 && visible);
     int creates = host_creates, strings = host_strings;
-    CHECK(host_checkpoints == 8);
+    CHECK(host_checkpoints == 9);
     int checkpoints = host_checkpoints;
     for (int tick = 0; tick < 30; tick++) {
         __wrap_vita2d_start_drawing();
@@ -560,6 +589,31 @@ int main(void) {
         CHECK(host_bad_text_targets == 2 && slots[NATIVE_BUTTON][0].widget == button_widget);
         CHECK(!strcmp(host_last_text, labels[n]));
     }
+    /* Exercise the actual flush with both buffer descriptions, including a
+     * missing depth surface, alternating sync objects and distinct format/type. */
+    reset();
+    for (int n = 0; n < 8; n++) {
+        host_frame_variant = n & 1;
+        __wrap_vita2d_start_drawing();
+        fixture();
+        __wrap_vita2d_end_drawing();
+        CHECK(state == 1 && host_updates == n + 1 && rendered_once);
+    }
+    /* Invalid targets must not enter firmware; recovery retains its guard. */
+    for (int n = 1; n <= 8; n++) {
+        reset();
+        host_bad_target = n;
+        __wrap_vita2d_start_drawing();
+        fixture();
+        __wrap_vita2d_end_drawing();
+        CHECK(state == -1 && !host_updates && !rendered_once && !updating);
+        CHECK(host_theme == VT_UI_THEME_LEGACY && host_saved_theme == VT_UI_THEME_LEGACY);
+    }
+    reset();
+    CHECK(ui_native_vita_prepare());
+    updating = 1;
+    CHECK(__wrap_sceCommonDialogUpdate(NULL) < 0 && !host_updates && !host_real_common);
+    updating = 0;
     uint16_t text[8];
     CHECK(ui_native_vita_utf16("citt\xc3\xa0", text, 8) == 5 && text[4] == 0xe0);
     CHECK(ui_native_vita_utf16("\xf0\x9f\x8e\xb5", text, 8) == 2 && text[0] == 0xd83c &&

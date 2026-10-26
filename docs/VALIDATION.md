@@ -5,16 +5,17 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
-The latest console log reports a Button string-target error (0x80AF4101).
-The [button-label correction](paf-button-label-2026-10-26.md) targets Button's
-label object 1 while Text retains object 0. Typed mocks and reuse/clear/restore
-regressions pass 9,121 adapter ASan/UBSan assertions. No further emulator or JIT
-experiments were launched. Full physical native-rendering acceptance is pending.
+The latest console crash occurs at first-frame update with GXM invalid-value in
+r0. The [extended frame audit](paf-frame-audit-2026-10-26.md) identifies a direct
+cast between incompatible CommonDialog (96-byte) and PAF (32-byte) records.
+The correction uses eight explicit fields, compile-time ARM layout checks and
+invalid-target rejection. Before the VPK build, 10,434 adapter assertions and
+the eight-theme chrome/utility suites passed, together with an independent
+reference ABI probe. Host pixel/state counts are not independent device tests.
 
-The preceding [retail layout correction](paf-layout-2026-10-26.md) remains in
-place. Its seven private setter probes and incomplete Vita3K attempts establish
-only their explicitly documented boundaries. Reaching a later operation on the
-console does not establish complete native text or frame rendering.
+The earlier [layout](paf-layout-2026-10-26.md) and [button-label](paf-button-label-2026-10-26.md)
+corrections remain integrated. No new emulator/JIT attempts were launched.
+Full physical native-rendering acceptance is still pending.
 
 The first physical PAF test crashed; the next run passed initialization but
 failed during native presentation. See the [second crash diagnosis and recovery

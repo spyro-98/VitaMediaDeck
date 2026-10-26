@@ -42,3 +42,11 @@ Text object 0 and Button label object 1. The mock tracks created widget classes
 and rejects a wrong target with that error. Regressions cover both old invalid
 targets, updates, clearing/restoring a cached button label, and no widget rebuild.
 See the [button-label report](../../docs/paf-button-label-2026-10-26.md).
+
+The first-frame regression requires PAF's OnUpdateData (32 bytes on ARM), not a
+cast of CommonDialog's 96-byte record. The firmware mock consumes the independent
+PAF type and checks every field against the actual CommonDialog source, with
+alternating buffers/sync, distinct format/type and reserved-area markers, nullable
+depth, eight invalid targets, NULL input and first-frame-only descriptor logging.
+ARM static assertions protect the production layout; an independent reference
+compile-only probe was also run before the VPK build. See the [extended audit](../../docs/paf-frame-audit-2026-10-26.md).
