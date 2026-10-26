@@ -1,6 +1,7 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Current follow-up: [PAF mutex ownership crash and single-owner correction](paf-thread-ownership-2026-10-26.md).
+Current follow-up: [complete PAF contract review and Legacy recovery](paf-contract-audit-2026-10-26.md).
+Previous follow-up: [PAF mutex ownership crash and single-owner correction](paf-thread-ownership-2026-10-26.md).
 Previous follow-up: [blank native layer, Run/Update lifecycle and native finishes](paf-render-loop-2026-10-26.md).
 Previous follow-up: [first-frame crash, extended PAF audit and framebuffer ABI](paf-frame-audit-2026-10-26.md).
 Previous follow-up: [PAF button-label object and new console result](paf-button-label-2026-10-26.md).
@@ -79,6 +80,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [docs/iptv-availability.md](iptv-availability.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/iptv-plan.md](iptv-plan.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/online-audio-preview.md](online-audio-preview.md) | Dated implementation/research snapshot; current integration linked above it |
+| [docs/paf-contract-audit-2026-10-26.md](paf-contract-audit-2026-10-26.md) | All 32 PAF boundaries, six reference repositories, asynchronous snapshots, ABI and recovery diagnostics |
 | [docs/paf-thread-ownership-2026-10-26.md](paf-thread-ownership-2026-10-26.md) | Console mutex ownership failure, adapter-wide correction and explicit host contracts |
 | [docs/paf-frame-audit-2026-10-26.md](paf-frame-audit-2026-10-26.md) | First-frame core, public examples, typed frame ABI and pre-build gate |
 | [docs/paf-button-label-2026-10-26.md](paf-button-label-2026-10-26.md) | New console button error, class-specific text objects and regression checks |
