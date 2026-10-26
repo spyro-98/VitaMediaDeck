@@ -1,6 +1,13 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest interface update: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
+Latest startup correction: [VMD recovery and default upgrade](vmd-startup-default-2026-10-26.md).
+The installed preceding VPK starts in VMD, then restores Legacy during native
+initialization. Show/Hide's incidental return register must not be treated as
+an error status; all visibility paths now discard it. Older Legacy defaults
+adopt VMD once, while later choices and true recovery stay persistent. Physical
+cold-start/native acceptance for this revision remains pending.
+
+Previous interface update: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
 VMD (formerly Legacy Vita, stable ID 7) is the default for fresh profiles;
 saved choices and Legacy recovery remain valid. Native captions use explicit
 bounds, menus retain their widgets, and the integrated Home opens sources/files
@@ -84,6 +91,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [design/theme-exploration/screen-inventory.md](../design/theme-exploration/screen-inventory.md) | Historical concept or research; not release implementation proof |
 | [design/theme-exploration/validation.md](../design/theme-exploration/validation.md) | Historical concept or research; not release implementation proof |
 | [docs/legacy-vita-paf-2026-10-25.md](legacy-vita-paf-2026-10-25.md) | Complete native PAF theme, evidence and console acceptance |
+| [docs/vmd-startup-default-2026-10-26.md](vmd-startup-default-2026-10-26.md) | VMD visibility return contract, cold-start recovery and one-time default migration |
 | [docs/VALIDATION.md](VALIDATION.md) | Current reference, policy or build instructions |
 | [docs/cache-and-ghost-2026-10-23.md](cache-and-ghost-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/console-validation-playerfix-2026-10-23.md](console-validation-playerfix-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |

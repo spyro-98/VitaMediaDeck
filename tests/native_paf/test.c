@@ -149,7 +149,7 @@ static void host_stop_runner(void) {
 static int host_frame_variant;
 static SceCommonDialogUpdateParam host_expected_frame;
 static const void *host_source_frame;
-static int host_fail_layout, host_fail_show, host_fail_hide, host_fail_alpha;
+static int host_fail_layout, host_visibility_return, host_missing_busy, host_fail_alpha;
 static unsigned host_failure_code;
 static char host_failure_operation[64];
 #define CHECK(x)                                                                                   \
@@ -318,15 +318,15 @@ int vmd_paf_widget_size(void *self, const float v[4], void *timer, int id, int o
 }
 int vmd_paf_widget_show(void *self, void *timer, int opt, float delay, void *cb) {
     host_owner_check();
-    if (self == page && !host_fail_show) host_page_shown = 1;
+    if (self == page) host_page_shown = 1;
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
-    return host_fail_show ? -12346 : 0;
+    return host_visibility_return;
 }
 int vmd_paf_widget_hide(void *self, void *timer, int opt, float delay, void *cb) {
     host_owner_check();
-    if (self == page && !host_fail_hide) host_page_shown = 0;
+    if (self == page) host_page_shown = 0;
     CHECK(self && !timer && opt == 0 && !delay && !cb && !host_scene);
-    return host_fail_hide ? -12347 : 0;
+    return host_visibility_return;
 }
 int vmd_paf_widget_alpha(void *self, float alpha, void *timer, int id, int opt, float delay,
                          void *cb) {
@@ -486,7 +486,10 @@ void vmd_paf_busy_stop(void *w) {
 void *vmd_paf_widget_find(void *parent, const VtPafId *name, int options) {
     host_owner_check();
     CHECK(parent == page && name->hash && !options && !host_scene);
-    return host_nodes + 900;
+    unsigned slot = 0;
+    CHECK(sscanf(name->name.data, "vmd_native_3_%u", &slot) == 1 &&
+          slot >= 1 && slot <= UI_NATIVE_BUSY_LIMIT);
+    return slot == (unsigned)host_missing_busy ? NULL : host_nodes + 900 + slot;
 }
 void __real_vita2d_set_clip_rectangle(int a, int b, int c, int d) {
     (void)a;
@@ -558,7 +561,7 @@ static void reset(void) {
     host_paf_mutex_live = 1;
     host_paf_locked = host_owner_valid = host_protocol_probe = 0;
     host_page_shown = host_failed_graph_draws = host_callback_wrong_thread = 0;
-    host_fail_show = host_fail_hide = host_fail_alpha = 0;
+    host_visibility_return = host_missing_busy = host_fail_alpha = 0;
     host_clock_us = 0;
     atomic_flag_clear(&mailbox_lock);
     atomic_store(&owner_callbacks, 0);
@@ -991,19 +994,35 @@ int main(void) {
     atomic_flag_clear(&mailbox_lock);
     __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
     CHECK(state == 1 && rendered_once && host_creates == 4);
-    /* Native visibility/alpha failures must reach owner-side recovery, too. */
-    for (int kind = 0; kind < 3; kind++) {
-        reset(); CHECK(ui_native_vita_prepare());
-        host_fail_show = kind == 0;
-        host_fail_alpha = kind == 1;
+    /* Retail visibility calls leave an incidental stack cookie in r0. Both
+     * signs must work at cold init, page/child show, hide and true recovery. */
+    const int incidental[] = {0, 0x12345678, (int)0x80000000u, (int)0xf123abcdU};
+    for (unsigned n = 0; n < sizeof(incidental) / sizeof(incidental[0]); n++) {
+        reset();
+        host_visibility_return = incidental[n];
+        CHECK(ui_native_vita_prepare() && state == 1 && !host_updates);
         __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
-        if (kind == 2) {
-            CHECK(state == 1 && visible);
-            host_fail_hide = 1;
-            __wrap_vita2d_start_drawing(); __wrap_vita2d_end_drawing();
-        }
+        CHECK(state == 1 && rendered_once && visible && host_page_shown);
+        __wrap_vita2d_start_drawing(); __wrap_vita2d_end_drawing();
+        CHECK(state == 1 && !visible && !host_page_shown);
+        __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
+        CHECK(state == 1 && visible && host_page_shown);
+        host_fail_alpha = 1;
+        __wrap_vita2d_start_drawing();
+        CHECK(ui_native_vita_panel(12, 60, 420, 360, 0xff502010, 0));
+        CHECK(ui_native_vita_button_fade(24, 112, 384, 42, "Jellyfin", 1, .3f));
+        __wrap_vita2d_end_drawing();
         CHECK(state == -1 && host_theme == VT_UI_THEME_LEGACY &&
-              ui_native_vita_error() == -0x5048);
+              ui_native_vita_error() == -0x5048 && !host_page_shown &&
+              !host_failed_graph_draws && !strcmp(host_failure_operation, "alpha") &&
+              host_failure_code == (unsigned)-12348);
+    }
+    /* A genuinely absent resource node is still fatal, for every busy slot. */
+    for (int slot = 1; slot <= UI_NATIVE_BUSY_LIMIT; slot++) {
+        reset(); host_missing_busy = slot;
+        CHECK(!ui_native_vita_prepare() && state == -1 &&
+              ui_native_vita_error() == -0x5047 && !host_updates && !host_creates &&
+              host_theme == VT_UI_THEME_LEGACY);
     }
     /* Opening/closing a modal must not rebind the underlying content or
      * regenerate its strings. Off-screen animation stays on the native path. */
@@ -1058,6 +1077,6 @@ int main(void) {
     reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
            "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "
-           "UTF-16, single-owner PAF APIs, bounded asynchronous snapshots, timed progress, native setter failures and mutex ownership passed. Sony pixels remain unverified.\n",
+           "UTF-16, single-owner PAF APIs, bounded asynchronous snapshots, timed progress, native setter failures, incidental visibility return registers and mutex ownership passed. Sony pixels remain unverified.\n",
            checks);
 }

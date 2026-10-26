@@ -1074,7 +1074,10 @@ int main(int argc, char *argv[]) {
                VT_BUILD_SW_UPLOAD, VITAMEDIADECK_SESSION_LOG_PATH);
 	g_startup_started_us = sceKernelGetProcessTimeWide();
 	uint64_t stage_started_us = g_startup_started_us;
-	vt_preferences_init();
+    int preferences_result = vt_preferences_init();
+    if (preferences_result < 0) {
+        log_printf("preferences: load/migration failed 0x%08X", (unsigned)preferences_result);
+    }
 	SceCtrlData startup_controls = {0};
 	sceCtrlPeekBufferPositive(0, &startup_controls, 1);
 	if ((startup_controls.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER)) ==

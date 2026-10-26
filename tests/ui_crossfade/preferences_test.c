@@ -5,10 +5,10 @@
 #include <sys/stat.h>
 int sceIoSync(const char *,int);
 #include "../../src/settings/preferences.c"
-static int fail_write;
+static int fail_write, write_calls;
 int sceIoOpen(const char *p,int f,int m){return open(p,f,m);}
 int sceIoRead(int f,void *p,unsigned n){return (int)read(f,p,n);}
-int sceIoWrite(int f,const void *p,unsigned n){return fail_write?-1:(int)write(f,p,n);}
+int sceIoWrite(int f,const void *p,unsigned n){write_calls++;return fail_write?-1:(int)write(f,p,n);}
 int sceIoClose(int f){return close(f);}
 int sceIoSyncByFd(int f,int flags){(void)flags;return fsync(f);}
 int sceIoSync(const char *p,int flags){(void)p;(void)flags;return 0;}
@@ -24,7 +24,7 @@ int main(void){
  assert(!vt_preferences_set_interface_theme(VT_UI_THEME_LEGACY));
  g_loaded=0;vt_preferences_init();assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY);
  /* Keep every pre-existing bit, including decoder, subtitle, theme and flatten. */
- uint32_t playback=0xd5a586b3U,subtitle=0xaaaaaaaaU & ~VT_AUDIO_LAYOUT_MASK;
+ uint32_t playback=0xd5a586b3U,subtitle=(0xaaaaaaaaU & ~VT_AUDIO_LAYOUT_MASK) | VT_VMD_DEFAULT_APPLIED;
  assert(!persist_subtitle_pair(playback,subtitle));
  for(int layout=0;layout<3;layout++){
   assert(!vt_preferences_set_audio_layout(layout));assert(g_playback_flags==playback);
@@ -48,7 +48,7 @@ int main(void){
  /* Interface selection survives reload and leaves every other setting intact. */
  assert(!persist_subtitle_pair(playback,0));
  assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY);
- uint32_t keep=0xb5ac93aaU & ~(VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH);
+ uint32_t keep=(0xb5ac93aaU & ~(VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH)) | VT_VMD_DEFAULT_APPLIED;
  assert(!persist_subtitle_pair(playback,keep));
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
   assert(!vt_preferences_set_interface_theme(theme));
@@ -79,16 +79,52 @@ int main(void){
          !(theme < 2 || theme == VT_UI_THEME_APERTURE || theme == VT_UI_THEME_MOSAIC ||
            theme == VT_UI_THEME_LEGACY_VITA));
  }
- /* Old V3 IDs retain their exact interpretation when the high bit is zero. */
+ /* Old custom V3 IDs remain selected; only the former Legacy default migrates. */
  for(int old=0;old<4;old++){
   assert(!persist_subtitle_pair(playback,(uint32_t)old<<20));g_loaded=0;vt_preferences_init();
-  assert(vt_preferences_interface_theme()==old);
+  assert(vt_preferences_interface_theme()==(old ? old : VT_UI_THEME_LEGACY_VITA));
  }
  assert(!persist_subtitle_pair(playback,VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH));
  g_loaded = 0;
  vt_preferences_init();
  assert(vt_preferences_interface_theme() == VT_UI_THEME_LEGACY_VITA);
+ /* Upgrade all unmarked V3 themes, preserving custom choices and all payload
+  * fields. A committed marker guarantees no startup writes after migration. */
+ uint32_t non_theme=0x19aac53aU & ~(VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH|VT_VMD_DEFAULT_APPLIED);
+ for (int old=0;old<VT_UI_THEME_COUNT;old++) {
+  uint32_t extra=non_theme|((unsigned)(old&3)<<VT_INTERFACE_THEME_SHIFT)|((old&4)?VT_INTERFACE_THEME_HIGH:0);
+  assert(!persist_record_all(480,25,VT_LANGUAGE_IT,playback,extra));
+  g_loaded=0;assert(!vt_preferences_init());
+  assert(vt_preferences_interface_theme()==(old?old:VT_UI_THEME_LEGACY_VITA));
+  assert(vt_preferences_default_quality()==480&&vt_preferences_default_frame_rate()==25&&vt_preferences_language()==VT_LANGUAGE_IT);
+  assert(g_playback_flags==playback&&(g_subtitle_flags&~(VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH|VT_VMD_DEFAULT_APPLIED))==non_theme);
+  assert(g_subtitle_flags&VT_VMD_DEFAULT_APPLIED);
+  int before=write_calls;g_loaded=0;assert(!vt_preferences_init()&&write_calls==before);
+ }
+ /* The native error/startup recovery setter uses this same explicit choice.
+  * Legacy must stay Legacy after any later restart, without write/retry loops. */
+ assert(!vt_preferences_set_interface_theme(VT_UI_THEME_LEGACY));
+ int before=write_calls;
+ for(int n=0;n<3;n++){g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_interface_theme()==VT_UI_THEME_LEGACY&&write_calls==before);}
+ /* An upgrade write failure does not commit a marker or change the loaded
+  * Legacy preference. The intact old record can migrate on a later launch. */
+ assert(!persist_record_all(480,25,VT_LANGUAGE_IT,playback,non_theme));
+ fail_write=1;g_loaded=0;assert(vt_preferences_init()<0);
+ assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY&&g_subtitle_flags==non_theme);
+ fail_write=0;g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_interface_theme()==VT_UI_THEME_LEGACY_VITA);
+ /* V1/V2 load paths also adopt the default without changing playback flags. */
+ for(int version=1;version<=2;version++){
+  f=fopen(VT_PREFERENCES_PATH,"wb");assert(f);
+  if(version==1)assert(fwrite(&v1,1,sizeof(v1),f)==sizeof(v1));
+  else assert(fwrite(&v2,1,sizeof(v2),f)==sizeof(v2));
+  assert(!fclose(f));g_loaded=0;assert(!vt_preferences_init());
+  assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY_VITA&&g_playback_flags==playback&&vt_preferences_audio_layout()==0);
+ }
+ /* Recovery from the known backup path migrates with the same rules. */
+ assert(!persist_record_all(480,25,VT_LANGUAGE_IT,playback,non_theme));
+ assert(!rename(VT_PREFERENCES_PATH,VT_PREFERENCES_BACKUP));
+ g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_interface_theme()==VT_UI_THEME_LEGACY_VITA);
  puts("Per-theme browser defaults and independent saved grid/list choices passed");
- puts("Interface themes: default VMD with saved Legacy/recovery preserved, all choices persisted, unrelated bits and failed-write rollback passed");
+ puts("Interface themes: default VMD, one-time Legacy upgrade, later choices/recovery and failed migration preserved, all choices persisted, unrelated bits and failed-write rollback passed");
  puts("Audio layout settings: persistence, unrelated flags, invalid values, write failure and V1/V2 migration passed");
 }
