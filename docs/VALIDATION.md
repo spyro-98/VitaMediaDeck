@@ -5,7 +5,17 @@ build IDs and dates; see [documentation index](README.md).
 
 ## Legacy Vita / PAF
 
-The latest console crash occurs at first-frame update with GXM invalid-value in
+The latest console run reaches first-frame completion but the native layer is
+blank. The [Run/Update lifecycle correction](paf-render-loop-2026-10-26.md)
+starts the missing blocking Run on one dedicated thread and waits for its
+active count before any native frame. Check both target/paint handshake and
+visual results; Update returning alone is insufficient. Before the build,
+10,846 adapter checks, 1,467 native dispatch checks, ARM ABI/syntax checks and
+eight-theme chrome/utility suites passed. Run
+`bash tests/native_paf/run-ui-routing-tests.sh` for the actual native dispatch
+branches of shared panels/L1. It does not rasterize Sony widgets.
+
+The preceding console crash occurs at first-frame update with GXM invalid-value in
 r0. The [extended frame audit](paf-frame-audit-2026-10-26.md) identifies a direct
 cast between incompatible CommonDialog (96-byte) and PAF (32-byte) records.
 The correction uses eight explicit fields, compile-time ARM layout checks and

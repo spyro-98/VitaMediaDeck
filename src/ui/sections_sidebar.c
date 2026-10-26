@@ -717,7 +717,9 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		return;
 	}
 	float ox = sidebar_offset(sidebar);
+    int native = 0;
 #ifdef VMD_ENABLE_PAF_NATIVE
+    native = ui_native_vita_active();
 	if (ui_theme_id() == VT_UI_THEME_LEGACY_VITA && ui_native_vita_error())
 		ui_text_line(446, 508, 490,
 		             vt_i18n_current_language() == VT_LANG_IT ? "PAF non disponibile: layout Legacy"
@@ -731,12 +733,16 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		vita2d_draw_rectangle(ox + SIDEBAR_WIDTH, 0,
 		                      960 - (ox + SIDEBAR_WIDTH), SCREEN_HEIGHT,
 		                      RGBA8(0, 0, 0, (unsigned int)(150.0f * animation)));
+    if (native)
+        ui_panel(ox, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT, VT_THEME_BG_SOFT, VT_THEME_BORDER_DIM, 0);
+    else {
 	vita2d_draw_rectangle(ox, 0, SIDEBAR_WIDTH, SCREEN_HEIGHT,
 	                      VT_THEME_BG_SOFT);
 	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 2, 0, 2, SCREEN_HEIGHT,
 	                      VT_THEME_SPECTRAL);
 	vita2d_draw_rectangle(ox + SIDEBAR_WIDTH - 7, 0, 4, SCREEN_HEIGHT,
 	                      VT_THEME_SIGNAL_A(42));
+    }
 	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	/* Keep decoration out of the navigation labels and moving focus band. */
@@ -774,7 +780,7 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 	}
 	if(!sidebar_clip_body(ox)){vita2d_disable_clipping();return;}
 	int has_focus = focus_cursor >= 0.0f;
-	if (has_focus) {
+	if (has_focus && !native) {
 		vita2d_draw_rectangle(ox + ITEM_X, sidebar_row_y(sidebar, focus_cursor)-sidebar->scroll,
 		                      ITEM_W, sidebar_row_height(), VT_THEME_SURFACE_FOCUS);
 		vita2d_draw_rectangle(ox + ITEM_X, sidebar_row_y(sidebar, focus_cursor)-sidebar->scroll,
@@ -791,6 +797,14 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
                           : items[section];
 		UiThemeRect rect=sidebar_slot_rect(sidebar,slot);
 		if(!sidebar_rect_visible(rect))continue;
+#ifdef VMD_ENABLE_PAF_NATIVE
+        /* Native rows use the firmware's nine-slice button and label, with
+         * the same existing scroll/touch rectangles. Edge-clipped rows keep
+         * the adapter's clipped text path until the whole target fits. */
+        if (native && ui_native_vita_button_fade(ox + rect.x, rect.y, rect.w, rect.h,
+                                                label, has_focus && slot == cursor, animation))
+            continue;
+#endif
 		unsigned int color = has_focus && slot == cursor ? VT_THEME_TEXT
 		                                      : VT_THEME_TEXT_MUTED;
 		ui_font_draw_text(font, (int)ox + 34,

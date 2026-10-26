@@ -1,6 +1,7 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Current follow-up: [first-frame crash, extended PAF audit and framebuffer ABI](paf-frame-audit-2026-10-26.md).
+Current follow-up: [blank native layer, Run/Update lifecycle and native finishes](paf-render-loop-2026-10-26.md).
+Previous follow-up: [first-frame crash, extended PAF audit and framebuffer ABI](paf-frame-audit-2026-10-26.md).
 Previous follow-up: [PAF button-label object and new console result](paf-button-label-2026-10-26.md).
 Previous follow-up: [PAF text-layout fallback and retail attribute correction](paf-layout-2026-10-26.md).
 Previous follow-up: [second PAF crash, widget factory and recovery](paf-widget-recovery-2026-10-25.md).

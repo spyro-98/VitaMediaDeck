@@ -50,3 +50,15 @@ alternating buffers/sync, distinct format/type and reserved-area markers, nullab
 depth, eight invalid targets, NULL input and first-frame-only descriptor logging.
 ARM static assertions protect the production layout; an independent reference
 compile-only probe was also run before the VPK build. See the [extended audit](../../docs/paf-frame-audit-2026-10-26.md).
+
+The blank-layer regression separates target acceptance from native processing.
+The firmware mock's Run uses a real POSIX thread and a per-frame condition
+handshake; Update without Run paints zero modeled frames. Startup create/start
+failure, absent/returned Run, delayed startup, timeout and later runner exit
+must recover before declaring native readiness. None of these mocks paints Sony
+pixels. See the [render-loop report](../../docs/paf-render-loop-2026-10-26.md).
+
+`bash tests/native_paf/run-ui-routing-tests.sh` compiles actual L1/shared
+components with native dispatch enabled. Checks cover native row buttons,
+IT/EN/live slots, scrolling bounds, panel finish ownership, media base retention
+and unchanged Legacy edges. This adds no golden Sony screenshot claim.

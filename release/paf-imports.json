@@ -25,6 +25,13 @@
       "nid": "0xF72FC59E"
     },
     {
+      "name": "vmd_paf_fw_run",
+      "library": "ScePafToplevel",
+      "library_nid": "0x4D9A9DD0",
+      "symbol": "_ZN3paf9Framework3RunEv",
+      "nid": "0x12E33958"
+    },
+    {
       "name": "vmd_paf_fw_update",
       "library": "ScePafToplevel",
       "library_nid": "0x4D9A9DD0",

@@ -232,6 +232,17 @@ void ui_scene_identity(float x, float y, float width, const char *code,
 void ui_panel(float x, float y, float width, float height,
 	          unsigned int fill, unsigned int accent, int focused) {
 	vita2d_draw_rectangle(x, y, width, height, fill);
+#ifdef VMD_ENABLE_PAF_NATIVE
+    /* Retain the base under media cutouts, but let Sony's widget supply its
+     * own edges/focus instead of drawing the Legacy border over it. */
+    if (ui_native_vita_panel(x, y, width, height, fill, focused)) {
+        if (focused) {
+            UiFocusMotion focus={.x=x,.y=y,.width=width,.height=height,.initialized=1};
+            ui_focus_outline_draw(&focus);
+        }
+        return;
+    }
+#endif
     ui_theme_fx_surface(x,y,width,height,fill,focused);
 	vita2d_draw_rectangle(x, y, width, 1,
 	                      focused ? VT_THEME_FOCUS : VT_THEME_BORDER_DIM);
@@ -242,9 +253,6 @@ void ui_panel(float x, float y, float width, float height,
 		UiFocusMotion focus={.x=x,.y=y,.width=width,.height=height,.initialized=1};
 		ui_focus_outline_draw(&focus);
 	}
-#ifdef VMD_ENABLE_PAF_NATIVE
-	ui_native_vita_panel(x, y, width, height, fill, focused);
-#endif
 	(void)accent;
 }
 
