@@ -491,6 +491,12 @@ static void draw_transport(int x, int control, int paused, int enabled,
                            unsigned foreground, float opacity) {
 	if(opacity<=.01f)return;
 	float y=MUSIC_CONTROLS_Y;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    const char *native_label = control == MUSIC_CONTROL_PLAY ? (paused ? "\xE2\x96\xB6" : "II")
+                              : control == MUSIC_CONTROL_BACK ? "<" : ">";
+    if (ui_native_vita_button_fade(x,y,48,44,native_label,
+        enabled && control==feedback && now<until,opacity*(enabled?1.0f:.4f))) return;
+#endif
 	unsigned fill=foreground==RGBA8(255,255,255,255)?VT_THEME_GLASS_A(224):RGBA8(240,244,248,230);
 	fill=music_control_fill(fill,control,feedback,until,now);
 	unsigned ink=fade_color(enabled?ui_contrast_bw(fill):VT_THEME_TEXT_FAINT,opacity);
@@ -686,6 +692,9 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 		                                           : VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, values[i]);
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if(ui_native_vita_active())ui_panel(x+14,492,width-28,40,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+#endif
 	if (small)
 		ui_font_draw_text(small, x + 28, 518, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_MUSIC_PLAYER_PANEL_HINT));

@@ -315,6 +315,10 @@ static void sidebar_scroll_chrome(const UiSectionsSidebar *sidebar,float ox) {
 	int legacy = vt_ui_theme_legacy_layout(ui_theme_id());
 	float maximum = sidebar_scroll_max(sidebar);
 	int left = legacy ? 28 : 64, width = legacy ? 272 : 704;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if (ui_native_vita_active())
+        ui_panel(ox + 14, 478, SIDEBAR_WIDTH - 28, 62, VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
+#endif
 	ui_text_line(
 	    ox + left, 503, width,
 	    vt_i18n_str(sidebar_vertical() ? VT_STR_SECTIONS_SCROLL_HINT : VT_STR_SECTIONS_SPATIAL_HINT),
@@ -747,11 +751,15 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	/* Keep decoration out of the navigation labels and moving focus band. */
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if (native) ui_native_vita_button(ox + 20, 14, 44, 32, "L1", 0);
+    else
+#endif
 	vita2d_draw_rectangle(ox + 20, 18, 42, 26, VT_THEME_SURFACE_RAISED);
-	vita2d_draw_rectangle(ox + 20, 18, 3, 26, VT_THEME_SIGNAL_BRIGHT);
+    if (!native) vita2d_draw_rectangle(ox + 20, 18, 3, 26, VT_THEME_SIGNAL_BRIGHT);
 	if (small) {
 		int key_width = ui_font_text_width(small, UI_FONT_SMALL, "L1");
-		ui_font_draw_text(small, (int)ox + 41 - key_width / 2, 38,
+        if (!native) ui_font_draw_text(small, (int)ox + 41 - key_width / 2, 38,
 		                  VT_THEME_TEXT, UI_FONT_SMALL, "L1");
 		ui_font_draw_text(small, (int)ox + 76, 38, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, "VitaMediaDeck");
@@ -768,11 +776,16 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		ui_font_draw_text(font,(int)ox+20,151,VT_THEME_TEXT,UI_FONT_BODY,vt_i18n_str(VT_STR_MUSIC_LAYOUT_TITLE));
 		const VtStringId labels[]={VT_STR_MUSIC_LAYOUT_CENTER,VT_STR_MUSIC_LAYOUT_LEFT,VT_STR_MUSIC_LAYOUT_RIGHT};
 		for(int i=0;i<3;i++) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+            if (native && ui_native_vita_button(ox+14,177+i*91,396,79,
+                vt_i18n_str(labels[i]),i==sidebar->audio_layout_selected)) continue;
+#endif
 			vita2d_draw_rectangle(ox+14,177+i*91,396,79,VT_THEME_SURFACE);
 			if(i==sidebar->audio_layout_selected)vita2d_draw_rectangle(ox+28,210+i*91,8,8,VT_THEME_SIGNAL_BRIGHT);
 			ui_font_draw_text(font,(int)ox+48,222+i*91,VT_THEME_TEXT,UI_FONT_BODY,vt_i18n_str(labels[i]));
 		}
 		if(sidebar->open){UiFocusMotion focus={.x=ox+14,.y=177+sidebar->focus_cursor*91,.width=396,.height=79,.initialized=1};ui_focus_outline_draw(&focus);}
+        if (native) ui_panel(ox+14,448,396,88,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 		if(small){
 			ui_font_draw_text(small,(int)ox+20,478,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,vt_i18n_str(VT_STR_MUSIC_LAYOUT_APPLIES));
 			ui_font_draw_text(small,(int)ox+20,514,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,vt_i18n_str(VT_STR_MUSIC_LAYOUT_UNCHANGED));

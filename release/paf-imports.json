@@ -226,6 +226,13 @@
       "library_nid": "0x3C1965CD",
       "symbol": "_ZN3paf6common18MainThreadCallList8RegisterEPFvPvES2_",
       "nid": "0x6735B503"
+    },
+    {
+      "name": "vmd_paf_check_set",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui15StateButtonBase8SetCheckEbfb",
+      "nid": "0x56B9B54A"
     }
   ]
 }

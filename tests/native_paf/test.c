@@ -166,6 +166,8 @@ static unsigned host_alloc_count;
 static unsigned char host_nodes[1024];
 static int host_node_kinds[1024], host_bad_text_targets;
 static float host_left[1024],host_width[1024];
+static unsigned host_size_calls,host_position_calls,host_check_calls,host_order_calls,host_font_style_calls;
+static int host_checked[1024];
 static int host_nodes_used;
 static char host_last_text[512];
 int ui_theme_id(void) {
@@ -288,7 +290,7 @@ void *vmd_paf_widget_create(void *self, void *parent, const char *type, const Vt
     CHECK(self == host_nodes && parent == host_nodes + 1 && type && name->hash && style->hash);
     /* Reproduce the real case-sensitive factory, rather than accepting any
      * arbitrary C++ type name as the old mock did. */
-    if (strcmp(type, "text") && strcmp(type, "button") && strcmp(type, "plane"))
+    if (strcmp(type, "text") && strcmp(type, "button") && strcmp(type, "plane") && strcmp(type, "check_box"))
         return NULL;
     host_creates++;
     if (host_fail_create)
@@ -296,7 +298,7 @@ void *vmd_paf_widget_create(void *self, void *parent, const char *type, const Vt
     CHECK(host_nodes_used < 1000);
     unsigned node = 2 + host_nodes_used++;
     host_node_kinds[node] = !strcmp(type, "button") ? NATIVE_BUTTON
-                              : !strcmp(type, "text") ? NATIVE_TEXT : NATIVE_PANEL;
+                              : !strcmp(type, "text") ? NATIVE_TEXT : !strcmp(type, "check_box") ? NATIVE_CHECK : NATIVE_PANEL;
     return host_nodes + node;
 }
 int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int opt, float delay,
@@ -305,6 +307,7 @@ int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int op
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10000);
     CHECK(isfinite(v[0]) && isfinite(v[1]) && !((uintptr_t)v & 15));
     unsigned node=(unsigned)((unsigned char *)self-host_nodes);
+    host_position_calls++;
     host_left[node]=v[0]+480-host_width[node]*.5f;
     return 0;
 }
@@ -313,6 +316,7 @@ int vmd_paf_widget_size(void *self, const float v[4], void *timer, int id, int o
     host_owner_check();
     CHECK(self && !host_scene && !timer && !opt && !delay && !cb && !data && id == 0x10004);
     CHECK(v[0] > 0 && v[1] > 0 && !((uintptr_t)v & 15));
+    host_size_calls++;
     host_width[(unsigned char *)self-host_nodes]=v[0];
     return host_fail_geometry ? -1 : 0;
 }
@@ -441,15 +445,18 @@ int vmd_paf_widget_color(void *w, const float c[4], void *timer, int id, int opt
 bool vmd_paf_widget_order(void *parent, void *w, void *sibling) {
     host_owner_check();
     CHECK(parent == page && w && !sibling && !host_scene);
+    host_order_calls++;
     return false; /* A no-op reorder is not a firmware error. */
 }
 int vmd_paf_text_size(void *w, int attr, unsigned start, unsigned count, float value) {
     host_owner_check();
+    host_font_style_calls++;
     CHECK(w && !host_scene && attr == 1 && !start && count < 512 && value > 0);
     return 0;
 }
 int vmd_paf_text_color(void *w, int attr, unsigned start, unsigned count, const float c[4]) {
     host_owner_check();
+    host_font_style_calls++;
     CHECK(w && !host_scene && attr == 2 && !start && count < 512 && c[3] >= 0 && c[3] <= 1 &&
           !((uintptr_t)c & 15));
     return 0;
@@ -463,6 +470,7 @@ int vmd_paf_text_layout_bool(void *w, int attr, bool value) {
     host_owner_check();
     CHECK(w && !host_scene && (attr == 11 || attr == 13 || attr == 15) &&
           (value == 0 || value == 1));
+    CHECK(attr != 11 || !value); /* No font condensation during clipping. */
     CHECK(attr != 15 || !value); /* No second native ellipsis on every label. */
     return attr == host_fail_layout ? -12345 : 0;
 }
@@ -474,6 +482,13 @@ int vmd_paf_text_layout_vec(void *w, int attr, const VtPafVec2 *v) {
     CHECK(v && !((uintptr_t)v & 15) && v->lane[0] >= 0 && v->lane[1] >= 0 &&
           v->lane[2] == 0 && v->lane[3] == 0);
     return attr == host_fail_layout ? -12345 : 0;
+}
+void vmd_paf_check_set(void *w, bool checked, float time, bool animate) {
+    host_owner_check();
+    CHECK(w && !host_scene && !time && !animate);
+    unsigned node=(unsigned)((unsigned char *)w-host_nodes);
+    CHECK(host_node_kinds[node]==NATIVE_CHECK);
+    host_checked[node]=checked;host_check_calls++;
 }
 void vmd_paf_busy_start(void *w) {
     host_owner_check();
@@ -562,6 +577,8 @@ static void reset(void) {
     host_paf_locked = host_owner_valid = host_protocol_probe = 0;
     host_page_shown = host_failed_graph_draws = host_callback_wrong_thread = 0;
     host_visibility_return = host_missing_busy = host_fail_alpha = 0;
+    host_size_calls=host_position_calls=host_check_calls=host_order_calls=host_font_style_calls=0;
+    memset(host_checked,0,sizeof(host_checked));
     host_clock_us = 0;
     atomic_flag_clear(&mailbox_lock);
     atomic_store(&owner_callbacks, 0);
@@ -654,7 +671,7 @@ int main(void) {
     CHECK(ui_native_vita_active() && host_loads == 1);
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(host_updates == 2 && host_creates == 4 && host_strings == 4 && visible);
+    CHECK(host_updates == 2 && host_creates == 3 && host_strings == 3 && visible);
     int creates = host_creates, strings = host_strings;
     CHECK(host_checkpoints == 10);
     CHECK(host_thread_creates == 1 && renderer_running() == 1 && host_frames_drawn == 2);
@@ -689,10 +706,12 @@ int main(void) {
     strcpy(name, "Changed");
     CHECK(!strcmp(commands[0].label, "Immutable"));
     __wrap_vita2d_draw_rectangle(100, 0, 860, 544, 0xff000000);
-    CHECK(commands[0].clip[2] == 100);
+    CHECK(commands[0].hidden && commands[0].w == 202 && commands[0].clip[2] == 202);
     CHECK(ui_native_vita_text(120, 40, 200, 20, 0xffffffff, "Modal"));
     __wrap_vita2d_end_drawing();
-    CHECK(text_slot("Immutable") && text_slot("Modal"));
+    CHECK(text_slot("Modal"));
+    for(unsigned i=0;i<UI_NATIVE_TEXT_LIMIT;i++)
+        CHECK(!slots[NATIVE_TEXT][i].shown || strcmp(slots[NATIVE_TEXT][i].prior.label,"Immutable"));
     /* Clip state tracks each frame and never leaks to another page/theme. */
     __wrap_vita2d_start_drawing();
     __wrap_vita2d_set_clip_rectangle(50, 50, 350, 300);
@@ -701,15 +720,20 @@ int main(void) {
     CHECK(commands[0].clip[0] == 50 && commands[0].clip[2] == 172);
     CHECK(ui_native_vita_button(20, 50, 200, 42, "Partial target", 0));
     CHECK(commands[1].clip[0] == 50 && commands[1].clip[2] == 170);
-    CHECK(commands[2].text_align == 1 && !strcmp(commands[2].label, "Partial target"));
+    CHECK(command_count == 2 && commands[0].hidden && commands[1].hidden &&
+          !strcmp(commands[1].label,"Partial target"));
     __wrap_vita2d_disable_clipping();
     unsigned cutout = command_count;
     CHECK(ui_native_vita_panel(400, 60, 200, 80, 0xffffffff, 0));
     __wrap_vita2d_draw_texture_scale((const vita2d_texture *)host_nodes, 440, 70, 1, 1);
     CHECK(commands[cutout].hidden);
     __wrap_vita2d_end_drawing();
+    for(unsigned i=0;i<UI_NATIVE_TEXT_LIMIT;i++)CHECK(!slots[NATIVE_TEXT][i].shown);
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_text(20,80,200,20,0xffffffff,"Clipped"));
+    __wrap_vita2d_end_drawing();
     unsigned clipped_node=(unsigned)((unsigned char *)text_slot("Clipped")->widget-host_nodes);
-    CHECK(host_left[clipped_node]==50&&host_width[clipped_node]==172);
+    CHECK(host_left[clipped_node]==20&&host_width[clipped_node]==202);
     __wrap_vita2d_start_drawing();
     CHECK(!clip_enabled);
     CHECK(ui_native_vita_text(0, 40, 200, 20, 0xffffffff, "Dimmed"));
@@ -830,9 +854,8 @@ int main(void) {
         __wrap_vita2d_end_drawing();
         CHECK(state == 1 && host_updates == n + 3 && host_creates == stable_creates);
         CHECK(host_bad_text_targets == 2 && slots[NATIVE_BUTTON][0].widget == button_widget);
-        CHECK(!slots[NATIVE_BUTTON][0].prior.label[0]);
-        if (labels[n][0]) CHECK(text_slot(labels[n]));
-        else for (unsigned i = 0; i < UI_NATIVE_TEXT_LIMIT; i++) CHECK(!slots[NATIVE_TEXT][i].shown);
+        CHECK(!strcmp(slots[NATIVE_BUTTON][0].prior.label,labels[n]));
+        for (unsigned i = 0; i < UI_NATIVE_TEXT_LIMIT; i++) CHECK(!slots[NATIVE_TEXT][i].shown);
     }
     /* Exercise the actual flush with both buffer descriptions, including a
      * missing depth surface, alternating sync objects and distinct format/type. */
@@ -945,9 +968,9 @@ int main(void) {
     /* Never read the capture array while native delivery is pending. */
     reset(); host_run_behavior = 5;
     __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && pending_count == 4 && owner_count == 0);
-    strcpy(commands[2].label, "Reused app capture");
-    CHECK(!strcmp(pending_commands[2].label, "Jellyfin"));
+    CHECK(state == 1 && pending_count == 3 && owner_count == 0);
+    strcpy(commands[1].label, "Reused app capture");
+    CHECK(!strcmp(pending_commands[1].label, "Jellyfin"));
     /* Theme changes replace pending native data with an empty snapshot;
      * no obsolete native screen may appear later over Legacy. */
     host_theme = VT_UI_THEME_LEGACY; host_run_behavior = 0;
@@ -978,7 +1001,7 @@ int main(void) {
     pthread_mutex_unlock(&host_runner_mutex);
     CHECK(!host_creates && !atomic_load(&applied_generation) && host_scene);
     fixture(); host_run_behavior = 0; __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && rendered_once && host_creates == 4);
+    CHECK(state == 1 && rendered_once && host_creates == 3);
     /* A request to initialize inside an already-open scene is deferred. */
     reset(); host_theme = VT_UI_THEME_LEGACY;
     __wrap_vita2d_start_drawing(); host_theme = VT_UI_THEME_LEGACY_VITA;
@@ -993,7 +1016,7 @@ int main(void) {
     CHECK(state == 1 && !rendered_once && !host_creates);
     atomic_flag_clear(&mailbox_lock);
     __wrap_vita2d_start_drawing(); fixture(); __wrap_vita2d_end_drawing();
-    CHECK(state == 1 && rendered_once && host_creates == 4);
+    CHECK(state == 1 && rendered_once && host_creates == 3);
     /* Retail visibility calls leave an incidental stack cookie in r0. Both
      * signs must work at cold init, page/child show, hide and true recovery. */
     const int incidental[] = {0, 0x12345678, (int)0x80000000u, (int)0xf123abcdU};
@@ -1037,11 +1060,9 @@ int main(void) {
             CHECK(scope == UI_NATIVE_SCOPE_CONTENT);
             CHECK(ui_native_vita_button_fade(-30 + frame, 100, 260, 44,
                                              "Jellyfin provider", 1, .8f));
-            CHECK(command_count == 3 && commands[1].clip[0] == 0);
-            CHECK(commands[2].w == 236 && commands[2].text_align == 1);
-            CHECK(commands[2].y == 104 && commands[2].h == 36);
-            CHECK(commands[2].x >= commands[1].x && commands[2].x + commands[2].w <= commands[1].x + commands[1].w);
-            CHECK(!strstr(commands[2].label, "..."));
+            CHECK(command_count == 2 && commands[1].clip[0] == 0);
+            CHECK(commands[1].kind==NATIVE_BUTTON && commands[1].w==260 && commands[1].h==44);
+            CHECK(!strcmp(commands[1].label,"Jellyfin provider"));
             CHECK(ui_native_vita_scope(scope) == UI_NATIVE_SCOPE_SECTIONS);
         }
         __wrap_vita2d_end_drawing();
@@ -1065,6 +1086,22 @@ int main(void) {
     __wrap_vita2d_end_drawing();
     CHECK(state == 1 && slots[NATIVE_PANEL][0].shown);
     CHECK(host_node_kinds[(unsigned char *)slots[NATIVE_PANEL][0].widget - host_nodes] == NATIVE_BUTTON);
+    /* Movement/fade must not resize or rebuild native text; checkbox updates
+     * only when its stored value changes. Built-in Button captions travel in
+     * the same widget, rather than a separately positioned Text. */
+    reset();
+    for(int n=0;n<60;n++) {
+        __wrap_vita2d_start_drawing();
+        CHECK(ui_native_vita_text(30+n,80,200,20,0xffffffff,"Stable text"));
+        CHECK(ui_native_vita_button(240+n,100,200,44,"Stable button",0));
+        CHECK(ui_native_vita_toggle(460,100,44,44,n>=30));
+        ui_native_vita_cover(0,0,960,544,(unsigned)(n%32+10)<<24);
+        __wrap_vita2d_end_drawing();
+        CHECK(state==1 && host_creates==3 && host_strings==2);
+        CHECK(host_size_calls==3 && host_font_style_calls==2 && host_order_calls==3);
+        CHECK(host_check_calls==(n<30?1u:2u));
+    }
+    CHECK(host_position_calls>100);
     /* Error-check mutex models the exact error class without crashing macOS. */
     reset();
     assert(!pthread_mutex_lock(&host_paf_mutex));

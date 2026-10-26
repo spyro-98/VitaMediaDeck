@@ -65,9 +65,9 @@ and unchanged Legacy edges. This adds no golden Sony screenshot claim.
 
 VMD layout regressions also check stable content/L1/R1 identities, repeated modal
 cycles without widget/string regeneration, native clipping during animation,
-bounded centered captions, no second native ellipsis, and retained native tile
+button-owned captions, no second native ellipsis, and retained native tile
 windows around media. The shared routing fixture checks the caller's available
-text width, rounded backing corners and one 84-vertex GPU batch. Sony pixels and
+text width, rounded backing corners and one 84-vertex panel-backing GPU batch. Sony pixels and
 native animation quality remain physical-console checks.
 
 The visibility-return regression supplies arbitrary positive and negative r0
@@ -76,3 +76,12 @@ statuses on the inspected retail implementation, despite the public RE int
 return declaration. Cold init, page/child hide/show/reopen and true alpha-error
 recovery must work for either sign. Real missing busy nodes remain errors. A
 negative control against b11d5ad exits normally with status 1 at cold startup.
+
+The latest [native polish report](../../docs/vmd-native-polish-2026-10-26.md)
+adds real CheckBox state, one Button-owned caption, fixed logical text bounds,
+no condensation, position-only movement, widget-alpha fades, scope-aware reuse
+and changed-suffix ordering. A 60-frame moving/fading fixture requires no size,
+string or text-style churn. The routing fixture checks the two-line footer and
+the one-batch 4,050-vertex thin-cyan background, highlight/brightness bounds,
+continuous motion and Reduce Motion. Existing eight-theme Home, chrome, utility,
+settings and audio fixtures exercise the shared callers with host rendering.

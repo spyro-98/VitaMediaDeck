@@ -24,6 +24,7 @@ int ui_native_vita_text(float x, float y, float w, unsigned size, unsigned color
     return 0; /* Host text renderer supplies reference pixels, not Sony text. */
 }
 static unsigned native_panels, native_rows;
+static UiThemeRect native_last_panel;
 int ui_native_vita_active(void) {
     return native_enabled && ui_theme_id() == VT_UI_THEME_LEGACY_VITA;
 }
@@ -33,6 +34,7 @@ int ui_native_vita_panel(float x, float y, float w, float h, unsigned color, int
     (void)x; (void)y; (void)color; (void)selected;
     if (!ui_native_vita_active()) return 0;
     CHECK(w > 0 && h > 0);
+    native_last_panel=(UiThemeRect){x,y,w,h};
     native_panels++;
     return 1;
 }
@@ -54,6 +56,9 @@ int ui_native_vita_focus(float x, float y, float w, float h) {
     (void)x; (void)y; (void)w; (void)h;
     return 0;
 }
+int ui_native_vita_toggle(float x,float y,float w,float h,int checked) {
+    (void)x;(void)y;(void)w;(void)h;(void)checked;return ui_native_vita_active();
+}
 int ui_native_vita_busy(float x, float y, float size) {
     (void)x; (void)y; (void)size;
     return ui_native_vita_active();
@@ -69,14 +74,19 @@ int main(int argc, char **argv) {
     vita2d_clear_screen();
     unsigned background_batches = gpu_draw_calls, background_vertices = gpu_vertex_count;
     ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
-    CHECK(gpu_draw_calls == background_batches + 1 && gpu_vertex_count == background_vertices + 1224);
+    CHECK(gpu_draw_calls == background_batches + 1 && gpu_vertex_count == background_vertices + 4050);
     memcpy(first_pixels,pixels,sizeof(pixels));
-    unsigned textured = 0;
+    unsigned textured = 0, highlights = 0;
+    unsigned long green_total=0,blue_total=0;
     for (int y=54;y<544;y++) for (int x=0;x<960;x++) {
-        CHECK(pixels[y][x][0] < 40 && pixels[y][x][1] < 65 && pixels[y][x][2] < 100);
+        CHECK(pixels[y][x][0] < 60 && pixels[y][x][1] < 190 && pixels[y][x][2] < 210);
+        green_total+=pixels[y][x][1];blue_total+=pixels[y][x][2];
+        highlights+=pixels[y][x][1]>65 && pixels[y][x][2]>90;
         textured += pixels[y][x][2] != ((VT_THEME_BG >> 16)&255);
     }
     CHECK(textured > 1000);
+    CHECK(highlights>1000 && highlights<15000); /* Thin luminous lines, not broad bright ribbons. */
+    CHECK(green_total<24u*960u*490u && blue_total<40u*960u*490u);
     png("vmd-background-dark");
     frame = 900;
     vita2d_clear_screen();ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
@@ -123,6 +133,13 @@ int main(int argc, char **argv) {
     p = pixels[102][110];
     CHECK(p[0] == 23 && p[1] == 44 && p[2] == 66);
     CHECK(native_scope == UI_NATIVE_SCOPE_CONTENT);
+    for(int bottom=472;bottom<=544;bottom+=72) {
+        ui_theme_home_footer("Local files",bottom);
+        CHECK(native_last_panel.y<=bottom-26-UI_FONT_SMALL);
+        CHECK(native_last_panel.y+native_last_panel.h>=bottom-8+8);
+        CHECK(native_last_panel.y>=ui_theme_home_item_rect(VT_UI_THEME_LEGACY_VITA,
+            ui_theme_home_layout(VT_UI_THEME_LEGACY_VITA,bottom).rows-1,bottom).y+44);
+    }
     ui_theme_apply(VT_UI_THEME_LEGACY);
     unsigned rows = native_rows, panels = native_panels;
     ui_panel(100, 100, 200, 40, fill, VT_THEME_FOCUS, 0);

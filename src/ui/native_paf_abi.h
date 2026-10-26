@@ -101,4 +101,6 @@ int vmd_paf_text_layout_vec(void *self, int attr, const VtPafVec2 *value);
 void *vmd_paf_widget_find(void *self, const VtPafId *name, int options);
 void vmd_paf_busy_start(void *self);
 void vmd_paf_busy_stop(void *self);
+/* StateButtonBase::SetCheck(bool,float,bool), owner-thread only; void result. */
+void vmd_paf_check_set(void *self, bool checked, float time, bool animate);
 #endif

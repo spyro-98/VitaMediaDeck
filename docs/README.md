@@ -1,20 +1,16 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest startup correction: [VMD recovery and default upgrade](vmd-startup-default-2026-10-26.md).
-The installed preceding VPK starts in VMD, then restores Legacy during native
-initialization. Show/Hide's incidental return register must not be treated as
-an error status; all visibility paths now discard it. Older Legacy defaults
-adopt VMD once, while later choices and true recovery stay persistent. Physical
-cold-start/native acceptance for this revision remains pending.
+Latest interface update: [VMD native controls, stable text and cyan backdrop](vmd-native-polish-2026-10-26.md).
+The installed preceding build now cold-starts in VMD and acknowledges native
+rendering. This update keeps glyph geometry stable behind overlays, attaches
+captions to their native Buttons, adds Sony CheckBox/player controls and contains
+command legends. The darker background uses thin moving cyan lines with glow
+and a discreet inclined symbol pattern. Host/threaded/ARM checks passed; the
+new native appearance and animation still need physical Vita acceptance.
+VMD remains the default, with the darker candidate-13 icon and Legacy recovery.
 
-Previous interface update: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
-VMD (formerly Legacy Vita, stable ID 7) is the default for fresh profiles;
-saved choices and Legacy recovery remain valid. Native captions use explicit
-bounds, menus retain their widgets, and the integrated Home opens sources/files
-without the former indexed Home. The preceding console build now displays the
-native UI; this revision still requires physical visual/performance acceptance.
-The provisional icon is the darker PAF media hub, shared by the bubble and
-in-app branding; VMD has a restrained animated dark blue wave backdrop.
+Previous startup correction: [VMD recovery and default upgrade](vmd-startup-default-2026-10-26.md).
+Earlier interface report: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
 
 Previous startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
 That report records the earlier loading hang. Its POSIX search-worker and
@@ -40,6 +36,8 @@ performance, validation and change records.
 - [PAF console crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
 
 ## Start here
+
+- [Native controls, stable text and thin cyan background](vmd-native-polish-2026-10-26.md): current VMD follow-up, test evidence and physical checks.
 
 - [Complete VMD / PAF integration](legacy-vita-paf-2026-10-25.md): native shared components, media composition, validation and console acceptance.
 

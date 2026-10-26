@@ -7,6 +7,7 @@
 #define UI_NATIVE_BUTTON_LIMIT 64
 #define UI_NATIVE_PANEL_LIMIT 48
 #define UI_NATIVE_BUSY_LIMIT 4
+#define UI_NATIVE_CHECK_LIMIT 16
 enum { UI_NATIVE_SCOPE_CONTENT, UI_NATIVE_SCOPE_SECTIONS, UI_NATIVE_SCOPE_ACTIONS };
 /* Scope affects stable widget identities only; input remains app-owned. */
 int ui_native_vita_scope(int scope);
@@ -22,6 +23,7 @@ int ui_native_vita_button_fade(float x, float y, float w, float h, const char *l
 void ui_native_vita_media_text(int active);
 int ui_native_vita_panel(float x, float y, float w, float h, unsigned color, int selected);
 int ui_native_vita_focus(float x, float y, float w, float h);
+int ui_native_vita_toggle(float x, float y, float w, float h, int checked);
 int ui_native_vita_busy(float x, float y, float size);
 unsigned ui_native_vita_utf16(const char *text, uint16_t *out, unsigned capacity);
 #endif
