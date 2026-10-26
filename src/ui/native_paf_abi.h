@@ -31,17 +31,33 @@ enum {
 /* The draw-object index is specific to each widget class. Button's index 0
  * is its background plane; only index 1 is a text object (OBJ_LABEL). */
 enum { VMD_PAF_TEXT_OBJECT = 0, VMD_PAF_BUTTON_LABEL_OBJECT = 1 };
+/* Framework::Update in CommonDialog mode consumes paf::cdlg::OnUpdateData.
+ * It is NOT SceCommonDialogUpdateParam: field order and total size differ. */
+typedef struct {
+    uint32_t pitch_pixels, width, height, color_format, surface_type;
+    void *color_data, *depth_data, *display_sync;
+} VtPafFrameUpdate;
 typedef struct {
     VtPafString name;
     uint32_t hash;
 } VtPafId;
 #if defined(__vita__)
 _Static_assert(sizeof(VtPafString) == 12 && sizeof(VtPafId) == 16, "PAF ARM ABI");
+_Static_assert(sizeof(VtPafFrameUpdate) == 32 &&
+                   offsetof(VtPafFrameUpdate, pitch_pixels) == 0 &&
+                   offsetof(VtPafFrameUpdate, width) == 4 &&
+                   offsetof(VtPafFrameUpdate, height) == 8 &&
+                   offsetof(VtPafFrameUpdate, color_format) == 12 &&
+                   offsetof(VtPafFrameUpdate, surface_type) == 16 &&
+                   offsetof(VtPafFrameUpdate, color_data) == 20 &&
+                   offsetof(VtPafFrameUpdate, depth_data) == 24 &&
+                   offsetof(VtPafFrameUpdate, display_sync) == 28,
+               "PAF OnUpdateData ARM ABI");
 #endif
 void vmd_paf_fw_params(void *params);
 void vmd_paf_fw_create(void *self, const void *params);
 void *vmd_paf_fw_instance(void);
-void vmd_paf_fw_update(void *self, void *params);
+void vmd_paf_fw_update(void *self, const VtPafFrameUpdate *params);
 void vmd_paf_fw_common(void *self, void (*finished)(void));
 void vmd_paf_plugin_params(void *params);
 void vmd_paf_plugin_load(const void *params, void (*finished)(void *), int options);
