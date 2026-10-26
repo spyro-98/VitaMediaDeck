@@ -82,6 +82,17 @@ UiDashboardLayout ui_dashboard_layout(int theme, int bottom) {
             l.cards[3] = (UiThemeRect){x, y + upper + gap, right, lower};
         }
     }
+    if(theme==VT_UI_THEME_LEGACY_VITA) {
+        /* Four distinct media components use the entire safe body; redundant
+         * Sources/History shortcuts remain accessible from navigation. */
+        int body=h-4, left=(int)(w*.62f), right=w-left-12;
+        int upper=(int)(body*.60f), lower=body-upper-12;
+        l.cards[0]=(UiThemeRect){x,y,left,upper};
+        l.cards[1]=(UiThemeRect){x+left+12,y,right,upper};
+        l.cards[2]=(UiThemeRect){x,y+upper+12,left,lower};
+        l.cards[3]=(UiThemeRect){x+left+12,y+upper+12,right,lower};
+        return l;
+    }
     l.cards[4] = (UiThemeRect){x, limit - actions, (w - gap) / 2, actions};
     l.cards[5] = (UiThemeRect){x + (w + gap) / 2, limit - actions, (w - gap) / 2, actions};
     return l;
@@ -95,7 +106,8 @@ UiDashboardLayout ui_dashboard_compose(int theme, int bottom, const int counts[4
     int gap = theme == VT_UI_THEME_GHOST_MESH ? 6 : 8;
     if (!counts[1] && !counts[2] && !counts[3]) {
         l.cards[0] = (UiThemeRect){l.content.x, l.content.y, l.content.w,
-                                 l.cards[4].y - gap - l.content.y};
+                                 (theme==VT_UI_THEME_LEGACY_VITA ? l.content.h-4
+                                  : l.cards[4].y-gap-l.content.y)};
         for (int i = 1; i < 4; i++)
             l.cards[i].h = 0;
         return l;

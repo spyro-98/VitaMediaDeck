@@ -687,7 +687,12 @@ void ui_sections_sidebar_tick(UiSectionsSidebar *sidebar) {
 	}
 	if(!sidebar->open)sidebar->touch_active=sidebar->touch_dragged=0;
 	if (!sidebar->open && sidebar->animation < 0.025f) sidebar->animation = 0.0f;
-	if (!sidebar_vertical() && !sidebar->audio_layout_page) {
+    if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA) {
+        float y=sidebar->audio_layout_page ? 177+sidebar->audio_layout_cursor*91
+            : sidebar_row_y(sidebar,(float)sidebar->cursor)-sidebar->scroll;
+        ui_focus_motion_tick(&sidebar->fixed_focus,14,y,396,
+            sidebar->audio_layout_page?79:sidebar_row_height());
+    } else if (!sidebar_vertical() && !sidebar->audio_layout_page) {
 		UiThemeRect rect = sidebar_content_rect(sidebar, sidebar->cursor);
 		ui_focus_motion_tick(&sidebar->fixed_focus, rect.x, rect.y, rect.w, rect.h);
 	}
@@ -784,7 +789,10 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 			if(i==sidebar->audio_layout_selected)vita2d_draw_rectangle(ox+28,210+i*91,8,8,VT_THEME_SIGNAL_BRIGHT);
 			ui_font_draw_text(font,(int)ox+48,222+i*91,VT_THEME_TEXT,UI_FONT_BODY,vt_i18n_str(labels[i]));
 		}
-		if(sidebar->open){UiFocusMotion focus={.x=ox+14,.y=177+sidebar->focus_cursor*91,.width=396,.height=79,.initialized=1};ui_focus_outline_draw(&focus);}
+        if(sidebar->open){
+            UiFocusMotion focus=native?sidebar->fixed_focus:(UiFocusMotion){.x=14,.y=177+sidebar->focus_cursor*91,.width=396,.height=79,.initialized=1};
+            focus.x+=ox;ui_focus_outline_draw(&focus);
+        }
         if (native) ui_panel(ox+14,448,396,88,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 		if(small){
 			ui_font_draw_text(small,(int)ox+20,478,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,vt_i18n_str(VT_STR_MUSIC_LAYOUT_APPLIES));
@@ -825,6 +833,14 @@ void ui_sections_sidebar_draw(const UiSectionsSidebar *sidebar) {
 		                  rect.y + 28, color,
 		                      UI_FONT_BODY, label);
 	}
+    if(native && sidebar->open) {
+        UiFocusMotion focus=sidebar->fixed_focus;
+        if(!focus.initialized) {
+            UiThemeRect r=sidebar_slot_rect(sidebar,cursor);
+            focus=(UiFocusMotion){.x=r.x,.y=r.y,.width=r.w,.height=r.h,.initialized=1};
+        }
+        focus.x+=ox;ui_focus_outline_draw(&focus);
+    }
     sidebar_group_headings(sidebar,ox);
     vita2d_set_clip_rectangle(0,0,960,544);
     sidebar_scroll_chrome(sidebar,ox);

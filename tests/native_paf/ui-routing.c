@@ -52,6 +52,7 @@ int ui_native_vita_button_fade(float x, float y, float w, float h, const char *l
 int ui_native_vita_button(float x, float y, float w, float h, const char *s, int selected) {
     return ui_native_vita_button_fade(x, y, w, h, s, selected, 1);
 }
+int ui_native_vita_decoration(int enabled) { (void)enabled;return 0; }
 int ui_native_vita_focus(float x, float y, float w, float h) {
     (void)x; (void)y; (void)w; (void)h;
     return 0;
@@ -78,7 +79,7 @@ int main(int argc, char **argv) {
     memcpy(first_pixels,pixels,sizeof(pixels));
     unsigned textured = 0, highlights = 0;
     unsigned long green_total=0,blue_total=0;
-    for (int y=54;y<544;y++) for (int x=0;x<960;x++) {
+    for (int y=0;y<544;y++) for (int x=0;x<960;x++) {
         CHECK(pixels[y][x][0] < 60 && pixels[y][x][1] < 190 && pixels[y][x][2] < 210);
         green_total+=pixels[y][x][1];blue_total+=pixels[y][x][2];
         highlights+=pixels[y][x][1]>65 && pixels[y][x][2]>90;
@@ -86,7 +87,7 @@ int main(int argc, char **argv) {
     }
     CHECK(textured > 1000);
     CHECK(highlights>1000 && highlights<15000); /* Thin luminous lines, not broad bright ribbons. */
-    CHECK(green_total<24u*960u*490u && blue_total<40u*960u*490u);
+    CHECK(green_total<24u*960u*544u && blue_total<40u*960u*544u);
     png("vmd-background-dark");
     frame = 900;
     vita2d_clear_screen();ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);

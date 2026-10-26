@@ -260,12 +260,16 @@ int main(int argc, char **argv) {
                             reachable[ui_dashboard_move(&l, from, directions[dir])] = 1;
             for (int i = 0; i < UI_DASH_COUNT; i++) {
                 UiThemeRect a = l.cards[i];
+                if(theme==VT_UI_THEME_LEGACY_VITA && i>=4) {
+                    CHECK(!a.h);continue;
+                }
                 CHECK(a.x >= l.content.x && a.y >= l.content.y);
                 CHECK(a.x + a.w <= l.content.x + l.content.w &&
                       a.y + a.h <= l.content.y + l.content.h);
                 CHECK(a.h >= 36 && a.w >= 140 && reachable[i]);
                 for (int j = 0; j < i; j++) {
                     UiThemeRect b = l.cards[j];
+                    if(!b.h)continue;
                     CHECK(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y ||
                           b.y + b.h <= a.y);
                 }

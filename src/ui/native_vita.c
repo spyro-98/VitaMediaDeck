@@ -129,7 +129,7 @@ int ui_native_vita_scope(int scope) {
 }
 static void *previous_order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
                             UI_NATIVE_BUSY_LIMIT + UI_NATIVE_CHECK_LIMIT];
-static int media_text, rendered_once, drawing_scene;
+static int media_text, rendered_once, drawing_scene, decoration;
 static int state, error_code, visible, updating, capturing, clip_enabled, overflow_logged;
 static int clip_box[4] = {0, 0, 960, 544};
 static uint32_t fw_params[FW_PARAMS_BYTES / 4], plugin_params[PLUGIN_PARAMS_BYTES / 4];
@@ -383,7 +383,11 @@ int ui_native_vita_error(void) {
 int ui_native_vita_active(void) {
     return state == 1 && capturing && ui_theme_id() == VT_UI_THEME_LEGACY_VITA;
 }
+int ui_native_vita_decoration(int enabled) {
+    int previous=decoration;decoration=!!enabled;return previous;
+}
 static void occlude(float x, float y, float w, float h, unsigned alpha, int media) {
+    if(decoration) return; /* A thin focus rim is not an opaque modal/media layer. */
     if (!ui_native_vita_active() || !alpha || w <= 2 || h <= 2)
         return;
     if (clip_enabled) {
@@ -529,14 +533,9 @@ int ui_native_vita_panel(float x, float y, float w, float h, unsigned color, int
 int ui_native_vita_focus(float x, float y, float w, float h) {
     if (!ui_native_vita_active())
         return 0;
-    for (unsigned n = command_count; n > 0; n--) {
-        NativeCommand *c = &commands[n - 1];
-        if (!c->hidden && (c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL) && fabsf(c->x - x) < 12 &&
-            fabsf(c->y - y) < 12 && fabsf(c->w - w) < 24 && fabsf(c->h - h) < 24) {
-            c->selected = 1;
-            return 1;
-        }
-    }
+    /* One continuous app-owned focus overlay, including while it settles.
+     * Never switch between a moving GPU outline and a snapped native press. */
+    (void)x; (void)y; (void)w; (void)h;
     return 0;
 }
 int ui_native_vita_busy(float x, float y, float size) {
@@ -622,6 +621,8 @@ static int present(void) {
                 return widget_failure("create", c->kind, number, -1);
         }
         void *w = slot->widget;
+        if (fresh && (c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL))
+            vmd_paf_button_animator(w, 0); /* App owns focus; no gray Sony press animation. */
         NativeCommand *old = &slot->prior;
         const float logical[4] = {c->x, c->y, c->w, c->h};
         const float prior_logical[4] = {old->x, old->y, old->w, old->h};
@@ -637,7 +638,7 @@ static int present(void) {
         if (c->kind == NATIVE_TEXT || c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL) {
             uint16_t text[NATIVE_LABEL_BYTES];
             unsigned count = ui_native_vita_utf16(c->label, text, NATIVE_LABEL_BYTES);
-            if (text_changed) {
+            if (text_changed && c->kind != NATIVE_PANEL) {
                 VtPafString value = {text, count, 0};
                 int rc = c->kind != NATIVE_TEXT
                              ? vmd_paf_button_text(w, &value, VMD_PAF_BUTTON_LABEL_OBJECT)
@@ -685,8 +686,19 @@ static int present(void) {
                                    "text-visible-size", number) < 0)
                         return -1;
                 }
-            } else if (fresh || old->selected != c->selected)
-                vmd_paf_button_state(w, c->selected ? 2 : 0);
+            } else if (fresh) vmd_paf_button_state(w, 0);
+        }
+        if (c->kind == NATIVE_BUTTON && (fresh || resize || text_changed)) {
+            void *label = vmd_paf_widget_draw_obj(w, 1);
+            if (!label) return widget_failure("button-label-object", c->kind, number, -1);
+            VtPafVec2 size = {{fmaxf(1,c->w-16), c->h, 0, 0}}, origin = {{0,0,0,0}};
+            int rc = vmd_paf_label_layout_vec(label, VMD_PAF_LAYOUT_SIZE, &size);
+            if (rc >= 0) rc = vmd_paf_label_layout_vec(label, VMD_PAF_LAYOUT_VISIBLE_POS, &origin);
+            if (rc >= 0) rc = vmd_paf_label_layout_vec(label, VMD_PAF_LAYOUT_VISIBLE_SIZE, &size);
+            if (rc >= 0) rc = vmd_paf_label_layout_bool(label, VMD_PAF_LAYOUT_CONDENSE_X, false);
+            if (rc >= 0) rc = vmd_paf_label_layout_bool(label, VMD_PAF_LAYOUT_WORD_WRAP, false);
+            if (rc >= 0) rc = vmd_paf_label_layout_bool(label, VMD_PAF_LAYOUT_ELLIPSIS, false);
+            if (rc < 0) return widget_failure("button-label-layout", c->kind, number, rc);
         }
         if (c->kind == NATIVE_PANEL && (fresh || old->color != c->color)) {
             _Alignas(16) float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,

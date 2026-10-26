@@ -168,6 +168,36 @@ static int host_node_kinds[1024], host_bad_text_targets;
 static float host_left[1024],host_width[1024];
 static unsigned host_size_calls,host_position_calls,host_check_calls,host_order_calls,host_font_style_calls;
 static int host_checked[1024];
+static unsigned char host_label_objects[1024];
+static float host_label_box[1024][9][2];
+static unsigned host_label_setters,host_animator_calls;
+static int host_label_missing,host_label_error;
+void *vmd_paf_widget_draw_obj(void *widget,int object) {
+    host_owner_check();
+    unsigned n=(unsigned)((unsigned char *)widget-host_nodes);
+    CHECK(host_node_kinds[n]==NATIVE_BUTTON && object==1 && !host_scene);
+    return host_label_missing ? NULL : host_label_objects+n;
+}
+void vmd_paf_button_animator(void *widget,int style) {
+    host_owner_check();
+    CHECK(widget && !style && !host_scene);host_animator_calls++;
+}
+int vmd_paf_label_layout_vec(void *label,int attr,const VtPafVec2 *value) {
+    host_owner_check();
+    CHECK(label && attr>=6 && attr<=8 && !((uintptr_t)value&15) && !host_scene);
+    CHECK(value->lane[2]==0 && value->lane[3]==0);
+    unsigned n=(unsigned)((unsigned char *)label-host_label_objects);
+    CHECK(n<1024 && host_node_kinds[n]==NATIVE_BUTTON);
+    host_label_box[n][attr][0]=value->lane[0];host_label_box[n][attr][1]=value->lane[1];
+    host_label_setters++;
+    return host_label_error ? -12345 : 0;
+}
+int vmd_paf_label_layout_bool(void *label,int attr,bool value) {
+    host_owner_check();
+    CHECK(label && (attr==11 || attr==13 || attr==15) && !value && !host_scene);
+    host_label_setters++;
+    return host_label_error ? -12345 : 0;
+}
 static int host_nodes_used;
 static char host_last_text[512];
 int ui_theme_id(void) {
@@ -579,6 +609,8 @@ static void reset(void) {
     host_visibility_return = host_missing_busy = host_fail_alpha = 0;
     host_size_calls=host_position_calls=host_check_calls=host_order_calls=host_font_style_calls=0;
     memset(host_checked,0,sizeof(host_checked));
+    host_label_setters=host_animator_calls=0;host_label_missing=host_label_error=0;
+    memset(host_label_box,0,sizeof(host_label_box));
     host_clock_us = 0;
     atomic_flag_clear(&mailbox_lock);
     atomic_store(&owner_callbacks, 0);
@@ -629,7 +661,7 @@ static void reset(void) {
     state = error_code = visible = updating = capturing = clip_enabled = overflow_logged = 0;
     command_count = previous_order_count = capture_scope = 0;
     memset(scope_counts, 0, sizeof(scope_counts));
-    media_text = rendered_once = 0;
+    media_text = rendered_once = decoration = 0;
 }
 static NativeSlot *text_slot(const char *label) {
     for (unsigned i = 0; i < UI_NATIVE_TEXT_LIMIT; i++)
@@ -671,7 +703,7 @@ int main(void) {
     CHECK(ui_native_vita_active() && host_loads == 1);
     fixture();
     __wrap_vita2d_end_drawing();
-    CHECK(host_updates == 2 && host_creates == 3 && host_strings == 3 && visible);
+    CHECK(host_updates == 2 && host_creates == 3 && host_strings == 2 && visible);
     int creates = host_creates, strings = host_strings;
     CHECK(host_checkpoints == 10);
     CHECK(host_thread_creates == 1 && renderer_running() == 1 && host_frames_drawn == 2);
@@ -697,7 +729,7 @@ int main(void) {
     ui_native_vita_media_text(0);
     CHECK(ui_native_vita_button_fade(20, 80, 200, 42, "Faded", 0, .4f) &&
           fabsf(commands[0].alpha - .4f) < .001f);
-    CHECK(ui_native_vita_focus(20, 80, 200, 42) && commands[0].selected);
+    CHECK(!ui_native_vita_focus(20, 80, 200, 42) && !commands[0].selected);
     __wrap_vita2d_end_drawing();
     /* Source labels are copied; later modal paint clips labels behind it. */
     __wrap_vita2d_start_drawing();
@@ -1082,7 +1114,7 @@ int main(void) {
     CHECK(ui_native_vita_panel(40, 60, 240, 180, 0xff502010, 0));
     __wrap_vita2d_draw_texture_scale((const vita2d_texture *)host_nodes, 52, 72, 1, 1);
     CHECK(!commands[0].hidden && commands[0].clip[1] > commands[0].y);
-    CHECK(ui_native_vita_focus(40, 60, 240, 180));
+    CHECK(!ui_native_vita_focus(40, 60, 240, 180));
     __wrap_vita2d_end_drawing();
     CHECK(state == 1 && slots[NATIVE_PANEL][0].shown);
     CHECK(host_node_kinds[(unsigned char *)slots[NATIVE_PANEL][0].widget - host_nodes] == NATIVE_BUTTON);
@@ -1111,6 +1143,45 @@ int main(void) {
     CHECK(!pthread_create(&foreign, NULL, host_foreign_unlock, NULL));
     CHECK(!pthread_join(foreign, &unlock_status) && (intptr_t)unlock_status == EPERM);
     CHECK(!pthread_mutex_unlock(&host_paf_mutex));
+    reset();
+    for(int tick=0;tick<40;tick++) {
+        __wrap_vita2d_start_drawing();
+        CHECK(ui_native_vita_button(20+tick*.125f,100,160,28,"X  Continue",tick%2));
+        CHECK(!ui_native_vita_focus(20+tick*.125f,100,160,28));
+        __wrap_vita2d_end_drawing();
+        NativeSlot *button=&slots[NATIVE_BUTTON][0];
+        unsigned n=(unsigned)((unsigned char *)button->widget-host_nodes);
+        CHECK(host_label_box[n][6][0]==144 && host_label_box[n][6][1]==28);
+        CHECK(host_label_box[n][8][0]==144 && host_label_box[n][8][1]==28);
+        CHECK(host_label_setters==6 && host_animator_calls==1 && host_strings==1);
+    }
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_button(20,100,640,44,"A long native caption with room on both sides",1));
+    __wrap_vita2d_end_drawing();
+    CHECK(host_label_setters==12 && host_animator_calls==1);
+    unsigned wide_node=(unsigned)((unsigned char *)slots[NATIVE_BUTTON][0].widget-host_nodes);
+    CHECK(host_label_box[wide_node][8][0]==624 && host_label_box[wide_node][8][1]==44);
+    for(int failure=0;failure<2;failure++) {
+        reset();host_label_missing=failure==0;host_label_error=failure==1;
+        __wrap_vita2d_start_drawing();
+        CHECK(ui_native_vita_button(20,100,160,28,"Continue",0));
+        __wrap_vita2d_end_drawing();
+        CHECK(state<0 && host_saved_theme==VT_UI_THEME_LEGACY);
+        CHECK(strstr(host_failure_operation,failure ? "button-label-layout" : "button-label-object"));
+    }
+    reset();
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_button(20,100,160,36,"Continue",1));
+    CHECK(ui_native_vita_text(210,125,200,20,0xffffffff,"Behind focus"));
+    int prior_decoration=ui_native_vita_decoration(1);
+    __wrap_vita2d_draw_rectangle(18,98,164,3,0xffffffff);
+    __wrap_vita2d_draw_rectangle(209,100,3,30,0xffffffff);
+    ui_native_vita_decoration(prior_decoration);
+    CHECK(!commands[0].hidden && !commands[1].hidden);
+    /* Real opaque content must still occlude after leaving decoration scope. */
+    __wrap_vita2d_draw_rectangle(210,100,210,32,0xffffffff);
+    CHECK(!commands[0].hidden && commands[1].hidden);
+    __wrap_vita2d_end_drawing();
     reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
            "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "

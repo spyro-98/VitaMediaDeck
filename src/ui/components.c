@@ -161,8 +161,14 @@ void ui_text_line(float x,float baseline,float width,const char *text,unsigned c
 
 void ui_tab(float x,float y,float w,float h,const char *label,int active) {
 #ifdef VMD_ENABLE_PAF_NATIVE
-	if (ui_native_vita_button(x, y, w, h, label, active))
-		return;
+    if (ui_native_vita_button(x, y, w, h, label, active)) {
+        if(active) {
+            int decoration=ui_native_vita_decoration(1);
+            vita2d_draw_rectangle(x+8,y+h-2,w-16,2,VT_THEME_SIGNAL_BRIGHT);
+            ui_native_vita_decoration(decoration);
+        }
+        return;
+    }
 #endif
 
 	ui_panel(x,y,w,h,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
