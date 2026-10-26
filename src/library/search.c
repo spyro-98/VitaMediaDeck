@@ -1,4 +1,5 @@
 #include "library/search.h"
+#include "common/text_log.h"
 #include "library/catalog.h"
 #include "history/playback_history.h"
 #include "settings/preferences.h"
@@ -84,7 +85,8 @@ static VtLibraryResult *snapshot_stage, *snapshot_results;
 static int snapshot_count, cache_refresh_queued;
 static unsigned snapshot_library_revision;
 static void rebuild_snapshot(unsigned gen);
-static SceUID threads[WORKERS] = {-1, -1, -1};
+static pthread_t threads[WORKERS];
+static int thread_started[WORKERS];
 static int current(unsigned gen) {
     pthread_mutex_lock(&search_mutex);
     int ok = !stopping && gen == generation;
@@ -305,8 +307,12 @@ static int process(Job *j) {
     }
     return -1;
 }
-static int worker(SceSize n, void *arg) {
-    (void)n;
+static void *worker(void *arg) {
+    /* Vita pthread-embedded needs its own per-thread cancellation/TLS record
+     * for cond_wait. A raw sceKernelCreateThread entry does not create it. */
+    int priority = sceKernelChangeThreadPriority(sceKernelGetThreadId(), 191);
+    if (priority < 0)
+        log_printf("library search: low priority unavailable 0x%08X", (unsigned)priority);
     int index = *(int *)arg;
     for (;;) {
         pthread_mutex_lock(&search_mutex);
@@ -353,7 +359,7 @@ static int worker(SceSize n, void *arg) {
         memset(j, 0, sizeof(*j));
         free(j);
     }
-    return 0;
+    return NULL;
 }
 static void add_job(int type, int provider, const VtNetworkSource *s, const VtNetworkCredential *c,
                     const VtLibraryItem *folder) {
@@ -654,20 +660,29 @@ int vt_library_search_init(void) {
     }
     snapshot_count = cache_refresh_queued = 0;
     stopping = 0;
+    pthread_attr_t attributes;
+    int rc = pthread_attr_init(&attributes);
+    if (!rc) {
+        rc = pthread_attr_setstacksize(&attributes, 0x40000);
+        if (rc)
+            pthread_attr_destroy(&attributes);
+    }
+    if (rc) {
+        free(snapshot_stage);
+        free(snapshot_results);
+        snapshot_stage = snapshot_results = NULL;
+        return -1;
+    }
     int started = 0;
+    memset(thread_started, 0, sizeof(thread_started));
     for (int i = 0; i < WORKERS; i++) {
         worker_indices[i] = i;
-        threads[i] =
-            sceKernelCreateThread("LibrarySearch", worker, 191 /* lowest user priority; 0x10000140 is rejected on retail */, 0x40000, 0, 0, NULL);
-        if (threads[i] >= 0) {
-            if (sceKernelStartThread(threads[i], sizeof(worker_indices[i]), &worker_indices[i]) <
-                0) {
-                sceKernelDeleteThread(threads[i]);
-                threads[i] = -1;
-            } else
-                started++;
+        if (!pthread_create(&threads[i], &attributes, worker, &worker_indices[i])) {
+            thread_started[i] = 1;
+            started++;
         }
     }
+    pthread_attr_destroy(&attributes);
     available_workers = started;
     if (!started) {
         free(snapshot_stage);
@@ -687,10 +702,9 @@ void vt_library_search_shutdown(void) {
     pthread_cond_broadcast(&search_changed);
     pthread_mutex_unlock(&search_mutex);
     for (int i = 0; i < WORKERS; i++)
-        if (threads[i] >= 0) {
-            sceKernelWaitThreadEnd(threads[i], NULL, NULL);
-            sceKernelDeleteThread(threads[i]);
-            threads[i] = -1;
+        if (thread_started[i]) {
+            pthread_join(threads[i], NULL);
+            thread_started[i] = 0;
         }
     free(snapshot_stage);
     free(snapshot_results);

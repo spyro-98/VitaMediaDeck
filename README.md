@@ -1,5 +1,11 @@
 # VitaMediaDeck
 
+Latest startup follow-up: [loading hang and Vita search-thread contract](docs/startup-search-threads-2026-10-26.md).
+The installed standard binary is verified, but the retained console log is older.
+Search workers now use POSIX creation/join with the Vita cancellation/TLS context
+required by their condition waits. Startup checkpoints now cover Legacy as well
+as PAF. Physical startup and native-theme acceptance remain pending.
+
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 <p align="center">

@@ -1,5 +1,11 @@
 # VitaMediaDeck documentation — 1.4.1
 
+Latest startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
+The installed standard binary is verified, but the retained console log is older.
+Search workers now use POSIX creation/join with the Vita cancellation/TLS context
+required by their condition waits. Startup checkpoints now cover Legacy as well
+as PAF. Physical startup and native-theme acceptance remain pending.
+
 Current follow-up: [complete PAF contract review and Legacy recovery](paf-contract-audit-2026-10-26.md).
 Previous follow-up: [PAF mutex ownership crash and single-owner correction](paf-thread-ownership-2026-10-26.md).
 Previous follow-up: [blank native layer, Run/Update lifecycle and native finishes](paf-render-loop-2026-10-26.md).

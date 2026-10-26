@@ -968,15 +968,23 @@ static int browse_network(int provider_section) {
 
 static int run_application(void) {
 	uint64_t stage_started_us = sceKernelGetProcessTimeWide();
+	log_printf("startup: playback/history begin");
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	vt_playback_history_init();
-	vt_library_init(vt_background_playback_library_sample);
+	/* Initialize the sampled state before either checkpoint worker can read it. */
 	vt_background_playback_init();
+	int library_ret = vt_library_init(vt_background_playback_library_sample);
+	if (library_ret < 0)
+		log_printf("library checkpoint worker unavailable: %d", library_ret);
 	log_printf(
 	    "startup stage: playback/history=%llu ms total=%llu ms",
 	    (unsigned long long)((sceKernelGetProcessTimeWide() - stage_started_us) / 1000ULL),
 	    (unsigned long long)((sceKernelGetProcessTimeWide() - g_startup_started_us) / 1000ULL));
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	ui_loading_present(NULL);
 	stage_started_us = sceKernelGetProcessTimeWide();
+	log_printf("startup: network begin");
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	g_network_ready = vita_https_init() >= 0;
 	if (g_network_ready)
 		g_network_ready = vt_network_init() >= 0;
@@ -985,7 +993,11 @@ static int run_application(void) {
 	    (unsigned long long)((sceKernelGetProcessTimeWide() - stage_started_us) / 1000ULL),
 	    g_network_ready,
 	    (unsigned long long)((sceKernelGetProcessTimeWide() - g_startup_started_us) / 1000ULL));
-	vt_library_search_init();
+	log_printf("startup: search workers begin");
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+	int search_ret = vt_library_search_init();
+	log_printf("startup: search workers complete result=%d; opening Home", search_ret);
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	int section = UI_SECTION_LOCAL_MEDIA;
 	if (!vt_preferences_startup_controls_seen()) {
 		int controls_section = ui_settings_show_controls_reference();
@@ -1072,6 +1084,9 @@ int main(int argc, char *argv[]) {
 	log_printf("startup stage: preferences/i18n=%llu ms",
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                stage_started_us) / 1000ULL));
+	log_printf("startup: diagnostics schema=2 theme=%d; graphics begin",
+	           vt_preferences_interface_theme());
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	stage_started_us = sceKernelGetProcessTimeWide();
 	if (ui_runtime_init() < 0) {
 		sceKernelExitProcess(0);
@@ -1080,6 +1095,7 @@ int main(int argc, char *argv[]) {
 	log_printf("startup stage: graphics=%llu ms",
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                stage_started_us) / 1000ULL));
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	uint64_t assets_started_us = sceKernelGetProcessTimeWide();
 	ui_runtime_load_boot_assets();
 	ui_loading_present(NULL);
@@ -1088,12 +1104,14 @@ int main(int argc, char *argv[]) {
 	                                assets_started_us) / 1000ULL),
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                g_startup_started_us) / 1000ULL));
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	ui_runtime_load_assets();
 	log_printf("startup assets: complete=%llu ms total=%llu ms",
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                assets_started_us) / 1000ULL),
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                g_startup_started_us) / 1000ULL));
+	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	ui_touch_init();
 	stage_started_us = sceKernelGetProcessTimeWide();
 	int thumbnail_ret = vt_video_thumbnail_init();
