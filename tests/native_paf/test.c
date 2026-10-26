@@ -4,8 +4,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include "../../src/ui/native_vita.c"
 static unsigned checks;
+static int host_fail_layout;
+static unsigned host_failure_code;
+static char host_failure_operation[64];
 #define CHECK(x)                                                                                   \
     do {                                                                                           \
         checks++;                                                                                  \
@@ -35,6 +39,16 @@ int vt_i18n_current_language(void) {
 }
 void log_printf(const char *format, ...) {
     CHECK(format && !strstr(format, "password"));
+    if (strstr(format, "widget failure")) {
+        va_list ap;
+        va_start(ap, format);
+        (void)va_arg(ap, int);
+        (void)va_arg(ap, unsigned);
+        snprintf(host_failure_operation, sizeof(host_failure_operation), "%s",
+                 va_arg(ap, const char *));
+        host_failure_code = va_arg(ap, unsigned);
+        va_end(ap);
+    }
 }
 int log_save(const char *path) {
     CHECK(path && strstr(path, "ux0:data/VitaMediaDeck/") && !host_scene);
@@ -221,13 +235,17 @@ int vmd_paf_text_layout_int(void *w, int attr, int value) {
     return 0;
 }
 int vmd_paf_text_layout_bool(void *w, int attr, int value) {
-    CHECK(w && !host_scene && (attr == 10 || attr == 12 || attr == 14) &&
+    CHECK(w && !host_scene && (attr == 11 || attr == 13 || attr == 15) &&
           (value == 0 || value == 1));
-    return 0;
+    return attr == host_fail_layout ? -12345 : 0;
 }
-int vmd_paf_text_layout_vec(void *w, int attr, const float v[2]) {
-    CHECK(w && !host_scene && (attr == 5 || attr == 6 || attr == 7) && v[0] >= 0 && v[1] >= 0);
-    return 0;
+int vmd_paf_text_layout_vec(void *w, int attr, const VtPafVec2 *v) {
+    /* Typed contract from the firmware checks, independent of the adapter's
+     * named constants: 5 is not a vector attribute on retail PAF. */
+    CHECK(w && !host_scene && (attr == 6 || attr == 7 || attr == 8));
+    CHECK(v && !((uintptr_t)v & 15) && v->lane[0] >= 0 && v->lane[1] >= 0 &&
+          v->lane[2] == 0 && v->lane[3] == 0);
+    return attr == host_fail_layout ? -12345 : 0;
 }
 void vmd_paf_busy_start(void *w) {
     CHECK(w && !host_scene);
@@ -302,7 +320,9 @@ static void reset(void) {
     for (unsigned i = 0; i < host_alloc_count; i++)
         free(host_allocated[i]);
     host_alloc_count = 0;
-    host_checkpoints = host_persist_error = host_fail_geometry = 0;
+    host_checkpoints = host_persist_error = host_fail_geometry = host_fail_layout = 0;
+    host_failure_code = 0;
+    host_failure_operation[0] = 0;
     host_saved_theme = VT_UI_THEME_LEGACY_VITA;
     host_theme = VT_UI_THEME_LEGACY_VITA;
     host_scene = host_loaded = host_load_error = host_ctor_missing = host_foreign = 0;
@@ -482,6 +502,23 @@ int main(void) {
     fixture();
     __wrap_vita2d_end_drawing();
     CHECK(state == -1 && !host_updates);
+    /* Firmware layout failures must preserve the actual code and stop before
+     * Framework::Update, for each typed stage rather than just string errors. */
+    const int layout_attrs[] = {6, 7, 8, 11, 13, 15};
+    const char *layout_ops[] = {"text-size-layout", "text-visible-position", "text-visible-size",
+                                "text-layout-condense", "text-layout-word-wrap",
+                                "text-layout-ellipsis"};
+    for (unsigned n = 0; n < sizeof(layout_attrs) / sizeof(layout_attrs[0]); n++) {
+        reset();
+        host_fail_layout = layout_attrs[n];
+        __wrap_vita2d_start_drawing();
+        fixture();
+        __wrap_vita2d_end_drawing();
+        CHECK(state == -1 && !host_updates && host_theme == VT_UI_THEME_LEGACY);
+        CHECK(host_saved_theme == VT_UI_THEME_LEGACY);
+        CHECK(host_failure_code == (unsigned)-12345);
+        CHECK(!strcmp(host_failure_operation, layout_ops[n]));
+    }
     uint16_t text[8];
     CHECK(ui_native_vita_utf16("citt\xc3\xa0", text, 8) == 5 && text[4] == 0xe0);
     CHECK(ui_native_vita_utf16("\xf0\x9f\x8e\xb5", text, 8) == 2 && text[0] == 0xd83c &&

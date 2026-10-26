@@ -64,6 +64,12 @@ of the eight themes. This work and the
 in standard 1.4.1. Console animation/performance acceptance remains distinct
 from host rendering checks.
 
+The latest console log pinpoints a text-layout attribute mismatch causing the
+return to Legacy. The [retail layout correction](docs/paf-layout-2026-10-26.md)
+fixes the typed attribute IDs and Vector2 ABI, with precise error diagnostics and
+8,318 host checks. Physical acceptance of the corrected PAF renderer remains
+pending; emulator attempts did not complete native UI rendering.
+
 The first physical Legacy Vita / PAF test exposed an initialization-memory crash.
 The corrected build moves PAF's global heap out of the small Sony dialog partition
 and bounds graphics allocations. A second console run passed initialization but
