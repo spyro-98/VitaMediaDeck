@@ -288,7 +288,7 @@ static void vmd_wave_background(unsigned base) {
     for(int row=-1;row<7;row++)for(int col=-1;col<8;col++) {
         int symbol=(row+col-step+40)%4;
         vmd_symbol(vertices,&count,symbol,col*128.f+row*30+offset*128,
-            row*110.f-col*32-offset*32+36,RGBA8(48,152,204,18));
+            row*110.f-col*32-offset*32+36,RGBA8(68,178,224,34));
     }
     float time=fx_phase(120000000ULL)*6.28318530718f;
     for(int wave=0;wave<5;wave++) {

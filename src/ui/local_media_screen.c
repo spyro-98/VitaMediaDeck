@@ -1568,7 +1568,8 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 	  UiHomeControlResult result = ui_home_controls_update(&input);
 	  pressed = result.pressed;
 	  nav = result.content_nav;
-	  focus_tabs = result.focus_sections;
+	  if(input.focus_sections && !result.focus_sections)selected=0;
+      focus_tabs = result.focus_sections;
 	  changed_tab = result.sections_changed;
   } else {
 	  nav = ui_nav_repeat_update(&page_repeat, pressed, overlay_owns_input ? 0 : ctrl.buttons,
@@ -1615,7 +1616,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 
 		if (vt_ui_theme_legacy_layout(ui_theme_id()) && count > 0 && focus_tabs &&
 		    (nav & SCE_CTRL_DOWN)) {
-			focus_tabs = 0;
+			focus_tabs = 0;selected=0;
 			nav &= ~SCE_CTRL_DOWN;
 		}
 		if (!focus_tabs && grid_mode) {

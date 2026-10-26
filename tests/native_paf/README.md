@@ -91,3 +91,10 @@ checks the actual native Button TextObj's logical/visible windows on compact
 and wide controls, manual native button animation, no unnecessary panel string,
 and balanced non-occluding focus decoration. Genuine following opaque content
 must still occlude. A preceding-source negative control exits 1 normally.
+
+`python3 tests/native_paf/test-font-dispatch.py` compiles the exact production
+font dispatch function in isolation with font/native boundary substitutes.
+`--negative-ref f9bd761` additionally requires normal exit 1 from the preceding
+function's measured-advance/window confusion. Full font.c compilation belongs
+to the ARM Release checks. Adapter tests separately cover available panel/clip
+spans and their internal glyph guard. See the [text/search report](../../docs/vmd-text-search-2026-10-27.md).

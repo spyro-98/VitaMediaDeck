@@ -493,6 +493,18 @@ static int enqueue(int kind, float x, float y, float w, float h, unsigned color,
     }
     return 1;
 }
+int ui_native_vita_text_span(float x, float baseline, unsigned size) {
+    float right=clip_enabled ? fminf(960,clip_box[2]) : 960;
+    for(unsigned i=command_count;i>0;i--) {
+        const NativeCommand *c=&commands[i-1];
+        if(!c->hidden && c->kind==NATIVE_PANEL && x>=c->x && x<c->x+c->w &&
+           baseline>=c->y+size && baseline<=c->y+c->h) {
+            right=fminf(right,c->x+c->w-4);break;
+        }
+    }
+    /* ui_native_vita_text adds its two-pixel glyph guard inside this span. */
+    return (int)fmaxf(1,right-x-2);
+}
 int ui_native_vita_text(float x, float baseline, float width, unsigned size, unsigned color,
                         const char *text) {
     if (media_text)

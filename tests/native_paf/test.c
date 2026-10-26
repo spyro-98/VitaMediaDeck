@@ -1183,6 +1183,19 @@ int main(void) {
     CHECK(!commands[0].hidden && commands[1].hidden);
     __wrap_vita2d_end_drawing();
     reset();
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_text_span(220,32,20)==738);
+    CHECK(ui_native_vita_panel(20,100,900,70,0xffffffff,0));
+    CHECK(ui_native_vita_text_span(100,128,20)==814);
+    CHECK(ui_native_vita_text_span(840,128,20)==74);
+    __wrap_vita2d_set_clip_rectangle(0,90,430,190);
+    __wrap_vita2d_enable_clipping();
+    CHECK(ui_native_vita_text_span(100,128,20)==328);
+    CHECK(ui_native_vita_text(100,128,ui_native_vita_text_span(100,128,20),20,0xffffffff,"Clipped panel title"));
+    CHECK(!commands[1].hidden && commands[1].x+commands[1].w==430);
+    __wrap_vita2d_disable_clipping();
+    __wrap_vita2d_end_drawing();
+    reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
            "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "
            "UTF-16, single-owner PAF APIs, bounded asynchronous snapshots, timed progress, native setter failures, incidental visibility return registers and mutex ownership passed. Sony pixels remain unverified.\n",

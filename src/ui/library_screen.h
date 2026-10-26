@@ -9,5 +9,6 @@ enum {
     UI_LIBRARY_CONNECT,
     UI_LIBRARY_SECTION_BASE = 100
 };
+void ui_library_reset_home(void);
 int ui_library_screen(VtLibraryItem *selected);
 #endif

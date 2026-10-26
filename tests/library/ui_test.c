@@ -484,6 +484,29 @@ int main(int argc, char **argv) {
     input_script[1] = SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&selected) == UI_LIBRARY_LOCAL);
     CHECK(artwork_requests > 0 && search_calls >= 28);
+    /* Fresh search must accept controller selection without a hidden tab-focus
+       prerequisite, in every theme and with cached/progressive media present. */
+    for(int theme=0;theme<VT_UI_THEME_COUNT;theme++) {
+        ui_theme_apply(theme);ui_home_tab_set(HOME_LIBRARY);
+        view=3;query[0]=0;navigation.valid=0;progressive=0;
+        VtLibraryResult expected[VT_LIBRARY_RESULTS];
+        int count=vt_library_query("",VT_LIBRARY_ALL,expected,VT_LIBRARY_RESULTS);
+        CHECK(count>1);
+        script_exit();input_script[2]=SCE_CTRL_DOWN;input_script[4]=SCE_CTRL_CROSS;
+        CHECK(ui_library_screen(&selected)==UI_LIBRARY_PLAY);
+        int next_index=theme==VT_UI_THEME_LEGACY_VITA?1:ui_theme_home_layout(theme,mini_top).columns;
+        CHECK(!strcmp(selected.id,expected[next_index].item.id));
+    }
+    for(int theme=VT_UI_THEME_LEGACY;theme<VT_UI_THEME_COUNT;theme+=VT_UI_THEME_LEGACY_VITA) {
+        ui_theme_apply(theme);ui_home_tab_set(HOME_LIBRARY);view=3;query[0]=0;
+        navigation=(typeof(navigation)){.valid=1,.focus=1,.selected=1,.filter=-1};
+        VtLibraryResult expected[VT_LIBRARY_RESULTS];
+        CHECK(vt_library_query("",VT_LIBRARY_ALL,expected,VT_LIBRARY_RESULTS)>1);
+        script_exit();input_script[2]=SCE_CTRL_DOWN;input_script[4]=SCE_CTRL_CROSS;
+        CHECK(ui_library_screen(&selected)==UI_LIBRARY_PLAY);
+        CHECK(!strcmp(selected.id,expected[0].item.id));
+    }
+    ui_library_reset_home();CHECK(view==LIBRARY_HOME&&!navigation.valid&&!query[0]);
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
     printf("Unified Home UI: %u checks; 72 host layouts, integrated dashboard/navigation, "

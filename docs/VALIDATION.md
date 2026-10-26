@@ -1,17 +1,17 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
-Latest interface correction: [VMD button space, full-screen backdrop and continuous focus](vmd-native-layout-2026-10-26.md).
-Native buttons use explicit blue styling and their own full-width text windows;
-the small Home action is taller. Focus keeps one smooth presentation and its
-thin borders no longer occlude native captions. VMD's redundant lower Home
-shortcuts are removed and the four media components use the recovered space.
-The dark cyan background now extends under translucent status chrome across
-the entire screen. Host/ARM checks passed; Sony appearance and motion still
-require physical acceptance of this new standard build.
+Latest correction: [native text space, search and one Home](vmd-text-search-2026-10-27.md).
+Native text windows now use their available container/clip space rather than
+another font's measured advance. Search starts on its results and VMD adds
+native rows, cached covers and visible smooth focus. Entering from tabs selects
+the first item once, including a held Down. The main browser opens local
+categories directly as files and returns to the integrated Home. Player controls
+use arrow icons; the background symbols are slightly brighter. Host/ARM checks
+pass; this build's Sony rendering still needs physical acceptance.
 
-Previous interface update: [native controls, stable text and cyan backdrop](vmd-native-polish-2026-10-26.md).
+Previous correction: [button space, full-screen backdrop and focus](vmd-native-layout-2026-10-26.md).
+Previous interface update: [native controls and cyan backdrop](vmd-native-polish-2026-10-26.md).
 Previous startup correction: [VMD recovery and default upgrade](vmd-startup-default-2026-10-26.md).
-Earlier interface report: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
 
 Previous startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
 That report records the earlier loading hang. Its POSIX search-worker and

@@ -676,6 +676,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
                                       .touch = &touch};
         UiHomeControlResult controls = ui_home_controls_update(&sample);
         pressed = controls.pressed;
+        if(sample.focus_sections&&!controls.focus_sections)dash_selected=UI_DASH_CONTINUE;
         focus_sections = controls.focus_sections;
         if (controls.sections_changed) {
             result = UI_LIBRARY_TAB;
@@ -865,6 +866,20 @@ static int dashboard_screen(VtLibraryItem *chosen) {
     return result;
 }
 
+static UiThemeRect library_row_rect(int slot,int bottom) {
+    if(ui_theme_id()!=VT_UI_THEME_LEGACY_VITA)
+        return ui_theme_home_item_rect(ui_theme_id(),slot,bottom);
+    UiThemeRect r={18,128+slot*72,924,64};
+    return ui_theme_page_rect(UI_SCENE_HOME,r);
+}
+static void library_native_row(UiThemeRect r,const VtLibraryResult *v,const char *detail,
+                               vita2d_texture *art,int selected) {
+    ui_panel(r.x,r.y,r.w,r.h,selected?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+    ui_artwork_tile(r.x+8,r.y+8,48,art,media_label(v->item.kind));
+    int width=r.w-88;
+    ui_text_line(r.x+72,r.y+27,width,v->item.title,VT_THEME_TEXT,UI_FONT_BODY);
+    ui_text_line(r.x+72,r.y+51,width,detail,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+}
 static int library_browser_screen(VtLibraryItem *selected_out) {
     VtLibraryResult *items = calloc(VT_LIBRARY_RESULTS, sizeof(*items));
     if (!items)
@@ -872,14 +887,14 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
     LibraryArtworkSources artwork = artwork_sources();
     UiSectionsSidebar sidebar;
     ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
-    UiFocusMotion tab_motion = {0};
+    UiFocusMotion tab_motion = {0}, result_motion={0};
     UiNavRepeat repeat;
     ui_nav_repeat_reset(&repeat);
     ui_home_controls_reset();
     SceCtrlData ctrl = {0}, previous = {0};
     sceCtrlPeekBufferPositive(0, &previous, 1);
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
-    int selected = 0, top = 0, n = 0, focus = 1, filter = -1, result = UI_LIBRARY_BACK, depth = 0,
+    int selected = 0, top = 0, n = 0, focus = view==3?0:1, filter = -1, result = UI_LIBRARY_BACK, depth = 0,
         dirty = 1;
     LibraryParent parents[8] = {0};
     VtLibraryItem folder = {0};
@@ -966,7 +981,9 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         int bottom =
             ui_mini_player_top() < UI_CONTENT_BOTTOM ? ui_mini_player_top() : UI_CONTENT_BOTTOM;
         UiThemeHomeLayout layout = ui_theme_home_layout(ui_theme_id(), bottom);
-        int legacy = vt_ui_theme_legacy_layout(ui_theme_id()), offset = legacy ? 1 : 0,
+        int native_rows=ui_theme_id()==VT_UI_THEME_LEGACY_VITA;
+        if(native_rows)layout=(UiThemeHomeLayout){18,128,924,72,(bottom-52-128+8)/72,1};
+        int legacy = vt_ui_theme_legacy_layout(ui_theme_id()), offset = legacy && !native_rows ? 1 : 0,
             visible = layout.rows - offset;
         if (visible < 1)
             visible = 1;
@@ -1011,7 +1028,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                                                         focus ? ctrl.lx : 128, 128);
                 changed = ui_home_tabs_input(tabs, flags, &touch, focus);
                 if (focus && (nav & SCE_CTRL_DOWN) && n) {
-                    focus = 0;
+                    focus = 0;selected=0;
                     nav &= ~SCE_CTRL_DOWN;
                 } else if (!focus && (nav & SCE_CTRL_UP) && selected == 0) {
                     focus = 1;
@@ -1036,6 +1053,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             UiHomeControlResult controls = ui_home_controls_update(&input);
             pressed = controls.pressed;
             nav = controls.content_nav;
+            if(input.focus_sections&&!controls.focus_sections)selected=0;
             focus = controls.focus_sections;
             changed = controls.sections_changed;
         }
@@ -1120,7 +1138,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             top = 0;
         if (flags & UI_TOUCH_EVENT_TAP) {
             for (int i = top; i < top + visible && i < n; i++) {
-                UiThemeRect r = ui_theme_home_item_rect(ui_theme_id(), i - top + offset, bottom);
+                UiThemeRect r = library_row_rect(i-top+offset,bottom);
                 if (ui_touch_hit_rect(touch.x, touch.y, r.x, r.y, r.w, r.h)) {
                     selected = i;
                     focus = 0;
@@ -1128,6 +1146,9 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                     break;
                 }
             }
+        }
+        if((pressed&SCE_CTRL_CROSS) && focus && ui_home_tab()==HOME_LIBRARY) {
+            result=LIBRARY_RETURN_HOME;break;
         }
         if ((pressed & SCE_CTRL_CROSS) && !focus && n) {
             VtLibraryItem chosen = items[selected].item;
@@ -1228,16 +1249,22 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                 art = vt_video_thumbnail_get(v->item.locator, v->item.size);
             if (!art)
                 art = remote_artwork(&artwork, &v->item, i == selected ? 100 : 50);
-            ui_theme_home_row_art(i - top + offset, i, v->item.title, line, i == selected, !focus,
+            if(native_rows)library_native_row(library_row_rect(i-top,bottom),v,line,art,!focus&&i==selected);
+            else ui_theme_home_row_art(i - top + offset, i, v->item.title, line, i == selected, !focus,
                                   bottom, art, media_label(v->item.kind));
             if (v->duration_ms && v->position_ms && v->item.kind != VT_LIBRARY_LIVE) {
-                UiThemeRect r = ui_theme_home_item_rect(ui_theme_id(), i - top + offset, bottom);
+                UiThemeRect r = library_row_rect(i-top+offset,bottom);
                 float fraction = (float)v->position_ms / (float)v->duration_ms;
                 if (fraction > 1)
                     fraction = 1;
                 vita2d_draw_rectangle(r.x + 8, r.y + r.h - 4, (r.w - 16) * fraction, 2,
                                       VT_THEME_SIGNAL_BRIGHT);
             }
+        }
+        if(native_rows && !focus && n) {
+            UiThemeRect r=library_row_rect(selected-top,bottom);
+            ui_focus_motion_tick(&result_motion,r.x,r.y,r.w,r.h);
+            ui_focus_outline_draw(&result_motion);
         }
         vita2d_disable_clipping();
         if (!n) {
@@ -1268,8 +1295,10 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             ui_text_line(footer_x, bottom - 26, footer_w, actions, VT_THEME_TEXT_MUTED,
                          UI_FONT_SMALL);
             ui_text_line(footer_x, bottom - 8, footer_w,
-                         filter >= 0 ? vt_library_provider_name(filter)
-                                     : ui_theme_home_controls_hint(focus),
+                         view==3 ? tr("D-pad: select · X: open · Square: provider",
+                                       "Frecce: seleziona · X: apri · Quadrato: sorgente")
+                         : filter >= 0 ? vt_library_provider_name(filter)
+                                       : ui_theme_home_controls_hint(focus),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
         }
         ui_mini_player_draw();
@@ -1299,6 +1328,9 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
     return result;
 }
 
+void ui_library_reset_home(void) {
+    view=LIBRARY_HOME;query[0]=0;navigation.valid=0;dashboard_folder=0;
+}
 int ui_library_screen(VtLibraryItem *selected_out) {
     for (;;) {
         int result = view == LIBRARY_HOME ? dashboard_screen(selected_out)

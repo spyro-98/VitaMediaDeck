@@ -319,6 +319,10 @@ UiHomeControlResult ui_home_controls_update(const UiHomeControlSample *s){
       out.content_nav = 0;
   }
  }
+ /* Entering content consumes the gesture; it must not also move a row. */
+ if(s->focus_sections && !out.focus_sections) {
+  out.content_nav=0;out.pressed&=~SCE_CTRL_CROSS;
+ }
  if(s->touch_flags&UI_TOUCH_EVENT_TAP){
   if(ui_home_tabs_touch_hit(s->touch)){
    ui_home_tabs_input(0,s->touch_flags,s->touch,0);out.focus_sections=1;
