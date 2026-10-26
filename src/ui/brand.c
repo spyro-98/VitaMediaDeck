@@ -28,7 +28,7 @@
 #define SCREEN_WIDTH  960
 #define SCREEN_HEIGHT 544
 
-#define HEADER_ICON_SIZE 36
+#define HEADER_ICON_SIZE UI_BRAND_HEADER_HEIGHT
 #define HEADER_ICON_X 18
 #define HEADER_ICON_Y ((UI_BRAND_HEADER_HEIGHT - HEADER_ICON_SIZE) / 2)
 #define HEADER_NAME_X (HEADER_ICON_X + HEADER_ICON_SIZE + 14)
@@ -39,7 +39,7 @@
  * The optional title/editor field is horizontally centred on the 960px screen
  * and the status indicators are pinned to the right edge:
  *
- *   left block   : 36px logo at x=18, then the compact command wordmark. The title
+ *   left block   : full-height logo at x=18, then the compact command wordmark. The title
  *                  size is reduced only as far as needed to preserve a 12px
  *                  gap before the centred search field. Loading dots are
  *                  included in that width budget.
@@ -726,8 +726,9 @@ void ui_brand_draw_player_breadcrumbs(const char *section, const char *parent,
 }
 
 int ui_brand_sections_hit(unsigned int flags, int x, int y) {
-	return (flags & UI_TOUCH_EVENT_TAP) && x >= 10 && x < 62 &&
-	       y >= 4 && y < UI_BRAND_HEADER_HEIGHT - 4;
+	return (flags & UI_TOUCH_EVENT_TAP) && x >= HEADER_ICON_X - 8 &&
+	       x < HEADER_ICON_X + HEADER_ICON_SIZE + 4 &&
+	       y >= 0 && y < UI_BRAND_HEADER_HEIGHT;
 }
 
 void ui_brand_set_loading(int loading) {

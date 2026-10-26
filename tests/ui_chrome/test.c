@@ -56,6 +56,8 @@ int main(int argc,char **argv){
   ui_brand_draw_status_indicators();CHECK(status_reads==reads+1); /* 2-second hardware cache, not 60 Hz. */
   if(language&&mode==1){char name[80];snprintf(name,sizeof(name),"theme-chrome-%d",theme);png(name);screen(theme,1);snprintf(name,sizeof(name),"theme-command-%d",theme);png(name);}
   CHECK(ui_brand_sections_hit(UI_TOUCH_EVENT_TAP,25,25));
+  CHECK(ui_brand_sections_hit(UI_TOUCH_EVENT_TAP,70,1));
+  CHECK(!ui_brand_sections_hit(UI_TOUCH_EVENT_TAP,76,25)); /* Tab rail begins here. */
   CHECK(!ui_brand_sections_hit(UI_TOUCH_EVENT_TAP,700,25));
  }
  ui_theme_apply(VT_UI_THEME_GHOST_MESH);loaded=0;load();unsigned char before[6];memcpy(before,order,6);

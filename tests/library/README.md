@@ -43,3 +43,11 @@ submitting work. It also checks partial/total creation failure and matching join
 The previous raw-thread mock silently supplied POSIX registration, which could
 not expose the Vita pthread-embedded cancellation/TLS incompatibility. See the
 [startup investigation](../../docs/startup-search-threads-2026-10-26.md).
+
+Run `python3 tests/library/test-browse-navigation.py` for the actual main
+browser loop with scripted screen/playback/filesystem boundaries. It checks
+that category tabs remain reachable, folder/playback return retains the category,
+Home opens only the integrated dashboard, and offline podcasts retain their
+online return. `--negative-ref a6d6dd4` verifies the preceding category bypass
+fails with normal exit 1. This is routing evidence, not real-screen input or
+Sony rendering; see the [category correction](../../docs/category-tabs-2026-10-27.md).
