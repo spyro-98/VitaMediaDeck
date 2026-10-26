@@ -80,6 +80,8 @@ int vmd_paf_widget_pos(void *self, const float v[4], void *timer, int id, int op
                        void *finished, void *data);
 int vmd_paf_widget_size(void *self, const float v[4], void *timer, int id, int options, float delay,
                         void *finished, void *data);
+/* The imported argument ABI matches the public RE declarations. On verified
+ * retail code Show/Hide do not return a status: ignore the value in r0. */
 int vmd_paf_widget_show(void *self, void *timer, int options, float delay, void *finished);
 int vmd_paf_widget_hide(void *self, void *timer, int options, float delay, void *finished);
 int vmd_paf_widget_alpha(void *self, float alpha, void *timer, int id, int options, float delay,

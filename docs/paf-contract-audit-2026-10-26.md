@@ -1,5 +1,9 @@
 # PAF integration contract audit — 26 October 2026
 
+> Follow-up: the Show/Hide status-check policy below is superseded by the
+> [retail visibility-return correction](vmd-startup-default-2026-10-26.md).
+> The historical header audit did not establish a meaningful return status.
+
 ## What the new console session establishes
 
 The installed eboot matches standard commit `b947d3c`, VPK SHA-256

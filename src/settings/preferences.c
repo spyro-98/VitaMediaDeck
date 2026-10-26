@@ -134,6 +134,9 @@ _Static_assert(sizeof(VtPreferencesDiskV3) == 40,
 #define VT_RELAY_BROWSER_GRID (1u << 27)
 #define VT_MOSAIC_BROWSER_LIST (1u << 28)
 #define VT_NATIVE_BROWSER_LIST (1u << 29)
+/* One-time upgrade from the former Legacy default; no record-size change.
+ * Explicit choices and recovery made by this release always set this bit. */
+#define VT_VMD_DEFAULT_APPLIED (1u << 30)
 
 static int g_loaded;
 static int g_default_quality = VT_DEFAULT_QUALITY_720;
@@ -353,15 +356,27 @@ static int persist_record(int height, int frame_rate, int language,
 	                          g_subtitle_flags);
 }
 
+static int migrate_vmd_default(void) {
+    if (g_subtitle_flags & VT_VMD_DEFAULT_APPLIED) return 0;
+    uint32_t next = g_subtitle_flags | VT_VMD_DEFAULT_APPLIED;
+    if (!(next & (VT_INTERFACE_THEME_MASK | VT_INTERFACE_THEME_HIGH)))
+        next |= (3u << VT_INTERFACE_THEME_SHIFT) | VT_INTERFACE_THEME_HIGH;
+    int ret = persist_record_all(g_default_quality, g_default_frame_rate, g_language,
+                                 g_playback_flags, next);
+    if (ret == 0) g_subtitle_flags = next;
+    return ret;
+}
+
 int vt_preferences_init(void) {
 	g_default_quality = VT_DEFAULT_QUALITY_720;
 	g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	g_language = VT_LANGUAGE_AUTO;
 	g_playback_flags = 0;
-    /* New profiles use VMD. Valid saved choices, including Legacy recovery,
-     * still take precedence below; stable on-disk theme IDs are unchanged. */
+    /* Fresh profiles use VMD. Loaded records migrate the former Legacy default
+     * once; later explicit selections and native recovery remain persistent. */
     g_subtitle_flags = ((VT_UI_THEME_LEGACY_VITA & 3u) << VT_INTERFACE_THEME_SHIFT) |
-                       ((VT_UI_THEME_LEGACY_VITA & 4u) ? VT_INTERFACE_THEME_HIGH : 0);
+                       ((VT_UI_THEME_LEGACY_VITA & 4u) ? VT_INTERFACE_THEME_HIGH : 0) |
+                       VT_VMD_DEFAULT_APPLIED;
 	g_loaded = 1;
 	int quality = 0, frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	int language = VT_LANGUAGE_AUTO;
@@ -375,7 +390,7 @@ int vt_preferences_init(void) {
 		g_language = language;
 		g_playback_flags = flags;
 		g_subtitle_flags = subtitle_flags;
-		return 0;
+        return migrate_vmd_default();
 	}
 	/* Recover a commit interrupted between the two rename operations. */
 	if (load_path(VT_PREFERENCES_BACKUP, &quality, &frame_rate,
@@ -385,7 +400,7 @@ int vt_preferences_init(void) {
 		g_language = language;
 		g_playback_flags = flags;
 		g_subtitle_flags = subtitle_flags;
-		return 0;
+        return migrate_vmd_default();
 	}
 	return path_exists(VT_PREFERENCES_PATH) ? ret : 0;
 }
@@ -529,7 +544,7 @@ int vt_preferences_set_interface_theme(int theme) {
  return persist_subtitle_pair(g_playback_flags,
      (g_subtitle_flags & ~(VT_INTERFACE_THEME_MASK|VT_INTERFACE_THEME_HIGH)) |
      (((uint32_t)theme&3u)<<VT_INTERFACE_THEME_SHIFT) |
-     ((theme&4)?VT_INTERFACE_THEME_HIGH:0));
+     ((theme&4)?VT_INTERFACE_THEME_HIGH:0) | VT_VMD_DEFAULT_APPLIED);
 }
 
 int vt_preferences_audio_layout(void) {

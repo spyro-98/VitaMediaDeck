@@ -237,9 +237,12 @@ static void *create(const char *type, const char *name, const char *style) {
     VtPafId n = id(name), s = id(style);
     return vmd_paf_widget_create(plugin, page, type, &n, &s);
 }
-static int show(void *widget, int enabled) {
-    return enabled ? vmd_paf_widget_show(widget, NULL, 0, 0, NULL)
-                   : vmd_paf_widget_hide(widget, NULL, 0, 0, NULL);
+static void show(void *widget, int enabled) {
+    /* Public RE headers declare int, but retail Show/Hide leave the stack
+     * cookie in r0 at return. Its sign is not an error status. Preserve their
+     * argument ABI and discard that register at EVERY visibility boundary. */
+    if (enabled) vmd_paf_widget_show(widget, NULL, 0, 0, NULL);
+    else vmd_paf_widget_hide(widget, NULL, 0, 0, NULL);
 }
 static int place(void *widget, float x, float y, float w, float h) {
     _Alignas(16) float size[4] = {w, h, 0, 0}, pos[4] = {x + w * .5f - 480, 272 - y - h * .5f, 0, 0};
@@ -363,14 +366,14 @@ static int initialize_owner(void) {
         VtPafId busy = id(name);
         void *w = vmd_paf_widget_find(page, &busy, 0);
         if (!w) {
+            log_printf("native PAF: initial widget missing kind=%d slot=%u operation=busy-lookup",
+                       NATIVE_BUSY, n);
             return -0x5047;
         }
         vmd_paf_busy_stop(w);
-        if (show(w, 0) < 0)
-            return -0x5047;
+        show(w, 0);
     }
-    if (show(page, 0) < 0)
-        return -0x5047;
+    show(page, 0);
     checkpoint("owner graph ready; entering Run");
     return 1;
 }
@@ -696,9 +699,7 @@ static int present(void) {
         }
         order[order_count++] = w;
         if (!slot->shown) {
-            int rc = show(w, 1);
-            if (rc < 0)
-                return widget_failure("show", c->kind, number, rc);
+            show(w, 1);
             if (c->kind == NATIVE_BUSY)
                 vmd_paf_busy_start(w);
         }
@@ -717,9 +718,7 @@ static int present(void) {
         for (unsigned n = 0; n < limits[kind]; n++) {
             NativeSlot *s = &slots[kind][n];
             if (s->shown && !used[kind][n]) {
-                int rc = show(s->widget, 0);
-                if (rc < 0)
-                    return widget_failure("hide", kind, n + 1, rc);
+                show(s->widget, 0);
                 if (kind == NATIVE_BUSY)
                     vmd_paf_busy_stop(s->widget);
                 s->shown = 0;
@@ -734,18 +733,12 @@ static int present(void) {
         previous_order_count = order_count;
     }
     if (any) {
-        if (!visible) {
-            int rc = show(page, 1);
-            if (rc < 0)
-                return widget_failure("page-show", NATIVE_PANEL, 0, rc);
-        }
+        if (!visible) show(page, 1);
         visible = 1;
         return 1;
     }
     if (visible) {
-        int rc = show(page, 0);
-        if (rc < 0)
-            return widget_failure("page-hide", NATIVE_PANEL, 0, rc);
+        show(page, 0);
         visible = 0;
         return 1;
     }
@@ -776,9 +769,7 @@ static void apply_commands(void *unused) {
     atomic_flag_clear_explicit(&mailbox_lock, memory_order_release);
     int rc = present();
     if (rc < 0) {
-        int hidden = show(page, 0);
-        if (hidden < 0)
-            widget_failure("recovery-hide", NATIVE_PANEL, 0, hidden);
+        show(page, 0);
         visible = 0;
         atomic_store(&renderer_error, -0x5048);
     }

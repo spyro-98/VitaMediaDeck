@@ -69,3 +69,10 @@ bounded centered captions, no second native ellipsis, and retained native tile
 windows around media. The shared routing fixture checks the caller's available
 text width, rounded backing corners and one 84-vertex GPU batch. Sony pixels and
 native animation quality remain physical-console checks.
+
+The visibility-return regression supplies arbitrary positive and negative r0
+values while Show/Hide actually update their target. They are not errno
+statuses on the inspected retail implementation, despite the public RE int
+return declaration. Cold init, page/child hide/show/reopen and true alpha-error
+recovery must work for either sign. Real missing busy nodes remain errors. A
+negative control against b11d5ad exits normally with status 1 at cold startup.

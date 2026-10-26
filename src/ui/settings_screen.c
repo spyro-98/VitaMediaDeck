@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/settings_screen.h"
 
 #include <stdio.h>
@@ -468,8 +471,14 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 			draw_toggle(ROW_X + row_width - 78, y + 14, rows[i].value);
 		else if (rows[i].kind == ROW_LANGUAGE)
 			draw_value(small, y, row_width, language_label(rows[i].value));
-		else if (rows[i].kind == ROW_INTERFACE_THEME)
-			draw_value(small,y,row_width,ui_theme_name(rows[i].value));
+        else if (rows[i].kind == ROW_INTERFACE_THEME) {
+            const char *name = ui_theme_name(rows[i].value);
+#ifdef VMD_ENABLE_PAF_NATIVE
+            if (rows[i].value == VT_UI_THEME_LEGACY && ui_native_vita_error())
+                name = vt_i18n_str(VT_STR_SETTINGS_THEME_VMD_RECOVERY);
+#endif
+            draw_value(small, y, row_width, name);
+        }
         else if(tab==TAB_INTERFACE&&i==3)draw_value(small,y,row_width,ui_theme_name(ui_theme_id()));
 		else if (rows[i].kind == ROW_CLOCK)
 			draw_value(small, y, row_width, rows[i].value == VT_CLOCK_SOURCE_APP
@@ -532,6 +541,10 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 		draw_subtitle_preview(small);
 	} else if (small) {
 		const char *footer = vt_i18n_str(VT_STR_SETTINGS_FOOTER_HINT);
+#ifdef VMD_ENABLE_PAF_NATIVE
+        if (tab == TAB_INTERFACE && ui_native_vita_error())
+            footer = vt_i18n_str(VT_STR_SETTINGS_THEME_VMD_RESTART_HINT);
+#endif
 		char fitted[512];
 		ui_font_fit_text(small, UI_FONT_SMALL, footer, fitted, sizeof(fitted),
 		                 ROW_W);

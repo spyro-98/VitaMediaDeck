@@ -1,6 +1,13 @@
 # VitaMediaDeck
 
-Latest interface update: [VMD native text, tiles, menu reuse and Home](docs/vmd-native-ui-2026-10-26.md).
+Latest startup correction: [VMD recovery and default upgrade](docs/vmd-startup-default-2026-10-26.md).
+The installed preceding VPK starts in VMD, then restores Legacy during native
+initialization. Show/Hide's incidental return register must not be treated as
+an error status; all visibility paths now discard it. Older Legacy defaults
+adopt VMD once, while later choices and true recovery stay persistent. Physical
+cold-start/native acceptance for this revision remains pending.
+
+Previous interface update: [VMD native text, tiles, menu reuse and Home](docs/vmd-native-ui-2026-10-26.md).
 VMD (formerly Legacy Vita, stable ID 7) is the default for fresh profiles;
 saved choices and Legacy recovery remain valid. Native captions use explicit
 bounds, menus retain their widgets, and the integrated Home opens sources/files
