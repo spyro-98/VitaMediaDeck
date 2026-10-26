@@ -1,6 +1,7 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Current follow-up: [PAF text-layout fallback and retail attribute correction](paf-layout-2026-10-26.md).
+Current follow-up: [PAF button-label object and new console result](paf-button-label-2026-10-26.md).
+Previous follow-up: [PAF text-layout fallback and retail attribute correction](paf-layout-2026-10-26.md).
 Previous follow-up: [second PAF crash, widget factory and recovery](paf-widget-recovery-2026-10-25.md).
 Previous follow-up: [console PAF crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
 Previous Home/L1/LTO update: [integrated dashboard and complete app LTO](home-dashboard-lto-2026-10-24.md).
@@ -75,6 +76,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [docs/iptv-availability.md](iptv-availability.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/iptv-plan.md](iptv-plan.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/online-audio-preview.md](online-audio-preview.md) | Dated implementation/research snapshot; current integration linked above it |
+| [docs/paf-button-label-2026-10-26.md](paf-button-label-2026-10-26.md) | New console button error, class-specific text objects and regression checks |
 | [docs/paf-layout-2026-10-26.md](paf-layout-2026-10-26.md) | Console text-layout failure, retail attribute IDs, emulator limitations and regression checks |
 | [docs/paf-widget-recovery-2026-10-25.md](paf-widget-recovery-2026-10-25.md) | Second real console crash, widget factory keys and failed-frame recovery |
 | [docs/paf-crash-home-2026-10-25.md](paf-crash-home-2026-10-25.md) | Actual console crash, correction and content-first Home acceptance |

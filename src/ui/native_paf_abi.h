@@ -28,6 +28,9 @@ enum {
     VMD_PAF_LAYOUT_WORD_WRAP = 13,
     VMD_PAF_LAYOUT_ELLIPSIS = 15
 };
+/* The draw-object index is specific to each widget class. Button's index 0
+ * is its background plane; only index 1 is a text object (OBJ_LABEL). */
+enum { VMD_PAF_TEXT_OBJECT = 0, VMD_PAF_BUTTON_LABEL_OBJECT = 1 };
 typedef struct {
     VtPafString name;
     uint32_t hash;

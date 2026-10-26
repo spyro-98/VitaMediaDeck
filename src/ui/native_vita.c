@@ -468,8 +468,9 @@ static int present(void) {
             unsigned count = ui_native_vita_utf16(c->label, text, NATIVE_LABEL_BYTES);
             if (text_changed) {
                 VtPafString value = {text, count, 0};
-                int rc = c->kind == NATIVE_BUTTON ? vmd_paf_button_text(w, &value, 0)
-                                                  : vmd_paf_widget_text(w, &value, 0);
+                int rc = c->kind == NATIVE_BUTTON
+                             ? vmd_paf_button_text(w, &value, VMD_PAF_BUTTON_LABEL_OBJECT)
+                             : vmd_paf_widget_text(w, &value, VMD_PAF_TEXT_OBJECT);
                 if (rc < 0)
                     return widget_failure("string", c->kind, at[c->kind], rc);
             }
