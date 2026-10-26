@@ -142,8 +142,11 @@ void ui_focus_glow_draw(float x,float y,float w,float h,uint64_t now,
 	if(clip_top<0)clip_top=0;
 	vita2d_set_clip_rectangle(0,clip_top,960,bottom);vita2d_enable_clipping();
 	/* External frame above grid artwork; no full-card translucent overdraw. */
-	UiFocusMotion m={.x=x-UI_MEDIA_GRID_FOCUS_OUTSET,.y=y-UI_MEDIA_GRID_FOCUS_OUTSET,
-        .width=w+2*UI_MEDIA_GRID_FOCUS_OUTSET,.height=h+2*UI_MEDIA_GRID_FOCUS_OUTSET,.initialized=1};
+	/* The grid already owns its outer frame. Account for VMD's additional
+	 * outline outset once, keeping both edges inside the reserved gutter. */
+	int inset = UI_MEDIA_GRID_FOCUS_OUTSET - (ui_theme_id()==VT_UI_THEME_LEGACY_VITA ? 2 : 0);
+	UiFocusMotion m={.x=x-inset,.y=y-inset,
+        .width=w+2*inset,.height=h+2*inset,.initialized=1};
 	ui_focus_outline_draw(&m);
 	vita2d_disable_clipping();
 }

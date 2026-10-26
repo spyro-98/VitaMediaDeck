@@ -1316,6 +1316,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 }
 
 int ui_local_media_screen(VtLocalMediaItem *selected_out) {
+	/* This screen owns the media tabs, never the retired aggregate Home. */
+	if (ui_home_tab() == HOME_LIBRARY)
+		return UI_LOCAL_MEDIA_ACTION_SECTION_BASE + UI_SECTION_LOCAL_MEDIA;
 	uint64_t navigation_started_us = sceKernelGetProcessTimeWide();
 	vt_video_thumbnail_resume();
     if(!g_index_ready) {
@@ -1584,6 +1587,8 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 		  focus_tabs = 1;
   }
   if(changed_tab){
+   if(ui_home_tab()==HOME_LIBRARY)
+    return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+UI_SECTION_LOCAL_MEDIA);
    if(ui_home_tab_online()){
     ui_online_audio_set_home(1);
     return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+UI_SECTION_ONLINE_AUDIO);

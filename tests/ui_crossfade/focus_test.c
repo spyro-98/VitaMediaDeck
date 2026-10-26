@@ -49,7 +49,8 @@ int main(void){
  }
  reduced=1;now+=16667;ui_focus_motion_tick(&m,18,62,166,40);
  assert(m.x==18&&m.y==62&&!m.velocity[0]);reduced=0;
- ui_theme_apply(VT_UI_THEME_LEGACY);
+ for(int native=0;native<2;native++) {
+ ui_theme_apply(native?VT_UI_THEME_LEGACY_VITA:VT_UI_THEME_LEGACY);
  for(int top=62;top<=118;top+=4)for(int bottom=448;bottom<=544;bottom++) {
   UiMediaGridLayout g=ui_media_grid_layout(top,bottom);
   assert(g.rows==2&&g.card_h>=120&&g.thumb_h>0);
@@ -59,6 +60,7 @@ int main(void){
   assert(g.title_y>g.thumb_h+6&&g.detail_y<g.card_h);
   top_visible=0;ui_focus_glow_draw(18,top,302,g.card_h,0,top,bottom);
   assert(clip_top==top-UI_MEDIA_GRID_FOCUS_OUTSET&&top_visible==2&&!clipped);
+ }
  }
  for(int cover=0;cover<2;cover++)for(int mode=0;mode<3;mode++){
   UiAudioLayout l=ui_audio_layout(mode,cover);

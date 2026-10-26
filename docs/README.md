@@ -1,13 +1,14 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest correction: [native text space, search and one Home](vmd-text-search-2026-10-27.md).
-Native text windows now use their available container/clip space rather than
-another font's measured advance. Search starts on its results and VMD adds
-native rows, cached covers and visible smooth focus. Entering from tabs selects
-the first item once, including a held Down. The main browser opens local
-categories directly as files and returns to the integrated Home. Player controls
-use arrow icons; the background symbols are slightly brighter. Host/ARM checks
-pass; this build's Sony rendering still needs physical acceptance.
+Latest correction: [restore category tabs; retire only the old Home](category-tabs-2026-10-27.md).
+Video, Music and Images again open their existing category screens with tabs,
+views and filters. Folder Back returns to its category. Only Home uses the
+integrated dashboard; the obsolete aggregate grid stays unreachable.
+The Legacy/VMD status icon fills the 54-pixel bar height with preserved aspect
+ratio. A production-routing regression passes and rejects the preceding route;
+physical console navigation and Sony rendering remain to be checked.
+
+Previous correction: [native text space and search](vmd-text-search-2026-10-27.md).
 
 Previous correction: [button space, full-screen backdrop and focus](vmd-native-layout-2026-10-26.md).
 Previous interface update: [native controls and cyan backdrop](vmd-native-polish-2026-10-26.md).
@@ -37,6 +38,8 @@ performance, validation and change records.
 - [PAF console crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
 
 ## Start here
+
+- [Restore category tabs](category-tabs-2026-10-27.md): preserve all media sections and retire only the aggregate Home.
 
 - [Native text space, search and one Home](vmd-text-search-2026-10-27.md): current correction, input regressions and physical acceptance.
 
