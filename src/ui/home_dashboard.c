@@ -6,6 +6,10 @@ UiDashboardLayout ui_dashboard_layout(int theme, int bottom) {
     int x = 18, y = 146, w = 924;
     l.title_y = 128;
     l.subtitle_y = 0;
+    if (vt_ui_theme_legacy_layout(theme)) {
+        y = 104;
+        l.title_y = 86;
+    }
     if (theme == VT_UI_THEME_GHOST_MESH) {
         x = 28;
         y = 158;

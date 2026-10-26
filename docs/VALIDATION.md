@@ -1,17 +1,26 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
-Latest startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
-The installed standard binary is verified, but the retained console log is older.
-Search workers now use POSIX creation/join with the Vita cancellation/TLS context
-required by their condition waits. Startup checkpoints now cover Legacy as well
-as PAF. Physical startup and native-theme acceptance remain pending.
+Latest interface update: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
+VMD (formerly Legacy Vita, stable ID 7) is the default for fresh profiles;
+saved choices and Legacy recovery remain valid. Native captions use explicit
+bounds, menus retain their widgets, and the integrated Home opens sources/files
+without the former indexed Home. The preceding console build now displays the
+native UI; this revision still requires physical visual/performance acceptance.
+The provisional icon is the darker PAF media hub, shared by the bubble and
+in-app branding; VMD has a restrained animated dark blue wave backdrop.
+
+Previous startup follow-up: [loading hang and Vita search-thread contract](startup-search-threads-2026-10-26.md).
+That report records the earlier loading hang. Its POSIX search-worker and
+startup-checkpoint corrections remain integrated; the subsequent console
+session reaches Home and acknowledges the native first frame. See the latest
+interface report above for remaining physical acceptance.
 
 This is the current suite/acceptance index. Historical reports keep their own
 build IDs and dates; see [documentation index](README.md).
 
-## Legacy Vita / PAF
+## VMD / PAF
 
-The latest standard console session completes a native frame, then explicitly
+A preceding standard console session completed a native frame, then explicitly
 restores Legacy with the app's generic -0x5049 code. It does not identify whether
 the renderer exited or the old same-frame task check fired. The [complete PAF
 contract audit](paf-contract-audit-2026-10-26.md) reviews all 32 imports and shared

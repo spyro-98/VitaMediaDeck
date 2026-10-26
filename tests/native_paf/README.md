@@ -62,3 +62,10 @@ pixels. See the [render-loop report](../../docs/paf-render-loop-2026-10-26.md).
 components with native dispatch enabled. Checks cover native row buttons,
 IT/EN/live slots, scrolling bounds, panel finish ownership, media base retention
 and unchanged Legacy edges. This adds no golden Sony screenshot claim.
+
+VMD layout regressions also check stable content/L1/R1 identities, repeated modal
+cycles without widget/string regeneration, native clipping during animation,
+bounded centered captions, no second native ellipsis, and retained native tile
+windows around media. The shared routing fixture checks the caller's available
+text width, rounded backing corners and one 84-vertex GPU batch. Sony pixels and
+native animation quality remain physical-console checks.

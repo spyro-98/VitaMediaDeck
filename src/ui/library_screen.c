@@ -475,10 +475,11 @@ static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, in
                          RGBA8(213, 223, 232, 255), UI_FONT_SMALL);
         }
         int button_y = r.y + r.h - 39;
-        const char *action = !available ? tr("Local files", "File locali")
+        const char *action = !available ? tr("Browse sources", "Esplora sorgenti")
                              : data->resuming ? tr("Continue", "Riprendi")
                                               : tr("Open", "Apri");
-        ui_action_button(r.x + 12, button_y, r.w > 320 ? 160 : 130, 28, VT_THEME_SURFACE, "X", action, selected);
+        int button_width = !available ? (r.w > 320 ? 224 : r.w - 24) : (r.w > 320 ? 160 : 130);
+        ui_action_button(r.x + 12, button_y, button_width, 28, VT_THEME_SURFACE, "X", action, selected);
         if (count > 1) {
             char more[64];
             snprintf(more, sizeof(more), "%d / %d  ·  R1", offset + 1, count);
@@ -773,7 +774,10 @@ static int dashboard_screen(VtLibraryItem *chosen) {
                 break;
             }
             if (!exists && dash_selected == UI_DASH_CONTINUE) {
-                result = UI_LIBRARY_LOCAL;
+                view = 2;
+                navigation.valid = 0;
+                query[0] = 0;
+                result = LIBRARY_OPEN_DETAIL;
                 break;
             }
             if (!exists) {

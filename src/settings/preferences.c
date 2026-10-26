@@ -358,7 +358,10 @@ int vt_preferences_init(void) {
 	g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	g_language = VT_LANGUAGE_AUTO;
 	g_playback_flags = 0;
-	g_subtitle_flags = 0;
+    /* New profiles use VMD. Valid saved choices, including Legacy recovery,
+     * still take precedence below; stable on-disk theme IDs are unchanged. */
+    g_subtitle_flags = ((VT_UI_THEME_LEGACY_VITA & 3u) << VT_INTERFACE_THEME_SHIFT) |
+                       ((VT_UI_THEME_LEGACY_VITA & 4u) ? VT_INTERFACE_THEME_HIGH : 0);
 	g_loaded = 1;
 	int quality = 0, frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	int language = VT_LANGUAGE_AUTO;

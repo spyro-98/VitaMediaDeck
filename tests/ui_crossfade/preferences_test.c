@@ -19,6 +19,10 @@ int sceIoGetstat(const char *p,SceIoStat *s){struct stat st;int r=stat(p,&st);if
 int main(void){
  char dir[]="/tmp/vmd-crossfade-preferences.XXXXXX";assert(mkdtemp(dir)&&!chdir(dir));
  assert(!mkdir("ux0:data",0700));vt_preferences_init();assert(vt_preferences_audio_layout()==0);
+ assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY_VITA);
+ /* A saved Legacy selection (also crash recovery) overrides the new default. */
+ assert(!vt_preferences_set_interface_theme(VT_UI_THEME_LEGACY));
+ g_loaded=0;vt_preferences_init();assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY);
  /* Keep every pre-existing bit, including decoder, subtitle, theme and flatten. */
  uint32_t playback=0xd5a586b3U,subtitle=0xaaaaaaaaU & ~VT_AUDIO_LAYOUT_MASK;
  assert(!persist_subtitle_pair(playback,subtitle));
@@ -85,6 +89,6 @@ int main(void){
  vt_preferences_init();
  assert(vt_preferences_interface_theme() == VT_UI_THEME_LEGACY_VITA);
  puts("Per-theme browser defaults and independent saved grid/list choices passed");
- puts("Interface themes: default Legacy, all choices persisted, unrelated bits and failed-write rollback passed");
+ puts("Interface themes: default VMD with saved Legacy/recovery preserved, all choices persisted, unrelated bits and failed-write rollback passed");
  puts("Audio layout settings: persistence, unrelated flags, invalid values, write failure and V1/V2 migration passed");
 }

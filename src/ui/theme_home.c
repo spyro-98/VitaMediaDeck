@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/theme_home.h"
 #include "ui/theme_scene.h"
 #include <math.h>
@@ -97,8 +100,92 @@ static void fx_frame(float x,float y,float w,float h,unsigned color){
  vita2d_draw_rectangle(x,y,w,1,color);vita2d_draw_rectangle(x,y+h-1,w,1,color);
  vita2d_draw_rectangle(x,y,1,h,color);vita2d_draw_rectangle(x+w-1,y,1,h,color);
 }
+/* App-owned dark wave backdrop. Sony still owns the widgets above it.
+ * One bounded color-geometry batch; no bitmap, shader or background worker. */
+static void vmd_wave_background(unsigned base) {
+    static const float curve[33][2] = {
+        {0.0000000f, 0.0000000f},
+        {0.0980171f, 0.1950903f},
+        {0.1950903f, 0.3826834f},
+        {0.2902847f, 0.5555702f},
+        {0.3826834f, 0.7071068f},
+        {0.4713967f, 0.8314696f},
+        {0.5555702f, 0.9238795f},
+        {0.6343933f, 0.9807853f},
+        {0.7071068f, 1.0000000f},
+        {0.7730105f, 0.9807853f},
+        {0.8314696f, 0.9238795f},
+        {0.8819213f, 0.8314696f},
+        {0.9238795f, 0.7071068f},
+        {0.9569403f, 0.5555702f},
+        {0.9807853f, 0.3826834f},
+        {0.9951847f, 0.1950903f},
+        {1.0000000f, 0.0000000f},
+        {0.9951847f, -0.1950903f},
+        {0.9807853f, -0.3826834f},
+        {0.9569403f, -0.5555702f},
+        {0.9238795f, -0.7071068f},
+        {0.8819213f, -0.8314696f},
+        {0.8314696f, -0.9238795f},
+        {0.7730105f, -0.9807853f},
+        {0.7071068f, -1.0000000f},
+        {0.6343933f, -0.9807853f},
+        {0.5555702f, -0.9238795f},
+        {0.4713967f, -0.8314696f},
+        {0.3826834f, -0.7071068f},
+        {0.2902847f, -0.5555702f},
+        {0.1950903f, -0.3826834f},
+        {0.0980171f, -0.1950903f},
+        {0.0000000f, -0.0000000f}
+    };
+    vita2d_color_vertex vertices[1224];
+    unsigned count = 0;
+    float phase = fx_phase(30000000ULL) * 6.28318530718f;
+    float drift = sinf(phase), breathe = cosf(phase);
+    for (int band = 0; band < 12; band++) {
+        float y = 54 + band * (490.f / 12), next = 54 + (band + 1) * (490.f / 12);
+        unsigned color = fx_mix(base, RGBA8(14,42,68,255), 14 + band * 3);
+        vita2d_color_vertex q[4] = {{0,y,.5f,color},{960,y,.5f,color},
+                                   {960,next,.5f,color},{0,next,.5f,color}};
+        const unsigned order[6] = {0,1,2,0,2,3};
+        for (int j=0;j<6;j++) vertices[count++] = q[order[j]];
+    }
+    for (int wave=0;wave<2;wave++)
+        for (int i=0;i<32;i++) {
+            float x[2] = {i*30.f,(i+1)*30.f}, y[2];
+            for (int j=0;j<2;j++)
+                y[j] = (wave ? 385 : 225) + (x[j]/960.f-.5f)*(wave ? -44 : 58) +
+                        curve[i+j][0]*(wave ? -30 : 42) + curve[i+j][1]*(10+drift*8) +
+                        breathe*(wave ? -7 : 7);
+            for (int lane=0;lane<3;lane++) {
+                float thickness = wave ? 20 : 16;
+                float top = (lane-1.5f)*thickness, bottom = top+thickness;
+                unsigned color = RGBA8(66,130,184,lane==1?18:6);
+                vita2d_color_vertex q[4] = {
+                    {x[0],y[0]+top,.5f,color},{x[1],y[1]+top,.5f,color},
+                    {x[1],y[1]+bottom,.5f,color},{x[0],y[0]+bottom,.5f,color}};
+                const unsigned order[6] = {0,1,2,0,2,3};
+                for (int j=0;j<6;j++) vertices[count++] = q[order[j]];
+            }
+        }
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_cover(0,54,960,490,base);
+#endif
+#ifdef __vita__
+    vita2d_color_vertex *gpu = vita2d_pool_memalign(sizeof(vertices),16);
+    if (!gpu) return;
+    memcpy(gpu,vertices,sizeof(vertices));
+    vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,gpu,count);
+#else
+    vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,vertices,count);
+#endif
+}
 void ui_theme_fx_background(unsigned base){
  int theme=ui_theme_id();
+ if (theme == VT_UI_THEME_LEGACY_VITA) {
+     vmd_wave_background(base);
+     return;
+ }
  if (vt_ui_theme_legacy_layout(theme)) {
      float phase = fx_phase(10000000ULL);
      unsigned alpha = (unsigned)(10 + 6 * (1 - cosf(phase * 6.28318530718f)));

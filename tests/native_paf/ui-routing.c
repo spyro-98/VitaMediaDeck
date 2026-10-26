@@ -3,7 +3,26 @@
 #define VMD_ENABLE_PAF_NATIVE 1
 #define VMD_CHROME_HELPERS_ONLY
 #include "../ui_chrome/test.c"
-static int native_enabled;
+#undef CHECK
+#define CHECK(x) do { ++checks; if (!(x)) { \
+    fprintf(stderr, "Contract failed: %s (%s:%d)\n", #x, __FILE__, __LINE__); exit(1); } } while (0)
+static int native_enabled, native_scope;
+static float native_last_text_width;
+static char native_last_text[512];
+void ui_native_vita_cover(float x, float y, float w, float h, unsigned color) {
+    (void)x; (void)y; (void)w; (void)h; (void)color;
+}
+int ui_native_vita_scope(int scope) {
+    int previous = native_scope;
+    native_scope = scope;
+    return previous;
+}
+int ui_native_vita_text(float x, float y, float w, unsigned size, unsigned color, const char *text) {
+    (void)x; (void)y; (void)size; (void)color;
+    native_last_text_width = w;
+    snprintf(native_last_text, sizeof(native_last_text), "%s", text);
+    return 0; /* Host text renderer supplies reference pixels, not Sony text. */
+}
 static unsigned native_panels, native_rows;
 int ui_native_vita_active(void) {
     return native_enabled && ui_theme_id() == VT_UI_THEME_LEGACY_VITA;
@@ -45,6 +64,31 @@ int main(int argc, char **argv) {
     CHECK(!FT_Init_FreeType(&ft)); CHECK(!FT_New_Face(ft, argv[1], 0, &face));
     ui_theme_apply(VT_UI_THEME_LEGACY_VITA);
     native_enabled = 1;
+    host_reduced_motion = 1;
+    frame = 0;
+    vita2d_clear_screen();
+    unsigned background_batches = gpu_draw_calls, background_vertices = gpu_vertex_count;
+    ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
+    CHECK(gpu_draw_calls == background_batches + 1 && gpu_vertex_count == background_vertices + 1224);
+    memcpy(first_pixels,pixels,sizeof(pixels));
+    unsigned textured = 0;
+    for (int y=54;y<544;y++) for (int x=0;x<960;x++) {
+        CHECK(pixels[y][x][0] < 40 && pixels[y][x][1] < 65 && pixels[y][x][2] < 100);
+        textured += pixels[y][x][2] != ((VT_THEME_BG >> 16)&255);
+    }
+    CHECK(textured > 1000);
+    png("vmd-background-dark");
+    frame = 900;
+    vita2d_clear_screen();ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
+    CHECK(!memcmp(first_pixels,pixels,sizeof(pixels)));
+    host_reduced_motion = 0;
+    frame = 0;
+    vita2d_clear_screen();ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
+    memcpy(first_pixels,pixels,sizeof(pixels));
+    frame = 900;
+    vita2d_clear_screen();ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
+    CHECK(memcmp(first_pixels,pixels,sizeof(pixels)));
+    host_reduced_motion = 1;
     for (language = 0; language < 2; language++) {
         for (int live = 0; live < 2; live++) {
             live_slots = download_slots = live;
@@ -69,9 +113,16 @@ int main(int argc, char **argv) {
      * before its deferred native widget. Its media-cutout base must remain. */
     unsigned fill = RGBA8(23, 44, 66, 255);
     clipped = 0; vita2d_clear_screen();
+    unsigned batches = gpu_draw_calls, vertices = gpu_vertex_count;
     ui_panel(100, 100, 200, 40, fill, VT_THEME_FOCUS, 0);
+    CHECK(gpu_draw_calls == batches + 1 && gpu_vertex_count == vertices + 84);
+    ui_text_line(20, 70, 300, "Settings", VT_THEME_TEXT, UI_FONT_SMALL);
+    CHECK(native_last_text_width == 300 && !strcmp(native_last_text, "Settings"));
     const unsigned char *p = pixels[100][100];
+    CHECK(!p[0] && !p[1] && !p[2]); /* Rounded corner stays clear. */
+    p = pixels[102][110];
     CHECK(p[0] == 23 && p[1] == 44 && p[2] == 66);
+    CHECK(native_scope == UI_NATIVE_SCOPE_CONTENT);
     ui_theme_apply(VT_UI_THEME_LEGACY);
     unsigned rows = native_rows, panels = native_panels;
     ui_panel(100, 100, 200, 40, fill, VT_THEME_FOCUS, 0);
