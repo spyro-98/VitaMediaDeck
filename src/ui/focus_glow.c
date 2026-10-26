@@ -24,7 +24,23 @@ void ui_focus_motion_tick(UiFocusMotion *m, float x, float y, float w, float h) 
 		m->x=x; m->y=y; m->width=w; m->height=h;
 		memcpy(m->target,next,sizeof(next));
 		memcpy(m->from,next,sizeof(next));
+        memset(m->velocity,0,sizeof(m->velocity));
 		m->transition_us=now; m->initialized=1;
+    } else if (ui_theme_id()==VT_UI_THEME_LEGACY_VITA) {
+        /* Analytic critically damped motion preserves velocity on retargets,
+         * remains stable at uneven frame times, and cannot accumulate frames. */
+        float dt=(now-m->last_tick_us)*.000001f, omega=26, decay=expf(-omega*dt);
+        float value[4]={m->x,m->y,m->width,m->height};
+        for(int i=0;i<4;i++) {
+            float offset=value[i]-next[i], step=(m->velocity[i]+omega*offset)*dt;
+            value[i]=next[i]+(offset+step)*decay;
+            m->velocity[i]=(m->velocity[i]-omega*step)*decay;
+            if(fabsf(value[i]-next[i])<.02f && fabsf(m->velocity[i])<.1f) {
+                value[i]=next[i];m->velocity[i]=0;
+            }
+        }
+        m->x=value[0];m->y=value[1];m->width=value[2];m->height=value[3];
+        memcpy(m->target,next,sizeof(next));
 	} else {
 		/* Retarget the presented rectangle, never queue inputs or ease selection.
 		 * Finite cubic settle: no allocations, trig, textures or idle particles. */
@@ -103,14 +119,17 @@ void ui_focus_outline_draw(const UiFocusMotion *m) {
 	if(!m || !m->initialized || m->width<=0 || m->height<=0) return;
 	float x=m->x,y=m->y,w=m->width,h=m->height;
 #ifdef VMD_ENABLE_PAF_NATIVE
-	if (ui_native_vita_focus(x, y, w, h))
-		return;
+    int decoration=ui_native_vita_decoration(1);
 #endif
+    if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA) { x-=2;y-=2;w+=4;h+=4; }
 	ui_theme_fx_focus(x, y, w, h);
 	vita2d_draw_rectangle(x,y,w,2,VT_THEME_FOCUS);
 	vita2d_draw_rectangle(x,y+h-2,w,2,VT_THEME_FOCUS);
 	vita2d_draw_rectangle(x,y,3,h,VT_THEME_FOCUS);
 	vita2d_draw_rectangle(x+w-2,y,2,h,VT_THEME_FOCUS);
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_decoration(decoration);
+#endif
 }
 
 void ui_focus_glow_draw(float x,float y,float w,float h,uint64_t now,

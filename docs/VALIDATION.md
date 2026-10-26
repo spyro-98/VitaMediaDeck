@@ -1,14 +1,15 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
-Latest interface update: [VMD native controls, stable text and cyan backdrop](vmd-native-polish-2026-10-26.md).
-The installed preceding build now cold-starts in VMD and acknowledges native
-rendering. This update keeps glyph geometry stable behind overlays, attaches
-captions to their native Buttons, adds Sony CheckBox/player controls and contains
-command legends. The darker background uses thin moving cyan lines with glow
-and a discreet inclined symbol pattern. Host/threaded/ARM checks passed; the
-new native appearance and animation still need physical Vita acceptance.
-VMD remains the default, with the darker candidate-13 icon and Legacy recovery.
+Latest interface correction: [VMD button space, full-screen backdrop and continuous focus](vmd-native-layout-2026-10-26.md).
+Native buttons use explicit blue styling and their own full-width text windows;
+the small Home action is taller. Focus keeps one smooth presentation and its
+thin borders no longer occlude native captions. VMD's redundant lower Home
+shortcuts are removed and the four media components use the recovered space.
+The dark cyan background now extends under translucent status chrome across
+the entire screen. Host/ARM checks passed; Sony appearance and motion still
+require physical acceptance of this new standard build.
 
+Previous interface update: [native controls, stable text and cyan backdrop](vmd-native-polish-2026-10-26.md).
 Previous startup correction: [VMD recovery and default upgrade](vmd-startup-default-2026-10-26.md).
 Earlier interface report: [VMD native text, tiles, menu reuse and Home](vmd-native-ui-2026-10-26.md).
 

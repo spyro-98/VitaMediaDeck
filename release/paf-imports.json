@@ -233,6 +233,34 @@
       "library_nid": "0x073F8C68",
       "symbol": "_ZN3paf2ui15StateButtonBase8SetCheckEbfb",
       "nid": "0x56B9B54A"
+    },
+    {
+      "name": "vmd_paf_widget_draw_obj",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Widget10GetDrawObjEi",
+      "nid": "0x2C7DB04C"
+    },
+    {
+      "name": "vmd_paf_button_animator",
+      "library": "ScePafWidget",
+      "library_nid": "0x073F8C68",
+      "symbol": "_ZN3paf2ui6Button16SetStyleAnimatorENS1_9StyleTypeE",
+      "nid": "0xC9C2C987"
+    },
+    {
+      "name": "vmd_paf_label_layout_vec",
+      "library": "ScePafGraphics",
+      "library_nid": "0xA070D6A7",
+      "symbol": "_ZN3paf5graph7TextObj18SetLayoutAttributeENS0_19TextLayoutAttributeERKNS_4math2v2E",
+      "nid": "0x9D1F6796"
+    },
+    {
+      "name": "vmd_paf_label_layout_bool",
+      "library": "ScePafGraphics",
+      "library_nid": "0xA070D6A7",
+      "symbol": "_ZN3paf5graph7TextObj18SetLayoutAttributeENS0_19TextLayoutAttributeEb",
+      "nid": "0x70FB2F76"
     }
   ]
 }

@@ -85,3 +85,9 @@ string or text-style churn. The routing fixture checks the two-line footer and
 the one-batch 4,050-vertex thin-cyan background, highlight/brightness bounds,
 continuous motion and Reduce Motion. Existing eight-theme Home, chrome, utility,
 settings and audio fixtures exercise the shared callers with host rendering.
+
+The [button-space/focus correction](../../docs/vmd-native-layout-2026-10-26.md)
+checks the actual native Button TextObj's logical/visible windows on compact
+and wide controls, manual native button animation, no unnecessary panel string,
+and balanced non-occluding focus decoration. Genuine following opaque content
+must still occlude. A preceding-source negative control exits 1 normally.

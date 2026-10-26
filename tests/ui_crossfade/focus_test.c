@@ -1,8 +1,12 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#undef assert
+#define assert(x) do { if(!(x)) { fprintf(stderr,"Focus contract failed: %s at %d\n",#x,__LINE__);exit(1); } } while(0)
 #include "ui/audio_layout.h"
 #include "ui/focus_glow.h"
+#include "ui/theme.h"
 #include "ui/media_grid_layout.h"
 static uint64_t now=1;
 static int reduced,draws,clip_top,clip_bottom,clipped,top_visible;
@@ -25,6 +29,27 @@ int main(void){
  now=0;ui_focus_motion_tick(&m,50,50,50,50);assert(m.x==50);
  ui_focus_outline_draw(&m);assert(draws==14);
  ui_focus_motion_reset(&m);ui_focus_outline_draw(&m);assert(draws==14);
+ /* VMD focus must preserve motion under rapid retargets and uneven frame
+    times, settle without a mode switch, and honor reduced motion. */
+ ui_theme_apply(VT_UI_THEME_LEGACY_VITA);
+ for(int fps=30;fps<=120;fps*=2) {
+  ui_focus_motion_reset(&m);now+=1000000;ui_focus_motion_tick(&m,10,20,160,44);
+  float previous=10;
+  for(int i=0;i<fps/2;i++) {
+   now+=1000000/fps;ui_focus_motion_tick(&m,400,120,300,80);
+   assert(isfinite(m.x)&&m.x>=previous&&m.x<=400);previous=m.x;
+  }
+  assert(fabsf(m.x-400)<.1f&&fabsf(m.height-80)<.1f);
+ }
+ ui_focus_motion_reset(&m);now+=1000000;ui_focus_motion_tick(&m,10,20,160,44);
+ for(int i=0;i<80;i++) {
+  float before=m.x;now+=i%3==0?33333:16667;
+  ui_focus_motion_tick(&m,i<30?400:i<55?60:500,120,300,80);
+  assert(isfinite(m.x)&&fabsf(m.x-before)<140);
+ }
+ reduced=1;now+=16667;ui_focus_motion_tick(&m,18,62,166,40);
+ assert(m.x==18&&m.y==62&&!m.velocity[0]);reduced=0;
+ ui_theme_apply(VT_UI_THEME_LEGACY);
  for(int top=62;top<=118;top+=4)for(int bottom=448;bottom<=544;bottom++) {
   UiMediaGridLayout g=ui_media_grid_layout(top,bottom);
   assert(g.rows==2&&g.card_h>=120&&g.thumb_h>0);

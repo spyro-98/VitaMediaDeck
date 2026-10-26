@@ -14,7 +14,7 @@ typedef struct {
 	float height;
 	uint64_t last_tick_us;
 	int initialized;
-	float from[4], target[4];
+	float from[4], target[4], velocity[4];
 	uint64_t transition_us;
 } UiFocusMotion;
 

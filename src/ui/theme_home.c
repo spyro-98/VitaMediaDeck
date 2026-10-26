@@ -107,7 +107,7 @@ static void vmd_quad(vita2d_color_vertex *v, unsigned *count,
     static const unsigned order[6] = {0,1,2,0,2,3};
     for (int n=0;n<6;n++) {
         unsigned j=order[n];
-        v[(*count)++] = (vita2d_color_vertex){x[j],fmaxf(54,fminf(544,y[j])),.5f,color};
+        v[(*count)++] = (vita2d_color_vertex){x[j],fmaxf(0,fminf(544,y[j])),.5f,color};
     }
 }
 static void vmd_symbol(vita2d_color_vertex *v,unsigned *count,int symbol,
@@ -244,7 +244,7 @@ static void vmd_symbol(vita2d_color_vertex *v,unsigned *count,int symbol,
         {-6.911999f,10.682014f}
     };
     for(unsigned n=first[symbol];n<first[symbol]+size[symbol];n++)
-        v[(*count)++]=(vita2d_color_vertex){x+glyph[n][0],fmaxf(54,fminf(544,y+glyph[n][1])),.5f,color};
+        v[(*count)++]=(vita2d_color_vertex){x+glyph[n][0],fmaxf(0,fminf(544,y+glyph[n][1])),.5f,color};
 }
 static void vmd_wave_background(unsigned base) {
     (void)base;
@@ -278,7 +278,7 @@ static void vmd_wave_background(unsigned base) {
 #endif
     unsigned count=0;
     for(int band=0;band<12;band++) {
-        float top=54+band*(490.f/12),bottom=54+(band+1)*(490.f/12);
+        float top=band*(544.f/12),bottom=(band+1)*(544.f/12);
         const float x[4]={0,960,960,0},y[4]={top,top,bottom,bottom};
         vmd_quad(vertices,&count,x,y,fx_mix(RGBA8(2,7,18,255),RGBA8(5,15,31,255),band*18));
     }
@@ -309,7 +309,7 @@ static void vmd_wave_background(unsigned base) {
         }
     }
 #ifdef VMD_ENABLE_PAF_NATIVE
-    ui_native_vita_cover(0,54,960,490,RGBA8(2,7,18,255));
+    ui_native_vita_cover(0,0,960,544,RGBA8(2,7,18,255));
 #endif
     vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,vertices,count);
 }

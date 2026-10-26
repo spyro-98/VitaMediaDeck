@@ -103,4 +103,9 @@ void vmd_paf_busy_start(void *self);
 void vmd_paf_busy_stop(void *self);
 /* StateButtonBase::SetCheck(bool,float,bool), owner-thread only; void result. */
 void vmd_paf_check_set(void *self, bool checked, float time, bool animate);
+/* Typed native Button label objects, never cast a Button to ui::Text. */
+void *vmd_paf_widget_draw_obj(void *self, int object);
+void vmd_paf_button_animator(void *self, int style);
+int vmd_paf_label_layout_vec(void *self, int attr, const VtPafVec2 *value);
+int vmd_paf_label_layout_bool(void *self, int attr, bool value);
 #endif

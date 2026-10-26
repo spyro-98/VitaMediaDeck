@@ -460,7 +460,8 @@ static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, in
                      RGBA8(208, 233, 238, 255), UI_FONT_SMALL);
         const char *title = available ? v->item.title
                                       : tr("What would you like to play?", "Cosa vuoi guardare o ascoltare?");
-        int title_y = compact ? r.y + 47 : r.y + r.h - 83;
+        int title_y = compact ? r.y + 47 : r.y + r.h -
+            (ui_theme_id()==VT_UI_THEME_LEGACY_VITA?94:83);
         ui_text_line(r.x + 14, title_y, r.w - 28, title, RGBA8(255, 255, 255, 255),
                      r.w > 440 && !compact ? UI_FONT_DISPLAY : UI_FONT_BODY);
         if (!compact) {
@@ -474,12 +475,14 @@ static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, in
             ui_text_line(r.x + 14, title_y + 23, r.w - 28, detail,
                          RGBA8(213, 223, 232, 255), UI_FONT_SMALL);
         }
-        int button_y = r.y + r.h - 39;
+        int native_home=ui_theme_id()==VT_UI_THEME_LEGACY_VITA;
+        int button_height=native_home?36:28;
+        int button_y = r.y + r.h - button_height - 11;
         const char *action = !available ? tr("Browse sources", "Esplora sorgenti")
                              : data->resuming ? tr("Continue", "Riprendi")
                                               : tr("Open", "Apri");
         int button_width = !available ? (r.w > 320 ? 224 : r.w - 24) : (r.w > 320 ? 160 : 130);
-        ui_action_button(r.x + 12, button_y, button_width, 28, VT_THEME_SURFACE, "X", action, selected);
+        ui_action_button(r.x + 12, button_y, button_width, button_height, VT_THEME_SURFACE, "X", action, selected);
         if (count > 1) {
             char more[64];
             snprintf(more, sizeof(more), "%d / %d  ·  R1", offset + 1, count);
@@ -625,8 +628,8 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         int bottom =
             ui_mini_player_top() < UI_CONTENT_BOTTOM ? ui_mini_player_top() : UI_CONTENT_BOTTOM;
         UiDashboardLayout layout = ui_dashboard_compose(ui_theme_id(), bottom, data->count);
-        if (layout.cards[dash_selected].h <= 0)
-            dash_selected = UI_DASH_CONTINUE;
+        if(dash_selected<0 || dash_selected>=UI_DASH_COUNT || layout.cards[dash_selected].h<=0)
+            dash_selected=UI_DASH_CONTINUE;
         sceCtrlPeekBufferPositive(0, &ctrl, 1);
         unsigned pressed = ctrl.buttons & ~previous.buttons;
         previous = ctrl;

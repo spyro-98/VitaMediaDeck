@@ -412,6 +412,11 @@ void ui_brand_draw_status_indicators(void) {
 
 static void draw_gradient_bar(void) {
  int theme=ui_theme_id();
+ if (theme==VT_UI_THEME_LEGACY_VITA) {
+     /* The VMD wallpaper continues beneath transparent status chrome. */
+     vita2d_draw_rectangle(0,0,960,UI_BRAND_HEADER_HEIGHT,RGBA8(2,7,18,100));
+     return;
+ }
  if (vt_ui_theme_legacy_layout(theme)) {
 	 vita2d_draw_rectangle(0, 0, SCREEN_WIDTH, UI_BRAND_HEADER_HEIGHT, VT_THEME_SURFACE);
 	 vita2d_draw_rectangle(708, 8, 1, 38, VT_THEME_BORDER_DIM);

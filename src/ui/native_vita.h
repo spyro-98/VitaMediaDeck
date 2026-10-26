@@ -23,6 +23,8 @@ int ui_native_vita_button_fade(float x, float y, float w, float h, const char *l
 void ui_native_vita_media_text(int active);
 int ui_native_vita_panel(float x, float y, float w, float h, unsigned color, int selected);
 int ui_native_vita_focus(float x, float y, float w, float h);
+/* Balanced UI-thread scope for non-occluding focus/active-tab decoration. */
+int ui_native_vita_decoration(int enabled);
 int ui_native_vita_toggle(float x, float y, float w, float h, int checked);
 int ui_native_vita_busy(float x, float y, float size);
 unsigned ui_native_vita_utf16(const char *text, uint16_t *out, unsigned capacity);
