@@ -98,6 +98,17 @@ int main(void) {
  CHECK(!ui_home_tab_online());carousel_tick();
  tap.x=tap.down_x=UI_HOME_TABS_X+RAIL_W/2;
  CHECK(ui_home_tabs_input(0,UI_TOUCH_EVENT_TAP,&tap,1));CHECK(ui_home_tab_online());
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++) {
+  ui_theme_apply(theme);ui_home_controls_reset();
+  unsigned enter=theme==VT_UI_THEME_DECK_90||theme==VT_UI_THEME_RELAY?SCE_CTRL_RIGHT:
+      theme==VT_UI_THEME_APERTURE?SCE_CTRL_UP:SCE_CTRL_DOWN;
+  UiHomeControlSample entry={.lx=128,.ly=128,.rx=128,.ry=128,.count=8,.bottom=536,
+      .focus_sections=1,.pressed=enter,.held=enter};
+  now+=300000;UiHomeControlResult r=ui_home_controls_update(&entry);
+  CHECK(!r.focus_sections && !r.content_nav);
+  entry.focus_sections=0;entry.pressed=0;now+=16667;
+  r=ui_home_controls_update(&entry);CHECK(!r.content_nav);
+ }
  printf("PASS: %u tab checks across all 720 orders, carousel, gestures and reduced motion\n",checks);
  return 0;
 }

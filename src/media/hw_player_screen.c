@@ -484,8 +484,8 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 		         status->height, status->fps, bitrate);
 		if (small) ui_text_line(610,454,332,quality,text,UI_FONT_SMALL);
 		if (!live) {
-			draw_skip_button(small, PLAYER_BACK_X, "<", hud_opacity);
-			draw_skip_button(small, PLAYER_FORWARD_X, ">", hud_opacity);
+			draw_skip_button(small, PLAYER_BACK_X, "\xE2\x86\x90", hud_opacity);
+			draw_skip_button(small, PLAYER_FORWARD_X, "\xE2\x86\x92", hud_opacity);
 		}
 #ifdef VMD_ENABLE_PAF_NATIVE
         int native_play = ui_native_vita_button_fade(PLAYER_PLAY_X - 24,

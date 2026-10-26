@@ -692,6 +692,7 @@ int ui_online_audio_screen(void) {
      .count=list_count(),.bottom=ui_mini_player_top()<UI_CONTENT_BOTTOM?ui_mini_player_top():UI_CONTENT_BOTTOM,
      .focus_sections=focus_tabs,.blocked=ui_mini_player_input_locked(),.touch=&touch};
     UiHomeControlResult routed=ui_home_controls_update(&input);
+    if(input.focus_sections&&!routed.focus_sections)g_selected=0;
     pressed=routed.pressed;nav=routed.content_nav;focus_tabs=routed.focus_sections;
     if(routed.sections_changed){
      if(!ui_home_tab_online())return online_leave(UI_SECTION_LOCAL_MEDIA);
@@ -714,9 +715,17 @@ int ui_online_audio_screen(void) {
      if((flags&UI_TOUCH_EVENT_TAP)&&ui_touch_hit_rect(touch.x,touch.y,221,UI_TABS_Y,195,40)){next=VT_ONLINE_FEED;focus_tabs=1;}
      if(next!=g_tab){g_tab=next;browse_menu();reset_input(&previous,&repeat);}
     }
-    if(focus_tabs&&(pressed&(SCE_CTRL_DOWN|SCE_CTRL_CROSS))){focus_tabs=0;pressed&=~(SCE_CTRL_DOWN|SCE_CTRL_CROSS);controls.buttons&=~SCE_CTRL_DOWN;}
-    else if(!focus_tabs&&g_selected<columns&&(pressed&SCE_CTRL_UP)){focus_tabs=1;pressed&=~SCE_CTRL_UP;}
-    nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+    if(focus_tabs&&(pressed&(SCE_CTRL_DOWN|SCE_CTRL_CROSS))) {
+        /* Seed the repeat delay with the consumed entry gesture, so a held
+         * Down does not become a second fresh direction on the next frame. */
+        (void)ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,
+            SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+        focus_tabs=0;g_selected=0;pressed&=~(SCE_CTRL_DOWN|SCE_CTRL_CROSS);nav=0;
+    } else {
+        if(!focus_tabs&&g_selected<columns&&(pressed&SCE_CTRL_UP)){focus_tabs=1;pressed&=~SCE_CTRL_UP;}
+        nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,
+            SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+    }
    }
 			if(PODCAST_HOME && !focus_tabs) {
 				if(nav&SCE_CTRL_RIGHT)offline_focus=1;
@@ -904,16 +913,21 @@ int ui_online_audio_screen(void) {
 				if(reserve<128)reserve=128;
 				text_width-=reserve+20;
 				if(font) {
+                    if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA) {
+                        ui_text_line(x+width-16-reserve,y+28,reserve,date,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+                        ui_text_line(x+width-16-reserve,y+54,reserve,duration,VT_THEME_TEXT,UI_FONT_SMALL);
+                    } else {
 					ui_font_draw_text(font,x+width-16-date_width,y+28,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,date);
 					ui_font_draw_text(font,x+width-16-duration_width,y+54,VT_THEME_TEXT,UI_FONT_SMALL,duration);
+                    }
 				}
 			}
 			ui_font_fit_text(font, UI_FONT_SMALL, title, fitted, sizeof(fitted), text_width);
 			int detail = i < g_query.count && g_query.items[i].detail[0];
-			if (font) ui_font_draw_text(font, text_x, y + (CATALOG_COVERS ? CATALOG_HEIGHT-48 : detail ? 28 : 43), VT_THEME_TEXT, UI_FONT_SMALL, fitted);
+			if (font) ui_text_line(text_x,y+(CATALOG_COVERS?CATALOG_HEIGHT-48:detail?28:43),text_width,fitted,VT_THEME_TEXT,UI_FONT_SMALL);
 			if (font && detail) {
 				ui_font_fit_text(font, UI_FONT_SMALL, g_query.items[i].detail, fitted, sizeof(fitted), text_width);
-				ui_font_draw_text(font, text_x, y + (CATALOG_COVERS ? CATALOG_HEIGHT-20 : 54), VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted);
+				ui_text_line(text_x,y+(CATALOG_COVERS?CATALOG_HEIGHT-20:54),text_width,fitted,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 			}
 		}
         vita2d_disable_clipping();

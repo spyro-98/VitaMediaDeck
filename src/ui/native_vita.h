@@ -15,6 +15,7 @@ void ui_native_vita_cover(float x, float y, float w, float h, unsigned color);
 int ui_native_vita_prepare(void);
 int ui_native_vita_active(void);
 int ui_native_vita_error(void);
+int ui_native_vita_text_span(float x, float baseline, unsigned size);
 int ui_native_vita_text(float x, float baseline, float width, unsigned size, unsigned color,
                         const char *text);
 int ui_native_vita_button(float x, float y, float w, float h, const char *label, int selected);

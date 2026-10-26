@@ -740,6 +740,7 @@ static int play_library_remote(const VtLibraryItem *v) {
 	return result;
 }
 static int browse_local(void) {
+    if(ui_home_tab()==HOME_LIBRARY)ui_library_reset_home();
 	if(ui_home_tab_online()){ui_online_audio_set_home(1);return UI_SECTION_ONLINE_AUDIO;}
 	int folder_browser = 0;
 	int folder_resume = 0;
@@ -855,11 +856,12 @@ static int browse_local(void) {
 				continue;
 			}
 		}
+        if(library_action<0 && !folder_browser) {
+            folder_browser=1;folder_resume=0;folder_root[0]=0;
+            folder_filter=ui_home_tab()==HOME_PODCAST?VT_LOCAL_MEDIA_AUDIO:(VtLocalMediaType)ui_home_tab_filter();
+        }
 		int action = library_action >= 0 ? library_action
-		             : folder_browser
-		                 ? ui_local_files_screen_open(folder_resume ? NULL : folder_root,
-		                                              folder_filter, &item)
-		                 : ui_local_media_screen(&item);
+            : ui_local_files_screen_open(folder_resume ? NULL : folder_root,folder_filter,&item);
 		if (folder_browser)
 			folder_resume = 1;
 		if (action >= UI_LOCAL_MEDIA_ACTION_SECTION_BASE)
@@ -868,6 +870,7 @@ static int browse_local(void) {
 			if (folder_browser) {
 				folder_browser = folder_resume = 0;
 				folder_root[0] = '\0';
+                ui_home_tab_set(HOME_LIBRARY);ui_library_reset_home();
 				continue;
 			}
 			if (ui_home_tab() == HOME_PODCAST)

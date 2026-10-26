@@ -376,7 +376,7 @@ void ui_mini_player_draw(void) {
 		                      34.0f, 1.0f, VT_THEME_SPECTRAL_A(112));
 	}
 	if (small && !snapshot.is_live) {
-		const char *back = "<", *forward = ">";
+		const char *back = "\xE2\x86\x90", *forward = "\xE2\x86\x92";
 		int back_w = ui_font_text_width(small, UI_FONT_SMALL, back);
 		int forward_w = ui_font_text_width(small, UI_FONT_SMALL, forward);
 		ui_font_draw_text(small, (int)transport_x[0] - back_w / 2, y + 40,

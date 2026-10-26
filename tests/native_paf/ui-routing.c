@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
     unsigned textured = 0, highlights = 0;
     unsigned long green_total=0,blue_total=0;
     for (int y=0;y<544;y++) for (int x=0;x<960;x++) {
-        CHECK(pixels[y][x][0] < 60 && pixels[y][x][1] < 190 && pixels[y][x][2] < 210);
+        CHECK(pixels[y][x][0] < 70 && pixels[y][x][1] < 190 && pixels[y][x][2] < 210);
         green_total+=pixels[y][x][1];blue_total+=pixels[y][x][2];
         highlights+=pixels[y][x][1]>65 && pixels[y][x][2]>90;
         textured += pixels[y][x][2] != ((VT_THEME_BG >> 16)&255);

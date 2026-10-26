@@ -493,7 +493,7 @@ static void draw_transport(int x, int control, int paused, int enabled,
 	float y=MUSIC_CONTROLS_Y;
 #ifdef VMD_ENABLE_PAF_NATIVE
     const char *native_label = control == MUSIC_CONTROL_PLAY ? (paused ? "\xE2\x96\xB6" : "II")
-                              : control == MUSIC_CONTROL_BACK ? "<" : ">";
+                              : control == MUSIC_CONTROL_BACK ? "\xE2\x86\x90" : "\xE2\x86\x92";
     if (ui_native_vita_button_fade(x,y,48,44,native_label,
         enabled && control==feedback && now<until,opacity*(enabled?1.0f:.4f))) return;
 #endif

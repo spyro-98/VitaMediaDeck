@@ -435,7 +435,9 @@ int ui_font_draw_text(vita2d_font *latin_font, int x, int y,
 #ifdef VMD_ENABLE_PAF_NATIVE
 	if (ui_native_vita_active()) {
 		int width = ui_font_text_width(latin_font, size, text);
-		if (ui_native_vita_text(x, y, width, size, color, text))
+		/* Inter/PGF advance is a positioning metric, not the Sony glyph window. */
+        int available=ui_native_vita_text_span(x,y,size);
+		if (ui_native_vita_text(x, y, available, size, color, text))
 			return width;
 	}
 #endif
