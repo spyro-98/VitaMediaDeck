@@ -1,5 +1,10 @@
 # Complete Legacy Vita theme / Sony PAF — 25 October 2026
 
+> 26 October follow-up: physical target completion still produced a blank native
+> layer. The [Run/Update lifecycle report](paf-render-loop-2026-10-26.md) supersedes
+> the external-loop description below: a dedicated blocking Run and 31 weak
+> imports are now required. Sony visual acceptance remains pending.
+
 **26 October frame correction:** a later console run reached first-frame update
 and exposed an incompatible frame-record cast. The [extended audit](paf-frame-audit-2026-10-26.md)
 supersedes the earlier unverified framebuffer-contract description below. The

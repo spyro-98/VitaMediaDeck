@@ -64,7 +64,15 @@ of the eight themes. This work and the
 in standard 1.4.1. Console animation/performance acceptance remains distinct
 from host rendering checks.
 
-The latest console crash reaches native first-frame update. An [extended audit
+The latest console test reaches target setup but shows no native text or
+finishes. The [render-loop correction](docs/paf-render-loop-2026-10-26.md)
+starts the missing PAF Run loop, synchronized with each Update, and checks its
+startup/failure lifecycle. L1 rows now use native buttons and shared panels
+avoid duplicate Legacy borders. Threaded adapter, native UI dispatch, ARM ABI
+and eight-theme suites passed before building. Actual Sony pixels still need
+console acceptance.
+
+The preceding console crash reaches native first-frame update. An [extended audit
 against public PAF examples](docs/paf-frame-audit-2026-10-26.md) identifies the
 incompatible CommonDialog/PAF frame records; the adapter now translates all eight
 fields explicitly and validates the target. Independent ARM layout probes,

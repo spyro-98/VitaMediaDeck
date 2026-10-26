@@ -57,6 +57,13 @@ _Static_assert(sizeof(VtPafFrameUpdate) == 32 &&
 void vmd_paf_fw_params(void *params);
 void vmd_paf_fw_create(void *self, const void *params);
 void *vmd_paf_fw_instance(void);
+/* Run is blocking, including with OneFrameMode: a dedicated runner sleeps
+ * between Update handshakes. The first Framework word is its run-loop count
+ * in the pinned public ABI; only this read-only startup prefix is observed. */
+typedef struct { uint32_t run_loop_count; } VtPafFrameworkPrefix;
+_Static_assert(sizeof(VtPafFrameworkPrefix) == 4 &&
+               offsetof(VtPafFrameworkPrefix, run_loop_count) == 0, "PAF Framework prefix ABI");
+int vmd_paf_fw_run(void *self);
 void vmd_paf_fw_update(void *self, const VtPafFrameUpdate *params);
 void vmd_paf_fw_common(void *self, void (*finished)(void));
 void vmd_paf_plugin_params(void *params);

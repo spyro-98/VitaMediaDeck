@@ -1,5 +1,9 @@
 # Legacy Vita: first-frame crash and extended PAF audit — 26 October 2026
 
+> Subsequent physical test: target setup completed, but the native layer remained
+> blank. See the [missing Run-loop correction](paf-render-loop-2026-10-26.md).
+> The tests below did not yet distinguish Update acceptance from painting.
+
 ## Console evidence
 
 The new dump is `psp2core-1793014239-0x000f2320b1-eboot.bin.psp2dmp.tmp`,

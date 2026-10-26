@@ -9,6 +9,8 @@
 #include "app_paths.h"
 #include <psp2/common_dialog.h>
 #include <psp2/sysmodule.h>
+#include <psp2/kernel/threadmgr.h>
+#include <stdatomic.h>
 #include <vita2d.h>
 #include <math.h>
 #include <stdio.h>
@@ -46,6 +48,44 @@ typedef struct {
     int shown;
 } NativeSlot;
 static void *framework, *plugin, *page;
+static SceUID renderer_thread = -1;
+static atomic_int renderer_exited, renderer_result;
+static unsigned renderer_running(void) {
+    return framework ? __atomic_load_n(&((VtPafFrameworkPrefix *)framework)->run_loop_count,
+                                       __ATOMIC_ACQUIRE) : 0;
+}
+static int renderer_main(SceSize args, void *argp) {
+    (void)args;
+    (void)argp;
+    int rc = vmd_paf_fw_run(framework);
+    atomic_store(&renderer_result, rc);
+    atomic_store(&renderer_exited, 1);
+    return rc;
+}
+static int start_renderer(void) {
+    renderer_thread = sceKernelCreateThread("VMDNativePaf", renderer_main, 0x10000100,
+                                            0x40000, 0, 0, NULL);
+    if (renderer_thread < 0)
+        return renderer_thread;
+    int rc = sceKernelStartThread(renderer_thread, 0, NULL);
+    if (rc < 0) {
+        sceKernelDeleteThread(renderer_thread);
+        renderer_thread = -1;
+        return rc;
+    }
+    /* Run increments its count under PAF's update mutex, then waits for
+     * Update. Waiting for this ABI-defined prefix prevents the first Update
+     * from silently doing target setup only. No firmware object is modified.
+     * One bounded initialization wait; no polling during playback or idle. */
+    for (unsigned attempt = 0; attempt < 2000; attempt++) {
+        if (atomic_load(&renderer_exited))
+            break;
+        if (renderer_running())
+            return 0;
+        sceKernelDelayThread(1000);
+    }
+    return -0x5049;
+}
 static NativeSlot slots[NATIVE_KINDS][UI_NATIVE_TEXT_LIMIT];
 static NativeCommand commands[NATIVE_COMMANDS];
 static unsigned command_count, previous_order_count;
@@ -151,6 +191,11 @@ static int place(void *widget, float x, float y, float w, float h) {
 }
 int ui_native_vita_prepare(void) {
     if (state) {
+        if (state > 0 && (atomic_load(&renderer_exited) || !renderer_running())) {
+            log_printf("native PAF: renderer stopped rc=0x%08X",
+                       (unsigned)atomic_load(&renderer_result));
+            log_failure(-0x5049);
+        }
         if (state < 0 && ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
             log_failure(error_code);
         return state > 0;
@@ -266,6 +311,12 @@ int ui_native_vita_prepare(void) {
         show(w, 0);
     }
     show(page, 0);
+    checkpoint("renderer thread; OneFrameMode handshake");
+    int rc = start_renderer();
+    if (rc < 0) {
+        log_failure(rc);
+        return 0;
+    }
     state = 1;
     checkpoint("ready");
     log_printf("native PAF: ready; Sony widgets; global heap=%u surface=%u text=%u", PAF_HEAP_BYTES,
@@ -604,8 +655,10 @@ int __wrap_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *params) {
                    frame.surface_type, frame.depth_data != NULL);
         log_save(VITAMEDIADECK_SESSION_LOG_PATH);
     }
+    if (atomic_load(&renderer_exited) || !renderer_running())
+        return -0x5049;
     vmd_paf_fw_update(framework, &frame);
-    return 0;
+    return atomic_load(&renderer_exited) ? -0x5049 : 0;
 }
 void __real_vita2d_start_drawing(void);
 void __wrap_vita2d_start_drawing(void) {

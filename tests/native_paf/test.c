@@ -5,8 +5,84 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <pthread.h>
+#include <time.h>
 #include "../../src/ui/native_vita.c"
 static unsigned checks;
+static pthread_t host_runner;
+static pthread_mutex_t host_runner_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t host_runner_cond = PTHREAD_COND_INITIALIZER;
+static SceKernelThreadEntry host_runner_entry;
+static int host_thread_live, host_thread_creates, host_thread_create_error, host_thread_start_error;
+static int host_run_behavior, host_frame_requested, host_frames_drawn;
+static atomic_int host_runner_stop, host_delays;
+static void *host_thread_main(void *arg) {
+    (void)arg;
+    host_runner_entry(0, NULL);
+    return NULL;
+}
+SceUID sceKernelCreateThread(const char *name, SceKernelThreadEntry entry, int priority,
+                             unsigned stack, unsigned attributes, int cpu, const void *options) {
+    assert(name && entry && priority == 0x10000100 && stack == 0x40000 && !attributes && !cpu && !options);
+    if (host_thread_create_error) return -88;
+    host_runner_entry = entry;
+    host_thread_creates++;
+    return 123;
+}
+int sceKernelStartThread(SceUID uid, SceSize args, void *argp) {
+    assert(uid == 123 && !args && !argp);
+    if (host_thread_start_error) return -89;
+    assert(!pthread_create(&host_runner, NULL, host_thread_main, NULL));
+    host_thread_live = 1;
+    return 0;
+}
+int sceKernelDeleteThread(SceUID uid) {
+    assert(uid == 123 && !host_thread_live);
+    return 0;
+}
+int sceKernelDelayThread(unsigned microseconds) {
+    assert(microseconds == 1000);
+    atomic_fetch_add(&host_delays, 1);
+    struct timespec delay = {0, 1000000};
+    nanosleep(&delay, NULL);
+    pthread_mutex_lock(&host_runner_mutex);
+    pthread_cond_broadcast(&host_runner_cond);
+    pthread_mutex_unlock(&host_runner_mutex);
+    return 0;
+}
+int vmd_paf_fw_run(void *self) {
+    assert(self && self == framework);
+    if (host_run_behavior == 1) return 0; /* unresolved weak Run / unexpected exit */
+    pthread_mutex_lock(&host_runner_mutex);
+    while (!atomic_load(&host_runner_stop) &&
+           (host_run_behavior == 2 || (host_run_behavior == 3 && atomic_load(&host_delays) < 5)))
+        pthread_cond_wait(&host_runner_cond, &host_runner_mutex);
+    if (atomic_load(&host_runner_stop)) {
+        pthread_mutex_unlock(&host_runner_mutex);
+        return -9;
+    }
+    __atomic_store_n(&((VtPafFrameworkPrefix *)self)->run_loop_count, 1, __ATOMIC_RELEASE);
+    /* OneFrameMode Run stays alive and waits. Update alone does not paint. */
+    while (!atomic_load(&host_runner_stop)) {
+        while (host_frame_requested == host_frames_drawn && !atomic_load(&host_runner_stop))
+            pthread_cond_wait(&host_runner_cond, &host_runner_mutex);
+        if (atomic_load(&host_runner_stop)) break;
+        host_frames_drawn++;
+        pthread_cond_broadcast(&host_runner_cond);
+    }
+    __atomic_store_n(&((VtPafFrameworkPrefix *)self)->run_loop_count, 0, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&host_runner_mutex);
+    return 0;
+}
+static void host_stop_runner(void) {
+    if (!host_thread_live) return;
+    pthread_mutex_lock(&host_runner_mutex);
+    atomic_store(&host_runner_stop, 1);
+    pthread_cond_broadcast(&host_runner_cond);
+    pthread_mutex_unlock(&host_runner_mutex);
+    assert(!pthread_join(host_runner, NULL));
+    host_thread_live = 0;
+}
 static int host_frame_variant;
 static SceCommonDialogUpdateParam host_expected_frame;
 static const void *host_source_frame;
@@ -210,6 +286,14 @@ void vmd_paf_fw_update(void *self, const VtPafFrameUpdate *v) {
     CHECK(v->color_data == t->colorSurfaceData && v->depth_data == t->depthSurfaceData &&
           v->display_sync == host_expected_frame.displaySyncObject);
     host_updates++;
+    pthread_mutex_lock(&host_runner_mutex);
+    if (__atomic_load_n(&((VtPafFrameworkPrefix *)self)->run_loop_count, __ATOMIC_ACQUIRE)) {
+        host_frame_requested++;
+        pthread_cond_broadcast(&host_runner_cond);
+        while (host_frames_drawn < host_frame_requested && !atomic_load(&host_runner_stop))
+            pthread_cond_wait(&host_runner_cond, &host_runner_mutex);
+    }
+    pthread_mutex_unlock(&host_runner_mutex);
 }
 int __real_sceCommonDialogUpdate(const SceCommonDialogUpdateParam *p) {
     CHECK(p);
@@ -359,6 +443,14 @@ void __real_vita2d_draw_texture_scale_rotate_hotspot(const vita2d_texture *t, fl
     CHECK(host_scene);
 }
 static void reset(void) {
+    host_stop_runner();
+    renderer_thread = -1;
+    atomic_store(&renderer_exited, 0);
+    atomic_store(&renderer_result, 0);
+    atomic_store(&host_runner_stop, 0);
+    atomic_store(&host_delays, 0);
+    host_thread_creates = host_thread_create_error = host_thread_start_error = host_run_behavior = 0;
+    host_frame_requested = host_frames_drawn = 0;
     for (unsigned i = 0; i < host_alloc_count; i++)
         free(host_allocated[i]);
     host_alloc_count = 0;
@@ -419,7 +511,8 @@ int main(void) {
     __wrap_vita2d_end_drawing();
     CHECK(host_updates == 1 && host_creates == 3 && host_strings == 2 && visible);
     int creates = host_creates, strings = host_strings;
-    CHECK(host_checkpoints == 9);
+    CHECK(host_checkpoints == 10);
+    CHECK(host_thread_creates == 1 && renderer_running() == 1 && host_frames_drawn == 1);
     int checkpoints = host_checkpoints;
     for (int tick = 0; tick < 30; tick++) {
         __wrap_vita2d_start_drawing();
@@ -427,6 +520,7 @@ int main(void) {
         __wrap_vita2d_end_drawing();
     }
     CHECK(host_creates == creates && host_strings == strings && host_checkpoints == checkpoints);
+    CHECK(host_thread_creates == 1 && host_frames_drawn == host_updates);
     __wrap_vita2d_start_drawing();
     __wrap_vita2d_end_drawing();
     CHECK(!visible && host_updates == 32);
@@ -622,9 +716,44 @@ int main(void) {
     CHECK(ui_native_vita_utf16("\xc0\x80", text, 8) == 2 && text[0] == 0xfffd && text[1] == 0xfffd);
     CHECK(!ui_native_vita_utf16("x", text, 1) && !text[0]);
     CHECK(!ui_native_vita_utf16("x", NULL, 0));
+    /* Reproduce the old lifecycle explicitly: Update can accept a valid
+     * descriptor without Run, yet no paint occurs. The old mock conflated
+     * these counters and therefore could not detect the blank native UI. */
+    reset();
+    framework = host_instance = vmd_paf_allocate(FW_BYTES);
+    host_expected_frame.renderTarget = (SceCommonDialogRenderTargetInfo){
+        .width = 960, .height = 544, .strideInPixels = 960,
+        .colorSurfaceData = host_nodes, .depthSurfaceData = host_nodes + 16};
+    host_expected_frame.displaySyncObject = host_nodes + 32;
+    VtPafFrameUpdate target_only = {.pitch_pixels = 960, .width = 960, .height = 544,
+        .color_data = host_nodes, .depth_data = host_nodes + 16, .display_sync = host_nodes + 32};
+    vmd_paf_fw_update(framework, &target_only);
+    CHECK(host_updates == 1 && host_frames_drawn == 0 && !renderer_running());
+    /* Runner startup must never accept a target-only Update as a drawn frame. */
+    for (int failure = 0; failure < 4; failure++) {
+        reset();
+        host_thread_create_error = failure == 0;
+        host_thread_start_error = failure == 1;
+        host_run_behavior = failure == 2 ? 1 : failure == 3 ? 2 : 0;
+        CHECK(!ui_native_vita_prepare() && state == -1 && !rendered_once);
+        CHECK(host_theme == VT_UI_THEME_LEGACY && !host_updates && !host_frames_drawn);
+        CHECK(ui_native_vita_error() == (failure == 0 ? -88 : failure == 1 ? -89 : -0x5049));
+    }
+    reset();
+    host_run_behavior = 3;
+    CHECK(ui_native_vita_prepare() && atomic_load(&host_delays) >= 5);
+    __wrap_vita2d_start_drawing();
+    fixture();
+    __wrap_vita2d_end_drawing();
+    CHECK(host_frames_drawn == 1 && rendered_once && !atomic_load(&renderer_exited));
+    host_stop_runner();
+    __wrap_vita2d_start_drawing();
+    CHECK(!ui_native_vita_active() && state == -1 && host_theme == VT_UI_THEME_LEGACY);
+    __wrap_vita2d_end_drawing();
+    CHECK(host_frames_drawn == 1 && host_updates == 1);
     reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
-           "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures "
-           "and UTF-16 passed. Sony firmware rendering remains unverified.\n",
+           "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "
+           "UTF-16 and threaded Run/Update handshake passed. Sony pixels remain unverified.\n",
            checks);
 }
