@@ -338,6 +338,9 @@ static void draw_skip_button(vita2d_font *font, float center_x,
 	unsigned fill = fade_color(VT_THEME_GLASS_A(225), opacity);
 	unsigned text = fade_color(VT_THEME_TEXT, opacity);
 	float left = center_x - 23.0f, top = PLAYER_TRANSPORT_Y - 23.0f;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if (ui_native_vita_button_fade(left, top, 46, 46, label, 0, opacity)) return;
+#endif
 	vita2d_draw_rectangle(left, top, 46.0f, 46.0f, fill);
 	if (font) {
 		int width = ui_font_text_width(font, UI_FONT_SMALL, label);
@@ -484,6 +487,11 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			draw_skip_button(small, PLAYER_BACK_X, "<", hud_opacity);
 			draw_skip_button(small, PLAYER_FORWARD_X, ">", hud_opacity);
 		}
+#ifdef VMD_ENABLE_PAF_NATIVE
+        int native_play = ui_native_vita_button_fade(PLAYER_PLAY_X - 24,
+            PLAYER_TRANSPORT_Y - 22, 48, 44, paused ? "\xE2\x96\xB6" : "II", 0, hud_opacity);
+        if (!native_play) {
+#endif
 		vita2d_draw_rectangle(PLAYER_PLAY_X - 24, PLAYER_TRANSPORT_Y - 22, 48, 44,
 		                      fade_color(VT_THEME_SURFACE_RAISED, hud_opacity));
 		if (paused) draw_play_icon(PLAYER_PLAY_X-10, PLAYER_TRANSPORT_Y-16, 32, text);
@@ -491,6 +499,9 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 			vita2d_draw_rectangle(PLAYER_PLAY_X-10, PLAYER_TRANSPORT_Y-16, 8, 32, text);
 			vita2d_draw_rectangle(PLAYER_PLAY_X+5, PLAYER_TRANSPORT_Y-16, 8, 32, text);
 		}
+#ifdef VMD_ENABLE_PAF_NATIVE
+        }
+#endif
 		if (paused && small) {
 			const char *paused_text = vt_i18n_str(VT_STR_PLAYER_PAUSED);
 			int width = ui_font_text_width(small, UI_FONT_SMALL, paused_text);
@@ -743,6 +754,9 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		                  UI_FONT_SMALL, fitted_decoder);
 		ui_font_draw_text(small, (int)x + 28, divider_y + 56,
 		                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, fitted_bitrate);
+#ifdef VMD_ENABLE_PAF_NATIVE
+        if(ui_native_vita_active())ui_panel(x+14,492,width-28,40,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+#endif
 		ui_font_draw_text(small, (int)x + 28, 518, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_PLAYER_PANEL_HINT));
 	}

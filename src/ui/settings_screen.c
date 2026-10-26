@@ -180,6 +180,9 @@ static const char *subtitle_position_label(int position) {
 }
 
 static void draw_toggle(float x, float y, int enabled) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if (ui_native_vita_toggle(x + 5, y - 8, 44, 44, enabled)) return;
+#endif
 	vita2d_draw_rectangle(x, y, 54, 28,
 	                      enabled ? VT_THEME_BLUE : VT_THEME_BORDER);
 	vita2d_draw_fill_circle(x + (enabled ? 40.0f : 14.0f), y + 14.0f,
@@ -544,6 +547,10 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 #ifdef VMD_ENABLE_PAF_NATIVE
         if (tab == TAB_INTERFACE && ui_native_vita_error())
             footer = vt_i18n_str(VT_STR_SETTINGS_THEME_VMD_RESTART_HINT);
+#endif
+#ifdef VMD_ENABLE_PAF_NATIVE
+        if (ui_native_vita_active())
+            ui_panel(ROW_X - 2, 438, ROW_W + 4, 36, VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
 #endif
 		char fitted[512];
 		ui_font_fit_text(small, UI_FONT_SMALL, footer, fitted, sizeof(fitted),

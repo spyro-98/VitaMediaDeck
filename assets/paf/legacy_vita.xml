@@ -3,6 +3,13 @@
   <pagetable><page id="menu"><plane style="vmd_transparent" id="canvas"><layout_hint size="960, 544" /></plane><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_1" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_2" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_3" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator><busyindicator style="_common_style_busyindicator_8" id="vmd_native_3_4" texture="_common_texture_busy"><layout_hint size="32, 32" alpha="0" /></busyindicator></page></pagetable>
   <templatetable />
   <styletable>
+    <!-- Native Button owns its caption, transform and padding. Runtime-only
+         common texture references; no extracted Sony artwork is packaged. -->
+    <style_button id="vmd_button" top_margin="4" bottom_margin="4" left_margin="10" right_margin="10" bg_obj="vmd_button_bg" label_obj="vmd_button_label" glow_obj="vmd_button_glow">
+      <planeobj id="vmd_button_bg" texture0="_common_texture_option_menu_button_single" />
+      <textobj id="vmd_button_label" font_size="18" align_x="1" align_y="1" word_wrap="0" ellipsis="1" />
+      <planeobj id="vmd_button_glow" texture0="_common_texture_option_menu_button_single_glow" blend="2" />
+    </style_button>
     <style_plane color="0, 0, 0, 0" planeobj="transparent_plane" id="vmd_transparent"><planeobj id="transparent_plane" /></style_plane>
     <style_plane color="0.025, 0.15, 0.29, 0.98" planeobj="panel_plane" id="vmd_panel"><planeobj id="panel_plane" /></style_plane>
     <style_plane color="1, 1, 1, 1" planeobj="white_plane" id="vmd_white"><planeobj id="white_plane" /></style_plane>

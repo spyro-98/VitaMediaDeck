@@ -100,85 +100,218 @@ static void fx_frame(float x,float y,float w,float h,unsigned color){
  vita2d_draw_rectangle(x,y,w,1,color);vita2d_draw_rectangle(x,y+h-1,w,1,color);
  vita2d_draw_rectangle(x,y,1,h,color);vita2d_draw_rectangle(x+w-1,y,1,h,color);
 }
-/* App-owned dark wave backdrop. Sony still owns the widgets above it.
- * One bounded color-geometry batch; no bitmap, shader or background worker. */
-static void vmd_wave_background(unsigned base) {
-    static const float curve[33][2] = {
-        {0.0000000f, 0.0000000f},
-        {0.0980171f, 0.1950903f},
-        {0.1950903f, 0.3826834f},
-        {0.2902847f, 0.5555702f},
-        {0.3826834f, 0.7071068f},
-        {0.4713967f, 0.8314696f},
-        {0.5555702f, 0.9238795f},
-        {0.6343933f, 0.9807853f},
-        {0.7071068f, 1.0000000f},
-        {0.7730105f, 0.9807853f},
-        {0.8314696f, 0.9238795f},
-        {0.8819213f, 0.8314696f},
-        {0.9238795f, 0.7071068f},
-        {0.9569403f, 0.5555702f},
-        {0.9807853f, 0.3826834f},
-        {0.9951847f, 0.1950903f},
-        {1.0000000f, 0.0000000f},
-        {0.9951847f, -0.1950903f},
-        {0.9807853f, -0.3826834f},
-        {0.9569403f, -0.5555702f},
-        {0.9238795f, -0.7071068f},
-        {0.8819213f, -0.8314696f},
-        {0.8314696f, -0.9238795f},
-        {0.7730105f, -0.9807853f},
-        {0.7071068f, -1.0000000f},
-        {0.6343933f, -0.9807853f},
-        {0.5555702f, -0.9238795f},
-        {0.4713967f, -0.8314696f},
-        {0.3826834f, -0.7071068f},
-        {0.2902847f, -0.5555702f},
-        {0.1950903f, -0.3826834f},
-        {0.0980171f, -0.1950903f},
-        {0.0000000f, -0.0000000f}
-    };
-    vita2d_color_vertex vertices[1224];
-    unsigned count = 0;
-    float phase = fx_phase(30000000ULL) * 6.28318530718f;
-    float drift = sinf(phase), breathe = cosf(phase);
-    for (int band = 0; band < 12; band++) {
-        float y = 54 + band * (490.f / 12), next = 54 + (band + 1) * (490.f / 12);
-        unsigned color = fx_mix(base, RGBA8(14,42,68,255), 14 + band * 3);
-        vita2d_color_vertex q[4] = {{0,y,.5f,color},{960,y,.5f,color},
-                                   {960,next,.5f,color},{0,next,.5f,color}};
-        const unsigned order[6] = {0,1,2,0,2,3};
-        for (int j=0;j<6;j++) vertices[count++] = q[order[j]];
+/* Dark console poster: original line geometry, no textures or new shader.
+ * Fixed upper bound 4,096 vertices / 65,536 pool bytes, one GPU draw. */
+static void vmd_quad(vita2d_color_vertex *v, unsigned *count,
+                     const float x[4], const float y[4], unsigned color) {
+    static const unsigned order[6] = {0,1,2,0,2,3};
+    for (int n=0;n<6;n++) {
+        unsigned j=order[n];
+        v[(*count)++] = (vita2d_color_vertex){x[j],fmaxf(54,fminf(544,y[j])),.5f,color};
     }
-    for (int wave=0;wave<2;wave++)
-        for (int i=0;i<32;i++) {
-            float x[2] = {i*30.f,(i+1)*30.f}, y[2];
-            for (int j=0;j<2;j++)
-                y[j] = (wave ? 385 : 225) + (x[j]/960.f-.5f)*(wave ? -44 : 58) +
-                        curve[i+j][0]*(wave ? -30 : 42) + curve[i+j][1]*(10+drift*8) +
-                        breathe*(wave ? -7 : 7);
-            for (int lane=0;lane<3;lane++) {
-                float thickness = wave ? 20 : 16;
-                float top = (lane-1.5f)*thickness, bottom = top+thickness;
-                unsigned color = RGBA8(66,130,184,lane==1?18:6);
-                vita2d_color_vertex q[4] = {
-                    {x[0],y[0]+top,.5f,color},{x[1],y[1]+top,.5f,color},
-                    {x[1],y[1]+bottom,.5f,color},{x[0],y[0]+bottom,.5f,color}};
-                const unsigned order[6] = {0,1,2,0,2,3};
-                for (int j=0;j<6;j++) vertices[count++] = q[order[j]];
+}
+static void vmd_symbol(vita2d_color_vertex *v,unsigned *count,int symbol,
+                       float x,float y,unsigned color) {
+    /* Four original glyph meshes, already rotated/outlined: no per-frame
+     * glyph tessellation, square root or trigonometry. */
+    static const unsigned first[4]={0,12,84,102},size[4]={12,72,18,24};
+    static const float glyph[126][2]={
+        {-10.574049f,-5.458554f},
+        {9.859791f,6.662646f},
+        {10.574049f,5.458554f},
+        {-10.574049f,-5.458554f},
+        {10.574049f,5.458554f},
+        {-9.859791f,-6.662646f},
+        {5.458554f,-10.574049f},
+        {-6.662646f,9.859791f},
+        {-5.458554f,10.574049f},
+        {5.458554f,-10.574049f},
+        {-5.458554f,10.574049f},
+        {6.662646f,-9.859791f},
+        {10.926849f,-2.977060f},
+        {10.853553f,3.234084f},
+        {12.253455f,3.250604f},
+        {10.926849f,-2.977060f},
+        {12.253455f,3.250604f},
+        {12.326751f,-2.960540f},
+        {10.951459f,2.885215f},
+        {7.782411f,8.227575f},
+        {8.986502f,8.941833f},
+        {10.951459f,2.885215f},
+        {8.986502f,8.941833f},
+        {12.155550f,3.599473f},
+        {8.041634f,7.974399f},
+        {2.625978f,11.016494f},
+        {3.311622f,12.237106f},
+        {8.041634f,7.974399f},
+        {3.311622f,12.237106f},
+        {8.727279f,9.195010f},
+        {2.977060f,10.926849f},
+        {-3.234084f,10.853553f},
+        {-3.250604f,12.253455f},
+        {2.977060f,10.926849f},
+        {-3.250604f,12.253455f},
+        {2.960540f,12.326751f},
+        {-2.885215f,10.951459f},
+        {-8.227575f,7.782411f},
+        {-8.941833f,8.986502f},
+        {-2.885215f,10.951459f},
+        {-8.941833f,8.986502f},
+        {-3.599473f,12.155550f},
+        {-7.974399f,8.041634f},
+        {-11.016494f,2.625978f},
+        {-12.237106f,3.311622f},
+        {-7.974399f,8.041634f},
+        {-12.237106f,3.311622f},
+        {-9.195010f,8.727279f},
+        {-10.926849f,2.977060f},
+        {-10.853553f,-3.234084f},
+        {-12.253455f,-3.250604f},
+        {-10.926849f,2.977060f},
+        {-12.253455f,-3.250604f},
+        {-12.326751f,2.960540f},
+        {-10.951459f,-2.885215f},
+        {-7.782411f,-8.227575f},
+        {-8.986502f,-8.941833f},
+        {-10.951459f,-2.885215f},
+        {-8.986502f,-8.941833f},
+        {-12.155550f,-3.599473f},
+        {-8.041634f,-7.974399f},
+        {-2.625978f,-11.016494f},
+        {-3.311622f,-12.237106f},
+        {-8.041634f,-7.974399f},
+        {-3.311622f,-12.237106f},
+        {-8.727279f,-9.195010f},
+        {-2.977060f,-10.926849f},
+        {3.234084f,-10.853553f},
+        {3.250604f,-12.253455f},
+        {-2.977060f,-10.926849f},
+        {3.250604f,-12.253455f},
+        {-2.960540f,-12.326751f},
+        {2.885215f,-10.951459f},
+        {8.227575f,-7.782411f},
+        {8.941833f,-8.986502f},
+        {2.885215f,-10.951459f},
+        {8.941833f,-8.986502f},
+        {3.599473f,-12.155550f},
+        {7.974399f,-8.041634f},
+        {11.016494f,-2.625978f},
+        {12.237106f,-3.311622f},
+        {7.974399f,-8.041634f},
+        {12.237106f,-3.311622f},
+        {9.195010f,-8.727279f},
+        {-3.469581f,-11.137700f},
+        {11.052718f,3.731445f},
+        {12.054280f,2.753245f},
+        {-3.469581f,-11.137700f},
+        {12.054280f,2.753245f},
+        {-2.468019f,-12.115900f},
+        {11.380317f,2.564106f},
+        {-8.757882f,7.706216f},
+        {-8.411517f,9.062694f},
+        {11.380317f,2.564106f},
+        {-8.411517f,9.062694f},
+        {11.726682f,3.920584f},
+        {-7.910736f,8.573594f},
+        {-2.294837f,-11.437661f},
+        {-3.642763f,-11.815939f},
+        {-7.910736f,8.573594f},
+        {-3.642763f,-11.815939f},
+        {-9.258663f,8.195316f},
+        {-10.335650f,-5.555521f},
+        {6.406942f,-9.830593f},
+        {6.060578f,-11.187071f},
+        {-10.335650f,-5.555521f},
+        {6.060578f,-11.187071f},
+        {-10.682014f,-6.911999f},
+        {5.555521f,-10.335650f},
+        {9.830593f,6.406942f},
+        {11.187071f,6.060578f},
+        {5.555521f,-10.335650f},
+        {11.187071f,6.060578f},
+        {6.911999f,-10.682014f},
+        {10.335650f,5.555521f},
+        {-6.406942f,9.830593f},
+        {-6.060578f,11.187071f},
+        {10.335650f,5.555521f},
+        {-6.060578f,11.187071f},
+        {10.682014f,6.911999f},
+        {-5.555521f,10.335650f},
+        {-9.830593f,-6.406942f},
+        {-11.187071f,-6.060578f},
+        {-5.555521f,10.335650f},
+        {-11.187071f,-6.060578f},
+        {-6.911999f,10.682014f}
+    };
+    for(unsigned n=first[symbol];n<first[symbol]+size[symbol];n++)
+        v[(*count)++]=(vita2d_color_vertex){x+glyph[n][0],fmaxf(54,fminf(544,y+glyph[n][1])),.5f,color};
+}
+static void vmd_wave_background(unsigned base) {
+    (void)base;
+    static const float curve[20][4] = {
+        {0.00000000f,1.00000000f,0.00000000f,1.00000000f},
+        {0.32469947f,0.94581724f,0.61421271f,0.78914051f},
+        {0.61421271f,0.78914051f,0.96940027f,0.24548549f},
+        {0.83716648f,0.54694816f,0.91577333f,-0.40169542f},
+        {0.96940027f,0.24548549f,0.47594739f,-0.87947375f},
+        {0.99658449f,-0.08257935f,-0.16459459f,-0.98636130f},
+        {0.91577333f,-0.40169542f,-0.73572391f,-0.67728157f},
+        {0.73572391f,-0.67728157f,-0.99658449f,-0.08257935f},
+        {0.47594739f,-0.87947375f,-0.83716648f,0.54694816f},
+        {0.16459459f,-0.98636130f,-0.32469947f,0.94581724f},
+        {-0.16459459f,-0.98636130f,0.32469947f,0.94581724f},
+        {-0.47594739f,-0.87947375f,0.83716648f,0.54694816f},
+        {-0.73572391f,-0.67728157f,0.99658449f,-0.08257935f},
+        {-0.91577333f,-0.40169542f,0.73572391f,-0.67728157f},
+        {-0.99658449f,-0.08257935f,0.16459459f,-0.98636130f},
+        {-0.96940027f,0.24548549f,-0.47594739f,-0.87947375f},
+        {-0.83716648f,0.54694816f,-0.91577333f,-0.40169542f},
+        {-0.61421271f,0.78914051f,-0.96940027f,0.24548549f},
+        {-0.32469947f,0.94581724f,-0.61421271f,0.78914051f},
+        {-0.00000000f,1.00000000f,-0.00000000f,1.00000000f}
+    };
+#ifdef __vita__
+    vita2d_color_vertex *vertices=vita2d_pool_memalign(4096*sizeof(*vertices),16);
+    if(!vertices)return;
+#else
+    vita2d_color_vertex storage[4096],*vertices=storage;
+#endif
+    unsigned count=0;
+    for(int band=0;band<12;band++) {
+        float top=54+band*(490.f/12),bottom=54+(band+1)*(490.f/12);
+        const float x[4]={0,960,960,0},y[4]={top,top,bottom,bottom};
+        vmd_quad(vertices,&count,x,y,fx_mix(RGBA8(2,7,18,255),RGBA8(5,15,31,255),band*18));
+    }
+    float poster=fx_phase(24000000ULL)*4;
+    int step=(int)poster;
+    float offset=poster-step;
+    for(int row=-1;row<7;row++)for(int col=-1;col<8;col++) {
+        int symbol=(row+col-step+40)%4;
+        vmd_symbol(vertices,&count,symbol,col*128.f+row*30+offset*128,
+            row*110.f-col*32-offset*32+36,RGBA8(48,152,204,18));
+    }
+    float time=fx_phase(120000000ULL)*6.28318530718f;
+    for(int wave=0;wave<5;wave++) {
+        float phase=time*(12+wave*3),ss=sinf(phase),cc=cosf(phase);
+        unsigned ink=RGBA8(40,198,242,1);
+        for(int i=0;i<19;i++) {
+            float x[2]={i*(960.f/19),(i+1)*(960.f/19)},y[2];
+            for(int j=0;j<2;j++)y[j]=104+wave*84+(x[j]-480)*(wave%2?.09f:-.07f)+
+                (curve[i+j][0]*cc+curve[i+j][1]*ss)*(22+wave*4)+curve[i+j][2]*(8+wave*2);
+            for(int lane=0;lane<3;lane++) {
+                static const float half_width[3]={5.5f,2.5f,.65f};
+                static const unsigned opacity[3]={9,24,150};
+                float half=half_width[lane];
+                const float qx[4]={x[0],x[1],x[1],x[0]};
+                const float qy[4]={y[0]-half,y[1]-half,y[1]+half,y[0]+half};
+                vmd_quad(vertices,&count,qx,qy,(ink&0xffffffu)|(opacity[lane]<<24));
             }
         }
+    }
 #ifdef VMD_ENABLE_PAF_NATIVE
-    ui_native_vita_cover(0,54,960,490,base);
+    ui_native_vita_cover(0,54,960,490,RGBA8(2,7,18,255));
 #endif
-#ifdef __vita__
-    vita2d_color_vertex *gpu = vita2d_pool_memalign(sizeof(vertices),16);
-    if (!gpu) return;
-    memcpy(gpu,vertices,sizeof(vertices));
-    vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,gpu,count);
-#else
     vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,vertices,count);
-#endif
 }
 void ui_theme_fx_background(unsigned base){
  int theme=ui_theme_id();
@@ -531,7 +664,7 @@ void ui_theme_home_heading(const char *title,const char *path,int bottom){
  }
  if(theme==VT_UI_THEME_SIGNAL){
   /* Parallel edges and constant thickness: an intentional diagonal, no stair gaps. */
-  for(int i=0;i<24;i++)vita2d_draw_rectangle(860+i,126+i,38,1,VT_THEME_SIGNAL_BRIGHT);
+  for(int i=0;i<19;i++)vita2d_draw_rectangle(860+i,126+i,38,1,VT_THEME_SIGNAL_BRIGHT);
  }
 }
 static void theme_home_row(int slot,int ordinal,const char *name,const char *detail,int selected,int focused,int bottom,vita2d_texture *art,const char *placeholder){
@@ -599,6 +732,9 @@ const char *ui_theme_home_controls_hint(int sections_focused){
           [!!sections_focused]);
 }
 void ui_theme_home_footer_with_focus(const char *path,int bottom,int sections_focused){
+#ifdef VMD_ENABLE_PAF_NATIVE
+ if(ui_native_vita_active())ui_panel(14,bottom-52,932,52,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+#endif
  UiThemeHomeLayout l=ui_theme_home_layout(ui_theme_id(),bottom);
  const char *hint=ui_theme_home_controls_hint(sections_focused);
  if(ui_theme_id()==VT_UI_THEME_GHOST_MESH){

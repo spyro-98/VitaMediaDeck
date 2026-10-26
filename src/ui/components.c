@@ -172,8 +172,15 @@ void ui_tab(float x,float y,float w,float h,const char *label,int active) {
 
 void ui_footer(int bottom,const char *left,const char *right) {
 	if(bottom<40)return;
+#ifdef VMD_ENABLE_PAF_NATIVE
+    if (ui_native_vita_active()) ui_panel(14,bottom-36,932,36,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+    else {
+#endif
 	vita2d_draw_rectangle(0,bottom-36,960,36,VT_THEME_SURFACE);
 	vita2d_draw_rectangle(18,bottom-36,924,1,VT_THEME_BORDER_DIM);
+#ifdef VMD_ENABLE_PAF_NATIVE
+    }
+#endif
 	ui_text_line(18,bottom-11,570,left,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 	vita2d_font *font=ui_runtime_font(UI_FONT_SMALL);
 	if(font && right) {

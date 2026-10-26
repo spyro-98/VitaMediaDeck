@@ -836,6 +836,9 @@ static int dashboard_screen(VtLibraryItem *chosen) {
             ui_focus_motion_tick(&focus_motion, r.x, r.y, r.w, r.h);
             ui_focus_outline_draw(&focus_motion);
         }
+        if (ui_theme_id()==VT_UI_THEME_LEGACY_VITA)
+            ui_panel(layout.content.x-2,layout.footer_y-23,layout.content.w+4,30,
+                     VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
         ui_text_line(layout.content.x, layout.footer_y, layout.content.w,
                      focus_sections ? ui_theme_home_controls_hint(1)
                                     : tr("Triangle: search · R1/Square: next/previous",
@@ -1252,6 +1255,8 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         const char *actions = tr("R1: Home · Triangle: search", "R1: Home · Triangolo: cerca");
         int footer_x = layout.x,
             footer_w = ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w : 942 - layout.x;
+        if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA)
+            ui_panel(footer_x-2,bottom-51,footer_w+4,49,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
         if (ui_theme_id() == VT_UI_THEME_APERTURE) {
             char hint[512];
             snprintf(hint, sizeof(hint), "%s · %s", actions, ui_theme_home_controls_hint(focus));

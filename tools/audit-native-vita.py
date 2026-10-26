@@ -8,21 +8,21 @@ for name,key in [('assets/paf/legacy_vita.xml','paf-resource.xml'),('src/ui/nati
     assert hashlib.sha256((r/name).read_bytes()).hexdigest()==lock[key+'.sha256'],name
 meta=json.loads((r/'release/paf-imports.json').read_text())
 assert meta['revision']==lock['paf-abi-reference.commit']
-assert len(meta['functions'])==32
-assert len({v['name'] for v in meta['functions']})==32
+assert len(meta['functions'])==33
+assert len({v['name'] for v in meta['functions']})==33
 explicit={'vmd_paf_widget_show':0xFF5BC957,'vmd_paf_widget_hide':0x4588699E}
 for v in meta['functions']:
     expected=explicit.get(v['name'],int.from_bytes(hashlib.sha1((v['symbol']+'PAF').encode()).digest()[:4],'little'))
     assert expected==int(v['nid'],16),v['name']
     assert v['name'].startswith('vmd_paf_') and v['library'].startswith('ScePaf')
 resource=bytes(int(v,16) for v in re.findall(r'0x([0-9a-f]{2})', (r/'src/ui/native_vita_resource.inc').read_text()))
-assert len(resource)==1728 and hashlib.sha256(resource).hexdigest()=='7577eaa4f0b3c87b73ae5a776cd85502a0109b3980d5263569af5fcbd916ce40'
+assert len(resource)==2336 and hashlib.sha256(resource).hexdigest()=='2949e60991225abcb633fbd64f5b2afe0616b889771a49ff276bcb8c4af36d92'
 # PAF styles/textures are symbolic runtime references, not packed Sony files.
 xml=(r/'assets/paf/legacy_vita.xml').read_text();assert xml.count('<busyindicator ')==4
 assert '<texturetable />' in xml and '<filetable />' in xml
 for p in (r/'src').rglob('*.c'):
     if p.name!='font.c':assert not re.search(r'vita2d_(?:font|pgf|pvf)_draw_text',p.read_text()),str(p)
-print('Native PAF audit: 32 app-local imports, fixed resource hashes, original symbolic-only resource and central text path passed; native firmware rendering is not verified.')
+print('Native PAF audit: 33 app-local imports, fixed resource hashes, original symbolic-only resource and central text path passed; native firmware rendering is not verified.')
 
 # Optional inspection of the real linked Vita ELF, without host ELF packages.
 import sys,struct
@@ -53,5 +53,5 @@ if '--elf' in sys.argv:
             assert ids=={int(v['nid'],16) for v in expected}
             found[lib]=nfunc
         at+=length
-    assert sum(found.values())==32 and len(found)==5,found
-    print('Linked Vita ELF: all 32 PAF functions in five weak firmware libraries verified:',json.dumps(found,sort_keys=True))
+    assert sum(found.values())==33 and len(found)==5,found
+    print('Linked Vita ELF: all 33 PAF functions in five weak firmware libraries verified:',json.dumps(found,sort_keys=True))
