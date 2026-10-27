@@ -344,6 +344,9 @@ static const char *failure_detail(int event) {
     case VT_IPTV_INVALID: return TR(IPTV_MANIFEST_ERROR);
     case UI_LOADING_TASK_FAILED: return TR(IPTV_BACKGROUND_ERROR);
     case VT_IPTV_MANIFEST: return TR(IPTV_MANIFEST_ERROR);
+    case VT_IPTV_TIMESTAMPS: return TR(IPTV_TIMESTAMPS_ERROR);
+    case VT_IPTV_REMUX: return TR(IPTV_REMUX_ERROR);
+    case VT_IPTV_MEDIA_DATA: return TR(IPTV_MEDIA_DATA_ERROR);
     case VT_IPTV_VIDEO_CODEC: return TR(IPTV_VIDEO_CODEC_ERROR);
     case VT_IPTV_AUDIO_CODEC: return TR(IPTV_AUDIO_CODEC_ERROR);
     case VT_IPTV_VIDEO_SIZE: return TR(IPTV_VIDEO_SIZE_ERROR);
@@ -814,7 +817,7 @@ int ui_iptv_screen(void) {
                 text_line(68,274,820,search[0]?TR(IPTV_CLEAR_SEARCH):TR(IPTV_NO_SAVED_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
             }
             ui_scroll_rail(948,IPTV_CATALOG_Y,catalog_rows*catalog_step-8,catalog_top,catalog_visible,result_count);
-            text_line(UI_CONTENT_X,ui_mini_player_top()-12,UI_CONTENT_W,message[0]?message:TR(IPTV_MANAGE_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+            if(message[0])text_line(UI_CONTENT_X,ui_mini_player_top()-12,UI_CONTENT_W,message,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         } else {
         text_line(18,89,720,TR(IPTV_FORMATS),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         ui_panel(18,110,924,90,VT_THEME_SURFACE,VT_THEME_BORDER,0);

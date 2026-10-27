@@ -96,3 +96,7 @@ VT_STR(IPTV_STAR_SHORT, "Preferito", "Favourite")
 VT_STR(IPTV_UNSTAR_SHORT, "Togli stella", "Unfavourite")
 VT_STR(IPTV_LINK_EDIT, "Start · Inserisci / modifica link HTTP(S)", "Start · Enter / edit HTTP(S) link")
 VT_STR(IPTV_CLOSING, "Chiusura collegamento...", "Closing connection...")
+
+VT_STR(IPTV_TIMESTAMPS_ERROR, "La playlist e stata letta, ma i tempi audio/video non sono utilizzabili. Prova un'altra versione del canale.", "The playlist was read, but its audio/video timestamps are unusable. Try another version of the channel.")
+VT_STR(IPTV_REMUX_ERROR, "Playlist e tracce riconosciute, ma la preparazione del flusso per il player non e riuscita.", "The playlist and tracks were recognized, but preparing the stream for the player failed.")
+VT_STR(IPTV_MEDIA_DATA_ERROR, "La playlist e stata letta, ma i segmenti audio/video contengono dati non utilizzabili o incompleti.", "The playlist was read, but its audio/video segments contain unusable or incomplete data.")

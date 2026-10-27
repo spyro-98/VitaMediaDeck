@@ -10,6 +10,8 @@
 #include <libavutil/opt.h>
 #include <libavutil/time.h>
 
+#define STARTUP_PACKETS 128
+#define STARTUP_BYTES (2u*1024u*1024u)
 #define IO_SIZE 32768
 #define RESOURCE_MEMORY (24u*1024u*1024u)
 typedef struct HlsSource HlsSource;
@@ -27,7 +29,9 @@ struct HlsSource {
     AVIOContext *root_io, *output_io;
     AVPacket *packet;
     int map[16], finished, error, output_error, origin_set;
-    int64_t origin, video_decode_lead, last_dts[16];
+    int64_t origin, video_decode_lead, video_lead_limit, last_dts[16];
+    unsigned timestamp_probe_frames, startup_count, startup_pos;
+    AVPacket *startup[STARTUP_PACKETS];
     uint32_t audio_rate, audio_channels;
     unsigned char *output;
     size_t output_size, output_capacity, resource_bytes;
@@ -236,6 +240,15 @@ static int initialize(HlsSource *s) {
     if(fps.num<=0 || fps.den<=0)fps=(AVRational){25,1};
     s->video_decode_lead=avcc?av_rescale_q(reorder,av_inv_q(fps),AV_TIME_BASE_Q):0;
     if(s->video_decode_lead>2000000)return VT_IPTV_UNSUPPORTED;
+    /* Some reordered TS sources have negative composition offsets, including
+     * explicit DTS and PTS-only PES with inferred DTS. Observe a bounded startup
+     * window before publishing bytes, then use one constant decode lead.
+     * PTS and the audio timeline are never shifted. */
+    if(!avcc && reorder>0) {
+        s->timestamp_probe_frames=(unsigned)reorder+3;
+        s->video_lead_limit=av_rescale_q(reorder+2,av_inv_q(fps),AV_TIME_BASE_Q);
+        if(s->video_lead_limit>2000000)s->video_lead_limit=2000000;
+    }
     IPTV_TRACE("HLS timeline: avcc=%d reorder=%d decode-lead=%lld us\n",avcc,reorder,(long long)s->video_decode_lead);
     if(avformat_alloc_output_context2(&s->mux,NULL,"mpegts",NULL)<0 || !s->mux)return VT_IPTV_MEMORY;
     unsigned char *buffer=av_malloc(IO_SIZE);if(!buffer)return VT_IPTV_MEMORY;
@@ -265,6 +278,53 @@ static void *source_open(const char *url,const VtIptvSourceConfig *config) {
     for(int i=0;i<16;i++){s->map[i]=-1;s->last_dts[i]=INT64_MIN;}
     s->packet=av_packet_alloc();if(!s->packet){free(s);return NULL;}return s;
 }
+/* Packet references only, transiently bounded at 128 packets / 2 MiB.
+ * This runs once on the producer; no per-frame allocation after replay. */
+static int prepare_decode_order(HlsSource *s) {
+    if(!s->timestamp_probe_frames)return 0;
+    unsigned video_frames=0;size_t bytes=0;int64_t previous=INT64_MIN,required=0;
+    while(video_frames<s->timestamp_probe_frames) {
+        if(interrupted(s))return VT_IPTV_CANCELLED;
+        int r=av_read_frame(s->demux,s->packet);
+        if(s->error)return s->error;
+        if(r==AVERROR_EOF)break;
+        if(r<0)return VT_IPTV_MEDIA_DATA;
+        int index=s->packet->stream_index;
+        if(index<0 || index>=16)return VT_IPTV_MEDIA_DATA;
+        if(s->map[index]<0){av_packet_unref(s->packet);continue;}
+        if(s->startup_count==STARTUP_PACKETS || s->packet->size<0 ||
+           (size_t)s->packet->size>STARTUP_BYTES-bytes)return VT_IPTV_LIMIT;
+        if(s->packet->pts==AV_NOPTS_VALUE || s->packet->dts==AV_NOPTS_VALUE)return VT_IPTV_TIMESTAMPS;
+        AVStream *in=s->demux->streams[index];
+        if(in->codecpar->codec_type==AVMEDIA_TYPE_VIDEO) {
+            int64_t dts=av_rescale_q(s->packet->dts,in->time_base,AV_TIME_BASE_Q);
+            int64_t pts=av_rescale_q(s->packet->pts,in->time_base,AV_TIME_BASE_Q);
+            if(dts<INT64_MIN+5000000 || dts>INT64_MAX-5000000 || pts<INT64_MIN+5000000 || pts>INT64_MAX-5000000)return VT_IPTV_TIMESTAMPS;
+            if(previous!=INT64_MIN && dts<=previous && previous-dts<=100000)dts=previous+12;
+            previous=dts;
+            if(dts>pts) {
+                if(pts<dts-s->video_lead_limit)return VT_IPTV_TIMESTAMPS;
+                if(dts-pts>required)required=dts-pts;
+            }
+            video_frames++;
+        }
+        AVPacket *saved=av_packet_alloc();if(!saved)return VT_IPTV_MEMORY;
+        bytes+=(size_t)s->packet->size;av_packet_move_ref(saved,s->packet);
+        s->startup[s->startup_count++]=saved;
+    }
+    if(required>s->video_lead_limit)return VT_IPTV_TIMESTAMPS;
+    if(required>s->video_decode_lead)s->video_decode_lead=required+12; /* One 90 kHz tick of rounding headroom. */
+    IPTV_TRACE("HLS decode order: observed=%lld lead=%lld us packets=%u video=%u\n",
+        (long long)required,(long long)s->video_decode_lead,s->startup_count,video_frames);
+    s->timestamp_probe_frames=0;return 0;
+}
+static int read_packet(HlsSource *s) {
+    if(s->startup_pos<s->startup_count) {
+        AVPacket **saved=&s->startup[s->startup_pos++];
+        av_packet_move_ref(s->packet,*saved);av_packet_free(saved);return 0;
+    }
+    return av_read_frame(s->demux,s->packet);
+}
 static int source_next(void *opaque,uint64_t now,volatile int *cancel,unsigned char **data,size_t *size,int *finite,uint64_t *duration) {
     (void)now;HlsSource *s=opaque;s->cancel=cancel;*data=NULL;*size=0;
     int result=0;
@@ -272,23 +332,24 @@ static int source_next(void *opaque,uint64_t now,volatile int *cancel,unsigned c
     *finite=s->demux->duration!=AV_NOPTS_VALUE && s->demux->duration>0;
     *duration=*finite?(uint64_t)(s->demux->duration/1000):0;
     if(s->finished)return VT_IPTV_END;
+    result=prepare_decode_order(s);if(result)goto failed;
     int64_t start=INT64_MIN;
     for(unsigned n=0;n<10000;n++) {
         if(interrupted(s)){result=VT_IPTV_CANCELLED;goto failed;}
-        int r=av_read_frame(s->demux,s->packet);
+        int r=read_packet(s);
         if(s->error){result=s->error;goto failed;}
         if(r==AVERROR_EOF) {
             if(s->error){result=s->error;goto failed;}
             if(!*finite){result=VT_IPTV_IO;goto failed;}
-            if(av_write_trailer(s->mux)<0){result=VT_IPTV_INVALID;goto failed;}
+            if(av_write_trailer(s->mux)<0){result=VT_IPTV_REMUX;goto failed;}
             s->finished=1;break;
         }
-        if(r<0){result=s->error?s->error:VT_IPTV_INVALID;goto failed;}
+        if(r<0){result=s->error?s->error:VT_IPTV_MEDIA_DATA;goto failed;}
         int index=s->packet->stream_index;
         if(index<0 || index>=16){result=VT_IPTV_INVALID;goto failed;}
         if(s->map[index]<0){av_packet_unref(s->packet);continue;}
-        if(s->packet->pts==AV_NOPTS_VALUE || s->packet->dts==AV_NOPTS_VALUE ||
-           av_packet_get_side_data(s->packet,AV_PKT_DATA_ENCRYPTION_INFO,NULL)) {result=VT_IPTV_ENCRYPTED;goto failed;}
+        if(av_packet_get_side_data(s->packet,AV_PKT_DATA_ENCRYPTION_INFO,NULL)){result=VT_IPTV_ENCRYPTED;goto failed;}
+        if(s->packet->pts==AV_NOPTS_VALUE || s->packet->dts==AV_NOPTS_VALUE){result=VT_IPTV_TIMESTAMPS;goto failed;}
         AVStream *in=s->demux->streams[index],*out=s->mux->streams[s->map[index]];
         int64_t dts=av_rescale_q(s->packet->dts,in->time_base,AV_TIME_BASE_Q);
         int64_t pts=av_rescale_q(s->packet->pts,in->time_base,AV_TIME_BASE_Q);
@@ -307,6 +368,7 @@ static int source_next(void *opaque,uint64_t now,volatile int *cancel,unsigned c
             /* Never silently give the two readers different clock epochs. */
             result=VT_IPTV_DISCONTINUITY;goto failed;
         }
+        if(dts>pts){result=VT_IPTV_TIMESTAMPS;goto failed;}
         s->last_dts[index]=dts;
         if(start==INT64_MIN)start=dts;
         s->packet->dts=av_rescale_q(dts-s->origin,AV_TIME_BASE_Q,out->time_base);
@@ -314,7 +376,7 @@ static int source_next(void *opaque,uint64_t now,volatile int *cancel,unsigned c
         s->packet->duration=av_rescale_q(s->packet->duration,in->time_base,out->time_base);
         s->packet->stream_index=out->index;s->packet->pos=-1;
         r=av_write_frame(s->mux,s->packet);av_packet_unref(s->packet);s->packets++;
-        if(r<0){result=s->output_error?s->output_error:VT_IPTV_INVALID;goto failed;}
+        if(r<0){result=s->output_error?s->output_error:VT_IPTV_REMUX;goto failed;}
         if(dts-start>=1000000)break;
     }
     avio_flush(s->output_io);
@@ -333,6 +395,7 @@ static void source_close(void *opaque) {
     if(s->root_io)close_resource(NULL,s->root_io);
     avformat_free_context(s->mux);
     if(s->output_io){av_freep(&s->output_io->buffer);avio_context_free(&s->output_io);}
+    for(unsigned i=0;i<s->startup_count;i++)av_packet_free(&s->startup[i]);
     av_packet_free(&s->packet);free(s->output);free(s);
 }
 static void audio_info(void *opaque,uint32_t *rate,uint32_t *channels) {
