@@ -153,7 +153,7 @@ in [Home, thumbnails, image controls and seek](docs/ui-feedback-2026-10-22.md).
 The [visual research and grid correction](docs/ui-style-research-2026-10-22.md)
 compares new interface directions and records the equal-row layout checks.
 Eight [themes and shared navigation](docs/themes-navigation-2026-10-23.md) are available in Settings → Interface → Theme:
-Legacy (the default), Ghost Mesh, Deck 90, Signal, Aperture, Relay, Mosaic and **VMD**.
+**VMD (the default)**, Legacy, Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic.
 VMD keeps Legacy navigation and uses actual Sony PAF text, buttons,
 panels and busy indicators throughout the app, including the player HUD, QR,
 guide, dialogs and less-used screens. Media textures keep their existing GPU
