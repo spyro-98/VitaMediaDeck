@@ -74,3 +74,45 @@ ffmpeg("-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-f", "lavfi", "-i"
 for name,extra in [("nodelay",[]),("nodelay-mux",["-hls_segment_type","fmp4"])]:
     ffmpeg("-i",root/"nodelay.mp4","-map","0:v","-map","0:a","-c","copy","-hls_time","2",
            "-hls_playlist_type","vod","-hls_fmp4_init_filename",name+"-init.mp4",*extra,root/(name+".m3u8"))
+
+# PTS-only MPEG-TS with non-pyramid B-frames: matches the observed broadcaster
+# timestamp class using locally generated media, never captured broadcasts.
+ffmpeg("-f", "lavfi", "-i", "testsrc2=size=512x288:rate=50", "-f", "lavfi", "-i",
+       "sine=frequency=440:sample_rate=48000", "-t", "12", "-c:v", "libx264", "-preset", "ultrafast",
+       "-pix_fmt", "yuv420p", "-g", "100", "-bf", "2", "-x264-params", "b-pyramid=none:b-adapt=0",
+       "-c:a", "aac", "-ac", "2", "-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod", root / "pts-only.m3u8")
+# A second fixture retains the encoder's mixture of PTS-only and PTS+DTS PES,
+# shifting explicit video DTS forward by one frame (20 ms at 90 kHz).
+(root / "shifted-dts.m3u8").write_text((root / "pts-only.m3u8").read_text().replace("pts-only", "shifted-dts"))
+pts_only_headers = 0
+shifted_headers = 0
+for path in root.glob("pts-only*.ts"):
+    body = bytearray(path.read_bytes())
+    shifted = bytearray(body)
+    for offset in range(0, len(body), 188):
+        assert body[offset] == 0x47
+        if not body[offset+1] & 64:
+            continue
+        adaptation = (body[offset+3] >> 4) & 3
+        if not adaptation & 1:
+            continue
+        pes = offset+4+(1+body[offset+4] if adaptation & 2 else 0)
+        if pes+19 > offset+188 or body[pes:pes+3] != b"\x00\x00\x01" or not 0xe0 <= body[pes+3] <= 0xef:
+            continue
+        if body[pes+7] >> 6 == 3:
+            encoded = body[pes+14:pes+19]
+            dts = (((encoded[0] >> 1) & 7) << 30) | (encoded[1] << 22) | ((encoded[2] >> 1) << 15) | (encoded[3] << 7) | (encoded[4] >> 1)
+            dts = (dts + 1800) & ((1 << 33) - 1)
+            shifted[pes+14:pes+19] = bytes((0x11 | ((dts >> 29) & 14), (dts >> 22) & 255, 1 | ((dts >> 14) & 254), (dts >> 7) & 255, 1 | ((dts << 1) & 254)))
+            shifted_headers += 1
+            # Keep the PES length and header length: replace DTS with legal
+            # stuffing. PTS uses the PTS-only prefix; compressed bytes are intact.
+            body[pes+7] = (body[pes+7] & 63) | 128
+            body[pes+9] = (body[pes+9] & 15) | 32
+            body[pes+14:pes+19] = b"\xff" * 5
+            pts_only_headers += 1
+    path.write_bytes(body)
+    path.with_name(path.name.replace("pts-only", "shifted-dts")).write_bytes(shifted)
+assert shifted_headers > 100
+assert pts_only_headers > 100
+print("Synthetic PTS-only video PES headers:", pts_only_headers)

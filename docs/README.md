@@ -1,5 +1,7 @@
 # VitaMediaDeck documentation — 1.4.1
 
+Current IPTV correction: [Mediaset decode timestamps and duplicate footer](iptv-mediaset-timestamps-2026-10-27.md).
+
 Current IPTV follow-up: [cancellation and visible management actions](iptv-cancel-management-2026-10-27.md).
 
 Latest correction: [local images beside Immich](local-images-2026-10-27.md).

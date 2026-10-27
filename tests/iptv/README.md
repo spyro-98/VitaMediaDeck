@@ -39,8 +39,8 @@ VMD_HLS_FIXTURE="$vmd_hls_fixture" bash tests/iptv/run-hls-tests.sh
 ```
 
 OpenSSL independently encrypts generated media with AES-CBC. The suite decodes
-eleven 12-second fixtures through both production session readers: TS, fMP4,
-signed composition offsets, low-delay TS/fMP4 with unchanged PTS=DTS,
+thirteen 12-second fixtures through both production session readers: TS, fMP4,
+signed composition offsets, PTS-only and shifted-explicit-DTS TS B-frames, low-delay TS/fMP4 with unchanged PTS=DTS,
 separate video/audio, byte ranges, ranged init maps,
 explicit/implicit IVs and rotating keys with METHOD=NONE. It also covers malformed
 padding/metadata, redirect downgrades, exact ranges, repeated open/close and
@@ -284,3 +284,16 @@ This runs ASan/UBSan and TSan, repeating cancellation before prebuffer and durin
 a decoder stream read. Decoder/transport delivery are synthetic; it requires
 the real producer to exit before UI cleanup and checks repeatable stop/join.
 Shared loading UI cancellation is exercised by `tests/ui_crossfade/run-host-tests.sh`.
+
+## PTS-only TS / Mediaset regression
+
+See [the timestamp and footer correction](../../docs/iptv-mediaset-timestamps-2026-10-27.md).
+Regenerate HLS fixtures with the current generator before running the suite.
+The PTS-only case uses synthetic H.264 non-pyramid B-frames and replaces DTS
+PES-header fields with legal stuffing, retaining media bytes and PTS. A second
+fixture retains mixed PTS-only/PTS+DTS PES and shifts explicit video DTS by one
+frame, matching the observed negative-composition class. Both real
+session readers must decode 600 video and 564 audio frames with bounded A/V
+delta. The ordinary and low-delay fixtures keep their previous expectations.
+UI checks reject the duplicate IPTV management legend in all themes/languages
+and verify separate timestamp, media-data and remux error mapping.

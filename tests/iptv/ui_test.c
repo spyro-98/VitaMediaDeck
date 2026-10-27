@@ -52,7 +52,7 @@ static char trail_text[2048];
 static int tap_frame=-1, tap_x, tap_y;
 static unsigned input_script[64], script_count, capture_frame;
 static SceCtrlData input_axes[64];static unsigned axis_count;
-static unsigned compact_home_labels, cancellation_labels;
+static unsigned compact_home_labels, cancellation_labels, duplicated_iptv_hints;
 static int allow_audio_fullscreen;
 static int clipped, clip_left, clip_top, clip_right=960, clip_bottom=544;
 static const char *output;
@@ -103,6 +103,7 @@ int ui_font_draw_text(vita2d_font *font,int x,int y,unsigned color,unsigned size
     if(y<54&&text&&(!strcmp(text,"Video locali")||!strcmp(text,"Libreria")||!strcmp(text,"Podcast")||!strcmp(text,"Radio")))compact_home_labels++;
 
     if(!strcmp(text,vt_i18n_str(VT_STR_LOADING_CANCELLING)))cancellation_labels++;
+    if(!strcmp(text,vt_i18n_str(VT_STR_IPTV_MANAGE_HINT)))duplicated_iptv_hints++;
     int width=ui_font_text_width(font,size,text);
     if (!clipped&&(x<0||y<(int)size||x+width>960||y>544))
         fprintf(stderr,"Text bounds: x=%d y=%d width=%d size=%u text=%s\n",x,y,width,size,text);
@@ -646,6 +647,10 @@ int main(int argc,char **argv) {
     stop_poll_budget=3;closing_frames=0;
     mode=VT_IPTV_HLS;CHECK(play_link(&message)==UI_SECTION_NONE&&message==TR(IPTV_CANCELLED));
     CHECK(playback_notices==notices&&closing_frames==3&&!stop_poll_budget);next_event=0;
+    CHECK(!duplicated_iptv_hints);
+    CHECK(failure_detail(VT_IPTV_TIMESTAMPS)==TR(IPTV_TIMESTAMPS_ERROR));
+    CHECK(failure_detail(VT_IPTV_REMUX)==TR(IPTV_REMUX_ERROR));
+    CHECK(failure_detail(VT_IPTV_MEDIA_DATA)==TR(IPTV_MEDIA_DATA_ERROR));
     FT_Done_Face(mono);face=inter;
     FT_Done_Face(face);FT_Done_FreeType(ft);
     printf("IPTV UI/navigation/layout: %u assertions passed\n",checks);
