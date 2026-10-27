@@ -105,8 +105,12 @@ MP4/subtitle seek fixes and HW 720p30 at reported CPU 333 with bus/GPU 222 MHz.
 They do not prove all files, 720p60, battery savings or sustained SW 720p30.
 The standard app requests CPU 333 MHz for HW and 444 MHz for SW with
 BUS/GPU/XBAR 222/222/111 MHz. Independent CPU targets are configurable;
-PSVshell manual hooks retain priority and explicit PSVshell mode writes no clocks. Current 1.4.1 packaging is not a new
-physical run or a published GitHub release.
+PSVshell manual hooks retain priority and explicit PSVshell mode writes no clocks.
+On 27 October 2026 the user confirmed excellent IPTV HW playback with the
+corrected standard 1.4.1 build, including sources described as 1080p. This is
+user-reported playback acceptance, not a measurement of the chosen rendition or
+an expansion of stream limits. See the [IPTV HW report](../docs/iptv-hw-startup-2026-10-27.md).
+Local packaging and commits do not publish a GitHub release.
 
 ## Unified local activity and cross-provider search (2026-10-24)
 

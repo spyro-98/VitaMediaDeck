@@ -1,11 +1,26 @@
 # IPTV hardware startup — 27 October 2026
 
 This follow-up corrects reproduced HLS timeline and pinned `h264_vita`
-lifecycle defects in the standard 1.4.1 / APP_VER 01.05 VPK. Physical first-frame
-acceptance for the reported channel remains pending. No emulator, Vita firmware
-or ARM JIT was executed during diagnosis or verification.
+lifecycle defects in the standard 1.4.1 / APP_VER 01.05 VPK. Physical Vita playback was reported for the corrected build. The host checks
+executed without Vita firmware or emulation.
 
-## Console evidence
+## User-confirmed console result
+
+The user reports that IPTV with the hardware decoder now works excellently,
+including many sources described as 1080p. The first-frame startup problem is
+therefore resolved for the IPTV sources they tested. This is physical-device
+feedback from the user, separate from the host tests and the older failing log
+below. It does not independently measure selected-rendition dimensions, FPS,
+bitrate, actual clocks, battery use or long-session duration; documented input
+and automatic rendition limits are unchanged.
+
+Tested standard VPK: **1.4.1 / APP_VER 01.05**, source commit
+`5419ffe27f93913bb7e067199b2e8c938ad9a8cb`, 6,022,158 bytes, SHA-256
+`774278ef33d8b627d60319fb9c43addafae2382b1dbe93b23e69e89d73aab9cf`.
+The VPK was copied and read-back verified in Vita Downloads before the user's
+successful test. This documentation update does not rebuild or replace it.
+
+## Previous failing console evidence
 
 The reproduction log records successful local 960×544 hardware playback at an actual 333 MHz,
 then IPTV 1280×720 hardware startup with zero output frames: 246 packets before
@@ -75,20 +90,19 @@ source and its dependency-lock hash. The backend harness is documented in
 Reference comparisons: [VitaSDK decoder API](https://docs.vitasdk.org/group__SceVideoDecUser.html),
 [Moonlight Vita decoder](https://github.com/xyzz/vita-moonlight/blob/vita/src/video/vita.c)
 and its [SPS handling](https://github.com/xyzz/vita-moonlight/blob/vita/libgamestream/sps.c).
-These examples inform lifecycle/header review; they are not proof that the
-reported channel will produce frames with this correction.
+These examples inform lifecycle/header review. The physical playback confirmation
+comes from the user's subsequent test recorded above, not from the examples or
+host mocks.
 
-## Physical acceptance
+## Acceptance scope and additional coverage
 
-1. Install the standard `VitaMediaDeck-1.4.1.vpk` from Vita Downloads. USB copy is
-   delivery only; the assistant does not install or change console preferences.
-2. Retry the same IPTV channel with Auto, then explicit HW in R1 if necessary.
-   Check first frame, fluid playback, audio sync and stop/reopen. Repeat a known
-   working local hardware video and a Jellyfin video.
-3. If the first-frame timeout persists, reconnect USB with the new
-   `session_standard.txt`. The bounded `vita_h264 init` / `startup no-output`
-   messages distinguish initialization, API failure and accepted-but-silent input.
-   These corrections do not establish which remaining device-specific condition
-   is preventing output until the channel is retried.
-4. Verify SW fallback/rollback, suspend/resume and long-running HLS. Respect
-   plugin-owned clock readback; this build does not force 444 MHz over PSVshell.
+IPTV HW startup and playback are user-confirmed for the tested sources. The
+broader regression checklist remains separate: repeated stop/reopen, long-running
+HLS, SW fallback/rollback, suspend/resume, and a fresh Jellyfin/local-file
+comparison were not individually reported in this latest confirmation. The
+backend fix is shared with those HW source paths, but this result does not claim
+they were all retested. Existing clock ownership rules still respect PSVshell.
+
+If a different source fails, the standard log's bounded `vita_h264 init` and
+`startup no-output` messages remain available for diagnosis. Do not publish raw
+private logs or authenticated source URLs.
