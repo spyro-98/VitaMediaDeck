@@ -266,3 +266,21 @@ decoded 300 video / 142 audio frames after six remux chunks (697,104 bytes),
 first A/V delta 20 ms. That feed selected 768x432/50 fps under the existing pixel
 budget; it is not a 720p Vita performance test. No media was saved. The console
 still needs a long-running 720p test of the new build.
+
+## Cancellation and visible management regression
+
+See [the current implementation and console checks](../../docs/iptv-cancel-management-2026-10-27.md).
+`run-host-tests.sh` covers the production form/action-bar dispatch in all eight
+themes and both languages, direct QR/save with controller and touch, save-list
+and Back preservation, first-channel focus, and cleanup-event preservation.
+For the actual player-open worker plus the real source/session producer, run:
+
+```sh
+VMD_HOST_FFMPEG=/absolute/path/to/host-ffmpeg \
+  bash tests/player_feedback/cancel/run-host-tests.sh
+```
+
+This runs ASan/UBSan and TSan, repeating cancellation before prebuffer and during
+a decoder stream read. Decoder/transport delivery are synthetic; it requires
+the real producer to exit before UI cleanup and checks repeatable stop/join.
+Shared loading UI cancellation is exercised by `tests/ui_crossfade/run-host-tests.sh`.

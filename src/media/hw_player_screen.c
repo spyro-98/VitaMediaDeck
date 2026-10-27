@@ -72,7 +72,7 @@ static void iptv_loading_detail(char *out,size_t size,void *ctx,uint64_t now) {
  snprintf(out,size,"%s · %u segments · %.1f MiB · %llu s",phase,status.buffered_segments,
    (double)status.buffered_bytes/(1024*1024),(unsigned long long)((now-task->ui_started_us)/1000000));
 }
-static int open_task(void *opaque) {
+static int open_task_run(void *opaque) {
 	OpenTask *task = opaque;
 	if (task->live_session) {
 		/* Startup may need a master, a media playlist and a complete TS segment.
@@ -81,7 +81,7 @@ static int open_task(void *opaque) {
 		uint64_t started = sceKernelGetProcessTimeWide();
 		uint64_t deadline = started + 65000000ULL;
 		for (;;) {
-			if (task->config.cancel_flag && *task->config.cancel_flag) return AVERROR_EXIT;
+			if (task->config.cancel_flag && __atomic_load_n(task->config.cancel_flag,__ATOMIC_ACQUIRE)) return AVERROR_EXIT;
 			VtIptvSourceStatus status;
 			vt_iptv_session_status(task->live_session, &status);
 			if (status.startup_ready) {
@@ -117,6 +117,26 @@ static int open_task(void *opaque) {
 	}
 	return result;
 }
+
+static int open_task(void *opaque) {
+ OpenTask *task=opaque;
+ int result=open_task_run(opaque);
+ if(task->config.cancel_flag && __atomic_load_n(task->config.cancel_flag,__ATOMIC_ACQUIRE))result=AVERROR_EXIT;
+ if(result<0 && task->live_session) {
+  /* Keep producer teardown on this worker while the UI renders its cancel
+   * state. Returning first would make the caller join HTTP/DNS on the UI. */
+  vt_iptv_session_stop_and_wait(task->live_session);
+ }
+ return result;
+}
+
+static void cancel_open_operation(void *opaque) {
+ OpenTask *task=opaque;
+ /* Before prebuffering completes there is no decoder-owned transport yet. */
+ if(task->live_session)vt_iptv_session_cancel(task->live_session);
+ vt_decoder_request_stop(task->player);
+}
+
 
 typedef struct {
 	VtDecoderPlayer *player;
@@ -239,7 +259,7 @@ static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
 	open->config.subtitle_track = subtitle_track;
 	loading->cancel_ctx = *player_io;
 	if (cancel) *cancel = 0;
-	int ret = ui_player_loading_run(loading, open_task, open, cancel, NULL, NULL);
+	int ret = ui_player_loading_run(loading, open_task_run, open, cancel, NULL, NULL);
 	if (ret >= 0) return 0;
 
 	vt_decoder_destroy(*player_io);
@@ -249,7 +269,7 @@ static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
 	open->config.preferred_backend = previous_preference;
 	loading->cancel_ctx = *player_io;
 	if (cancel) *cancel = 0;
-	return ui_player_loading_run(loading, open_task, open, cancel, NULL, NULL) >= 0
+	return ui_player_loading_run(loading, open_task_run, open, cancel, NULL, NULL) >= 0
 	     ? 1 : ret;
 }
 
@@ -851,8 +871,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 		.channel = source->location,
 		.status = opening_status,
 		.quality_height = source->expected_height,
-		.cancel_action = cancel_player_operation,
-		.cancel_ctx = player,
+		.cancel_action = cancel_open_operation,
+		.cancel_ctx = &open,
         .detail_text = live ? iptv_loading_detail : NULL,
         .detail_ctx = &open
 	};
@@ -871,7 +891,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			return -1;
 		}
 		open.player = player;
-		loading.cancel_ctx = player;
+		loading.cancel_ctx = &open;
 		cancel = 0;
 		open.config.start_position_ms = 0;
 		loading.start_over_requested = NULL;
@@ -882,6 +902,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 		vt_performance_end_video(&clock_guard);
 		return cancel ? 0 : ret;
 	}
+	loading.cancel_action=cancel_player_operation;
+	loading.cancel_ctx=player;
 	int library_started = 0;
 	uint64_t library_tick = 0, library_position = source->start_position_ms, library_duration = 0;
 	uint64_t vod_duration = 0;

@@ -81,7 +81,7 @@ static void cancellation_and_reopen(void) {
     Mock m={0}; VtDecoderStreamFactory f; VtIptvSession *s=make(&m,&f);
     VtDecoderStreamHandle a,b; CHECK(!f.open(f.opaque,&a)); CHECK(!f.open(f.opaque,&b));
     unsigned char bytes[376]; CHECK(a.read(a.opaque,bytes,sizeof(bytes))==376);
-    wait_blocked(&m); Read read={.handle=&a};pthread_t thread;
+    wait_blocked(&m);CHECK(!vt_iptv_session_stopped(s)); Read read={.handle=&a};pthread_t thread;
     CHECK(!pthread_create(&thread,NULL,read_wait,&read));
     for(int i=0;i<15;i++)tick(); a.abort(a.opaque);
     CHECK(!pthread_join(thread,NULL)&&read.result<0);
@@ -99,7 +99,10 @@ static void discontinuity(void) {
     CHECK(a.read(a.opaque,bytes,sizeof(bytes))<0);
     CHECK(vt_iptv_session_event(s)==VT_IPTV_DISCONTINUITY);
     CHECK(b.read(b.opaque,bytes,sizeof(bytes))<0); /* Both stop, no unilateral clock jump. */
-    a.close(a.opaque); b.close(b.opaque); vt_iptv_session_destroy(s);
+    a.close(a.opaque); b.close(b.opaque);
+    vt_iptv_session_stop_and_wait(s);vt_iptv_session_stop_and_wait(s);
+    CHECK(vt_iptv_session_event(s)==VT_IPTV_DISCONTINUITY); /* Cleanup preserves the cause. */
+    vt_iptv_session_destroy(s);
 }
 static void backpressure(void) {
     Mock m={.release=1}; VtIptvSourceConfig cfg={.buffer_limit=752,.segment_limit=376,.fetch=mock_fetch,.fetch_ctx=&m};

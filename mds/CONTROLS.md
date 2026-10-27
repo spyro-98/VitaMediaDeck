@@ -94,17 +94,23 @@ episodes start at the beginning. Saving runs separately from audio/UI; pause and
 suspend request a checkpoint. Closing the bubble forcibly can lose roughly the
 last 15 seconds. See [resume implementation and console checks](../docs/podcast-resume-2026-10-24.md).
 
-**L1 → IPTV** opens saved lists/channels. **Start / Add stream** opens the URL
-form. Its R1 menu offers Enter link, Scan QR and Save. In saved lists/channels,
-R1 starts with Open/Play, the explicit favourite toggle, Rename and Remove saved
-entry; its other actions include All/Favourites, Search, Refresh and Add. In the
-form, Triangle changes the detected format and X activates the focused control.
-In a list, X opens, Square stars a channel, Select stars the current playlist;
-Triangle searches lists/channels; R1 offers All/Favourites for saved entries.
-Circle returns one level and restores the saved-list selection; a search does
-not consume Back. The saved browser toolbar switches All/Favourites; inside a
-playlist the same position controls availability filtering. Remove saved entry
-requires confirmation and does not remove other channels or remote content.
+**L1 → IPTV** opens saved lists/channels. **Start / Add stream** opens the link
+form: Start enters/edits, **△ scans QR**, **□ saves with a name**, and Select
+changes the detected format. X activates the focused control; each visible
+button accepts touch. The primary action opens an M3U list or plays a stream.
+
+The visible action bar offers Open/Play, Favourite, Rename and Remove in saved
+entries; inside a playlist, Save/Rename list and Star list replace the last two.
+Up from the first row enters the action bar, left/right chooses an action, and
+Down returns to the first channel. A short Select renames the selected saved
+entry or saves/renames the current playlist when not reserved for the mini-player.
+Square toggles a channel favourite, Triangle searches, Start adds another link.
+Circle returns to the populated form after browsing a newly entered list, or to
+the saved collection for an existing one. Removal asks for confirmation and
+retains separately saved channels and remote media. R1 retains extra options.
+During connection, **Circle or the touch Cancel button** cancels both prebuffer
+and decoder startup. A spinner and Cancelling message remain until worker
+cleanup finishes; no second press or held-button repeat is necessary.
 During IPTV playback, **Square** or the HUD Favourite button
 toggles the current channel's favourite state without restarting playback.
 **Filter errors** (also in R1 Options) checks entry URLs without decoding media
@@ -344,7 +350,7 @@ Musica e Immagini tengono il rispettivo servizio in testa.
 
 ## QR scanner and system keyboard
 
-Open QR from Network Download Tools or IPTV R1 Options. Aim a complete HTTP(S)
+Open QR from Network Download Tools or IPTV > Start > Scan QR. Aim a complete HTTP(S)
 QR at the rear camera; Circle or the touch Cancel button returns without changing
 the pending link. Unsupported payloads stay in the scanner with a translated
 status. All eight themes frame the same unobscured 444x444 preview.

@@ -1,3 +1,4 @@
+#define VMD_REAL_LOADING_TEST
 #define main iptv_ui_main
 #define ui_message_show stub_message_show
 #define ui_loading_run stub_loading_run
@@ -20,6 +21,16 @@ static int loading_worker_create(pthread_t *thread,const pthread_attr_t *attr,
 #include "../../src/ui/loading_screen.c"
 #undef pthread_create
 static pthread_t loading_ui_thread;
+static volatile int test_cancel;
+static int cancel_callback_calls;
+static void cancel_callback(void *ctx) {
+ CHECK(ctx==(void*)&test_cancel);CHECK(!__atomic_load_n(&test_cancel,__ATOMIC_ACQUIRE));cancel_callback_calls++;
+}
+static int cancellation_worker(void *ctx) {
+ volatile int *flag=ctx;
+ while(!__atomic_load_n(flag,__ATOMIC_ACQUIRE)){struct timespec t={0,1000000};nanosleep(&t,NULL);}
+ struct timespec t={0,50000000};nanosleep(&t,NULL);return -123;
+}
 static int loading_callback_calls;
 static int loader_callback(void *ctx) {
  if(pthread_equal(pthread_self(),loading_ui_thread))return -900;
@@ -100,5 +111,27 @@ int main(int argc,char **argv){
  fail_loading_worker=1;frame=0;
  CHECK(ui_loading_run("Loading IPTV list",loader_callback,&task_result,NULL,NULL,NULL)==UI_LOADING_TASK_FAILED);
  CHECK(loading_callback_calls==1&&loading_worker_calls==2);script_count=0;
+ fail_loading_worker=0;
+ for(int trigger=0;trigger<4;trigger++) {
+  frame=0;script_count=16;memset(input_script,0,sizeof(input_script));
+  test_cancel=0;cancel_callback_calls=0;cancellation_labels=0;
+  volatile int restart=0;
+  UiPlayerLoadingInfo info={.title="IPTV",.status="Opening stream",.cancel_action=cancel_callback,.cancel_ctx=(void*)&test_cancel};
+  if(trigger==0)for(int i=1;i<16;i++)input_script[i]=SCE_CTRL_CIRCLE;
+  if(trigger==1)for(int i=0;i<16;i++)input_script[i]=SCE_CTRL_CIRCLE; /* Already held on entry. */
+  if(trigger==2){tap_frame=1;tap_x=480;tap_y=415;}
+  if(trigger==3){info.start_over_requested=&restart;input_script[1]=SCE_CTRL_CROSS;}
+  CHECK(ui_player_loading_run(&info,cancellation_worker,(void*)&test_cancel,&test_cancel,NULL,NULL)==-123);
+  CHECK(test_cancel&&cancel_callback_calls==1&&cancellation_labels>0);
+  CHECK(restart==(trigger==3));
+ }
+ for(int trigger=0;trigger<2;trigger++) {
+  frame=0;script_count=16;memset(input_script,0,sizeof(input_script));test_cancel=0;cancellation_labels=0;
+  if(trigger==0)for(int i=0;i<16;i++)input_script[i]=SCE_CTRL_CIRCLE;
+  else {tap_frame=1;tap_x=480;tap_y=475;}
+  CHECK(ui_loading_run("Loading IPTV list",cancellation_worker,(void*)&test_cancel,&test_cancel,NULL,NULL)==-123);
+  CHECK(test_cancel&&cancellation_labels>0);
+ }
+ script_count=0;tap_frame=-1;
  FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);printf("Crossfade native download states: %u checks passed\n",checks);
 }

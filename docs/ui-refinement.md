@@ -64,6 +64,8 @@ is substituted in the settings layout harness. They are not release screenshots.
 
 ## Design and navigation
 
+This section records the earlier layout; the current IPTV form/actions are documented in [IPTV cancellation and management](iptv-cancel-management-2026-10-27.md).
+
 The established Inter typography, OLED-black background, graphite surfaces,
 jade focus and ice-white text remain. Changes concentrate on readable content,
 context-sensitive actions and common touch/controller behaviour.

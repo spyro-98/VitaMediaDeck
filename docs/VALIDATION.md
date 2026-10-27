@@ -1,5 +1,7 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
+Current IPTV follow-up: [cancellation and visible management actions](iptv-cancel-management-2026-10-27.md).
+
 QR/IPTV follow-up: [input, background workers and error reporting](iptv-qr-errors-2026-10-27.md); [QR regression command](../tests/qr/README.md).
 
 Latest correction: [local images beside Immich](local-images-2026-10-27.md).

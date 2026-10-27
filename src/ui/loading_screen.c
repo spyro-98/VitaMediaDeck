@@ -281,8 +281,7 @@ static void draw_loading_frame(const char *query, const char *message,
 		                 VT_THEME_SURFACE, "Circle",
 		                 vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORT), 0);
 	} else if (cancellable) {
-		draw_centered_text(total > 0 ? 470 : 402, COLOR_MUTED, UI_FONT_SMALL,
-		                   vt_i18n_str(VT_STR_LOADING_CANCEL_HINT));
+		ui_action_button(338,458,284,42,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
@@ -322,9 +321,8 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 		ui_draw_spinner(480.0f, 252.0f, now_us);
 		if (small) ui_font_draw_text_centered(small,480,324,268,COLOR_TEXT,
 		    UI_FONT_SMALL,status);
-		if (info->cancellable && small)
-			ui_font_draw_text_centered(small,480,426,864,COLOR_MUTED,
-			    UI_FONT_SMALL,vt_i18n_str(VT_STR_LOADING_PLAYER_CANCEL_HINT));
+		if (info->cancellable)
+			ui_action_button(338,392,284,50,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 		ui_theme_media_end(theme_before);
 		return;
 	}
@@ -364,12 +362,9 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 			    small, SCREEN_WIDTH / 2, 409, 252, COLOR_TEXT, UI_FONT_SMALL,
 			    vt_i18n_str(VT_STR_LOADING_PLAYER_START_OVER));
 		}
-		if (info && info->cancellable)
-			ui_font_draw_text_centered(
-				small, SCREEN_WIDTH / 2,
-				info->start_over_requested ? 456 : 426,
-				SCREEN_WIDTH - 96, COLOR_MUTED,
-				UI_FONT_SMALL, vt_i18n_str(VT_STR_LOADING_PLAYER_CANCEL_HINT));
+		if(info && info->cancellable)
+			ui_action_button(338,info->start_over_requested?446:392,284,50,
+			    VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 	}
 
 	long current = progress_current ? *progress_current : 0;
@@ -469,12 +464,13 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
+	int cancellation_requested=0;
 	while (!__atomic_load_n(&state.done, __ATOMIC_ACQUIRE)) {
 		ui_player_loading_present(&draw_info, progress_current, progress_total);
 		if (draw_info.progress_tick && progress_current && progress_total) {
 			draw_info.progress_tick(*progress_current, *progress_total);
 		}
-		if (cancel_flag) {
+		if (cancel_flag && !cancellation_requested) {
 			sceCtrlPeekBufferPositive(0, &ctrl, 1);
 			unsigned int pressed = ctrl.buttons & ~previous.buttons;
 			previous = ctrl;
@@ -489,18 +485,23 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 				*draw_info.start_over_requested = 1;
 				cancel_requested = 1;
 			}
-			if ((pressed & SCE_CTRL_CIRCLE) ||
+			int cancel_button_tap=(touch_flags&UI_TOUCH_EVENT_TAP) &&
+			    ui_touch_hit_rect(touch.x,touch.y,338,draw_info.start_over_requested?446:392,284,50);
+			if ((ctrl.buttons & SCE_CTRL_CIRCLE) || cancel_button_tap ||
 			    touch_is_cancel_hold(touch_flags, &touch)) {
 				cancel_requested = 1;
 			}
 			if (cancel_requested) {
+				cancellation_requested=1;
+				draw_info.status=vt_i18n_str(VT_STR_LOADING_CANCELLING);
+				draw_info.cancellable=0;draw_info.start_over_requested=NULL;
+				draw_info.detail_text=NULL;
 				/* Interrupt the decoder-owned transport phase before publishing the
 				 * caller flag. Otherwise the worker can enter rollback from that flag
 				 * and a delayed callback can accidentally cancel the fresh restore. */
 				if (draw_info.cancel_action)
 					draw_info.cancel_action(draw_info.cancel_ctx);
-				__sync_synchronize();
-				*cancel_flag = 1;
+				__atomic_store_n(cancel_flag,1,__ATOMIC_RELEASE);
 			}
 		}
 		sceKernelDelayThread(16 * 1000);
@@ -560,23 +561,24 @@ static int loading_run_internal(const char *query, const char *message,
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
+	int cancellation_requested=0;
 	while (!__atomic_load_n(&state.done, __ATOMIC_ACQUIRE)) {
 		if (download_controls) vt_display_keep_awake_tick();
-		draw_loading_frame(query, message, progress_current, progress_total,
-		                   cancel_flag != NULL, download_controls,
+		draw_loading_frame(query, cancellation_requested?vt_i18n_str(VT_STR_LOADING_CANCELLING):message, progress_current, progress_total,
+		                   cancel_flag != NULL && !cancellation_requested, download_controls,
 		                   pause_flag && *pause_flag,
 		                   download_controls ? &download_rate : NULL,
 		                   download_progress_read, download_progress_ctx, NULL, 0,
 		                   NULL);
 
-		if (cancel_flag) {
+		if (cancel_flag && !cancellation_requested) {
 			sceCtrlPeekBufferPositive(0, &ctrl, 1);
 			unsigned int pressed = ctrl.buttons & ~previous.buttons;
 			previous = ctrl;
 			if (download_controls && pause_flag && (pressed & SCE_CTRL_START))
 				*pause_flag = !*pause_flag;
-			if (pressed & SCE_CTRL_CIRCLE) {
-				*cancel_flag = 1;
+			if (ctrl.buttons & SCE_CTRL_CIRCLE) {
+				cancellation_requested=1;__atomic_store_n(cancel_flag,1,__ATOMIC_RELEASE);
 			}
 			UiTouchEvent touch;
 			unsigned int touch_flags = ui_touch_poll(&touch);
@@ -586,8 +588,10 @@ static int loading_run_internal(const char *query, const char *message,
 				*pause_flag = !*pause_flag;
 			if ((download_controls && (touch_flags & UI_TOUCH_EVENT_TAP) &&
 			     ui_touch_hit_rect(touch.x, touch.y, 498, 458, 216, 42)) ||
+			    (!download_controls && (touch_flags&UI_TOUCH_EVENT_TAP) &&
+			     ui_touch_hit_rect(touch.x,touch.y,338,458,284,42)) ||
 			    touch_is_cancel_hold(touch_flags, &touch)) {
-				*cancel_flag = 1;
+				cancellation_requested=1;__atomic_store_n(cancel_flag,1,__ATOMIC_RELEASE);
 			}
 		}
 		sceKernelDelayThread(16 * 1000);
