@@ -17,6 +17,8 @@ static int network_error(int result,long status) {
        result==VITA_HTTPS_ERROR_CURL_BASE-CURLE_SSL_CONNECT_ERROR)return VT_IPTV_TLS;
     if(status==401 || status==403)return VT_IPTV_ACCESS;
     if(status==404 || status==410)return VT_IPTV_NOT_FOUND;
+    if(status==429)return VT_IPTV_HTTP_RATE_LIMIT;
+    if(status>=500 && status<=599)return VT_IPTV_HTTP_SERVER;
     /* The client already follows redirects. A final 3xx has no usable
      * destination (or exceeded its redirect limit), not a decoder failure. */
     if((status>=300 && status<400) || result==VITA_HTTPS_ERROR_CURL_BASE-CURLE_TOO_MANY_REDIRECTS)return VT_IPTV_REDIRECT;
@@ -63,7 +65,10 @@ static int fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     if (!data || !size || !effective || !capacity || !limit || limit > 32u * 1024u * 1024u) return VT_IPTV_INVALID;
     *data = NULL; *size = 0; effective[0] = 0;
     char checked[VT_IPTV_URL_MAX];
-    if (vt_iptv_resolve_url(url, url, checked, sizeof(checked))) return VT_IPTV_INVALID;
+    if (vt_iptv_resolve_url(url, url, checked, sizeof(checked))) {
+        IPTV_TRACE("IPTV request rejected: invalid URL length=%u\n",url?(unsigned)strlen(url):0);
+        return VT_IPTV_INVALID;
+    }
     if (cancel && *cancel) return VT_IPTV_CANCELLED;
     VitaHttpsClientConfig config = {.user_agent = "VitaMediaDeck/1.4.1", .allow_http = 1,
         .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
@@ -76,14 +81,23 @@ static int fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     VitaHttpsClient *client = vita_https_client_create(&config);
     if (!client) return VT_IPTV_MEMORY;
     Response response = {.limit = limit};
-    VitaHttpsRequest request = {.method = "GET", .url = url, .write = receive,
+    VitaHttpsRequest request = {.method = "GET", .url = checked, .write = receive,
         .write_opaque = &response, .cancel_flag = cancel};
-    RangeHeader range={0};char range_text[96];const char *headers[]={range_text,NULL};
+    RangeHeader range={0};char range_text[96],agent_header[VT_IPTV_USER_AGENT_MAX+16];
+    const char *headers[3]={0};unsigned header_count=0;
     if(ranged) {
         if(offset>UINT64_MAX-limit){vita_https_client_destroy(client);return VT_IPTV_INVALID;}
         snprintf(range_text,sizeof(range_text),"Range: bytes=%" PRIu64 "-%" PRIu64,offset,offset+limit-1);
-        request.headers=headers;request.header=range_header;request.header_opaque=&range;
+        headers[header_count++]=range_text;request.header=range_header;request.header_opaque=&range;
     }
+    if(options && options->user_agent[0]) {
+        /* vita-https stores its default agent in 128 bytes. Override that
+         * header explicitly so validated broadcaster agents up to 255 bytes
+         * reach the server intact; never accept arbitrary playlist headers. */
+        snprintf(agent_header,sizeof(agent_header),"User-Agent: %s",options->user_agent);
+        headers[header_count++]=agent_header;
+    }
+    request.headers=headers;
     VitaHttpsResponse metadata = {0};
     uint64_t started=iptv_trace_ms();
     int result = vita_https_perform(client, &request, &metadata);
@@ -98,9 +112,10 @@ static int fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     vita_https_client_destroy(client);
     *data = response.data; *size = response.size;
     if (cancel && *cancel) return VT_IPTV_CANCELLED;
-    if (response.error) return response.error;
+    if (response.error) return metadata.status_code>=400?network_error(result,metadata.status_code):response.error;
+    if(ranged && (metadata.status_code==416 || (result>=0 && metadata.status_code==200)))return VT_IPTV_RANGE;
     if (result < 0 || metadata.status_code != (ranged?206:200)) return network_error(result,metadata.status_code);
-    if(ranged && (!range.valid || range.first!=offset || range.last!=offset+limit-1 || response.size!=limit))return VT_IPTV_INVALID;
+    if(ranged && (!range.valid || range.first!=offset || range.last!=offset+limit-1 || response.size!=limit))return VT_IPTV_RANGE;
     return vt_iptv_resolve_url(url, metadata.effective_url, effective, capacity);
 }
 int vt_iptv_http_fetch(void *ctx,const char *url,size_t limit,unsigned char **data,

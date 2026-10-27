@@ -138,12 +138,13 @@ static int open_resource(AVFormatContext *format,AVIOContext **io,const char *ur
     if(!result)result=option_number(options?*options:NULL,"end_offset",-1,&end);
     unsigned char *data=NULL;size_t size=0;
     if(!result)result=download(s,address,offset,end,&data,&size,effective);
-    if(!result && crypto) {result=decrypt_segment(data,&size,options?*options:NULL);if(!result)s->encrypted++;}
+    if(!result && crypto) {result=decrypt_segment(data,&size,options?*options:NULL);if(result==VT_IPTV_INVALID)result=VT_IPTV_ENCRYPTED;if(!result)s->encrypted++;}
     const unsigned char *text=data;size_t text_size=size;
     if(text_size>=3 && !memcmp(text,"\xef\xbb\xbf",3)){text+=3;text_size-=3;}
     if(!result && text_size>=7 && !memcmp(text,"#EXTM3U",7)) {
         unsigned char *prepared=NULL;size_t prepared_size=0;
         result=vt_hls_prepare_manifest(data,size,effective,&s->config,&prepared,&prepared_size);
+        if(result==VT_IPTV_INVALID)result=VT_IPTV_MANIFEST;
         free(data);data=prepared;size=prepared_size;
     }
     if(!result && size>RESOURCE_MEMORY-s->resource_bytes)result=VT_IPTV_LIMIT;
@@ -202,22 +203,25 @@ static int initialize(HlsSource *s) {
     av_dict_set(&options,"allowed_extensions","ALL",0);
     r=avformat_open_input(&s->demux,s->url,hls,&options);av_dict_free(&options);
     if(s->error)return s->error;
-    if(r<0)return s->error?s->error:VT_IPTV_INVALID;
+    if(r<0)return s->error?s->error:VT_IPTV_MANIFEST;
     r=avformat_find_stream_info(s->demux,NULL);
     if(s->error)return s->error;
-    if(r<0)return s->error?s->error:VT_IPTV_INVALID;
+    if(r<0)return s->error?s->error:VT_IPTV_MANIFEST;
     if(s->demux->nb_streams>16)return VT_IPTV_LIMIT;
-    int video=-1,audio=-1;
+    int video=-1,audio=-1,saw_video=0,saw_h264=0,saw_audio=0,saw_aac=0;
     for(unsigned i=0;i<s->demux->nb_streams;i++) {
         AVStream *stream=s->demux->streams[i];AVCodecParameters *par=stream->codecpar;
         stream->discard=AVDISCARD_ALL;
+        if(par->codec_type==AVMEDIA_TYPE_VIDEO){saw_video=1;saw_h264|=par->codec_id==AV_CODEC_ID_H264;}
+        if(par->codec_type==AVMEDIA_TYPE_AUDIO){saw_audio=1;saw_aac|=par->codec_id==AV_CODEC_ID_AAC;}
         if(video<0 && par->codec_type==AVMEDIA_TYPE_VIDEO && par->codec_id==AV_CODEC_ID_H264 &&
            par->width>0 && par->height>0 && (unsigned)par->width<=s->config.width_limit && (unsigned)par->height<=s->config.height_limit)video=(int)i;
         if(audio<0 && par->codec_type==AVMEDIA_TYPE_AUDIO && par->codec_id==AV_CODEC_ID_AAC &&
            par->sample_rate>0 && par->sample_rate<=48000 && par->ch_layout.nb_channels>0 && par->ch_layout.nb_channels<=2)audio=(int)i;
         IPTV_TRACE("HLS track: index=%u type=%d codec=%d size=%dx%d audio=%d/%d\n",i,par->codec_type,par->codec_id,par->width,par->height,par->sample_rate,par->ch_layout.nb_channels);
     }
-    if(video<0 || audio<0)return VT_IPTV_UNSUPPORTED;
+    if(video<0)return saw_video&&saw_h264?VT_IPTV_VIDEO_SIZE:VT_IPTV_VIDEO_CODEC;
+    if(audio<0)return saw_audio&&saw_aac?VT_IPTV_AUDIO_FORMAT:VT_IPTV_AUDIO_CODEC;
     /* MPEG-TS already has valid decode timestamps. Preserve them: adding a
      * fictitious 17-frame PTS/DTS gap changes the live timeline, even for
      * streams with no B-frames. Only length-prefixed CMAF may need a decode

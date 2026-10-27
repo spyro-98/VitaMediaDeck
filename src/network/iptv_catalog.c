@@ -41,7 +41,7 @@ int vt_iptv_channel_matches(const VtIptvChannel *item,const char *query) {
     search_key(public_url,key,sizeof(key));return strstr(key,needle)!=NULL;
 }
 int vt_iptv_link_kind(const char *url) {
-    const char *end = strchr(url, '?'); if (!end) end = url + strlen(url);
+    const char *end = url + strcspn(url, "?#");
     const char *dot = end;
     while (dot > url && dot[-1] != '/' && dot[-1] != '.') dot--;
     if (dot == url || dot[-1] != '.') return VT_IPTV_HLS;

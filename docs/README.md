@@ -50,6 +50,9 @@ performance, validation and change records.
 
 ## Start here
 
+- [QR links and IPTV failure handling](iptv-qr-errors-2026-10-27.md): shared URL normalization, registered background loading, broadcaster identifiers and readable causes.
+- [QR payload regressions](../tests/qr/README.md): actual scanner handoff, validator and controlled negative revision.
+
 - [Current screenshot gallery](../README.md#screenshots--141): default VMD interface, playback and alternate themes.
 
 - [IPTV hardware startup](iptv-hw-startup-2026-10-27.md): shared codec lifecycle, HLS timestamps, actual-source regressions and console acceptance.

@@ -7,6 +7,10 @@
 /* Operation run on a separate thread while the main thread keeps redrawing
  * the loading screen. */
 typedef int (*UiLoadingTaskFn)(void *ctx);
+/* Infrastructure failure, outside provider/transport result-code ranges.
+ * The task was not run; callers may report it without confusing it with DNS,
+ * TLS, a malformed playlist or a decoder error. */
+enum { UI_LOADING_TASK_FAILED = -0x7401 };
 typedef void (*UiLoadingProgressTickFn)(long current, long total);
 typedef void (*UiDownloadProgressReadFn)(void *ctx, uint64_t *current,
 	                                     uint64_t *total);

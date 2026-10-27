@@ -203,6 +203,15 @@ VitaHttpsClient *vita_https_client_create(const VitaHttpsClientConfig *c) {
 void vita_https_client_destroy(VitaHttpsClient *c) { CHECK(c==(void*)1); }
 int vita_https_perform(VitaHttpsClient *c,const VitaHttpsRequest *request,VitaHttpsResponse *response) {
     (void)c; memset(response,0,sizeof(*response));response->status_code=http_mode==3?403:200;
+    CHECK(!strncmp(request->url,"https://",8));
+    if(http_agent[0] && strcmp(http_agent,"VitaMediaDeck/1.4.1")) {
+        int found=0;
+        for(const char *const *h=request->headers;h && *h;h++)
+            if(!strncmp(*h,"User-Agent: ",12)){CHECK(!strcmp(*h+12,http_agent));found++;}
+        CHECK(found==1); /* Full validated agent reaches the request, not a 128-byte default. */
+    }
+    if(http_mode==18)response->status_code=429;
+    if(http_mode==19)response->status_code=503;
     snprintf(response->effective_url,sizeof(response->effective_url),"%s",http_mode==2?"http://example.org/downgrade":"https://example.org/final/media.m3u8");
     if(http_mode==4)*request->cancel_flag=1;
     if(http_mode==5){response->status_code=0;return VITA_HTTPS_ERROR_CURL_BASE-6;}
@@ -237,6 +246,9 @@ static void http_tests(void) {
     memset(options.user_agent,'A',136);options.user_agent[136]=0;
     CHECK(!vt_iptv_http_fetch(&options,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));free(data);
     CHECK(strlen(http_agent)==136 && !strcmp(http_agent,options.user_agent));
+    memset(options.user_agent,'B',255);options.user_agent[255]=0;
+    CHECK(!vt_iptv_http_fetch(&options,"HTTPS://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));free(data);
+    CHECK(strlen(http_agent)==255);
     strcpy(options.user_agent,"player\r\nAuthorization: injected");
     CHECK(vt_iptv_http_fetch(&options,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel)==VT_IPTV_INVALID);
     CHECK(!data&&!size);
@@ -249,9 +261,13 @@ static void http_tests(void) {
     for(http_mode=5;http_mode<=12;http_mode++) {
         CHECK(vt_iptv_http_fetch(NULL,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel)==expected[http_mode-5]);free(data);
     }
+    for(http_mode=18;http_mode<=19;http_mode++) {
+        int r=vt_iptv_http_fetch(NULL,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel);
+        CHECK(r==(http_mode==18?VT_IPTV_HTTP_RATE_LIMIT:VT_IPTV_HTTP_SERVER));free(data);
+    }
     for(http_mode=13;http_mode<=17;http_mode++) {
         int r=vt_iptv_http_fetch_range(NULL,"https://example.org/video.mp4",4294967300ULL,16,&data,&size,effective,sizeof(effective),&cancel);
-        CHECK(http_mode==13?r==0:r<0);free(data);
+        CHECK(http_mode==13?r==0:r==VT_IPTV_RANGE);free(data);
     }
 }
 static void prebuffer_tests(void) {

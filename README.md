@@ -90,6 +90,8 @@ headroom for the interface and streaming.
 
 ## Bug fixes
 
+- QR/IPTV link validation, full broadcaster User-Agent headers and clearer
+  playlist, server, codec and resolution errors, with readable multiline notices.
 - MP4 files missing their total duration or refusing to seek.
 - Subtitles disappearing after seeking and unreliable audio-track recovery.
 - Missing thumbnails after returning from playback and lost browser position.

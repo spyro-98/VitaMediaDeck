@@ -45,7 +45,7 @@ static int fake_next(void *p,uint64_t now,volatile int *cancel,unsigned char **d
 static void fake_close(void *p){free(p);closed++;}
 int main(int argc,char **argv) {
     CHECK(argc==2);fixture=argv[1];av_log_set_level(AV_LOG_QUIET);
-    VtIptvSource *s=make_source(1);CHECK(vt_iptv_source_poll(s,0)==VT_IPTV_INVALID);vt_iptv_source_destroy(s);
+    VtIptvSource *s=make_source(1);CHECK(vt_iptv_source_poll(s,0)==VT_IPTV_MANIFEST);vt_iptv_source_destroy(s);
     s=make_source(5);CHECK(vt_iptv_source_poll(s,0)<0);vt_iptv_source_destroy(s);
     s=make_source(2);int result=0;VtIptvSourceStatus status;
     for(unsigned i=0;i<30;i++) {

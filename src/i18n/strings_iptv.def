@@ -73,3 +73,13 @@ VT_STR(IPTV_SAVED_HINT, "X Apri   □ Preferito   △ Cerca   ○ Indietro", "X 
 VT_STR(IPTV_MODE_DASH, "DASH diretta / VOD", "DASH live / VOD")
 
 VT_STR(IPTV_UNSTAR_LIST, "Rimuovi lista dai preferiti", "Remove list from favourites")
+
+VT_STR(IPTV_MANIFEST_ERROR, "Il server non ha restituito una playlist HLS/DASH valida, oppure i dati sono incompleti. Verifica il tipo di link: lista canali, HLS, DASH o file.", "The server did not return a valid HLS/DASH playlist, or its data is incomplete. Check the link type: channel list, HLS, DASH or file.")
+VT_STR(IPTV_VIDEO_CODEC_ERROR, "Nessuna traccia video H.264 utilizzabile. HEVC/H.265, AV1 e altri codec richiedono un flusso alternativo compatibile.", "No usable H.264 video track. HEVC/H.265, AV1 and other codecs require a compatible alternative stream.")
+VT_STR(IPTV_AUDIO_CODEC_ERROR, "Nessuna traccia audio AAC utilizzabile. AC-3, E-AC-3 e altri codec non sono supportati in questo percorso IPTV.", "No usable AAC audio track. AC-3, E-AC-3 and other codecs are not supported in this IPTV path.")
+VT_STR(IPTV_VIDEO_SIZE_ERROR, "Il video H.264 supera il limite di 1280x720, oppure non dichiara dimensioni valide. Scegli una qualita inferiore del canale.", "The H.264 video exceeds 1280x720, or has no valid dimensions. Choose a lower-quality version of the channel.")
+VT_STR(IPTV_AUDIO_FORMAT_ERROR, "La traccia AAC non ha un formato utilizzabile. Servono audio mono/stereo, frequenza fino a 48 kHz e un profilo supportato.", "The AAC track has an unusable format. Mono/stereo audio, a rate up to 48 kHz and a supported profile are required.")
+VT_STR(IPTV_SERVER_ERROR, "Errore del server IPTV (HTTP 5xx). Riprova piu tardi o usa un altro collegamento del canale.", "The IPTV server returned HTTP 5xx. Retry later or use another link for the channel.")
+VT_STR(IPTV_RATE_LIMIT_ERROR, "Il server limita le richieste (HTTP 429). Attendi prima di riprovare e verifica il limite di connessioni del servizio.", "The server is limiting requests (HTTP 429). Wait before retrying and check the service connection limit.")
+VT_STR(IPTV_RANGE_ERROR, "Il server non rispetta l'intervallo di byte richiesto. Questo flusso a segmenti non puo essere letto correttamente.", "The server did not honor the requested byte range. This segmented stream cannot be read correctly.")
+VT_STR(IPTV_BACKGROUND_ERROR, "Impossibile avviare il caricamento in background. Chiudi la riproduzione attiva e riprova; se persiste, riavvia l'app.", "Could not start the background loader. Stop active playback and retry; restart the app if the problem persists.")

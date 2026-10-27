@@ -1,7 +1,9 @@
 #include "ui/qr_scanner.h"
 #include "ui/qr_view.h"
+#include "network/iptv_manifest.h"
 
 #include <stdint.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +43,6 @@
 #define QR_DECODE_SMALL_HEIGHT (QR_DECODE_HEIGHT / 2)
 #define QR_ADAPTIVE_BLOCK 32
 #define QR_URL_MAX 2048
-#define QR_WORKER_PRIORITY 0x40
 #define QR_WORKER_STACK (256 * 1024)
 /* Keep the investigation hooks available without writing debug frames or
  * verbose per-frame telemetry in production builds. */
@@ -51,7 +52,8 @@
 typedef struct QrDecodeWorker {
 	struct quirc *decoder;
 	struct quirc *small_decoder;
-	SceUID thid;
+	pthread_t thread;
+	int thread_started;
 	volatile int stop;
 	volatile int pending;
 	volatile int result;
@@ -84,11 +86,6 @@ static void set_last_error(const char *operation, int error) {
 
 const char *ui_qr_scan_last_error(void) {
 	return g_last_error[0] ? g_last_error : "Camera or QR decoder unavailable";
-}
-
-static int is_http_url(const char *value, size_t length) {
-	return (length >= 8 && !memcmp(value, "https://", 8)) ||
-	       (length >= 7 && !memcmp(value, "http://", 7));
 }
 
 #if QR_DEBUG_DIAGNOSTICS
@@ -134,26 +131,25 @@ static void qr_log_processing(const QrDecodeWorker *worker, int candidates) {
 #endif
 
 static int publish_qr_data(QrDecodeWorker *worker, const struct quirc_data *data) {
-	if (data->payload_len <= 0 || data->payload_len >= QR_URL_MAX) {
-		worker->rejection = 1;
+	int result = data->payload_len > 0
+	    ? vt_iptv_input_url(data->payload, (size_t)data->payload_len,
+	                        worker->url, sizeof(worker->url)) : VT_IPTV_INVALID;
+	if (result) {
+		__atomic_store_n(&worker->rejection,result == VT_IPTV_LIMIT ? 1 : 2,__ATOMIC_RELEASE);
 		return 0;
 	}
-	memcpy(worker->url, data->payload, (size_t)data->payload_len);
-	worker->url[data->payload_len] = '\0';
-	if (!is_http_url(worker->url, (size_t)data->payload_len)) {
-		worker->url[0] = '\0';
-		worker->rejection = 2;
-		return 0;
-	}
-	__sync_synchronize();
-	worker->result = 1;
+	__atomic_store_n(&worker->rejection,0,__ATOMIC_RELEASE);
+	__atomic_store_n(&worker->decode_error,0,__ATOMIC_RELEASE);
+	log_printf("qr camera: URL accepted bytes=%u normalized=%u\n",
+	           (unsigned)data->payload_len, (unsigned)strlen(worker->url));
+	__atomic_store_n(&worker->result, 1, __ATOMIC_RELEASE);
 	return 1;
 }
 
 static int decode_candidates(QrDecodeWorker *worker, struct quirc *decoder,
 	                         const char *pipeline) {
 	int candidates = quirc_count(decoder);
-	for (int i = 0; i < candidates && !worker->result; i++) {
+	for (int i = 0; i < candidates && !__atomic_load_n(&worker->result,__ATOMIC_ACQUIRE); i++) {
 		struct quirc_code code;
 		struct quirc_data data;
 		quirc_extract(decoder, i, &code);
@@ -181,7 +177,7 @@ static int decode_candidates(QrDecodeWorker *worker, struct quirc *decoder,
 		           quirc_strerror(direct_result), quirc_strerror(decode_result), flipped);
 		#endif
 		if (decode_result != QUIRC_SUCCESS) {
-			worker->decode_error = decode_result;
+			__atomic_store_n(&worker->decode_error,decode_result,__ATOMIC_RELEASE);
 			continue;
 		}
 		publish_qr_data(worker, &data);
@@ -262,40 +258,39 @@ static int process_small_frame(QrDecodeWorker *worker) {
 	return decode_candidates(worker, worker->small_decoder, "downsample2");
 }
 
-static int qr_decode_thread(SceSize args, void *argp) {
-	(void)args;
-	QrDecodeWorker *worker = *(QrDecodeWorker **)argp;
-	while (!worker->stop) {
-		if (!worker->pending) {
+static void *qr_decode_thread(void *argp) {
+	QrDecodeWorker *worker = argp;
+	while (!__atomic_load_n(&worker->stop, __ATOMIC_ACQUIRE)) {
+		if (!__atomic_load_n(&worker->pending, __ATOMIC_ACQUIRE)) {
 			sceKernelDelayThread(1000);
 			continue;
 		}
 		int candidates = process_full_frame(worker);
 		if (candidates < 0) {
-			worker->decode_error = QUIRC_ERROR_DATA_OVERFLOW;
-			worker->pending = 0;
+			__atomic_store_n(&worker->decode_error,QUIRC_ERROR_DATA_OVERFLOW,__ATOMIC_RELEASE);
+			__atomic_store_n(&worker->pending, 0, __ATOMIC_RELEASE);
 			continue;
 		}
-		if (!worker->result) {
+		if (!__atomic_load_n(&worker->result,__ATOMIC_ACQUIRE)) {
 			int inverted_candidates = process_inverted_frame(worker);
 			if (inverted_candidates > 0) candidates += inverted_candidates;
 		}
-		if (!worker->result) {
+		if (!__atomic_load_n(&worker->result,__ATOMIC_ACQUIRE)) {
 			int adaptive_candidates = process_adaptive_frame(worker);
 			if (adaptive_candidates > 0) candidates += adaptive_candidates;
 		}
-		if (!worker->result) {
+		if (!__atomic_load_n(&worker->result,__ATOMIC_ACQUIRE)) {
 			int small_candidates = process_small_frame(worker);
 			if (small_candidates > 0) candidates += small_candidates;
 		}
-		worker->analyzed_frames = worker->frame_id;
+		__atomic_store_n(&worker->analyzed_frames, worker->frame_id, __ATOMIC_RELEASE);
 		#if QR_DEBUG_DIAGNOSTICS
 		qr_log_processing(worker, candidates);
 		#endif
-		if (candidates > 0) worker->candidates = candidates;
-		worker->pending = 0;
+		if (candidates > 0) __atomic_store_n(&worker->candidates,candidates,__ATOMIC_RELEASE);
+		__atomic_store_n(&worker->pending, 0, __ATOMIC_RELEASE);
 	}
-	return 0;
+	return NULL;
 }
 
 #if QR_DEBUG_DIAGNOSTICS
@@ -330,7 +325,7 @@ static void save_debug_frame(QrDecodeWorker *worker) {
 #endif
 
 static void submit_camera_frame(QrDecodeWorker *worker, vita2d_texture *preview) {
-	if (!worker || !preview || worker->pending || worker->result) return;
+	if (!worker || !preview || __atomic_load_n(&worker->pending,__ATOMIC_ACQUIRE) || __atomic_load_n(&worker->result,__ATOMIC_ACQUIRE)) return;
 	unsigned int stride = vita2d_texture_get_stride(preview);
 	unsigned char *pixels = vita2d_texture_get_datap(preview);
 	if (!pixels || stride < QR_CAMERA_WIDTH * sizeof(uint32_t)) return;
@@ -373,24 +368,24 @@ static void submit_camera_frame(QrDecodeWorker *worker, vita2d_texture *preview)
 	#if QR_DEBUG_DIAGNOSTICS
 	if (worker->frame_id == QR_DEBUG_LOG_INTERVAL) save_debug_frame(worker);
 	#endif
-	worker->pending = 1;
+	__atomic_store_n(&worker->pending, 1, __ATOMIC_RELEASE);
 }
 
 static void report_decoder_diagnostics(const QrDecodeWorker *worker,
 	                                     int *candidate_reported,
 	                                     int *decode_error_reported,
 	                                     int *rejection_reported) {
-	if (worker->candidates > 0 && !*candidate_reported) {
-		log_printf("qr camera: detected %d candidate(s)\n", worker->candidates);
+	if (__atomic_load_n(&worker->candidates,__ATOMIC_ACQUIRE) > 0 && !*candidate_reported) {
+		log_printf("qr camera: detected %d candidate(s)\n", __atomic_load_n(&worker->candidates,__ATOMIC_ACQUIRE));
 		*candidate_reported = 1;
 	}
-	if (worker->decode_error && !*decode_error_reported) {
+	if (__atomic_load_n(&worker->decode_error,__ATOMIC_ACQUIRE) && !*decode_error_reported) {
 		log_printf("qr camera: candidate decode: %s\n",
-		           quirc_strerror((quirc_decode_error_t)worker->decode_error));
+		           quirc_strerror((quirc_decode_error_t)__atomic_load_n(&worker->decode_error,__ATOMIC_ACQUIRE)));
 		*decode_error_reported = 1;
 	}
-	if (worker->rejection && !*rejection_reported) {
-		if (worker->rejection == 1)
+	if (__atomic_load_n(&worker->rejection,__ATOMIC_ACQUIRE) && !*rejection_reported) {
+		if (__atomic_load_n(&worker->rejection,__ATOMIC_ACQUIRE) == 1)
 			log_printf("qr camera: decoded payload has unsupported length\n");
 		else
 			log_printf("qr camera: decoded payload is not an HTTP(S) URL\n");
@@ -400,11 +395,12 @@ static void report_decoder_diagnostics(const QrDecodeWorker *worker,
 
 static UiQrState scanner_state(const QrDecodeWorker *worker) {
  if (!worker) return UI_QR_STARTING;
- if (worker->result) return UI_QR_RECOGNIZED;
- if (worker->rejection == 2) return UI_QR_INVALID_PROTOCOL;
- if (worker->rejection == 1) return UI_QR_INVALID_LENGTH;
- if (worker->decode_error) return UI_QR_DECODING;
- if (worker->candidates > 0) return UI_QR_CANDIDATE;
+ if (__atomic_load_n(&worker->result,__ATOMIC_ACQUIRE)) return UI_QR_RECOGNIZED;
+ int rejection=__atomic_load_n(&worker->rejection,__ATOMIC_ACQUIRE);
+ if (rejection==2) return UI_QR_INVALID_PROTOCOL;
+ if (rejection==1) return UI_QR_INVALID_LENGTH;
+ if (__atomic_load_n(&worker->decode_error,__ATOMIC_ACQUIRE)) return UI_QR_DECODING;
+ if (__atomic_load_n(&worker->candidates,__ATOMIC_ACQUIRE)>0) return UI_QR_CANDIDATE;
  return UI_QR_SEARCHING;
 }
 
@@ -413,7 +409,7 @@ static void draw_scanner(vita2d_texture *preview, int has_preview,
  UiQrStatus status={.state=scanner_state(worker)};
  if(worker) {
   status.submitted=worker->submitted_frames;
-  status.analyzed=worker->analyzed_frames;
+  status.analyzed=__atomic_load_n(&worker->analyzed_frames,__ATOMIC_ACQUIRE);
  }
  vita2d_start_drawing();
  vita2d_clear_screen();
@@ -486,7 +482,6 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 		set_last_error("QR decoder worker", -1);
 		goto done;
 	}
-	worker->thid = -1;
 	worker->decoder = quirc_new();
 	worker->small_decoder = quirc_new();
 	if (!worker->decoder || !worker->small_decoder ||
@@ -502,16 +497,19 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 	           quirc_version(), QR_DECODE_WIDTH, QR_DECODE_HEIGHT,
 	           QR_DECODE_SMALL_WIDTH, QR_DECODE_SMALL_HEIGHT);
 	#endif
-	worker->thid = sceKernelCreateThread("VitaMediaDeckQrDecode", qr_decode_thread,
-	                                     QR_WORKER_PRIORITY, QR_WORKER_STACK, 0, 0, NULL);
-	if (worker->thid < 0 ||
-	    sceKernelStartThread(worker->thid, sizeof(worker), &worker) < 0) {
-		log_printf("qr camera: decoder thread start failed\n");
-		set_last_error("QR decoder worker", worker->thid);
-		if (worker->thid >= 0) sceKernelDeleteThread(worker->thid);
-		worker->thid = -1;
+	pthread_attr_t attr;
+	int thread_result=pthread_attr_init(&attr);
+	int attr_ready=thread_result==0;
+	if(!thread_result)thread_result=pthread_attr_setstacksize(&attr,QR_WORKER_STACK);
+	if(!thread_result)thread_result=pthread_create(&worker->thread,&attr,qr_decode_thread,worker);
+	if(attr_ready)pthread_attr_destroy(&attr);
+	if(thread_result) {
+		log_printf("qr camera: decoder pthread start failed: %d\n",thread_result);
+		set_last_error("QR decoder worker",-thread_result);
+		result=-1;
 		goto done;
 	}
+	worker->thread_started=1;
 
 	SceCtrlData previous;
 	int candidate_reported = 0;
@@ -534,7 +532,7 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 		/* The worker publishes result with a barrier. Check it before another
 		 * blocking camera read, so a successful decode cannot be delayed or
 		 * lost behind the preview loop. */
-		if (worker->result) {
+		if (__atomic_load_n(&worker->result, __ATOMIC_ACQUIRE)) {
 			__sync_synchronize();
 			size_t length = strlen(worker->url);
 			if (length > 0 && length < out_size) {
@@ -565,13 +563,13 @@ int ui_qr_scan_https_url(char *out, size_t out_size) {
 		draw_scanner(preview, 1, worker);
 	}
 done:
+	log_printf("qr camera: finished result=%d bytes=%u analyzed=%u rejection=%d\n",result,
+	           result>0?(unsigned)strlen(out):0,worker?__atomic_load_n(&worker->analyzed_frames,__ATOMIC_ACQUIRE):0,
+	           worker?__atomic_load_n(&worker->rejection,__ATOMIC_ACQUIRE):0);
 	ui_touch_reset();
 	if (worker) {
-		worker->stop = 1;
-		if (worker->thid >= 0) {
-			sceKernelWaitThreadEnd(worker->thid, NULL, NULL);
-			sceKernelDeleteThread(worker->thid);
-		}
+		__atomic_store_n(&worker->stop,1,__ATOMIC_RELEASE);
+		if(worker->thread_started)pthread_join(worker->thread,NULL);
 		if (worker->decoder) quirc_destroy(worker->decoder);
 		if (worker->small_decoder) quirc_destroy(worker->small_decoder);
 		free(worker);

@@ -188,7 +188,7 @@ int main(int argc,char **argv){
   fixture(provider);g_home=0;g_catalog=1;g_menu=0;g_query.count=1;
   CHECK(toggle_favorite()==1&&favorite_count==1&&g_query.count==1);
   CHECK(favorite_index(&g_query.items[0])>=0);
-  UiContextAction actions[8];int action_count=online_options(actions,0),remove_actions=0;
+  UiContextAction actions[12];int action_count=online_options(actions,0),remove_actions=0;
   for(int i=0;i<action_count;i++)remove_actions+=actions[i].action==SCE_CTRL_SQUARE;
   CHECK(action_count<=8&&remove_actions==1);
   CHECK(toggle_favorite()==1&&!favorite_count&&g_query.count==1);
