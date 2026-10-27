@@ -36,6 +36,7 @@
 static VtOnlineQuery g_query;
 static int g_tab = VT_ONLINE_RADIO;
 static int g_episodes, g_selected, g_top, g_initialized;
+static int g_cover_rows=1;
 static char g_feed_title[160];
 static int g_catalog, g_return_valid, g_return_selected, g_return_top, g_return_catalog;
 static VtOnlineQuery g_return_query;
@@ -49,7 +50,7 @@ void ui_online_audio_set_home(int favorites_only) {g_home=!!favorites_only;g_mod
 #define LIST_Y (THEMED ? HOME_LAYOUT.y : g_home ? (PODCAST_HOME ? 88 : UI_HOME_CONTENT_Y) : 110)
 #define CATALOG_BOTTOM (ui_mini_player_top() - (g_home ? 24 : 0))
 #define CATALOG_COVERS (!THEMED && !g_menu && !PODCAST_HOME && (g_query.kind==VT_ONLINE_RADIO || g_query.kind==VT_ONLINE_FEED || g_query.kind==VT_ONLINE_SHOW))
-#define CATALOG_ROWS (THEMED ? HOME_LAYOUT.rows/HOME_LAYOUT.columns : CATALOG_COVERS ? 1 : vt_catalog_rows(LIST_Y,CATALOG_BOTTOM))
+#define CATALOG_ROWS (THEMED ? HOME_LAYOUT.rows/HOME_LAYOUT.columns : CATALOG_COVERS ? g_cover_rows : vt_catalog_rows(LIST_Y,CATALOG_BOTTOM))
 #define CATALOG_COLUMNS (THEMED ? HOME_LAYOUT.columns : PODCAST_HOME ? 1 : CATALOG_COVERS ? 3 : vt_catalog_columns(g_query.kind))
 #define CATALOG_STEP (THEMED ? HOME_LAYOUT.step : (CATALOG_BOTTOM-28-LIST_Y+UI_CONTENT_GAP)/CATALOG_ROWS)
 #define CATALOG_HEIGHT (THEMED ? HOME_LAYOUT.step-6 : CATALOG_STEP - UI_CONTENT_GAP)
@@ -59,23 +60,24 @@ void ui_online_audio_set_home(int favorites_only) {g_home=!!favorites_only;g_mod
 #define ONLINE_ACTION_REFRESH (1<<25)
 #define ONLINE_ACTION_SAVED (1<<26)
 #define ONLINE_ACTION_OFFLINE (1<<27)
+#define ONLINE_ACTION_ROWS (1<<28)
 static int favorite_index(const VtOnlineItem *item);
 static int saved_list(void) { return !g_menu && !g_catalog && !g_episodes; }
 static int can_favorite(const VtOnlineItem *item) {
-    return item && (item->kind==VT_ONLINE_RADIO || item->kind==VT_ONLINE_FEED || item->kind==VT_ONLINE_SHOW);
+    return item && (item->kind==VT_ONLINE_RADIO || item->kind==VT_ONLINE_FEED || item->kind==VT_ONLINE_SHOW || vt_online_item_country(item));
 }
 #define TR(id) vt_i18n_str(VT_STR_##id)
 
-static int online_options(UiContextAction items[8], int offline_focus) {
+static int online_options(UiContextAction items[12], int offline_focus) {
     int n=0;
     VtOnlineItem *item=g_selected>=0 && g_selected<g_query.count ? &g_query.items[g_selected] : NULL;
-    int selected=item && !g_menu && g_query.kind!=VT_ONLINE_COUNTRY && g_query.kind!=VT_ONLINE_TAG && !(PODCAST_HOME&&offline_focus);
+    int selected=item && !g_menu && g_query.kind!=VT_ONLINE_TAG && !(PODCAST_HOME&&offline_focus);
     if((PODCAST_HOME && offline_focus)||(THEMED_OFFLINE&&g_selected==g_query.count))
         items[n++]=(UiContextAction){TR(HOME_PODCAST_OPEN),NULL,ONLINE_ACTION_OFFLINE,1};
     if(selected) {
-        items[n++]=(UiContextAction){g_tab==VT_ONLINE_RADIO||g_episodes?TR(IPTV_PLAY):TR(ONLINE_EPISODES),NULL,SCE_CTRL_CROSS,1};
+        items[n++]=(UiContextAction){vt_online_item_country(item)?(vt_i18n_current_language()==VT_LANG_IT?"Apri nazione":"Open country"):g_tab==VT_ONLINE_RADIO||g_episodes?TR(IPTV_PLAY):TR(ONLINE_EPISODES),NULL,SCE_CTRL_CROSS,1};
         if(can_favorite(item))items[n++]=(UiContextAction){saved_list()||favorite_index(item)>=0?TR(UI_UNSTAR):TR(UI_STAR),NULL,SCE_CTRL_SQUARE,1};
-        items[n++]=(UiContextAction){TR(UI_DETAILS),NULL,SCE_CTRL_SELECT,1};
+        if(!vt_online_item_country(item))items[n++]=(UiContextAction){TR(UI_DETAILS),NULL,SCE_CTRL_SELECT,1};
         if(g_episodes)items[n++]=(UiContextAction){TR(UI_DOWNLOAD),NULL,SCE_CTRL_START,1};
     }
     if(!g_home && !g_episodes) {
@@ -86,6 +88,7 @@ static int online_options(UiContextAction items[8], int offline_focus) {
     if(g_menu || (!g_home && g_catalog))items[n++]=(UiContextAction){TR(ONLINE_FAVORITES),NULL,ONLINE_ACTION_SAVED,1};
     else if(!g_episodes)items[n++]=(UiContextAction){TR(ONLINE_BROWSE),NULL,ONLINE_ACTION_BROWSE,1};
     if(!g_menu)items[n++]=(UiContextAction){TR(UI_REFRESH),NULL,ONLINE_ACTION_REFRESH,1};
+    if(CATALOG_COVERS)items[n++]=(UiContextAction){g_cover_rows==1?(vt_i18n_current_language()==VT_LANG_IT?"2 righe":"2 rows"):(vt_i18n_current_language()==VT_LANG_IT?"1 riga":"1 row"),NULL,ONLINE_ACTION_ROWS,1};
     if(!g_home || g_episodes)items[n++]=(UiContextAction){TR(UI_BACK),NULL,SCE_CTRL_CIRCLE,1};
     return n;
 }
@@ -116,7 +119,10 @@ static int favorite_index(const VtOnlineItem *item) {
     if(!can_favorite(item))return -1;
     if(!g_saved_valid && refresh_favorites()<0)return -1;
     for(int i=0;i<g_saved_count;i++) {
-        if(item->kind==VT_ONLINE_SHOW) {
+        if(vt_online_item_country(item)) {
+            if(g_saved_keys[i].kind==g_tab && !strncmp(g_saved_keys[i].url,"vmd-country:",12) &&
+               !strcmp(g_saved_keys[i].url+12,item->id))return i;
+        } else if(item->kind==VT_ONLINE_SHOW) {
             if(g_saved_keys[i].kind==VT_ONLINE_FEED && item->id[0] && !strcmp(item->id,g_saved_keys[i].id))return i;
         } else if(item->kind==g_saved_keys[i].kind && !strcmp(item->url,g_saved_keys[i].url))return i;
     }
@@ -183,7 +189,7 @@ static void cover_tick(int rows) {
 		return;
 	for (int r = -1; r < rows; r++) {
 		int i = r < 0 ? g_selected : g_top + r;
-		if (i < 0 || i >= g_query.count || g_query.items[i].artwork_path[0])
+		if (i < 0 || i >= g_query.count || vt_online_item_country(&g_query.items[i]) || g_query.items[i].artwork_path[0])
 			continue;
 		if (!g_query.items[i].artwork_url[0] &&
 		    !(g_query.items[i].kind == VT_ONLINE_RADIO && g_query.items[i].id[0]) &&
@@ -213,13 +219,15 @@ static void episode_labels(const VtOnlineItem *item, char date[16], char duratio
 }
 static int show_loading(void *ctx) {return vt_online_resolve_show(ctx,&g_action_cancel);}
 static void library_query_cache(const VtOnlineQuery *q) {
-	for (int i = 0; i < q->count; i++)
-		if (q->items[i].kind == VT_ONLINE_RADIO || q->items[i].kind == VT_ONLINE_FEED ||
+	for (int i = 0; i < q->count; i++) {
+		if (vt_online_item_country(&q->items[i]))continue;
+        if (q->items[i].kind == VT_ONLINE_RADIO || q->items[i].kind == VT_ONLINE_FEED ||
 		    q->items[i].kind == VT_ONLINE_EPISODE) {
 			VtLibraryItem v;
 			vt_library_online(&q->items[i], q->kind == VT_ONLINE_EPISODE ? q->query : NULL, &v);
 			vt_library_cache(&v);
 		}
+    }
 }
 static int lazy_worker(SceSize args, void *ctx) {
 	(void)args;(void)ctx;
@@ -491,6 +499,9 @@ static int toggle_favorite(void) {
     if(g_selected<0 || g_selected>=g_query.count || !can_favorite(&g_query.items[g_selected]))return 0;
     VtOnlineItem item=g_query.items[g_selected];
     int found=favorite_index(&item),removing=saved_list()||found>=0;
+    if(vt_online_item_country(&item)) {
+        item.kind=g_tab;snprintf(item.url,sizeof(item.url),"vmd-country:%.2s",item.id);
+    }
     if(removing && found>=0){item.kind=g_saved_keys[found].kind;snprintf(item.url,sizeof(item.url),"%s",g_saved_keys[found].url);}
     if(!removing && item.kind==VT_ONLINE_SHOW) {
         g_action_cancel=0;
@@ -507,7 +518,7 @@ static int toggle_favorite(void) {
         if(g_top>g_selected)g_top=g_selected;
         cache_home();
     }
-    ui_message_show_success(removing?TR(ONLINE_REMOVED):TR(ONLINE_SAVED),item.title,1100);
+    /* The in-card star is the confirmation; errors retain an explicit notice. */
     return 1;
 }
 
@@ -527,7 +538,7 @@ static void draw_provider_tabs(int focused,UiFocusMotion *motion) {
 
 static vita2d_texture *online_artwork(const VtOnlineItem *item) {
     if(!item)return NULL;
-    if(item->kind==VT_ONLINE_COUNTRY)return vt_country_flag_get(item->id);
+    if(vt_online_item_country(item))return vt_country_flag_get(item->id);
     return item->artwork_path[0]&&strcmp(item->artwork_path,"-")?vt_artwork_thumbnail_get(item->artwork_path):NULL;
 }
 
@@ -555,20 +566,22 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
  }
  vita2d_set_clip_rectangle(0,HOME_LAYOUT.y-4,960,bottom);vita2d_enable_clipping();
  for(int index=page.first;index<page.end;index++){
-  int slot=index-g_top;const char *title,*detail="";char metadata[256],favorite_title[192];
+  int slot=index-g_top;const char *title,*detail="";char metadata[256];
   if(index<g_query.count){VtOnlineItem *item=&g_query.items[index];title=item->title;detail=item->detail;
    if(item->kind==VT_ONLINE_EPISODE){char date[16],duration[24];episode_labels(item,date,duration);
     snprintf(metadata,sizeof(metadata),"%s  /  %s",date,duration);detail=metadata;}
   }else if(THEMED_OFFLINE){title=TR(HOME_PODCAST_FILES);detail="ux0:podcast / ux0:podcasts";}
   else{title=g_tab==VT_ONLINE_RADIO?TR(ONLINE_WORLD):TR(ONLINE_US_STORE);}
-  if(index<g_query.count && can_favorite(&g_query.items[index]) && (saved_list()||favorite_index(&g_query.items[index])>=0)) {
-   snprintf(favorite_title,sizeof(favorite_title),"* %s",title);title=favorite_title;
-  }
   int selected=index==g_selected&&!focus_sections&&page_focus;
   VtOnlineItem *item=index<g_query.count?&g_query.items[index]:NULL;
-  int media=item&&(item->kind==VT_ONLINE_RADIO||item->kind==VT_ONLINE_FEED||item->kind==VT_ONLINE_SHOW||item->kind==VT_ONLINE_EPISODE||item->kind==VT_ONLINE_COUNTRY);
+  int media=item&&(item->kind==VT_ONLINE_RADIO||item->kind==VT_ONLINE_FEED||item->kind==VT_ONLINE_SHOW||item->kind==VT_ONLINE_EPISODE||vt_online_item_country(item));
   if(media)ui_theme_home_row_art(slot,index,title,detail,index==g_selected,!focus_sections&&page_focus,bottom,online_artwork(item),item->kind==VT_ONLINE_COUNTRY?"--":item->kind==VT_ONLINE_RADIO?"FM":"PD");
   else ui_theme_home_row(slot,index,title,detail,index==g_selected,!focus_sections&&page_focus,bottom);
+  if(index<g_query.count && can_favorite(&g_query.items[index]) && (saved_list()||favorite_index(&g_query.items[index])>=0)) {
+   UiThemeRect star=online_item_rect(index-g_top);
+   ui_text_line(star.x+star.w-28,star.y+24,24,"★",VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
+  }
+
   if(selected){UiThemeRect target=online_item_rect(slot);ui_focus_motion_tick(focus,target.x,target.y,target.w,target.h);}
  }
  vita2d_disable_clipping();
@@ -577,7 +590,7 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
  if(ui_theme_id()==VT_UI_THEME_APERTURE){
   vita2d_texture *art=NULL;const char *name=NULL;
   if(g_selected<g_query.count){VtOnlineItem *item=&g_query.items[g_selected];name=item->title;
-   if(g_query.kind==VT_ONLINE_COUNTRY)art=vt_country_flag_get(item->id);
+   if(vt_online_item_country(item))art=vt_country_flag_get(item->id);
    else if(item->artwork_path[0]&&strcmp(item->artwork_path,"-"))art=vt_artwork_thumbnail_get(item->artwork_path);}
   ui_theme_home_preview(art,name,bottom,0);
  }
@@ -585,7 +598,7 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
  else ui_text_line(18,bottom-12,924,focus_sections?TR(ONLINE_PROVIDER_TABS_HINT):online_content_hint(),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  ui_theme_home_position(g_selected,list_count(),bottom);
  if(!focus_sections&&page_focus&&list_count())ui_focus_outline_draw(focus);
- ui_mini_player_draw();UiContextAction items[8];int n=online_options(items,0);
+ ui_mini_player_draw();UiContextAction items[12];int n=online_options(items,0);
  ui_context_menu_draw(options,TR(UI_OPTIONS),items,n);
  if(sidebar->animation>.01f)ui_sections_sidebar_draw(sidebar);
  vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();ui_frame_pace(frame_started_us);
@@ -633,7 +646,7 @@ int ui_online_audio_screen(void) {
 			pressed|=SCE_CTRL_RTRIGGER;flags=0;
 		}
 		if(pressed&SCE_CTRL_RTRIGGER)sidebar.open=0;
-		UiContextAction option_items[8];int option_count=online_options(option_items,offline_focus);
+		UiContextAction option_items[12];int option_count=online_options(option_items,offline_focus);
 		int option_action=ui_context_menu_input(&options,option_items,option_count,&pressed,controls.buttons,controls.ly,&flags,&touch);
 		ui_context_menu_tick(&options);
 		int section = ui_sections_sidebar_handle_buttons(&sidebar, &pressed,
@@ -666,7 +679,8 @@ int ui_online_audio_screen(void) {
 			if (ui_mini_player_handle_touch(flags, &touch)) flags = 0;
 			if((!THEMED||(touch.down_x>=HOME_LAYOUT.x&&touch.down_x<HOME_LAYOUT.x+HOME_LAYOUT.columns*(HOME_LAYOUT.w+12)))&&
        (flags&UI_TOUCH_EVENT_UP)&&!(flags&UI_TOUCH_EVENT_TAP)&&touch.down_y>=LIST_Y&&touch.down_y<LIST_Y+rows*CATALOG_STEP) {
-				int delta=(touch.down_y-touch.y)/CATALOG_STEP;
+                int dx=touch.x-touch.down_x,dy=touch.down_y-touch.y;
+                int delta=abs(dx)>abs(dy)?(dx<-32?1:dx>32?-1:0):dy/56;
 				g_selected+=delta*columns;focus_tabs=0;
 				if(g_selected<0)g_selected=0;
 				if(g_selected>=g_query.count)g_selected=g_query.count?g_query.count-1:0;
@@ -809,7 +823,7 @@ int ui_online_audio_screen(void) {
                     else if(action==2)fetch_page(VT_ONLINE_TAG,"",0,1);else load_saved();
 				} else if(item.kind==VT_ONLINE_TAG) {
 					g_query.browse=1;g_query.search_field=1;fetch_page(VT_ONLINE_RADIO,item.id,0,1);
-				} else if (item.kind == VT_ONLINE_COUNTRY) {
+				} else if (vt_online_item_country(&item)) {
 					select_country(item.id, item.title);
 				} else if (item.kind == VT_ONLINE_FEED) {
 					if (fetch_page(VT_ONLINE_EPISODE, item.url, 0, 1) >= 0)
@@ -885,7 +899,7 @@ int ui_online_audio_screen(void) {
 			int focused = i == g_selected && !focus_tabs && page_focus && !(PODCAST_HOME&&offline_focus);
 			ui_panel(x, y, width, CATALOG_HEIGHT, VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
 			if(focused){ui_focus_motion_tick(&focus_motion,x,y,width,CATALOG_HEIGHT);draw_focus=1;}
-			char fitted[192],favorite_title[192];
+			char fitted[192];
 			const char *title;
 			int extra = i - g_query.count;
 			if (i < g_query.count) title = g_query.items[i].title;
@@ -893,18 +907,19 @@ int ui_online_audio_screen(void) {
 			else title = vt_i18n_str(g_query.offset > 0 && extra == (g_query.kind == VT_ONLINE_COUNTRY)
 			    ? VT_STR_ONLINE_PREVIOUS : VT_STR_ONLINE_NEXT);
 			if(i<g_query.count && can_favorite(&g_query.items[i]) && (saved_list()||favorite_index(&g_query.items[i])>=0)) {
-                snprintf(favorite_title,sizeof(favorite_title),"* %s",title);title=favorite_title;
+                ui_text_line(x+width-28,y+24,24,"★",VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
             }
             const char *art = i<g_query.count ? g_query.items[i].artwork_path : "";
-			int art_size = CATALOG_COVERS ? CATALOG_HEIGHT-96 : columns==3 ? 40 : 56;
+			int art_size = CATALOG_COVERS ? CATALOG_HEIGHT-76 : columns==3 ? 40 : 56;
+            if(art_size<32)art_size=32;
             if(art_size>width-20)art_size=width-20;
 			vita2d_texture *cover=NULL;
-			if(i<g_query.count && g_query.kind==VT_ONLINE_COUNTRY)cover=vt_country_flag_get(g_query.items[i].id);
+			if(i<g_query.count && vt_online_item_country(&g_query.items[i]))cover=vt_country_flag_get(g_query.items[i].id);
 			else if(art[0] && strcmp(art,"-"))cover=vt_artwork_thumbnail_get(art);
 			if(g_query.kind!=VT_ONLINE_TAG && !g_menu)
 				ui_artwork_tile(CATALOG_COVERS?x+(width-art_size)/2:x+10,CATALOG_COVERS?y+10:y+(CATALOG_HEIGHT-art_size)/2,art_size,cover,g_query.kind==VT_ONLINE_COUNTRY?"--":g_tab==VT_ONLINE_RADIO?"FM":"PD");
 			int text_x = x + (CATALOG_COVERS || g_query.kind==VT_ONLINE_TAG || g_menu ? 14 : art_size+20);
-			int text_width = x+width-12-text_x;
+			int text_width = x+width-40-text_x;
 			if(i<g_query.count && g_query.items[i].kind==VT_ONLINE_EPISODE) {
 				char date[16],duration[24];episode_labels(&g_query.items[i],date,duration);
 				int date_width=ui_font_text_width(font,UI_FONT_SMALL,date);

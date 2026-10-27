@@ -21,6 +21,8 @@ static int guide_swapped;
 int vt_preferences_player_swap_shoulders(void){return guide_swapped;}
 int vt_preferences_set_player_swap_shoulders(int n){guide_swapped=n;settings_writes++;return 0;}
 PREF(language,1) PREF(player_status_always_visible,0) PREF(clock_source,1)
+int vt_preferences_decoder_cpu_mhz(int hardware){return hardware?333:444;}
+int vt_preferences_set_decoder_cpu_mhz(int hardware,int mhz){(void)hardware;(void)mhz;settings_writes++;return 0;}
 PREF(disk_logs_enabled,0) PREF(remember_network_passwords,0)
 PREF(subtitle_font,0) PREF(subtitle_text_color,0) PREF(subtitle_border_color,0)
 PREF(subtitle_background_color,0) PREF(subtitle_size,1) PREF(subtitle_max_width,2)

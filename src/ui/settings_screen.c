@@ -66,6 +66,7 @@ enum {
 	ROW_LANGUAGE,
 	ROW_INTERFACE_THEME,
 	ROW_CLOCK,
+ ROW_CPU,
 	ROW_MAPPING,
 	ROW_DECODER,
 	ROW_SUBTITLE_FONT,
@@ -260,7 +261,9 @@ static int rows_for_tab(int tab, SettingRow rows[9]) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_CLOCK_CONTROL), vt_preferences_clock_source(), ROW_CLOCK };
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_WRITE_LOGS), vt_preferences_disk_logs_enabled(), ROW_TOGGLE };
 		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_REMEMBER_NETWORK_PASSWORDS), vt_preferences_remember_network_passwords(), ROW_TOGGLE };
-		return 3;
+        rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_HW_CPU), vt_preferences_decoder_cpu_mhz(1), ROW_CPU };
+        rows[4] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SW_CPU), vt_preferences_decoder_cpu_mhz(0), ROW_CPU };
+		return 5;
 	}
 	rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_CONTROL_MAPPING),
 	                        vt_preferences_player_swap_shoulders(), ROW_MAPPING };
@@ -382,7 +385,13 @@ static int apply_row(int tab, int row, int direction) {
 			return vt_preferences_set_clock_source(value);
 		} else if (row == 1) {
 			return vt_preferences_set_disk_logs_enabled(!vt_preferences_disk_logs_enabled());
-		} else if (row == 2) {
+		} else if (row == 3 || row == 4) {
+            int hardware = row == 3;
+            int current = vt_preferences_decoder_cpu_mhz(hardware);
+            const int choices[] = {222,333,444};
+            int index = current == 222 ? 0 : current == 333 ? 1 : 2;
+            return vt_preferences_set_decoder_cpu_mhz(hardware, choices[(index + (direction < 0 ? 2 : 1)) % 3]);
+        } else if (row == 2) {
 			int enabled = !vt_preferences_remember_network_passwords();
 			if (!enabled) {
 				int clear_result = vt_network_credentials_clear();
@@ -398,7 +407,7 @@ static int apply_row(int tab, int row, int direction) {
 }
 
 static int visible_rows_for_tab(int tab) {
-	return tab == TAB_SUBTITLES ? SUBTITLE_VISIBLE_ROWS : SETTINGS_VISIBLE_ROWS;
+	return tab == TAB_SYSTEM ? 4 : tab == TAB_SUBTITLES ? SUBTITLE_VISIBLE_ROWS : SETTINGS_VISIBLE_ROWS;
 }
 
 static int first_visible_row(int cursor, int row_count, int visible_rows) {
@@ -485,8 +494,12 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
         else if(tab==TAB_INTERFACE&&i==3)draw_value(small,y,row_width,ui_theme_name(ui_theme_id()));
 		else if (rows[i].kind == ROW_CLOCK)
 			draw_value(small, y, row_width, rows[i].value == VT_CLOCK_SOURCE_APP
-			                       ? "VitaMediaDeck 444/222/222/111"
+			                       ? vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_APP)
 			                       : vt_i18n_str(VT_STR_SETTINGS_CLOCK_SOURCE_PSVSHELL));
+        else if (rows[i].kind == ROW_CPU) {
+            char value[24]; snprintf(value, sizeof(value), "%d MHz", rows[i].value);
+            draw_value(small, y, row_width, value);
+        }
 		else if (rows[i].kind == ROW_MAPPING)
 			draw_value(small, y, row_width, vt_i18n_str(rows[i].value
 			    ? VT_STR_SETTINGS_CONTROL_DPAD_PANELS
@@ -530,16 +543,19 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 			                  453,
 			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "v");
 	}
-	if (tab == TAB_SYSTEM && small) {
+	if (tab == TAB_SYSTEM && small && cursor == 2) {
 		char path[192];
 		snprintf(path, sizeof(path), vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PATH),
 		         VITAMEDIADECK_NETWORK_PASSWORDS_PATH);
-		ui_font_draw_text(small, ROW_X + 12, 354, VT_THEME_WARNING,
+		ui_font_draw_text(small, ROW_X + 12, 394, VT_THEME_WARNING,
 		                  UI_FONT_SMALL,
 		                  vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PLAINTEXT_WARNING));
-		ui_font_draw_text(small, ROW_X + 12, 382, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text(small, ROW_X + 12, 418, VT_THEME_TEXT_MUTED,
 		                  UI_FONT_SMALL, path);
 	}
+    if (tab == TAB_SYSTEM && small && cursor != 2) {
+        ui_text_line(ROW_X+12,394,ROW_W-24,vt_i18n_str(VT_STR_SETTINGS_CLOCK_PRIORITY),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+    }
 	if (tab == TAB_SUBTITLES) {
 		draw_subtitle_preview(small);
 	} else if (small) {

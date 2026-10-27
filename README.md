@@ -1,12 +1,14 @@
 # VitaMediaDeck
 
-Latest correction: [restore category tabs; retire only the old Home](docs/category-tabs-2026-10-27.md).
-Video, Music and Images again open their existing category screens with tabs,
-views and filters. Folder Back returns to its category. Only Home uses the
-integrated dashboard; the obsolete aggregate grid stays unreachable.
-The Legacy/VMD status icon fills the 54-pixel bar height with preserved aspect
-ratio. A production-routing regression passes and rejects the preceding route;
-physical console navigation and Sony rendering remain to be checked.
+Latest correction: [Home controls, media feedback and automatic decoder clocks](docs/home-media-controls-2026-10-27.md).
+Home collections support item navigation; the tab repeat, search text, player
+feedback, country favourites/flags and touch controls are improved. Video CPU
+now follows the active decoder (HW 333 / SW 444 MHz), with independent saved
+targets and priority for PSVshell manual clocks. IPTV startup shows buffer and
+backend progress and offers R1 decoder selection; the reported HW first-frame
+timeout still needs console diagnosis and is not claimed fixed.
+
+Previous correction: [restore category tabs; retire only the old Home](docs/category-tabs-2026-10-27.md).
 
 Previous correction: [native text space and search](docs/vmd-text-search-2026-10-27.md).
 
@@ -34,11 +36,10 @@ or authenticated WebDAV, SFTP, and SMB servers. Browsing, demuxing, decoding,
 synchronization, and rendering run directly on the console.
 
 **Home** is now one integrated dashboard: unfinished media takes priority,
-saved connections open directly, and favourites, recent activity and access to
+saved connections stay visible, and favourites, recent activity and access to
 sources/history stay visible together. The primary cover, compact server rows, favourite shelf and
 activity rows follow each theme; empty collections yield their space to media.
-Indexed local files appear even before anything has been played. D-pad/left stick moves between them; **R1/Square**
-cycles items within a component, and **Triangle** opens global search. Full
+Indexed local files appear even before anything has been played. D-pad/left stick moves between components; **×** enters a populated collection, then selects its item. **□ / R1** cycles previous/next and **△** or the magnifier opens global search. Full
 collections are deliberate drill-downs rather than interchangeable Home lists.
 
 Search matches indexed titles, filenames, artists and albums, with worker-prepared

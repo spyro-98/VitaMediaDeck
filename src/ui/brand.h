@@ -7,6 +7,8 @@
 void ui_brand_draw_header(const char *query);
 /* Logo and system status, with the central area reserved for Home tabs. */
 void ui_brand_draw_home_header(void);
+void ui_brand_draw_home_search(void);
+int ui_brand_home_search_hit(unsigned flags,int x,int y);
 void ui_brand_draw_breadcrumbs(const char *section, const char *parent, const char *leaf);
 void ui_brand_draw_path(const char *section, const char *path);
 /* Uses the player's existing fading scrim, without an opaque logo/bar. */

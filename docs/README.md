@@ -1,12 +1,14 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest correction: [restore category tabs; retire only the old Home](category-tabs-2026-10-27.md).
-Video, Music and Images again open their existing category screens with tabs,
-views and filters. Folder Back returns to its category. Only Home uses the
-integrated dashboard; the obsolete aggregate grid stays unreachable.
-The Legacy/VMD status icon fills the 54-pixel bar height with preserved aspect
-ratio. A production-routing regression passes and rejects the preceding route;
-physical console navigation and Sony rendering remain to be checked.
+Latest correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
+Home collections support item navigation; the tab repeat, search text, player
+feedback, country favourites/flags and touch controls are improved. Video CPU
+now follows the active decoder (HW 333 / SW 444 MHz), with independent saved
+targets and priority for PSVshell manual clocks. IPTV startup shows buffer and
+backend progress and offers R1 decoder selection; the reported HW first-frame
+timeout still needs console diagnosis and is not claimed fixed.
+
+Previous correction: [restore category tabs; retire only the old Home](category-tabs-2026-10-27.md).
 
 Previous correction: [native text space and search](vmd-text-search-2026-10-27.md).
 
@@ -38,6 +40,8 @@ performance, validation and change records.
 - [PAF console crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
 
 ## Start here
+
+- [Home controls and decoder clocks](home-media-controls-2026-10-27.md): collection navigation, media feedback, country favourites, automatic CPU pairing and IPTV diagnosis.
 
 - [Restore category tabs](category-tabs-2026-10-27.md): preserve all media sections and retire only the aggregate Home.
 
@@ -163,3 +167,5 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [docs/podcast-resume-2026-10-24.md](podcast-resume-2026-10-24.md) | Podcast checkpoint reliability, I/O budget and acceptance limits |
 | [tests/podcast_resume/README.md](../tests/podcast_resume/README.md) | Persistence/worker/real MP3 resume host regressions |
 | [docs/l1-scroll-2026-10-24.md](l1-scroll-2026-10-24.md) | Animated L1 viewports, spacing and input validation |
+
+| [docs/home-media-controls-2026-10-27.md](home-media-controls-2026-10-27.md) | Current Home/media and cooperative decoder clock policy |

@@ -443,6 +443,10 @@ int vt_online_fetch_query(void *ctx) {
 	return q->cancel || (q->cancel_parent && *q->cancel_parent) || !success ? -1 : 0;
 }
 
+static int saved_valid(const VtOnlineItem *v) {
+ return v && (v->kind==VT_ONLINE_RADIO || v->kind==VT_ONLINE_FEED) &&
+  (vt_online_item_country(v) || vt_online_url_valid(v->url));
+}
 int vt_online_load_saved(VtOnlineItem *out, int capacity) {
 	SceIoStat status;
 	if (!out || capacity <= 0) return 0;
@@ -459,7 +463,10 @@ int vt_online_load_saved(VtOnlineItem *out, int capacity) {
 		if (count >= capacity) break;
 		const char *url = json_text(entry, "url");
 		int kind = (int)json_integer_value(json_object_get(entry, "kind"));
-		if (!vt_online_url_valid(url) || (kind != VT_ONLINE_RADIO && kind != VT_ONLINE_FEED)) continue;
+		VtOnlineItem key={.kind=kind};
+        snprintf(key.url,sizeof(key.url),"%s",url);
+        snprintf(key.id,sizeof(key.id),"%s",json_text(entry,"id"));
+        if(!saved_valid(&key))continue;
 		VtOnlineItem *item = &out[count++];
 		memset(item, 0, sizeof(*item));
 		snprintf(item->title, sizeof(item->title), "%s", json_text(entry, "title"));
@@ -504,8 +511,7 @@ static int write_saved(const VtOnlineItem *items, int count) {
 
 
 int vt_online_save(const VtOnlineItem *item) {
-    if (!item || !vt_online_url_valid(item->url) ||
-        (item->kind != VT_ONLINE_RADIO && item->kind != VT_ONLINE_FEED)) return -1;
+    if (!saved_valid(item)) return -1;
     VtOnlineItem *items = calloc(VT_ONLINE_MAX, sizeof(*items));
     if (!items) return -1;
     int count = vt_online_load_saved(items, VT_ONLINE_MAX);
@@ -524,7 +530,11 @@ int vt_online_save(const VtOnlineItem *item) {
 }
 
 int vt_online_remove(int kind, const char *url) {
-    if ((kind != VT_ONLINE_RADIO && kind != VT_ONLINE_FEED) || !vt_online_url_valid(url)) return -1;
+    VtOnlineItem key={.kind=kind};
+    if(!url)return -1;
+    snprintf(key.url,sizeof(key.url),"%s",url);
+    if(!strncmp(url,"vmd-country:",12))snprintf(key.id,sizeof(key.id),"%s",url+12);
+    if(!saved_valid(&key))return -1;
     VtOnlineItem *items = calloc(VT_ONLINE_MAX, sizeof(*items));
     if (!items) return -1;
     int count = vt_online_load_saved(items, VT_ONLINE_MAX);

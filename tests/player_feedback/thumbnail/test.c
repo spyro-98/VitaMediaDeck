@@ -11,7 +11,7 @@ int sceKernelChangeThreadPriority(SceUID id,int p){(void)id;(void)p;priority_cal
 void log_printf(const char *s,...){(void)s;}
 void vita2d_wait_rendering_done(void){fences++;}
 void vita2d_free_texture(vita2d_texture *p){frees++;free(p);}
-vita2d_texture *vita2d_create_empty_texture_format(unsigned w,unsigned h,int fmt){CHECK(w==264&&h==148&&fmt==SCE_GXM_TEXTURE_FORMAT_R5G6B5);return allocation_fails?NULL:calloc(1,sizeof(vita2d_texture));}
+vita2d_texture *vita2d_create_empty_texture_format(unsigned w,unsigned h,int fmt){CHECK(((w==264&&h==148)||(w==64&&h==64))&&fmt==SCE_GXM_TEXTURE_FORMAT_R5G6B5);return allocation_fails?NULL:calloc(1,sizeof(vita2d_texture));}
 unsigned vita2d_texture_get_stride(const vita2d_texture *p){(void)p;return 264*2;}
 void *vita2d_texture_get_datap(const vita2d_texture *p){return (void *)p->pixels;}
 void vita2d_texture_set_filters(vita2d_texture *p,int a,int b){(void)p;(void)a;(void)b;}
@@ -55,5 +55,18 @@ int main(void) {
  CHECK(vt_video_thumbnail_get_priority(request.path,100,100)==g_thumbnail.textures[0].texture);
  vt_video_thumbnail_prepare_playback();CHECK(!g_thumbnail.enabled && frees==1 && fences>0);
  vt_video_thumbnail_resume();CHECK(g_thumbnail.enabled);
+ /* Eighteen visible/prefetched country flags survive unrelated cover churn. */
+ for(int n=0;n<18;n++) {
+  char path[8];snprintf(path,sizeof(path),"flag:A%c",'A'+n);
+  g_thumbnail.result=(ThumbnailResult){.key=thumbnail_key(path,0,3),.generation=g_thumbnail.generation,.width=64,.height=64};
+  strcpy(g_thumbnail.result.path,path);g_thumbnail.result.pixels=calloc(64*64,2);vt_video_thumbnail_pump();
+ }
+ for(int n=0;n<16;n++) {
+  char path[64];snprintf(path,sizeof(path),"ux0:movies/churn-%d.mp4",n);
+  g_thumbnail.result=(ThumbnailResult){.key=thumbnail_key(path,0,0),.generation=g_thumbnail.generation,.width=264,.height=148};
+  strcpy(g_thumbnail.result.path,path);g_thumbnail.result.pixels=calloc(THUMB_PIXELS,2);now++;vt_video_thumbnail_pump();
+  for(int k=0;k<18;k++){char code[3]={'A','A'+k,0};CHECK(vt_country_flag_get(code)!=NULL);}
+ }
+ vt_video_thumbnail_prepare_playback();
  printf("PASS: %u thumbnail lifecycle checks\n",checks);
 }

@@ -39,12 +39,12 @@ int main(void){
  VtPreferencesDiskV1 v1={.header={.version=1,.record_size=sizeof(v1)},.default_quality=720};
  memcpy(v1.header.magic,g_preferences_magic,8);v1.reserved[1]=playback;v1.header.checksum=disk_v1_checksum(&v1);
  FILE *f=fopen("legacy1","wb");assert(f&&fwrite(&v1,1,sizeof(v1),f)==sizeof(v1));assert(!fclose(f));
- int q,rate,lang;uint32_t flags,extra;
- assert(!load_path("legacy1",&q,&rate,&lang,&flags,&extra)&&flags==playback&&!extra);
+ int q,rate,lang;uint32_t flags,extra,clocks;
+ assert(!load_path("legacy1",&q,&rate,&lang,&flags,&extra,&clocks)&&flags==playback&&!extra&&!clocks);
  VtPreferencesDiskV2 v2={.header={.version=2,.record_size=sizeof(v2)},.default_quality=720,.default_frame_rate=30};
  memcpy(v2.header.magic,g_preferences_magic,8);v2.reserved[1]=playback;v2.header.checksum=disk_v2_checksum(&v2);
  f=fopen("legacy2","wb");assert(f&&fwrite(&v2,1,sizeof(v2),f)==sizeof(v2));assert(!fclose(f));
- assert(!load_path("legacy2",&q,&rate,&lang,&flags,&extra)&&flags==playback&&!extra);
+ assert(!load_path("legacy2",&q,&rate,&lang,&flags,&extra,&clocks)&&flags==playback&&!extra&&!clocks);
  /* Interface selection survives reload and leaves every other setting intact. */
  assert(!persist_subtitle_pair(playback,0));
  assert(vt_preferences_interface_theme()==VT_UI_THEME_LEGACY);
@@ -124,6 +124,27 @@ int main(void){
  assert(!persist_record_all(480,25,VT_LANGUAGE_IT,playback,non_theme));
  assert(!rename(VT_PREFERENCES_PATH,VT_PREFERENCES_BACKUP));
  g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_interface_theme()==VT_UI_THEME_LEGACY_VITA);
+ /* Actual V3 migration retains all payload bits and supplies the new pair. */
+ VtPreferencesDiskV3 v3={.header={.version=3,.record_size=sizeof(v3)},.default_quality=480,.default_frame_rate=25,.subtitle_flags=subtitle|VT_VMD_DEFAULT_APPLIED};
+ memcpy(v3.header.magic,g_preferences_magic,8);v3.reserved[1]=playback;v3.header.checksum=disk_v3_checksum(&v3);
+ f=fopen(VT_PREFERENCES_PATH,"wb");assert(f&&fwrite(&v3,1,sizeof(v3),f)==sizeof(v3));assert(!fclose(f));
+ g_loaded=0;assert(!vt_preferences_init());assert(vt_preferences_decoder_cpu_mhz(1)==333&&vt_preferences_decoder_cpu_mhz(0)==444);
+ assert(g_playback_flags==playback&&g_subtitle_flags==v3.subtitle_flags);
+ for(int hw=0;hw<2;hw++)for(int mhz=222;mhz<=444;mhz+=111){
+  int other=vt_preferences_decoder_cpu_mhz(!hw);
+  assert(!vt_preferences_set_decoder_cpu_mhz(hw,mhz));
+  g_loaded=0;assert(!vt_preferences_init());assert(vt_preferences_decoder_cpu_mhz(hw)==mhz&&vt_preferences_decoder_cpu_mhz(!hw)==other);
+  assert(g_playback_flags==playback&&g_subtitle_flags==v3.subtitle_flags);
+ }
+ assert(!vt_preferences_set_decoder_cpu_mhz(1,333));assert(!vt_preferences_set_decoder_cpu_mhz(0,444));
+ assert(vt_preferences_set_decoder_cpu_mhz(1,500)<0&&vt_preferences_set_decoder_cpu_mhz(2,333)<0);
+ fail_write=1;assert(vt_preferences_set_decoder_cpu_mhz(0,222)<0&&vt_preferences_decoder_cpu_mhz(0)==444);
+ fail_write=0;g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_decoder_cpu_mhz(0)==444);
+ /* Unrelated writes preserve the pair, and the known backup recovers V4 too. */
+ assert(!vt_preferences_set_decoder_cpu_mhz(1,222));assert(!vt_preferences_set_default_quality(720));
+ assert(!rename(VT_PREFERENCES_PATH,VT_PREFERENCES_BACKUP));g_loaded=0;
+ assert(!vt_preferences_init()&&vt_preferences_decoder_cpu_mhz(1)==222&&vt_preferences_decoder_cpu_mhz(0)==444);
+ puts("CPU pair V4: HW333/SW444 defaults, V1/V2/V3 migration, independent pairs, persistence, invalid values, failed-write rollback and V4 backup passed");
  puts("Per-theme browser defaults and independent saved grid/list choices passed");
  puts("Interface themes: default VMD, one-time Legacy upgrade, later choices/recovery and failed migration preserved, all choices persisted, unrelated bits and failed-write rollback passed");
  puts("Audio layout settings: persistence, unrelated flags, invalid values, write failure and V1/V2 migration passed");

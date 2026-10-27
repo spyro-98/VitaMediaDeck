@@ -11,7 +11,7 @@ from pathlib import Path
 
 def parse(lines):
     result = {"clocks": [], "opens": [], "pacing": [], "stops": [], "builds": [],
-              "energy_measured": False}
+              "decoder_clocks": [], "energy_measured": False}
     # Old console logs concatenate records. Parse complete event grammars and
     # every occurrence; never let a later join's shown= or AAC gap_max= replace
     # the video cadence fields from the beginning of the same physical line.
@@ -21,6 +21,7 @@ def parse(lines):
                        r"GPU (?P<gpu_before>-?\d+)->(?P<gpu_actual>-?\d+) ret=[0-9A-Fa-f]+ " +
                        r"XBAR (?P<xbar_before>-?\d+)->(?P<xbar_actual>-?\d+) ret=[0-9A-Fa-f]+" +
                        r"(?: requested_ARM=(?P<arm_request>\d+) requested_BUS=(?P<bus_request>\d+) requested_GPU=(?P<gpu_request>\d+) requested_XBAR=(?P<xbar_request>\d+))?")
+    decoder_clock = re.compile(r"video clocks: backend=(?P<backend>HW|SW) requested_CPU=(?P<requested>\d+) actual_CPU=(?P<actual>\d+) owner=(?P<owner>app|external)(?=\s|$)")
     opened = re.compile(r"software video: H\.264 ready backend=(?P<backend>\w+) " +
                         r"(?P<width>\d+)x(?P<height>\d+) (?P<fps>\d+)fps texture=\d+x\d+ pitch=\d+ " +
                         r"memory=(?P<surface_memory_kib>\d+) KiB queue=(?P<queue>\d+) mode=(?P<mode>\w+) " +
@@ -46,6 +47,8 @@ def parse(lines):
                 if m[key + "_request"] is not None:
                     entry[key]["requested_mhz"] = int(m[key + "_request"])
             result["clocks"].append(entry)
+        for m in decoder_clock.finditer(line):
+            result["decoder_clocks"].append({"line": number, "backend": m["backend"], "requested_mhz": int(m["requested"]), "actual_mhz": int(m["actual"]), "owner": m["owner"]})
         for m in opened.finditer(line):
             values = {key: value if key in ("backend", "mode") else int(value)
                       for key, value in m.groupdict().items() if value is not None}

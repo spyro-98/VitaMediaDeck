@@ -29,10 +29,10 @@ are secondary actions. No R1 cycle replaces the Home with another list.
 | Control | Home dashboard |
 | --- | --- |
 | D-pad / left stick | Move spatially between components. |
-| Cross | Play/open the focused item or saved connection. |
-| R1 / Square | Next / previous item within that component, keeping Home visible. |
-| Triangle | Search across providers. |
-| Circle | Focus the category tabs; Ghost's right stick keeps controlling its wheel. |
+| × | Enter a populated favourite/recent/server collection; press again to play/open its selected item. |
+| □ / R1 | Next / previous item within that component, keeping Home visible. |
+| △ / magnifier | Search across providers. |
+| ○ | Exit collection to components, then focus tabs; Ghost's right stick controls its wheel. |
 | Touch | Open a component; each visible server/activity row and favourite cover opens that item. |
 
 On a completely empty Home, the primary action opens local files directly.
@@ -80,7 +80,7 @@ Country/genre/station grids navigate with the d-pad or touch and page lazily.
 Radio: X plays/pauses and reconnects live after pause. Podcast: X opens a show
 or streams an episode, Start downloads an episode, Select/Square shows details.
 Outside episodes, Triangle searches, Start adds a URL and **Square toggles the
-selected favourite**, including Home. R1 explicitly offers Add to favourites or
+selected favourite**, including Home and country shortcuts. A star appears inline; successful toggles have no popup. R1 explicitly offers Add to favourites or
 Remove from favourites; removing the last item leaves an empty favourites view.
 The action removes only the saved reference, preserving downloads and playback.
 In provider discovery, Up from the first row focuses the Radio/Podcast tabs;
@@ -373,3 +373,13 @@ pixels retain their existing GPU path beneath the native controls.
 Hold **L1 + R1 while starting** to save and recover to Legacy if a firmware/PAF
 problem prevents normal use. A detected initialization/widget error uses the
 existing renderer automatically. Physical Vita acceptance is still required.
+
+## Decoder CPU and external clocks
+
+System settings expose Auto by decoder (HW 333 / SW 444 MHz by default),
+independent 222/333/444 MHz targets, and PSVshell manual ownership. The latter
+performs no application clock writes/restores. Manual plugin hooks take priority
+in Auto too; readback failures/external changes relinquish app ownership.
+R1 in an AUTO IPTV player also offers the active decoder switch. A failed HW
+request returns to the previous backend with a notice; it does not prove HW
+compatibility. See [current report](../docs/home-media-controls-2026-10-27.md).

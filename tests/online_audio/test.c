@@ -218,6 +218,14 @@ static void saved_test(void) {
     saved_fail_commit=1;CHECK(vt_online_remove(feed.kind,feed.url)<0);saved_fail_commit=0;
     CHECK(vt_online_load_saved(loaded,64)==1); /* Backup survives a failed recovery commit. */
     CHECK(!vt_online_remove(feed.kind,feed.url));CHECK(vt_online_load_saved(loaded,64)==0);
+    VtOnlineItem country={.kind=VT_ONLINE_RADIO,.id="IT",.title="Italy",.url="vmd-country:IT"};
+    CHECK(vt_online_item_country(&country));CHECK(!vt_online_url_valid(country.url));
+    CHECK(!vt_online_save(&country));country.kind=VT_ONLINE_FEED;CHECK(!vt_online_save(&country));
+    CHECK(vt_online_load_saved(loaded,64)==2);
+    CHECK(!vt_online_remove(VT_ONLINE_RADIO,country.url));CHECK(vt_online_load_saved(loaded,64)==1);
+    CHECK(loaded[0].kind==VT_ONLINE_FEED && vt_online_item_country(&loaded[0]));
+    CHECK(!vt_online_remove(VT_ONLINE_FEED,country.url));
+    strcpy(country.id,"US");CHECK(vt_online_save(&country)<0);
     CHECK(!vt_online_save(&item));
     FILE *f=fopen("ux0:data/VitaMediaDeck/online-audio.json","wb"); CHECK(f); fputs("broken",f); fclose(f);
     CHECK(vt_online_remove(item.kind,item.url)<0);

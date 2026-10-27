@@ -8,7 +8,7 @@
 
 #include "app_paths.h"
 
-#define VT_PREFERENCES_VERSION 3U
+#define VT_PREFERENCES_VERSION 4U
 #define VT_PREFERENCES_PATH VITAMEDIADECK_DATA_DIR "/settings.bin"
 #define VT_PREFERENCES_TEMP VITAMEDIADECK_DATA_DIR "/settings.tmp"
 #define VT_PREFERENCES_BACKUP VITAMEDIADECK_DATA_DIR "/settings.bak"
@@ -52,6 +52,18 @@ typedef struct {
 	int32_t default_frame_rate;
 	uint32_t subtitle_flags;
 } VtPreferencesDiskV3;
+
+/* V4 appends the independent decoder CPU pair. Zero migrates to HW 333 / SW
+ * 444 without repurposing any shipped subtitle, theme or playback bits. */
+typedef struct {
+ VtPreferencesHeader header;
+ int32_t default_quality;
+ uint32_t reserved[2];
+ int32_t default_frame_rate;
+ uint32_t subtitle_flags;
+ uint32_t clock_flags;
+} VtPreferencesDiskV4;
+_Static_assert(sizeof(VtPreferencesDiskV4) == 44, "preferences v4 layout");
 
 _Static_assert(sizeof(VtPreferencesHeader) == 20,
 	           "preferences header layout must remain fixed");
@@ -144,6 +156,7 @@ static int g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 static int g_language = VT_LANGUAGE_AUTO;
 static uint32_t g_playback_flags = 0;
 static uint32_t g_subtitle_flags = 0;
+static uint32_t g_clock_flags;
 
 static int set_playback_flag(uint32_t bit, int enabled);
 static int persist_subtitle_pair(uint32_t playback, uint32_t subtitle);
@@ -197,6 +210,12 @@ static uint32_t disk_v3_checksum(const VtPreferencesDiskV3 *disk) {
 	return crc32_bytes((const unsigned char *)&copy, sizeof(copy));
 }
 
+static uint32_t disk_v4_checksum(const VtPreferencesDiskV4 *disk) {
+ VtPreferencesDiskV4 copy = *disk;
+ copy.header.checksum = 0;
+ return crc32_bytes((const unsigned char *)&copy, sizeof(copy));
+}
+
 static int path_exists(const char *path) {
 	SceIoStat stat;
 	memset(&stat, 0, sizeof(stat));
@@ -227,7 +246,8 @@ static int write_all(SceUID fd, const void *data, size_t size) {
 
 static int load_path(const char *path, int *quality, int *frame_rate,
 	                 int *language, uint32_t *flags,
-	                 uint32_t *subtitle_flags) {
+	                 uint32_t *subtitle_flags, uint32_t *clock_flags) {
+ *clock_flags = 0;
 	SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
 	if (fd < 0) return fd;
 	VtPreferencesHeader header;
@@ -272,7 +292,7 @@ static int load_path(const char *path, int *quality, int *frame_rate,
 			*flags = disk.reserved[1];
 			*subtitle_flags = 0;
 		}
-	} else if (ret == 0 && header.version == VT_PREFERENCES_VERSION &&
+	} else if (ret == 0 && header.version == 3U &&
 	           header.record_size == sizeof(VtPreferencesDiskV3)) {
 		VtPreferencesDiskV3 disk;
 		memset(&disk, 0, sizeof(disk));
@@ -291,6 +311,20 @@ static int load_path(const char *path, int *quality, int *frame_rate,
 			*flags = disk.reserved[1];
 			*subtitle_flags = disk.subtitle_flags;
 		}
+ } else if (ret == 0 && header.version == VT_PREFERENCES_VERSION &&
+            header.record_size == sizeof(VtPreferencesDiskV4)) {
+  VtPreferencesDiskV4 disk = { .header = header };
+  ret = read_all(fd, (unsigned char *)&disk + sizeof(header), sizeof(disk)-sizeof(header));
+  if (ret == 0 && (disk.header.checksum != disk_v4_checksum(&disk) ||
+                  !valid_quality(disk.default_quality) || !valid_frame_rate(disk.default_frame_rate))) ret = -2;
+  if (ret == 0) {
+   *quality = disk.default_quality;
+   *frame_rate = disk.default_frame_rate;
+   *language = valid_language((int)disk.reserved[0]) ? (int)disk.reserved[0] : VT_LANGUAGE_AUTO;
+   *flags = disk.reserved[1];
+   *subtitle_flags = disk.subtitle_flags;
+   *clock_flags = disk.clock_flags;
+  }
 	} else if (ret == 0) {
 		ret = -2;
 	}
@@ -299,9 +333,9 @@ static int load_path(const char *path, int *quality, int *frame_rate,
 	return ret;
 }
 
-static int persist_record_all(int height, int frame_rate, int language,
-	                          uint32_t flags, uint32_t subtitle_flags) {
-	VtPreferencesDiskV3 disk;
+static int persist_record_clocks(int height, int frame_rate, int language,
+                              uint32_t flags, uint32_t subtitle_flags, uint32_t clock_flags) {
+	VtPreferencesDiskV4 disk;
 	memset(&disk, 0, sizeof(disk));
 	memcpy(disk.header.magic, g_preferences_magic, sizeof(disk.header.magic));
 	disk.header.version = VT_PREFERENCES_VERSION;
@@ -311,7 +345,8 @@ static int persist_record_all(int height, int frame_rate, int language,
 	disk.reserved[1] = flags;
 	disk.default_frame_rate = frame_rate;
 	disk.subtitle_flags = subtitle_flags;
-	disk.header.checksum = disk_v3_checksum(&disk);
+	disk.clock_flags = clock_flags;
+	disk.header.checksum = disk_v4_checksum(&disk);
 
 	sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
 	sceIoRemove(VT_PREFERENCES_TEMP);
@@ -350,6 +385,11 @@ static int persist_record_all(int height, int frame_rate, int language,
 	return 0;
 }
 
+static int persist_record_all(int height, int frame_rate, int language,
+                              uint32_t flags, uint32_t subtitle_flags) {
+ return persist_record_clocks(height, frame_rate, language, flags, subtitle_flags, g_clock_flags);
+}
+
 static int persist_record(int height, int frame_rate, int language,
 	                      uint32_t flags) {
 	return persist_record_all(height, frame_rate, language, flags,
@@ -372,6 +412,7 @@ int vt_preferences_init(void) {
 	g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	g_language = VT_LANGUAGE_AUTO;
 	g_playback_flags = 0;
+ g_clock_flags = 0;
     /* Fresh profiles use VMD. Loaded records migrate the former Legacy default
      * once; later explicit selections and native recovery remain persistent. */
     g_subtitle_flags = ((VT_UI_THEME_LEGACY_VITA & 3u) << VT_INTERFACE_THEME_SHIFT) |
@@ -381,25 +422,27 @@ int vt_preferences_init(void) {
 	int quality = 0, frame_rate = VT_DEFAULT_FRAME_RATE_30;
 	int language = VT_LANGUAGE_AUTO;
 	uint32_t flags = 0;
-	uint32_t subtitle_flags = 0;
+	uint32_t subtitle_flags = 0, clock_flags = 0;
 	int ret = load_path(VT_PREFERENCES_PATH, &quality, &frame_rate,
-	                    &language, &flags, &subtitle_flags);
+	                    &language, &flags, &subtitle_flags, &clock_flags);
 	if (ret == 0) {
 		g_default_quality = quality;
 		g_default_frame_rate = frame_rate;
 		g_language = language;
 		g_playback_flags = flags;
 		g_subtitle_flags = subtitle_flags;
+        g_clock_flags = clock_flags;
         return migrate_vmd_default();
 	}
 	/* Recover a commit interrupted between the two rename operations. */
 	if (load_path(VT_PREFERENCES_BACKUP, &quality, &frame_rate,
-	              &language, &flags, &subtitle_flags) == 0) {
+	              &language, &flags, &subtitle_flags, &clock_flags) == 0) {
 		g_default_quality = quality;
 		g_default_frame_rate = frame_rate;
 		g_language = language;
 		g_playback_flags = flags;
 		g_subtitle_flags = subtitle_flags;
+        g_clock_flags = clock_flags;
         return migrate_vmd_default();
 	}
 	return path_exists(VT_PREFERENCES_PATH) ? ret : 0;
@@ -724,6 +767,25 @@ int vt_preferences_set_clock_source(int source) {
 	    source != VT_CLOCK_SOURCE_PSVSHELL) return -1;
 	return set_playback_flag(VT_PERFORMANCE_FLAG_PSVSHELL_CLOCKS,
 	                         source == VT_CLOCK_SOURCE_PSVSHELL);
+}
+
+int vt_preferences_decoder_cpu_mhz(int hardware) {
+ if (!g_loaded) vt_preferences_init();
+ unsigned value = (g_clock_flags >> (hardware ? 0 : 2)) & 3u;
+ return value == 1 ? 222 : value == 2 ? 333 : value == 3 ? 444 : hardware ? 333 : 444;
+}
+
+int vt_preferences_set_decoder_cpu_mhz(int hardware, int mhz) {
+ if ((hardware != 0 && hardware != 1) || (mhz != 222 && mhz != 333 && mhz != 444)) return -1;
+ if (!g_loaded) vt_preferences_init();
+ unsigned shift = hardware ? 0 : 2;
+ unsigned encoded = mhz == 222 ? 1 : mhz == 333 ? 2 : 3;
+ uint32_t next = (g_clock_flags & ~(3u << shift)) | (encoded << shift);
+ if (next == g_clock_flags) return 0;
+ int ret = persist_record_clocks(g_default_quality, g_default_frame_rate, g_language,
+                                 g_playback_flags, g_subtitle_flags, next);
+ if (ret == 0) g_clock_flags = next;
+ return ret;
 }
 
 static unsigned int subtitle_field(unsigned int shift) {

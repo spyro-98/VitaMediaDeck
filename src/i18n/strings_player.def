@@ -37,3 +37,7 @@ VT_STR(PLAYER_ERROR_DETAIL, "Verifica il formato del file o la connessione e rip
 
 VT_STR(PLAYER_INPUT_LOCK_HINT, "Tieni SELECT: blocca/sblocca", "Hold SELECT: lock/unlock")
 VT_STR(PLAYER_SWAPPED_SHORTCUTS_HINT, "Frecce: pannelli | X: pausa/riprendi", "D-pad: panels | X: pause/resume")
+
+VT_STR(IPTV_LOADING, "Connessione IPTV e preparazione video", "Connecting IPTV and preparing video")
+
+VT_STR(PLAYER_BACKEND_RETAINED, "Cambio decoder non riuscito: mantenuto quello precedente.", "Decoder switch failed: the previous decoder was retained.")

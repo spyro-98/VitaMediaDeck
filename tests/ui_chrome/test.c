@@ -4,12 +4,16 @@
 #define ui_brand_draw_header host_brand_draw_header
 #define ui_brand_draw_breadcrumbs host_brand_draw_breadcrumbs
 #define ui_brand_draw_home_header host_brand_draw_home_header
+#define ui_brand_draw_home_search host_brand_draw_home_search
+#define ui_brand_home_search_hit host_brand_home_search_hit
 #define ui_brand_sections_hit host_brand_sections_hit
 #include "../iptv/ui_test.c"
 #undef main
 #undef ui_brand_draw_header
 #undef ui_brand_draw_breadcrumbs
 #undef ui_brand_draw_home_header
+#undef ui_brand_draw_home_search
+#undef ui_brand_home_search_hit
 #undef ui_brand_sections_hit
 #undef VITAMEDIADECK_UI_BRAND_H
 #include "ui/brand.h"
@@ -72,6 +76,16 @@ int main(int argc,char **argv){
   ui_theme_apply(theme);frame=0;script_count=2;input_script[0]=0;input_script[1]=SCE_CTRL_CIRCLE;capture_frame=0;
   ui_home_tabs_configure();memcpy(pixels,first_pixels,sizeof(pixels));char name[80];snprintf(name,sizeof(name),"theme-positions-%d",theme);png(name);
  }
+ /* R1 drag reaches actions beyond the original eight-row viewport. */
+ UiContextMenu menu={.open=1,.animation=1};UiContextAction actions[12];
+ for(int i=0;i<12;i++)actions[i]=(UiContextAction){"Action",NULL,100+i,1};
+ unsigned press=0,flags=UI_TOUCH_EVENT_DOWN;UiTouchEvent drag={.x=600,.y=470,.down_x=600,.down_y=470};
+ CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)<0);
+ drag.y=10;flags=UI_TOUCH_EVENT_MOVE;CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)<0);
+ CHECK(menu.cursor==8 && menu.top==1);
+ drag.x=600;drag.y=94+7*52+20;flags=UI_TOUCH_EVENT_TAP;
+ CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)==108);
+ CHECK(!menu.open);
  FT_Done_Face(face);
  FT_Done_FreeType(ft);
  printf("Production theme chrome: %u checks, 8 themes, IT/EN, 12h/24h, live activities, unknown "

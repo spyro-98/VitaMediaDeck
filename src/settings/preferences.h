@@ -239,11 +239,16 @@ int vt_preferences_set_remember_network_passwords(int enabled);
 int vt_preferences_stream_fallback_enabled(void);
 int vt_preferences_set_stream_fallback_enabled(int enabled);
 
-/* Explicit clock ownership. APP is the deterministic default and applies the
+/* Explicit clock ownership. APP follows the active decoder and applies the
  * documented VitaMediaDeck video profile. PSVshell is an opt-in and means VitaMediaDeck
  * never writes or restores any clock. */
 int vt_preferences_clock_source(void);
 int vt_preferences_set_clock_source(int source);
+
+/* CPU pairs: hardware=1 defaults to 333 MHz, software=0 to 444 MHz.
+ * Valid user targets are 222, 333 and 444; PSVshell ownership ignores both. */
+int vt_preferences_decoder_cpu_mhz(int hardware);
+int vt_preferences_set_decoder_cpu_mhz(int hardware, int mhz);
 
 /* Subtitle renderer profile. Existing settings.bin files decode to the
  * historical white/black, medium, 88%-wide style at the new bottom position. */

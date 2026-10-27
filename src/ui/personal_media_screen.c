@@ -576,16 +576,16 @@ static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection
         }
         if (!n)
             text(46, 170,
-                 tr("Press Square to add a server", "Premi Quadrato per aggiungere un server"), 0);
+                 tr("Press □ to add a server", "Premi □ per aggiungere un server"), 0);
         text(28, 442,
-             tr("X Connect    Square Add    Triangle Edit",
-                "X Collega    Quadrato Aggiungi    Triangolo Modifica"),
+             tr("X Connect    □ Add    △ Edit",
+                "X Collega    □ Aggiungi    △ Modifica"),
              1);
         text(28, 466,
              remove
-                 ? tr("X: remove connection only    Circle: cancel", "X: rimuovi solo collegamento    Cerchio: annulla")
-                 : tr("Circle Back    R1 Options    L1 Sections",
-                      "Cerchio Indietro    R1 Opzioni    L1 Sezioni"),
+                 ? tr("X: remove connection only    ○: cancel", "X: rimuovi solo collegamento    ○: annulla")
+                 : tr("○ Back    R1 Options    L1 Sections",
+                      "○ Indietro    R1 Opzioni    L1 Sezioni"),
              1);
         ui_action_button(756,62,186,40,VT_THEME_SURFACE,"R1",vt_i18n_str(VT_STR_UI_OPTIONS),options.open);
         ui_mini_player_draw();
