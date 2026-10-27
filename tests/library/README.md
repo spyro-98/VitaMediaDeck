@@ -51,3 +51,14 @@ Home opens only the integrated dashboard, and offline podcasts retain their
 online return. `--negative-ref a6d6dd4` verifies the preceding category bypass
 fails with normal exit 1. This is routing evidence, not real-screen input or
 Sony rendering; see the [category correction](../../docs/category-tabs-2026-10-27.md).
+
+## Local image access independent of indexing
+
+Run `python3 tests/library/test-local-images.py --negative-ref e84de5b` for the
+actual category entry functions, with substituted index/root records. It checks
+empty/populated folder and flattened catalogues, the permanent Local images
+entry, Immich ordering, typed open actions and unchanged other categories under
+ASan/UBSan. The negative source exits normally with status 1. Run
+`python3 tests/library/test-browse-navigation.py` for the actual app router,
+including image-filtered device browsing, viewer return and category retention.
+These are host contracts, not Vita screenshots or hardware input tests.

@@ -847,19 +847,45 @@ static int filtered_index(int filter, int position) {
 	return position - g_page_start;
 }
 
+/* This device entry must not depend on scanner summaries: an empty/stale
+ * index must never leave Images with only its remote provider. Empty path is
+ * the filesystem browser's device picker, with the image filter retained. */
+static int local_images_shortcut(const VtLocalMediaItem *item) {
+    return item && item->source == VT_LOCAL_MEDIA_SOURCE_FILE &&
+           item->is_directory && item->type == VT_LOCAL_MEDIA_IMAGE &&
+           !item->path[0];
+}
+
+static int screen_local_count(int filter, int flattened) {
+    return (flattened ? filtered_count(filter) : g_root_view_count) +
+           (filter == VT_LOCAL_MEDIA_IMAGE);
+}
+
 static int screen_count(int filter, int flattened) {
-	return home_provider_count(filter)+(flattened ? filtered_count(filter) : g_root_view_count);
+    return home_provider_count(filter) + screen_local_count(filter, flattened);
 }
 
 static const VtLocalMediaItem *screen_item(int filter, int position,
 	                                       int flattened,
 	                                       LocalMediaRoot **root_out) {
 	if (root_out) *root_out = NULL;
-    int locals=flattened?filtered_count(filter):g_root_view_count;
+    int locals = screen_local_count(filter, flattened);
     int provider=home_provider_position(filter,position,locals);
     if(provider>=0)return home_provider_item(filter,provider);
     position=home_local_position(filter,position,locals);
     if(position<0)return NULL;
+    if (filter == VT_LOCAL_MEDIA_IMAGE) {
+        if (position == 0) {
+            static VtLocalMediaItem local_images;
+            local_images.type = VT_LOCAL_MEDIA_IMAGE;
+            local_images.source = VT_LOCAL_MEDIA_SOURCE_FILE;
+            local_images.is_directory = 1;
+            snprintf(local_images.name, sizeof(local_images.name), "%s",
+                     vt_i18n_str(VT_STR_LOCAL_MEDIA_BROWSE_IMAGES));
+            return &local_images;
+        }
+        position--;
+    }
 	if (flattened) {
 		int slot = filtered_index(filter, position);
 		return slot >= 0 ? &g_items[slot] : NULL;
@@ -867,6 +893,12 @@ static const VtLocalMediaItem *screen_item(int filter, int position,
 	LocalMediaRoot *root = screen_root(position);
 	if (root_out) *root_out = root;
 	return root ? &root->item : NULL;
+}
+
+static int screen_open_action(const VtLocalMediaItem *item) {
+    return !item ? UI_LOCAL_MEDIA_ACTION_BACK
+         : item->is_directory ? UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER
+                              : UI_LOCAL_MEDIA_ACTION_PLAY;
 }
 
 static const char *storage_filter_name(int filter) {
@@ -960,6 +992,8 @@ static const char *media_type_name(const VtLocalMediaItem *item) {
 
 static const char *media_location_label(const VtLocalMediaItem *item) {
     if (!item) return "";
+    if (local_images_shortcut(item))
+        return vt_i18n_str(VT_STR_LOCAL_MEDIA_BROWSE_IMAGES_DETAIL);
     if (item->source == VT_LOCAL_MEDIA_SOURCE_NAVIDROME)
         return vt_i18n_str(VT_STR_HOME_NAVIDROME_DETAIL);
     if (item->source == VT_LOCAL_MEDIA_SOURCE_IMMICH)
@@ -1085,6 +1119,8 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				         vt_i18n_str(item->source == VT_LOCAL_MEDIA_SOURCE_NAVIDROME
 				                         ? VT_STR_HOME_NAVIDROME_DETAIL
 										 : VT_STR_HOME_IMMICH_DETAIL));
+            else if (local_images_shortcut(item))
+                snprintf(detail, sizeof(detail), "%s", media_location_label(item));
 			else if (root)
 				snprintf(detail, sizeof(detail), vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_DETAILS),
 				         root->visible_count, size);
@@ -1160,7 +1196,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				draw_media_badge(small, format, badge_x, row_y + 11,
 				                 media_accent(item));
 				char size_text[32];
-				if(item->source==VT_LOCAL_MEDIA_SOURCE_FILE)ui_format_file_size(item->size, size_text, sizeof(size_text));
+				if(item->source==VT_LOCAL_MEDIA_SOURCE_FILE && !local_images_shortcut(item))ui_format_file_size(item->size, size_text, sizeof(size_text));
                 else size_text[0]=0;
 				int size_width = ui_font_text_width(small, UI_FONT_SMALL, size_text);
 				ui_font_draw_text(small, list_x + LIST_W - 12 - size_width,
@@ -1227,9 +1263,11 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 				                  UI_FONT_SMALL, title);
 				char detail[128];
 				char size_text[32];
-				if(item->source==VT_LOCAL_MEDIA_SOURCE_FILE)ui_format_file_size(item->size, size_text, sizeof(size_text));
+				if(item->source==VT_LOCAL_MEDIA_SOURCE_FILE && !local_images_shortcut(item))ui_format_file_size(item->size, size_text, sizeof(size_text));
                 else size_text[0]=0;
-				if (root)
+                if (local_images_shortcut(item))
+                    snprintf(detail, sizeof(detail), "%s", media_location_label(item));
+				else if (root)
 					snprintf(detail, sizeof(detail),
 					         vt_i18n_str(VT_STR_LOCAL_MEDIA_FOLDER_DETAILS),
 					         root->visible_count, size_text);
@@ -1293,7 +1331,8 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_BROWSE_FILES);
 		actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_REFRESH);
 		if (flattened && screen_item(filter,selected,flattened,NULL) &&
-            screen_item(filter,selected,flattened,NULL)->source==VT_LOCAL_MEDIA_SOURCE_FILE)
+            screen_item(filter,selected,flattened,NULL)->source==VT_LOCAL_MEDIA_SOURCE_FILE &&
+            !screen_item(filter,selected,flattened,NULL)->is_directory)
 			actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTIONS);
 		for (int i = 0; i < action_count; i++) {
 			int ay = 124 + i * 62;
@@ -1656,8 +1695,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
                 return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+home_provider_section(item));
             if (item && selected_out) *selected_out = *item;
 			if (item)
-				return local_media_leave(flattened ? UI_LOCAL_MEDIA_ACTION_PLAY
-				                                   : UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER);
+				return local_media_leave(screen_open_action(item));
 		}
 		if(pressed&SCE_CTRL_CIRCLE){
 			if (!vt_ui_theme_legacy_layout(ui_theme_id()) && !focus_tabs) {
@@ -1697,8 +1735,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
                 return local_media_leave(UI_LOCAL_MEDIA_ACTION_SECTION_BASE+home_provider_section(item));
             if (item && selected_out) *selected_out = *item;
 					if (item)
-						return local_media_leave(flattened ? UI_LOCAL_MEDIA_ACTION_PLAY
-						                                   : UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER);
+						return local_media_leave(screen_open_action(item));
 				}
 			}
 		}
