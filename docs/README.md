@@ -50,6 +50,8 @@ performance, validation and change records.
 
 ## Start here
 
+- [Current screenshot gallery](../README.md#screenshots--141): default VMD interface, playback and alternate themes.
+
 - [IPTV hardware startup](iptv-hw-startup-2026-10-27.md): shared codec lifecycle, HLS timestamps, actual-source regressions and console acceptance.
 
 - [Home controls and decoder clocks](home-media-controls-2026-10-27.md): collection navigation, media feedback, country favourites, automatic CPU pairing and IPTV diagnosis.

@@ -1,5 +1,18 @@
 # VitaMediaDeck
 
+<p align="center">
+  <a href="assets/branding/vitamediadeck-icon.png"><img src="sce_sys/icon0.png" width="128" height="128" alt="Current VitaMediaDeck app icon"></a>
+</p>
+
+<p align="center">
+  <strong>A native local and authenticated-network media player for PlayStation Vita.</strong>
+</p>
+
+<p align="center">
+  <a href="screenshots/1.4.1/vmd-home.png"><img src="screenshots/1.4.1/vmd-home.png" width="960" alt="VitaMediaDeck 1.4.1 integrated Home with the default VMD theme, unfinished media, saved connections, favourites and recent playback"></a>
+  <br><sub>VitaMediaDeck 1.4.1 — VMD, the new default theme using Sony PAF components</sub>
+</p>
+
 Latest correction: [local images beside Immich](docs/local-images-2026-10-27.md).
 The Images tab always includes a Local images entry that opens image-filtered
 folders on the Vita, even with an empty or refreshing index. Immich and existing
@@ -26,14 +39,6 @@ Previous interface update: [native controls and cyan backdrop](docs/vmd-native-p
 Previous startup correction: [VMD recovery and default upgrade](docs/vmd-startup-default-2026-10-26.md).
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-
-<p align="center">
-  <img src="assets/branding/vitamediadeck-icon.png" width="256" height="256" alt="VitaMediaDeck app icon">
-</p>
-
-<p align="center">
-  <strong>A native local and authenticated-network media player for PlayStation Vita.</strong>
-</p>
 
 > [!IMPORTANT]
 > **Public beta** — VitaMediaDeck is available publicly but remains in active
@@ -257,28 +262,52 @@ spectral-cyan controls, cold blue/teal atmosphere, restrained amber telemetry,
 particle clouds, and scan traces. Its visual and multilingual typography
 contract is documented in [UI_SIGNAL_SHELL.md](mds/UI_SIGNAL_SHELL.md).
 
-## Running on PlayStation Vita
+## Screenshots — 1.4.1
+
+Screenshots from the new version, with **VMD** as the default theme. Select an
+image to open it at its original resolution.
+
+### Libraries and playback
 
 <table>
   <tr>
-    <td colspan="2" align="center">
-      <img src="screenshots/hardware-decoder-spectral-ui.jpeg" alt="VitaMediaDeck hardware H.264 playback and Spectral Reassembly player UI on a PlayStation Vita">
-    </td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-local-video.png"><img src="screenshots/1.4.1/vmd-local-video.png" width="480" alt="VitaMediaDeck 1.4.1 — VMD: local video library"></a><br><sub>VMD: local video library</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-video-player.png"><img src="screenshots/1.4.1/vmd-video-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Video player and playback HUD"></a><br><sub>Video player and playback HUD</sub></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><sub>Hardware H.264 playback on a physical PlayStation Vita</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-music-player.png"><img src="screenshots/1.4.1/vmd-music-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Music playback"></a><br><sub>Music playback</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-radio-player.png"><img src="screenshots/1.4.1/vmd-radio-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Live radio playback"></a><br><sub>Live radio playback</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center">
-      <img src="screenshots/library-cover-expanded-miniplayer.png" alt="VitaMediaDeck local library with embedded cover artwork and expanded live video mini-player">
-    </td>
-    <td width="50%" align="center">
-      <img src="screenshots/library-cover-miniplayer.png" alt="VitaMediaDeck local library with embedded cover artwork and compact live video mini-player">
-    </td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-podcast-player.png"><img src="screenshots/1.4.1/vmd-podcast-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Podcast playback"></a><br><sub>Podcast playback</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-playback-menu.png"><img src="screenshots/1.4.1/vmd-playback-menu.png" width="480" alt="VitaMediaDeck 1.4.1 — R1 playback options and decoder information"></a><br><sub>R1 playback options and decoder information</sub></td>
   </tr>
   <tr>
-    <td align="center"><sub>Expanded live mini-player and embedded cover</sub></td>
-    <td align="center"><sub>Compact live mini-player and embedded cover</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-sections-menu.png"><img src="screenshots/1.4.1/vmd-sections-menu.png" width="480" alt="VitaMediaDeck 1.4.1 — L1 sections and personal-media providers"></a><br><sub>L1 sections and personal-media providers</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-audio-miniplayer.png"><img src="screenshots/1.4.1/vmd-audio-miniplayer.png" width="480" alt="VitaMediaDeck 1.4.1 — Home with the audio mini-player"></a><br><sub>Home with the audio mini-player</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="screenshots/1.4.1/vmd-video-miniplayer.png"><img src="screenshots/1.4.1/vmd-video-miniplayer.png" width="960" alt="VitaMediaDeck 1.4.1 — Home with the live video mini-player"></a><br><sub>Home with the live video mini-player</sub></td>
+  </tr>
+</table>
+
+### Other themes
+
+Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic offer different layouts
+and visual styles. The original Legacy theme remains available in Settings.
+
+<table>
+  <tr>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/ghost-mesh.png"><img src="screenshots/1.4.1/ghost-mesh.png" width="480" alt="VitaMediaDeck 1.4.1 — Ghost Mesh"></a><br><sub>Ghost Mesh</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/deck-90.png"><img src="screenshots/1.4.1/deck-90.png" width="480" alt="VitaMediaDeck 1.4.1 — Deck 90"></a><br><sub>Deck 90</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/signal.png"><img src="screenshots/1.4.1/signal.png" width="480" alt="VitaMediaDeck 1.4.1 — Signal"></a><br><sub>Signal</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/aperture.png"><img src="screenshots/1.4.1/aperture.png" width="480" alt="VitaMediaDeck 1.4.1 — Aperture"></a><br><sub>Aperture</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/relay.png"><img src="screenshots/1.4.1/relay.png" width="480" alt="VitaMediaDeck 1.4.1 — Relay"></a><br><sub>Relay</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.1/mosaic.png"><img src="screenshots/1.4.1/mosaic.png" width="480" alt="VitaMediaDeck 1.4.1 — Mosaic"></a><br><sub>Mosaic</sub></td>
   </tr>
 </table>
 
