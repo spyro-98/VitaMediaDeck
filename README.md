@@ -1,12 +1,14 @@
 # VitaMediaDeck
 
-Latest correction: [Home controls, media feedback and automatic decoder clocks](docs/home-media-controls-2026-10-27.md).
-Home collections support item navigation; the tab repeat, search text, player
-feedback, country favourites/flags and touch controls are improved. Video CPU
-now follows the active decoder (HW 333 / SW 444 MHz), with independent saved
-targets and priority for PSVshell manual clocks. IPTV startup shows buffer and
-backend progress and offers R1 decoder selection; the reported HW first-frame
-timeout still needs console diagnosis and is not claimed fixed.
+Latest correction: [IPTV hardware startup and shared codec lifecycle](docs/iptv-hw-startup-2026-10-27.md).
+The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
+duplicate first-AU initialization and stale resource releases after failed resize.
+Actual-source host regressions pass. The reported IPTV channel still needs a
+physical HW first-frame retest; no emulator/firmware was executed.
+
+Previous correction: [Home controls, media feedback and automatic decoder clocks](docs/home-media-controls-2026-10-27.md).
+Home item navigation, category tabs, search/media feedback, country favourites and
+HW333/SW444 pairing remain integrated. Saved user/plugin clock choices take priority.
 
 Previous correction: [restore category tabs; retire only the old Home](docs/category-tabs-2026-10-27.md).
 

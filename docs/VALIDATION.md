@@ -1,12 +1,14 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
-Latest correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
-Home collections support item navigation; the tab repeat, search text, player
-feedback, country favourites/flags and touch controls are improved. Video CPU
-now follows the active decoder (HW 333 / SW 444 MHz), with independent saved
-targets and priority for PSVshell manual clocks. IPTV startup shows buffer and
-backend progress and offers R1 decoder selection; the reported HW first-frame
-timeout still needs console diagnosis and is not claimed fixed.
+Latest correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
+The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
+duplicate first-AU initialization and stale resource releases after failed resize.
+Actual-source host regressions pass. The reported IPTV channel still needs a
+physical HW first-frame retest; no emulator/firmware was executed.
+
+Previous correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
+Home item navigation, category tabs, search/media feedback, country favourites and
+HW333/SW444 pairing remain integrated. Saved user/plugin clock choices take priority.
 
 Previous correction: [restore category tabs; retire only the old Home](category-tabs-2026-10-27.md).
 
@@ -95,6 +97,7 @@ bash tests/ui_chrome/run-host-tests.sh
 bash tests/ui_coverage/run-host-tests.sh
 bash tests/home_tabs/run-host-tests.sh
 
+VMD_HOST_FFMPEG=/path/to/configured/ffmpeg6 bash tests/h264_vita_lifecycle/run-host-tests.sh
 VMD_HOST_FFMPEG=/path/to/configured/ffmpeg6 bash tests/decoder/run-host-tests.sh
 VMD_HOST_FFMPEG=/path/to/configured/ffmpeg6 bash tests/playback_seek/run-host-tests.sh
 VMD_HOST_FFMPEG=/path/to/configured/ffmpeg6 bash tests/player_feedback/run-host-tests.sh
@@ -111,6 +114,7 @@ VMD_HOST_FFMPEG=/path/to/configured/ffmpeg6 bash tests/player_feedback/run-host-
 | Radio/audio protocol and caches | [online audio](../tests/online_audio/README.md), [metadata](../tests/podcast_metadata/README.md) |
 | Lazy navigation and stale replies | [online navigation](../tests/online_navigation/README.md) |
 | Navidrome/Immich adapters | [personal media](../tests/personal_media/README.md) |
+| Pinned hardware codec lifecycle | [actual source, mocked hardware APIs](../tests/h264_vita_lifecycle/README.md) |
 | IPTV/HLS/DASH adapters | [IPTV](../tests/iptv/README.md) |
 
 Some transport tests bind a local server and need local-network/socket permission.

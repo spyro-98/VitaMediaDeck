@@ -89,6 +89,11 @@ fi
 
 ffmpeg_root="${VITAMEDIADECK_H264_VITA_ROOT:-$repo_root/build/deps/ffmpeg-vita-hw}"
 require_file "$ffmpeg_root/lib/libavformat.a"
+require_file "$ffmpeg_root/share/sources/ffmpeg-vita-lifecycle.patch"
+cmp "$repo_root/tools/patches/ffmpeg-vita-lifecycle.patch" "$ffmpeg_root/share/sources/ffmpeg-vita-lifecycle.patch" >/dev/null || fail "FFmpeg lifecycle patch differs from reviewed source"
+lifecycle_hash="$(sed -n 's/^ffmpeg-vita.lifecycle-patch.sha256=//p' release/DEPENDENCIES.lock)"
+printf '%s  %s\n' "$lifecycle_hash" tools/patches/ffmpeg-vita-lifecycle.patch | shasum -a 256 -c - >/dev/null || fail "FFmpeg lifecycle patch hash mismatch"
+
 "$nm_tool" -g --defined-only "$ffmpeg_root/lib/libavformat.a" > "$nm_output"
 grep -q 'ff_mov_demuxer' "$nm_output" || fail "release FFmpeg misses MOV/MP4 demuxing"
 grep -q 'ff_matroska_demuxer' "$nm_output" || fail "release FFmpeg misses Matroska demuxing"

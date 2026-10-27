@@ -1,12 +1,14 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
-Home collections support item navigation; the tab repeat, search text, player
-feedback, country favourites/flags and touch controls are improved. Video CPU
-now follows the active decoder (HW 333 / SW 444 MHz), with independent saved
-targets and priority for PSVshell manual clocks. IPTV startup shows buffer and
-backend progress and offers R1 decoder selection; the reported HW first-frame
-timeout still needs console diagnosis and is not claimed fixed.
+Latest correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
+The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
+duplicate first-AU initialization and stale resource releases after failed resize.
+Actual-source host regressions pass. The reported IPTV channel still needs a
+physical HW first-frame retest; no emulator/firmware was executed.
+
+Previous correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
+Home item navigation, category tabs, search/media feedback, country favourites and
+HW333/SW444 pairing remain integrated. Saved user/plugin clock choices take priority.
 
 Previous correction: [restore category tabs; retire only the old Home](category-tabs-2026-10-27.md).
 
@@ -40,6 +42,8 @@ performance, validation and change records.
 - [PAF console crash diagnosis and content-first Home](paf-crash-home-2026-10-25.md).
 
 ## Start here
+
+- [IPTV hardware startup](iptv-hw-startup-2026-10-27.md): shared codec lifecycle, HLS timestamps, actual-source regressions and console acceptance.
 
 - [Home controls and decoder clocks](home-media-controls-2026-10-27.md): collection navigation, media feedback, country favourites, automatic CPU pairing and IPTV diagnosis.
 
@@ -102,6 +106,8 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [design/theme-exploration/validation.md](../design/theme-exploration/validation.md) | Historical concept or research; not release implementation proof |
 | [docs/legacy-vita-paf-2026-10-25.md](legacy-vita-paf-2026-10-25.md) | Complete native PAF theme, evidence and console acceptance |
 | [docs/vmd-startup-default-2026-10-26.md](vmd-startup-default-2026-10-26.md) | VMD visibility return contract, cold-start recovery and one-time default migration |
+| [docs/iptv-hw-startup-2026-10-27.md](iptv-hw-startup-2026-10-27.md) | HLS timeline and shared HW codec lifecycle correction; physical retest pending |
+| [tests/h264_vita_lifecycle/README.md](../tests/h264_vita_lifecycle/README.md) | Actual pinned HW codec lifecycle tests with mocked Vita APIs |
 | [docs/VALIDATION.md](VALIDATION.md) | Current reference, policy or build instructions |
 | [docs/cache-and-ghost-2026-10-23.md](cache-and-ghost-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |
 | [docs/console-validation-playerfix-2026-10-23.md](console-validation-playerfix-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |

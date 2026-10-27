@@ -3,7 +3,7 @@
 #undef main
 #include "network/hls_source.h"
 int main(int argc,char **argv) {
-    CHECK(argc==3);fixture=argv[1];av_log_set_level(AV_LOG_ERROR);
+    CHECK(argc==3);fixture=argv[1];expect_zero_decode_lead=!strncmp(argv[2],"nodelay",7);av_log_set_level(AV_LOG_ERROR);
     char url[2048];snprintf(url,sizeof(url),"https://fixture.test/%s",argv[2]);
     VtIptvSourceConfig config={.buffer_limit=24u*1024u*1024u,.startup_segments=6};
     vt_hls_source_configure(&config);

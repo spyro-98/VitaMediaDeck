@@ -1,6 +1,7 @@
 # Release dependency lock
 # Update source URL, immutable version/commit and hash together.
 
+ffmpeg-vita.lifecycle-patch.sha256=845f80ea710b9092f73d9b3e87caf04c138ff3d99b00012f61f1b955973144a1
 ffmpeg-hw.commit=ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
 wiliwili.commit=88e5876bea9502d06f46a8656e3530684d3aaf7d
 wiliwili.ffmpeg-patch.sha256=2d38529d10c74560db3909cf8c2f3e359b128c04fb29f6dd0085770ed81cef6c

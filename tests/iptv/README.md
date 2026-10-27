@@ -16,8 +16,9 @@ VMD_HLS_FIXTURE="$vmd_hls_fixture" bash tests/iptv/run-hls-tests.sh
 ```
 
 OpenSSL independently encrypts generated media with AES-CBC. The suite decodes
-nine 12-second fixtures through both production session readers: TS, fMP4,
-signed composition offsets, separate video/audio, byte ranges, ranged init maps,
+eleven 12-second fixtures through both production session readers: TS, fMP4,
+signed composition offsets, low-delay TS/fMP4 with unchanged PTS=DTS,
+separate video/audio, byte ranges, ranged init maps,
 explicit/implicit IVs and rotating keys with METHOD=NONE. It also covers malformed
 padding/metadata, redirect downgrades, exact ranges, repeated open/close and
 cancellation while fetching manifests, keys and segments. Both ASan/UBSan and
