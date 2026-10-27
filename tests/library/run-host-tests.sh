@@ -4,6 +4,7 @@ vmd_repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$vmd_repo"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-library.XXXXXX")"
 python3 tests/library/extract-background.py "$vmd_output/background-sample.inc"
+python3 tests/library/extract-background-decoder.py "$vmd_output/background-decoder.inc"
 python3 tests/library/extract-local.py "$vmd_output/local-search.inc"
 python3 tests/library/extract-connections.py "$vmd_output/connections.inc"
 for sanitizer in address,undefined thread; do
@@ -14,7 +15,9 @@ for sanitizer in address,undefined thread; do
  clang -O1 -g -Wall -Wextra -Werror -fsanitize="$sanitizer" -Isrc -I"$vmd_output" tests/library/connections_test.c -o "$vmd_output/connections-test"
  "$vmd_output/connections-test"
  "$vmd_output/local-search-test"
+ clang -O1 -g -Wall -Wextra -Werror -fsanitize="$sanitizer" -Isrc -I../vita-https/include -I"$vmd_output" tests/library/background_decoder_test.c -o "$vmd_output/background-decoder-test"
  "$vmd_output/background-test"
+ "$vmd_output/background-decoder-test"
  "$vmd_output/search-test"
  "$vmd_output/core-test"
 done

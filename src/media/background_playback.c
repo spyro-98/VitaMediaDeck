@@ -30,6 +30,7 @@
 #include "ui/subtitle.h"
 #include "settings/preferences.h"
 #include "system/background_audio.h"
+#include "system/performance.h"
 
 #define BACKGROUND_THREAD_PRIORITY 0x10000100
 #define BACKGROUND_THREAD_STACK    0x40000
@@ -918,11 +919,18 @@ static int play_av_source(BackgroundPlaybackJob *job) {
 	return 0;
 }
 
+static void background_decoder_clock_start(void *ctx, VtDecoderBackend backend) {
+ vt_performance_select_backend(ctx, backend == VT_DECODER_BACKEND_HARDWARE);
+}
+
 static int play_decoder_source(BackgroundPlaybackJob *job) {
 	VtBackgroundAudioLease lease;
 	vt_background_audio_acquire(&lease);
+ VtPerformanceClockGuard clock_guard;
+ vt_performance_begin_video(&clock_guard, 0, 0);
 	VtDecoderPlayer *decoder = vt_decoder_create();
 	if (!decoder) {
+        vt_performance_end_video(&clock_guard);
 		vt_background_audio_release(&lease);
 		return -1;
 	}
@@ -931,9 +939,13 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 	else if (job->remote_video_source) factory = job->remote_factory.factory;
 	else vt_decoder_file_stream_factory(job->input_path, &factory);
 	uint64_t start_position_ms = player_start_position(job);
+	int preference = vt_preferences_video_decoder();
 	VtDecoderPlayerConfig config = {
 		.stream = factory,
-		.preferred_backend = VT_DECODER_BACKEND_NONE,
+		.preferred_backend = preference == VT_VIDEO_DECODER_HW_H264 ? VT_DECODER_BACKEND_HARDWARE
+            : preference == VT_VIDEO_DECODER_SW_FFMPEG ? VT_DECODER_BACKEND_SOFTWARE : VT_DECODER_BACKEND_NONE,
+        .backend_start = background_decoder_clock_start,
+        .backend_start_ctx = &clock_guard,
 		.audio_track = job->audio_track,
 		.subtitle_track = job->subtitle_track,
 		.start_paused = __atomic_load_n(&job->desired_paused, __ATOMIC_ACQUIRE),
@@ -958,6 +970,7 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		if (job->active_decoder == decoder) job->active_decoder = NULL;
 		player_unlock(job);
 		vt_decoder_destroy(decoder);
+    vt_performance_end_video(&clock_guard);
 		vt_background_audio_release(&lease);
 		return ret;
 	}
@@ -1054,6 +1067,7 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 	}
 	snapshot_unlock();
 	vt_decoder_destroy(decoder);
+    vt_performance_end_video(&clock_guard);
 	vt_background_audio_release(&lease);
 	return job->cancel ? -1 : ret;
 }

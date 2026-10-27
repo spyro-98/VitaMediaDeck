@@ -38,6 +38,8 @@ Settings → System → Clock control defaults to **Auto by decoder**. Hardware
 CPU defaults to **333 MHz**, software CPU to **444 MHz**. Each target can be
 changed independently to 222, 333 or 444 MHz. The active attempt selects the
 CPU before opening HW or SW, including AUTO fallback and player R1 changes.
+The independent background/mini-player decoder also honors the saved backend
+preference and owns a guard through decoder destruction, including failed opens.
 BUS/GPU/XBAR remain 222/222/111 MHz in the standard build. Audio-only playback
 and normal UI do not acquire a video clock guard.
 
