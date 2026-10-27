@@ -43,6 +43,7 @@ fi
 
 patch -d "$work/ffmpeg" -p1 < "$patch_file"
 patch -d "$work/ffmpeg" -p1 < "$repo_root/tools/ffmpeg-hls-custom-io.patch"
+patch -d "$work/ffmpeg" -p1 < "$repo_root/tools/patches/ffmpeg-vita-lifecycle.patch"
 
 # Preserve the exact patched tree before configuration adds generated files.
 tar -C "$work" --exclude='ffmpeg/.git' -czf "$work/ffmpeg-n6.0-h264-vita-source.tar.gz" ffmpeg
@@ -87,6 +88,7 @@ install -m 0644 "$work/ffmpeg-n6.0-h264-vita-source.tar.gz" \
   "$prefix/share/sources/ffmpeg-n6.0-h264-vita-source.tar.gz"
 install -m 0644 "$work/wiliwili-88e5876b.tar.gz" \
   "$prefix/share/sources/wiliwili-88e5876b.tar.gz"
+install -m 0644 "$repo_root/tools/patches/ffmpeg-vita-lifecycle.patch" "$prefix/share/sources/ffmpeg-vita-lifecycle.patch"
 install -m 0644 "$patch_file" \
   "$prefix/share/sources/wiliwili-ffmpeg.patch"
 

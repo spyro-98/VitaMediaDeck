@@ -66,3 +66,11 @@ for mode in ("implicit", "explicit", "rotation"):
             lines.append(line)
     (root / (mode + ".m3u8")).write_text("\n".join(lines) + "\n")
 print(root)
+
+# Match the failing live class: progressive, one-reference H.264 without B-frames.
+ffmpeg("-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-f", "lavfi", "-i",
+       "sine=frequency=440:sample_rate=48000", "-t", "12", "-c:v", "libx264", "-preset", "ultrafast",
+       "-pix_fmt", "yuv420p", "-g", "50", "-bf", "0", "-refs", "1", "-c:a", "aac", "-ac", "2", root / "nodelay.mp4")
+for name,extra in [("nodelay",[]),("nodelay-mux",["-hls_segment_type","fmp4"])]:
+    ffmpeg("-i",root/"nodelay.mp4","-map","0:v","-map","0:a","-c","copy","-hls_time","2",
+           "-hls_playlist_type","vod","-hls_fmp4_init_filename",name+"-init.mp4",*extra,root/(name+".m3u8"))

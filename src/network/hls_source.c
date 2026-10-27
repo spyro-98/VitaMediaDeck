@@ -218,17 +218,21 @@ static int initialize(HlsSource *s) {
         IPTV_TRACE("HLS track: index=%u type=%d codec=%d size=%dx%d audio=%d/%d\n",i,par->codec_type,par->codec_id,par->width,par->height,par->sample_rate,par->ch_layout.nb_channels);
     }
     if(video<0 || audio<0)return VT_IPTV_UNSUPPORTED;
-    /* CMAF can use signed composition offsets: valid video PTS < DTS is
-     * legal in MP4 but rejected by the MPEG-TS muxer. Move decode timestamps
-     * only, never presentation timestamps or the audio clock. H.264's DPB is
-     * bounded at 16 pictures; reserve that reorder window before presentation.
-     * No extra frames are decoded or allocated by this timestamp conversion. */
+    /* MPEG-TS already has valid decode timestamps. Preserve them: adding a
+     * fictitious 17-frame PTS/DTS gap changes the live timeline, even for
+     * streams with no B-frames. Only length-prefixed CMAF may need a decode
+     * lead for signed composition offsets, bounded by its actual reordering. */
+    AVCodecParameters *video_parameters=s->demux->streams[video]->codecpar;
+    int avcc=video_parameters->extradata_size>=7 && video_parameters->extradata &&
+        video_parameters->extradata[0]==1;
+    int reorder=video_parameters->video_delay;
+    if(reorder<0 || reorder>16)return VT_IPTV_UNSUPPORTED;
     AVRational fps=s->demux->streams[video]->avg_frame_rate;
     if(fps.num<=0 || fps.den<=0)fps=s->demux->streams[video]->r_frame_rate;
     if(fps.num<=0 || fps.den<=0)fps=(AVRational){25,1};
-    s->video_decode_lead=av_rescale_q(17,av_inv_q(fps),AV_TIME_BASE_Q);
-    if(s->video_decode_lead<100000)s->video_decode_lead=100000;
-    if(s->video_decode_lead>2000000)s->video_decode_lead=2000000;
+    s->video_decode_lead=avcc?av_rescale_q(reorder,av_inv_q(fps),AV_TIME_BASE_Q):0;
+    if(s->video_decode_lead>2000000)return VT_IPTV_UNSUPPORTED;
+    IPTV_TRACE("HLS timeline: avcc=%d reorder=%d decode-lead=%lld us\n",avcc,reorder,(long long)s->video_decode_lead);
     if(avformat_alloc_output_context2(&s->mux,NULL,"mpegts",NULL)<0 || !s->mux)return VT_IPTV_MEMORY;
     unsigned char *buffer=av_malloc(IO_SIZE);if(!buffer)return VT_IPTV_MEMORY;
     s->output_io=avio_alloc_context(buffer,IO_SIZE,1,s,NULL,write_output,NULL);

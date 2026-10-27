@@ -1,0 +1,1 @@
+int sceKernelDelayThread(unsigned);

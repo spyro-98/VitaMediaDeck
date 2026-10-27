@@ -1,0 +1,61 @@
+--- a/libavcodec/vitadec_video.c
++++ b/libavcodec/vitadec_video.c
+@@ -152,6 +152,8 @@
+     int h264_width;
+     int h264_height;
+     int h264_ref_frames;
++    unsigned startup_no_output;
++    bool output_started;
+ } VitaDecodeContextImpl;
+ 
+ typedef struct VitaDecodeContext {
+@@ -394,6 +396,8 @@
+         const VitaDecodeBufferDescriptor *bd = &vita_decode_buffer_descriptors[i];
+         if (ctx->flags & bd->field_bit) {
+             VitaDecodeBufferFreeParams p = {0};
++            /* Reinit and a later allocation failure may both call cleanup. */
++            ctx->flags &= ~bd->field_bit;
+             extract_buffer_field_ptrs(bd, ctx, &p.mb, &p.ptr, &p.ref);
+             bd->free(&p);
+         }
+@@ -689,6 +693,10 @@
+         goto fail;
+     }
+ 
++    /* SPS/PPS discovered in the first AU can enter here before vita_decode's
++     * deferred-init branch. Consume that obligation here too: do not create,
++     * immediately delete and recreate a live decoder for the same AU. */
++    ctx->flags &= ~VITA_DECODE_VIDEO_FLAG_INIT_POSTPONED;
+     // the decoder may have been initialized before
+     do_uninit_decoder(avctx);
+ 
+@@ -753,6 +761,10 @@
+     ctx->flags |= VITA_DECODE_VIDEO_FLAG_DONE_DECODER;
+ 
+     ctx->flags |= VITA_DECODE_VIDEO_FLAG_DECODER_READY;
++    ctx->startup_no_output = 0;
++    ctx->output_started = false;
++    av_log(avctx, AV_LOG_INFO, "vita_h264 init: ready %dx%d refs=%d direct=%d\n",
++           ctx->h264_width, ctx->h264_height, ctx->h264_ref_frames, ctx->option_dr);
+     return;
+ 
+ fail:
+@@ -950,8 +962,17 @@
+         }
+     }
+ 
+-    if (!ap.numOfOutput)
++    if (!ap.numOfOutput) {
++        if (!ctx->output_started && avpkt->size && ctx->startup_no_output < 256) {
++            unsigned count = ++ctx->startup_no_output;
++            if (count <= 2 || !(count & (count - 1)))
++                av_log(avctx, AV_LOG_INFO,
++                       "vita_h264 decode: startup no-output=%u bytes=%d ret=%d pts=%lld dts=%lld\n",
++                       count, avpkt->size, ret, (long long)avpkt->pts, (long long)avpkt->dts);
++        }
+         goto done;
++    }
++    ctx->output_started = true;
+ 
+     if (ctx->option_dr) {
+         av_frame_unref(frame);

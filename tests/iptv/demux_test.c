@@ -15,6 +15,7 @@
 static unsigned checks, requests, segments;
 #define CHECK(x) do { __atomic_add_fetch(&checks,1,__ATOMIC_RELAXED); assert(x); } while (0)
 static const char *fixture;
+static int expect_zero_decode_lead;
 #ifndef VMD_EXTERNAL_FETCH
 int vt_iptv_http_fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     size_t *size, char *effective, size_t capacity, volatile int *cancel) {
@@ -121,7 +122,11 @@ static int decode_step(Decode *d,Input *in) {
     int result;
     do {av_packet_unref(packet);result=av_read_frame(in->format,packet);}
     while(result>=0&&packet->stream_index!=d->stream);
-    if(result>=0){CHECK(avcodec_send_packet(d->codec,packet)>=0);drain(d,in);}
+    if(result>=0){
+        if(expect_zero_decode_lead && d->codec->codec_id==AV_CODEC_ID_H264)
+            CHECK(packet->pts==packet->dts);
+        CHECK(avcodec_send_packet(d->codec,packet)>=0);drain(d,in);
+    }
     else {CHECK(result==AVERROR_EOF);CHECK(avcodec_send_packet(d->codec,NULL)>=0);drain(d,in);}
     av_packet_free(&packet);return result>=0;
 }

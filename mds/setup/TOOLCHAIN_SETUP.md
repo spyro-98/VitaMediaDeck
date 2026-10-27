@@ -73,7 +73,12 @@ The script clones pinned FFmpeg and wiliwili revisions into a temporary
 directory, verifies the Vita patch checksum, enables the required H.264/AAC and
 MOV/MP4/Matroska/SRT pieces, builds with Cortex-A9/NEON `-O3` and LTO, verifies
 the `h264_vita` registration symbol, and installs below
-`build/deps/ffmpeg-vita-hw`.
+`build/deps/ffmpeg-vita-hw`. It also applies the app's custom-I/O and
+[reviewed hardware lifecycle patch](../../tools/patches/ffmpeg-vita-lifecycle.patch).
+The installed source archive includes all three patches; release audit verifies
+the installed lifecycle patch against source and `release/DEPENDENCIES.lock`.
+Run the [actual-source host regression](../../tests/h264_vita_lifecycle/README.md)
+after rebuilding the dependency. Host mocks do not prove Vita HW output.
 
 Optional custom prefixes:
 

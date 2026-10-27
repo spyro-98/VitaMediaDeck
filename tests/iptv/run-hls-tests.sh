@@ -14,7 +14,7 @@ for vmd_sanitizer in address,undefined thread; do
     "$vmd_output/manifest-test"
     clang "${vmd_flags[@]}" "-fsanitize=$vmd_sanitizer" tests/iptv/hls_demux_test.c \
         "${vmd_sources[@]}" "${vmd_libs[@]}" -o "$vmd_output/demux-test"
-    for vmd_name in plain mux negative separate range maprange implicit explicit rotation; do
+    for vmd_name in plain mux negative separate range maprange implicit explicit rotation nodelay nodelay-mux; do
         "$vmd_output/demux-test" "$vmd_fixture" "$vmd_name.m3u8"
     done
     clang "${vmd_flags[@]}" "-fsanitize=$vmd_sanitizer" tests/iptv/hls_lifecycle_test.c \
