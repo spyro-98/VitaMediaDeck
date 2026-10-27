@@ -50,6 +50,9 @@ performance, validation and change records.
 
 ## Start here
 
+- [Reddit announcement for 1.4.1](REDDIT_POST_1.4.1.md), also available as [rich text](REDDIT_POST_1.4.1.rtf) for the Reddit editor.
+- [Current screenshot gallery](../README.md#screenshots--141): default VMD interface, playback and alternate themes.
+
 - [IPTV hardware startup](iptv-hw-startup-2026-10-27.md): shared codec lifecycle, HLS timestamps, actual-source regressions and console acceptance.
 
 - [Home controls and decoder clocks](home-media-controls-2026-10-27.md): collection navigation, media feedback, country favourites, automatic CPU pairing and IPTV diagnosis.
