@@ -29,7 +29,7 @@ void ui_online_audio_set_home(int value){online_home=value;}
 void ui_library_reset_home(void){home_resets++;}
 int ui_library_screen(VtLibraryItem *item){Step s=consume(DASH);memset(item,0,sizeof(*item));item->provider=VT_LIBRARY_LOCAL;item->kind=VT_LIBRARY_VIDEO;strcpy(item->locator,"ux0:movies/sample.mp4");return s.action;}
 static void fill(VtLocalMediaItem *item,int type){memset(item,0,sizeof(*item));item->type=type;strcpy(item->path,"ux0:media/selected");}
-int ui_local_media_screen(VtLocalMediaItem *item){CHECK(active!=HOME_LIBRARY);Step s=consume(CATEGORY);fill(item,s.filter);return s.action;}
+int ui_local_media_screen(VtLocalMediaItem *item){CHECK(active!=HOME_LIBRARY);Step s=consume(CATEGORY);fill(item,s.filter);if(s.root)snprintf(item->path,sizeof(item->path),"%s",s.root);return s.action;}
 int ui_local_files_screen_open(const char *root,VtLocalMediaType filter,VtLocalMediaItem *item){Step s=consume(FILES);CHECK((int)filter==s.filter);CHECK((!root&&!s.root)||(root&&s.root&&!strcmp(root,s.root)));fill(item,filter?filter:VT_LOCAL_MEDIA_VIDEO);return s.action;}
 static int play_local_video(const VtLocalMediaItem *item){CHECK(item->type==VT_LOCAL_MEDIA_VIDEO);return consume(VIDEO).action;}
 static int play_local_audio(VtLocalMediaItem item){CHECK(item.type==VT_LOCAL_MEDIA_AUDIO);return consume(AUDIO).action;}
@@ -91,6 +91,15 @@ int main(void){
   add(DASH,HOME_LIBRARY,UI_LIBRARY_SECTION_BASE+UI_SECTION_SETTINGS,-1,0,NULL);
   CHECK(browse_local()==UI_SECTION_SETTINGS);CHECK(cursor==length);CHECK(home_resets==1);
  }
+ /* Images' permanent local entry opens device roots with the image filter,
+  * returns from the viewer into the same filesystem browser, then its tab. */
+ reset(HOME_IMAGES);
+ add(CATEGORY,HOME_IMAGES,UI_LOCAL_MEDIA_ACTION_BROWSE_FOLDER,-1,VT_LOCAL_MEDIA_IMAGE,"");
+ add(FILES,HOME_IMAGES,UI_LOCAL_MEDIA_ACTION_PLAY,-1,VT_LOCAL_MEDIA_IMAGE,"");
+ add(IMAGE,HOME_IMAGES,0,-1,0,NULL);
+ add(FILES,HOME_IMAGES,UI_LOCAL_MEDIA_ACTION_BACK,-1,VT_LOCAL_MEDIA_IMAGE,NULL);
+ add(CATEGORY,HOME_IMAGES,UI_LOCAL_MEDIA_ACTION_SECTION_BASE+UI_SECTION_SETTINGS,-1,VT_LOCAL_MEDIA_IMAGE,NULL);
+ CHECK(browse_local()==UI_SECTION_SETTINGS);CHECK(cursor==length);CHECK(active==HOME_IMAGES);
  /* Direct filesystem access requested from the dashboard still returns there. */
  reset(HOME_LIBRARY);add(DASH,HOME_LIBRARY,UI_LIBRARY_LOCAL,-1,0,NULL);
  add(FILES,HOME_LIBRARY,UI_LOCAL_MEDIA_ACTION_BACK,-1,0,"");

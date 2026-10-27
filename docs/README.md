@@ -1,6 +1,11 @@
 # VitaMediaDeck documentation — 1.4.1
 
-Latest correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
+Latest correction: [local images beside Immich](local-images-2026-10-27.md).
+The Images tab always includes a Local images entry that opens image-filtered
+folders on the Vita, even with an empty or refreshing index. Immich and existing
+indexed photo folders remain available in all themes.
+
+Previous correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
 The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
 duplicate first-AU initialization and stale resource releases after failed resize.
 Actual-source host regressions pass. On 27 October 2026, the user confirmed
@@ -108,6 +113,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [design/theme-exploration/validation.md](../design/theme-exploration/validation.md) | Historical concept or research; not release implementation proof |
 | [docs/legacy-vita-paf-2026-10-25.md](legacy-vita-paf-2026-10-25.md) | Complete native PAF theme, evidence and console acceptance |
 | [docs/vmd-startup-default-2026-10-26.md](vmd-startup-default-2026-10-26.md) | VMD visibility return contract, cold-start recovery and one-time default migration |
+| [docs/local-images-2026-10-27.md](local-images-2026-10-27.md) | Permanent image-filtered local browsing beside Immich |
 | [docs/iptv-hw-startup-2026-10-27.md](iptv-hw-startup-2026-10-27.md) | HLS timeline and shared HW codec lifecycle correction; user-confirmed IPTV HW playback |
 | [tests/h264_vita_lifecycle/README.md](../tests/h264_vita_lifecycle/README.md) | Actual pinned HW codec lifecycle tests with mocked Vita APIs |
 | [docs/VALIDATION.md](VALIDATION.md) | Current reference, policy or build instructions |

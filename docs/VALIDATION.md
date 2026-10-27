@@ -1,6 +1,11 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
-Latest correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
+Latest correction: [local images beside Immich](local-images-2026-10-27.md).
+The Images tab always includes a Local images entry that opens image-filtered
+folders on the Vita, even with an empty or refreshing index. Immich and existing
+indexed photo folders remain available in all themes.
+
+Previous correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
 The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
 duplicate first-AU initialization and stale resource releases after failed resize.
 Actual-source host regressions pass. On 27 October 2026, the user confirmed
@@ -79,6 +84,14 @@ using their host renderer rather than native Sony rasterization.
 | Native Release/LTO + audit | compiler/linker integration, archive/SELF/SFO/font/provenance checks | installation, playback, account login or real display contrast |
 | Read-back SHA-256 on mounted Vita | delivered bytes match the artifact | installation or execution |
 | User observations and PlayerFix logs | the files, clocks and actions actually tested | all media, themes, providers or newer builds |
+
+## Local Images regression
+
+`python3 tests/library/test-local-images.py --negative-ref e84de5b` checks the
+actual entry mapping with empty/populated indexes and a controlled negative
+source. `python3 tests/library/test-browse-navigation.py` checks the actual
+browser routing and image-filter retention through viewer return. Platform
+rendering and physical device input remain separate acceptance.
 
 ## Host prerequisites and suites
 
