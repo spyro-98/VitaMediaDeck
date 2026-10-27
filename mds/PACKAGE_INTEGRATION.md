@@ -85,6 +85,14 @@ App 1.4.1 uses package APP_VER 01.05 and pins decoder/HTTPS revisions in
 targets link the same patched FFmpeg n6.0 prefix selected by the root CMake file;
 the SW package's standalone FFmpeg 8.1.2 builder is not the VPK's linked FFmpeg.
 
+The 27 October IPTV correction adds a reviewed `h264_vita` lifecycle patch to
+VitaMediaDeck's FFmpeg builder and fixes timestamps in the app's HLS remux.
+The codec patch prevents duplicate initialization and stale resource releases;
+it benefits every app source using that HW codec. Jellyfin's authenticated range
+reader is separate from the HLS remux. These app-owned changes are not implicitly
+inherited by either decoder package's standalone builder. See the
+[correction and user-confirmed console result](../docs/iptv-hw-startup-2026-10-27.md).
+
 Standard options: empty `VITAMEDIADECK_TEST_ID`, performance clock profile,
 `VITA_SW_DECODER_PLANAR_UPLOAD=OFF`, both CPU-thread cache options at 3. The HW
 backend remains hardware-only; the thread option is not three hardware decode

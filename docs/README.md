@@ -3,8 +3,10 @@
 Latest correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
 The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
 duplicate first-AU initialization and stale resource releases after failed resize.
-Actual-source host regressions pass. The reported IPTV channel still needs a
-physical HW first-frame retest; no emulator/firmware was executed.
+Actual-source host regressions pass. On 27 October 2026, the user confirmed
+excellent IPTV hardware playback on a physical Vita, including several sources
+described as 1080p. The selected track's actual resolution/FPS was not measured;
+this report does not change the documented stream-selection limits.
 
 Previous correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
 Home item navigation, category tabs, search/media feedback, country favourites and
@@ -106,7 +108,7 @@ and hashes remain unchanged. Tests must not be mistaken for real-console capture
 | [design/theme-exploration/validation.md](../design/theme-exploration/validation.md) | Historical concept or research; not release implementation proof |
 | [docs/legacy-vita-paf-2026-10-25.md](legacy-vita-paf-2026-10-25.md) | Complete native PAF theme, evidence and console acceptance |
 | [docs/vmd-startup-default-2026-10-26.md](vmd-startup-default-2026-10-26.md) | VMD visibility return contract, cold-start recovery and one-time default migration |
-| [docs/iptv-hw-startup-2026-10-27.md](iptv-hw-startup-2026-10-27.md) | HLS timeline and shared HW codec lifecycle correction; physical retest pending |
+| [docs/iptv-hw-startup-2026-10-27.md](iptv-hw-startup-2026-10-27.md) | HLS timeline and shared HW codec lifecycle correction; user-confirmed IPTV HW playback |
 | [tests/h264_vita_lifecycle/README.md](../tests/h264_vita_lifecycle/README.md) | Actual pinned HW codec lifecycle tests with mocked Vita APIs |
 | [docs/VALIDATION.md](VALIDATION.md) | Current reference, policy or build instructions |
 | [docs/cache-and-ghost-2026-10-23.md](cache-and-ghost-2026-10-23.md) | Dated implementation/research snapshot; current integration linked above it |

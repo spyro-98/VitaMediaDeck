@@ -33,6 +33,11 @@ README's `assets/branding/vitamediadeck-icon.png`. The numbered prompt records
 the generation and subsequent blue-only darkening requested by the user.
 The original artwork is not a Sony asset.
 
+12. `12-paf-media-deck.png` — earlier sapphire media-card medallion, retained
+    with its BMP preview, generation prompt and high-resolution master at
+    `assets/branding/vitamediadeck-paf-media-deck-master.png` for comparison.
+    Candidate 13 remains the active app icon.
+
 13. `13-paf-media-hub.png` — deeper sapphire PAF-style bubble with music, photo
     and video cards over a library/broadcast tray; selected on 26 October 2026.
     The PNG is the exact 128x128 indexed project export, with no transparency;

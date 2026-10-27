@@ -3,8 +3,10 @@
 Latest correction: [IPTV hardware startup and shared codec lifecycle](iptv-hw-startup-2026-10-27.md).
 The HLS remux preserves low-delay timestamps; the pinned hardware backend avoids
 duplicate first-AU initialization and stale resource releases after failed resize.
-Actual-source host regressions pass. The reported IPTV channel still needs a
-physical HW first-frame retest; no emulator/firmware was executed.
+Actual-source host regressions pass. On 27 October 2026, the user confirmed
+excellent IPTV hardware playback on a physical Vita, including several sources
+described as 1080p. The selected track's actual resolution/FPS was not measured;
+this report does not change the documented stream-selection limits.
 
 Previous correction: [Home controls, media feedback and automatic decoder clocks](home-media-controls-2026-10-27.md).
 Home item navigation, category tabs, search/media feedback, country favourites and

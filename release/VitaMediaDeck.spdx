@@ -23,7 +23,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-VitaMediaDeck
 
 PackageName: vita-hw-decoder
 SPDXID: SPDXRef-Package-VitaHwDecoder
-PackageVersion: cd3ee51ca2c1072a57ac85878f50d646a864679e
+PackageVersion: f418b6ae0baa01fa66b37a155fac79f6aa6e5d5c
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -35,7 +35,7 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwDec
 
 PackageName: vita-sw-decoder
 SPDXID: SPDXRef-Package-VitaSwDecoder
-PackageVersion: f895684f2bfa2f20b815ebc8121d3880d2160230
+PackageVersion: 54e811b135b1a07270317f20b0b170e6e0f4b3c2
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
