@@ -7,10 +7,28 @@
 #undef ui_loading_run
 void ui_message_show(const char *,const char *,int);
 int ui_loading_run(const char *,UiLoadingTaskFn,void *,volatile int *,const volatile long *,const volatile long *);
+#include <pthread.h>
+#include <errno.h>
+static int fail_loading_worker,loading_worker_calls;
+static int loading_worker_create(pthread_t *thread,const pthread_attr_t *attr,
+                                void *(*entry)(void *),void *ctx) {
+ size_t stack=0;CHECK(!pthread_attr_getstacksize(attr,&stack));CHECK(stack==256*1024);
+ loading_worker_calls++;
+ return fail_loading_worker?EAGAIN:pthread_create(thread,attr,entry,ctx);
+}
+#define pthread_create loading_worker_create
 #include "../../src/ui/loading_screen.c"
+#undef pthread_create
+static pthread_t loading_ui_thread;
+static int loading_callback_calls;
+static int loader_callback(void *ctx) {
+ if(pthread_equal(pthread_self(),loading_ui_thread))return -900;
+ loading_callback_calls++;return *(int *)ctx;
+}
 #include "../../src/ui/format.c"
 static int header_loading,hidden_download;
 int ui_runtime_is_ready(void){return 1;}
+void vt_display_keep_awake_tick(void){}
 void ui_brand_draw_status_indicators(void){}
 void ui_brand_set_loading(int n){header_loading=n;}
 void ui_brand_set_download_progress_hidden(int n){hidden_download=n;}
@@ -61,6 +79,13 @@ int main(int argc,char **argv){
   if(language){char name[80];snprintf(name,sizeof(name),"theme-success-%d",theme);png(name);}
   ui_message_show("Connection unavailable","Check the server address.",0);
   if(language){char name[80];snprintf(name,sizeof(name),"theme-error-%d",theme);png(name);}
+  /* Production notices redraw while native labels settle, and wrap the full
+   * IPTV cause instead of fitting it into one truncated line. */
+  frame=0;script_count=8;memset(input_script,0,sizeof(input_script));
+  vita2d_enable_clipping();vita2d_set_clip_rectangle(0,300,960,544);
+  ui_message_show(vt_i18n_str(VT_STR_IPTV_FAILED),vt_i18n_str(VT_STR_IPTV_MANIFEST_ERROR),48);
+  CHECK(frame==4&&!clipped);CHECK(pixels[155][455][0]==(VT_THEME_DANGER&255));script_count=0;
+  if(theme==VT_UI_THEME_LEGACY_VITA){png(language?"iptv-notice-it":"iptv-notice-en");}
   UiPlayerLoadingInfo loading={.title="Video",.status="Loading...",.cancellable=1};
   const unsigned *palette=ui_theme_colors;vita2d_clear_screen();ui_player_loading_draw(&loading,NULL,NULL,1000000);
   CHECK(ui_theme_colors==palette);
@@ -68,5 +93,12 @@ int main(int argc,char **argv){
   loading.draw_backdrop=frozen_canvas;ui_player_loading_draw(&loading,NULL,NULL,1000000);
   CHECK(ui_theme_colors==palette&&pixels[100][100][0]==40&&pixels[100][100][1]==80&&pixels[100][100][2]==120);
  }
+ frame=0;script_count=8;memset(input_script,0,sizeof(input_script));
+ loading_ui_thread=pthread_self();int task_result=123;
+ CHECK(ui_loading_run("Loading IPTV list",loader_callback,&task_result,NULL,NULL,NULL)==123);
+ CHECK(loading_callback_calls==1&&loading_worker_calls==1);
+ fail_loading_worker=1;frame=0;
+ CHECK(ui_loading_run("Loading IPTV list",loader_callback,&task_result,NULL,NULL,NULL)==UI_LOADING_TASK_FAILED);
+ CHECK(loading_callback_calls==1&&loading_worker_calls==2);script_count=0;
  FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);printf("Crossfade native download states: %u checks passed\n",checks);
 }

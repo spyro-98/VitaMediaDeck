@@ -242,6 +242,10 @@ static int rename_saved_link(VtIptvChannel *item, const char **message) {
 }
 static void open_list(const char **message) {
     if(saved_view)snprintf(saved_search,sizeof(saved_search),"%s",search);
+    char checked[VT_IPTV_URL_MAX];
+    int valid=vt_iptv_input_url(link,strlen(link),checked,sizeof(checked));
+    if(valid){*message=valid==VT_IPTV_LIMIT?TR(IPTV_TOO_LARGE):TR(IPTV_INVALID);return;}
+    snprintf(link,sizeof(link),"%s",checked);
     search[0]=0;filter_dirty=1;
     iptv_cover_stop();catalog_cancel=0;saved_view=0;
     int result=ui_loading_run(TR(IPTV_MODE_LIST),load_catalog,NULL,&catalog_cancel,NULL,NULL);
@@ -249,6 +253,7 @@ static void open_list(const char **message) {
         catalog.count=0;
         *message=result==VT_IPTV_CANCELLED?"":result==VT_IPTV_INVALID || result==VT_IPTV_UNSUPPORTED
             ?TR(IPTV_LIST_INVALID):failure_detail(result);
+        if(result!=VT_IPTV_CANCELLED)ui_message_show(TR(IPTV_FAILED),*message,12000);
     } else *message=catalog.truncated?TR(IPTV_LIST_LIMIT):"";
     log_save(VITAMEDIADECK_SESSION_LOG_PATH);
     catalog_focus=catalog_top=0;
@@ -304,17 +309,18 @@ static void new_link(void) {
 }
 static int accept_link(const char *input) {
     if(!input)return -1;
-    while(*input==' ' || *input=='\t' || *input=='\r' || *input=='\n')input++;
-    size_t n=strlen(input);
-    while(n && (input[n-1]==' ' || input[n-1]=='\t' || input[n-1]=='\r' || input[n-1]=='\n'))n--;
-    char trimmed[VT_IPTV_URL_MAX],checked[VT_IPTV_URL_MAX];
-    if(!n || n>=sizeof(trimmed))return -1;
-    memcpy(trimmed,input,n);trimmed[n]=0;
-    if(vt_iptv_resolve_url(trimmed,trimmed,checked,sizeof(checked)))return -1;
+    char checked[VT_IPTV_URL_MAX];
+    int result=vt_iptv_input_url(input,strlen(input),checked,sizeof(checked));
+    if(result) {
+        log_printf("IPTV input rejected: result=%d bytes=%u\n",result,(unsigned)strlen(input));
+        log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+        return result;
+    }
     snprintf(link,sizeof(link),"%s",checked);
     channel_title[0]=channel_agent[0]=0;mode=vt_iptv_link_kind(link);
     memset(&current_list,0,sizeof(current_list));
     log_printf("IPTV link input: mode=%d length=%u\n",mode,(unsigned)strlen(link));
+    log_save(VITAMEDIADECK_SESSION_LOG_PATH);
     return 0;
 }
 
@@ -322,7 +328,17 @@ static const char *failure_detail(int event) {
     switch (event) {
     case VT_IPTV_DISCONTINUITY: case VT_IPTV_LAGGED: return TR(IPTV_CHANGED);
     case VT_IPTV_LIMIT: case VT_IPTV_MEMORY: return TR(IPTV_TOO_LARGE);
-    case VT_IPTV_UNSUPPORTED: case VT_IPTV_INVALID: return TR(IPTV_UNSUPPORTED);
+    case VT_IPTV_INVALID: return TR(IPTV_MANIFEST_ERROR);
+    case UI_LOADING_TASK_FAILED: return TR(IPTV_BACKGROUND_ERROR);
+    case VT_IPTV_MANIFEST: return TR(IPTV_MANIFEST_ERROR);
+    case VT_IPTV_VIDEO_CODEC: return TR(IPTV_VIDEO_CODEC_ERROR);
+    case VT_IPTV_AUDIO_CODEC: return TR(IPTV_AUDIO_CODEC_ERROR);
+    case VT_IPTV_VIDEO_SIZE: return TR(IPTV_VIDEO_SIZE_ERROR);
+    case VT_IPTV_AUDIO_FORMAT: return TR(IPTV_AUDIO_FORMAT_ERROR);
+    case VT_IPTV_HTTP_SERVER: return TR(IPTV_SERVER_ERROR);
+    case VT_IPTV_HTTP_RATE_LIMIT: return TR(IPTV_RATE_LIMIT_ERROR);
+    case VT_IPTV_RANGE: return TR(IPTV_RANGE_ERROR);
+    case VT_IPTV_UNSUPPORTED: return TR(IPTV_UNSUPPORTED);
     case VT_IPTV_IO: return TR(IPTV_NETWORK_ERROR);
     case VT_IPTV_DNS: return TR(IPTV_DNS_ERROR);
     case VT_IPTV_ACCESS: return TR(IPTV_ACCESS_ERROR);
@@ -377,6 +393,7 @@ static int play_link(const char **message) {
         source.location = TR(IPTV_MODE_FILE); source.authenticated_remote = 1;
         int result = vt_hw_player_screen_run(&source, NULL, NULL, NULL, NULL, NULL);
         *message = result < 0 ? TR(IPTV_DECODE_ERROR) : TR(IPTV_EXIT_NOTE);
+        if (result < 0) ui_message_show(TR(IPTV_FAILED),*message,12000);
         if (result < 0) { log_printf("IPTV VOD file: result=%d\n", result); log_save(VITAMEDIADECK_SESSION_LOG_PATH); }
         return result >= VT_HW_PLAYER_ACTION_SECTION_BASE && result < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT
             ? result - VT_HW_PLAYER_ACTION_SECTION_BASE : UI_SECTION_NONE;
@@ -413,11 +430,11 @@ static int play_link(const char **message) {
             result, event, (unsigned long long)status.generation,
             status.buffered_segments, (unsigned)status.buffered_bytes);
         if (result < 0) {
-            *message = failure_detail(event ? event : !status.buffered_segments ? VT_IPTV_IO : status.last_error);
+            *message = failure_detail(event ? event : status.last_error ? status.last_error : !status.buffered_segments ? VT_IPTV_IO : 0);
             log_save(VITAMEDIADECK_SESSION_LOG_PATH);
             /* A short startup rejection must not look like an unexplained
              * player exit. Keep the reason in the footer after the notice. */
-            ui_message_show(TR(IPTV_FAILED), *message, 4000);
+            ui_message_show(TR(IPTV_FAILED), *message, 12000);
         } else if (status.terminal == VT_IPTV_END) *message = TR(IPTV_FINISHED);
         else *message = TR(IPTV_EXIT_NOTE);
         if (result == VT_HW_PLAYER_ACTION_GO_LIVE) continue;
@@ -664,6 +681,8 @@ int ui_iptv_screen(void) {
                         focus = 2; message = "";
                     } else message = TR(IPTV_INVALID);
                 }
+            } else if (action == 1 && !link[0]) {
+                focus=0;message=TR(IPTV_EMPTY);
             } else if (action == 1) {
                 if(mode==VT_IPTV_LIST) {
                     memset(&current_list,0,sizeof(current_list));snprintf(current_list.url,sizeof(current_list.url),"%s",link);

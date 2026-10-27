@@ -1,5 +1,28 @@
 # IPTV host checks (not on-device playback)
 
+## QR / IPTV errors follow-up
+
+The host suite now passes QR output through the production input handler and
+list loader into the real M3U parser. HTTP checks require the full broadcaster
+User-Agent header (including 136- and 255-byte cases), canonical URL schemes,
+HTTP 429/5xx classification and exact byte ranges. Error mapping distinguishes
+manifest/data, video/audio codec, resolution, AAC format and worker setup failures.
+Synthetic incompatible-input checks also exercise the real HLS producer with
+MPEG-2 video, AC-3 audio, direct 1080p, AAC 5.1 and an HTML response:
+
+```sh
+python3 tests/iptv/make-failure-fixtures.py /tmp/vmd-failure-fixtures
+VMD_IPTV_FFMPEG_ROOT=/path/to/host-ffmpeg-6 \
+VMD_IPTV_FAILURE_FIXTURE=/tmp/vmd-failure-fixtures \
+  bash tests/iptv/run-failure-tests.sh
+```
+
+The standalone [QR tests](../qr/README.md) compile the actual scanner handoff.
+The [crossfade suite](../ui_crossfade/run-host-tests.sh) additionally exercises the
+real POSIX loader and verifies that creation failure never runs a task on the UI
+thread; it renders wrapped notices in all eight themes and both languages.
+These checks do not establish successful camera scans or IPTV playback on Vita.
+
 Part of the 1.4.1 validation set. See [suite index and evidence boundaries](../../docs/VALIDATION.md).
 
 ## Expanded HLS transport

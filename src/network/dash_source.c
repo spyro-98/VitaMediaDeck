@@ -91,7 +91,7 @@ static int manifest_load(DashSource *s,uint64_t now) {
     }
     free(body);
     if(!r&&s->manifest&&!vt_dash_same_tracks(s->manifest,fresh))r=VT_IPTV_DISCONTINUITY;
-    if(r){vt_dash_manifest_free(fresh);return r;}
+    if(r){vt_dash_manifest_free(fresh);return r==VT_IPTV_INVALID?VT_IPTV_MANIFEST:r;}
     int initial=!s->manifest;
     vt_dash_manifest_free(s->manifest);s->manifest=fresh;
     s->reload_at=fresh->dynamic?now+fresh->update_ms:UINT64_MAX;
@@ -172,13 +172,13 @@ static int fragment_open(DashSource *s,int index) {
     if(r<0||t->demux->nb_streams!=1)return VT_IPTV_UNSUPPORTED;
     if(t->demux->streams[0]->time_base.num<=0||t->demux->streams[0]->time_base.den<=0)return VT_IPTV_INVALID;
     AVCodecParameters *codec=t->demux->streams[0]->codecpar;
-    if(codec->codec_id!=(index?AV_CODEC_ID_AAC:AV_CODEC_ID_H264))return VT_IPTV_UNSUPPORTED;
+    if(codec->codec_id!=(index?AV_CODEC_ID_AAC:AV_CODEC_ID_H264))return index?VT_IPTV_AUDIO_CODEC:VT_IPTV_VIDEO_CODEC;
     if(index) {
         int object_type=codec->extradata_size>=2?codec->extradata[0]>>3:0;
         if(codec->ch_layout.nb_channels<1||codec->ch_layout.nb_channels>2||codec->sample_rate<=0||codec->sample_rate>48000||
-           (object_type!=2&&object_type!=5&&object_type!=29))return VT_IPTV_UNSUPPORTED;
+           (object_type!=2&&object_type!=5&&object_type!=29))return VT_IPTV_AUDIO_FORMAT;
         s->audio_sample_rate=codec->sample_rate;s->audio_channels=codec->ch_layout.nb_channels;
-    } else if(codec->width<=0||codec->height<=0||codec->width>(int)s->config.width_limit||codec->height>(int)s->config.height_limit)return VT_IPTV_UNSUPPORTED;
+    } else if(codec->width<=0||codec->height<=0||codec->width>(int)s->config.width_limit||codec->height>(int)s->config.height_limit)return VT_IPTV_VIDEO_SIZE;
     t->segment=segment;t->next_tick=segment.time+segment.duration;t->started=1;s->segments++;
     return 0;
 }
@@ -200,7 +200,7 @@ static int packet_next(DashSource *s,int index) {
         if(++t->packets>100000||t->packet->size<0||(size_t)t->packet->size>s->config.segment_limit)return VT_IPTV_LIMIT;
         if(t->packet->stream_index!=0||t->packet->dts==AV_NOPTS_VALUE||t->packet->pts==AV_NOPTS_VALUE)return VT_IPTV_UNSUPPORTED;
         size_t side_size=0;
-        if(av_packet_get_side_data(t->packet,AV_PKT_DATA_ENCRYPTION_INFO,&side_size))return VT_IPTV_UNSUPPORTED;
+        if(av_packet_get_side_data(t->packet,AV_PKT_DATA_ENCRYPTION_INFO,&side_size))return VT_IPTV_ENCRYPTED;
         const VtDashTrack *track=&s->manifest->tracks[index];
         int64_t offset=av_rescale(track->offset,1000000,track->timescale);
         int64_t dts=av_rescale_q(t->packet->dts,t->demux->streams[0]->time_base,AV_TIME_BASE_Q);

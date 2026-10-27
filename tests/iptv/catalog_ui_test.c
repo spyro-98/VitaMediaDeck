@@ -63,7 +63,7 @@ int main(int argc,char **argv) {
         memcpy(pixels,first_pixels,sizeof(pixels));char name[64];snprintf(name,sizeof(name),"catalog-%d-%s%s",kind,language?"it":"en",mini?"-mini":"");png(name);
         int rows=CATALOG_ROWS;
         CHECK(LIST_Y+rows*CATALOG_STEP-UI_CONTENT_GAP<=CATALOG_BOTTOM-28);
-        UiContextAction actions[8];int count=online_options(actions,0);CHECK(count<=8);
+        UiContextAction actions[12];int count=online_options(actions,0);CHECK(count<=12);
         int download=0,search=0;
         for(int i=0;i<count;i++){download+=actions[i].action==SCE_CTRL_START;search+=actions[i].action==SCE_CTRL_TRIANGLE;}
         if(kind==3)CHECK(!download&&!search);

@@ -39,7 +39,6 @@
 #define COLOR_ACCENT   VT_THEME_SIGNAL_BRIGHT
 #define COLOR_BUFFER   VT_THEME_SPECTRAL_LIGHT
 
-#define TASK_THREAD_PRIORITY 0x10000100
 #define TASK_THREAD_STACK    0x40000
 #define CANCEL_TOUCH_HOLD_US (800 * 1000ULL)
 #define CANCEL_TOUCH_MOVE_PX 18
@@ -62,22 +61,11 @@ typedef struct {
 	int was_paused;
 } UiDownloadRateState;
 
-static int loading_task_thread(SceSize args, void *argp) {
-	(void)args;
-	UiTaskThreadArgs *thread_args = (UiTaskThreadArgs *)argp;
-	UiTaskState *state = thread_args->state;
-	state->result = state->task(state->ctx);
-	__sync_synchronize();
-	state->done = 1;
-	return sceKernelExitThread(0);
-}
-
 static void *loading_task_pthread(void *argp) {
 	UiTaskThreadArgs *thread_args = (UiTaskThreadArgs *)argp;
 	UiTaskState *state = thread_args->state;
 	state->result = state->task(state->ctx);
-	__sync_synchronize();
-	state->done = 1;
+	__atomic_store_n(&state->done, 1, __ATOMIC_RELEASE);
 	return NULL;
 }
 
@@ -481,7 +469,7 @@ int ui_player_loading_run(const UiPlayerLoadingInfo *info,
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	while (!state.done) {
+	while (!__atomic_load_n(&state.done, __ATOMIC_ACQUIRE)) {
 		ui_player_loading_present(&draw_info, progress_current, progress_total);
 		if (draw_info.progress_tick && progress_current && progress_total) {
 			draw_info.progress_tick(*progress_current, *progress_total);
@@ -553,34 +541,26 @@ static int loading_run_internal(const char *query, const char *message,
 	UiDownloadRateState download_rate;
 	memset(&download_rate, 0, sizeof(download_rate));
 
-	SceUID thid = sceKernelCreateThread("VitaMediaDeckUiTask", loading_task_thread,
-	                                    TASK_THREAD_PRIORITY, TASK_THREAD_STACK,
-	                                    0, 0, NULL);
-	if (thid < 0) {
-		draw_loading_frame(query, message, progress_current, progress_total,
-		                   cancel_flag != NULL, download_controls,
-		                   pause_flag && *pause_flag,
-		                   download_controls ? &download_rate : NULL,
-		                   download_progress_read, download_progress_ctx, NULL, 0,
-		                   NULL);
-		return task(ctx);
-	}
-	ret = sceKernelStartThread(thid, sizeof(thread_args), &thread_args);
-	if (ret < 0) {
-		sceKernelDeleteThread(thid);
-		draw_loading_frame(query, message, progress_current, progress_total,
-		                   cancel_flag != NULL, download_controls,
-		                   pause_flag && *pause_flag,
-		                   download_controls ? &download_rate : NULL,
-		                   download_progress_read, download_progress_ctx, NULL, 0,
-		                   NULL);
-		return task(ctx);
+	/* Network/XML callbacks may use POSIX TLS and cancellation. A raw kernel
+	 * worker does not have pthread-embedded's Vita OSAL context. Match the
+	 * player loader and never fall back to blocking network work on the UI. */
+	pthread_attr_t attr;
+	int create_ret=pthread_attr_init(&attr);
+	int attr_ready=create_ret==0;
+	if(!create_ret)create_ret=pthread_attr_setstacksize(&attr,TASK_THREAD_STACK);
+	pthread_t thread;
+	if(!create_ret)create_ret=pthread_create(&thread,&attr,loading_task_pthread,&thread_args);
+	if(attr_ready)pthread_attr_destroy(&attr);
+	if(create_ret) {
+		log_printf("ui_loading_run: pthread setup failed (%d); task not started\n",create_ret);
+		ui_brand_set_loading(0);
+		return UI_LOADING_TASK_FAILED;
 	}
 
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	while (!state.done) {
+	while (!__atomic_load_n(&state.done, __ATOMIC_ACQUIRE)) {
 		if (download_controls) vt_display_keep_awake_tick();
 		draw_loading_frame(query, message, progress_current, progress_total,
 		                   cancel_flag != NULL, download_controls,
@@ -613,8 +593,7 @@ static int loading_run_internal(const char *query, const char *message,
 		sceKernelDelayThread(16 * 1000);
 	}
 
-	sceKernelWaitThreadEnd(thid, NULL, NULL);
-	sceKernelDeleteThread(thid);
+	pthread_join(thread, NULL);
 	ret = state.result;
 
 	ui_brand_set_loading(0);
@@ -760,47 +739,40 @@ static void message_show_internal(const char *message, const char *detail,
 	if (duration_ms < 0) duration_ms = 0;
 	if (!ui_runtime_is_ready()) return;
 
-	vita2d_start_drawing();
-	vita2d_clear_screen();
 	ui_brand_set_loading(0);
-	unsigned int state_color = success ? VT_THEME_SUCCESS : VT_THEME_DANGER;
-	ui_chrome_background(COLOR_BG, state_color);
-	ui_brand_draw_header(NULL);
-	/* Status stays a full acquisition page: no modal box breaks the app's
-	 * visual continuity. Successful operations use a check instead of the
-	 * error scene's warning mark. */
-	vita2d_draw_rectangle(451.0f, 197.0f, 58.0f, 58.0f, state_color);
-	unsigned int badge_ink = ui_contrast_bw(state_color);
-	if (success) {
-		vita2d_draw_line(465.0f, 226.0f, 476.0f, 238.0f, badge_ink);
-		vita2d_draw_line(476.0f, 238.0f, 498.0f, 213.0f, badge_ink);
-		vita2d_draw_line(465.0f, 227.0f, 476.0f, 239.0f, badge_ink);
-		vita2d_draw_line(476.0f, 239.0f, 498.0f, 214.0f, badge_ink);
-	} else {
-		vita2d_draw_rectangle(478.0f, 211.0f, 4.0f, 20.0f, badge_ink);
-		vita2d_draw_rectangle(478.0f, 237.0f, 4.0f, 4.0f, badge_ink);
-	}
-	draw_centered_text(312, COLOR_TEXT, UI_FONT_DISPLAY,
-	                   message ? message : vt_i18n_str(VT_STR_LOADING_DEFAULT_ERROR_MESSAGE));
-	if (detail && detail[0]) {
-		draw_centered_text(354, COLOR_MUTED, UI_FONT_SMALL, detail);
-	}
-	vita2d_end_drawing();
-	vita2d_wait_rendering_done();
-	vita2d_swap_buffers();
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	int elapsed = 0;
-	while (elapsed < duration_ms) {
+	ui_touch_reset();
+	for (int elapsed=0;;elapsed+=16) {
+		vita2d_start_drawing();vita2d_disable_clipping();vita2d_clear_screen();
+		unsigned int state_color = success ? VT_THEME_SUCCESS : VT_THEME_DANGER;
+		ui_chrome_background(COLOR_BG, state_color);ui_brand_draw_header(NULL);
+		vita2d_draw_rectangle(451.0f, 151.0f, 58.0f, 58.0f, state_color);
+		unsigned int badge_ink = ui_contrast_bw(state_color);
+		if (success) {
+			vita2d_draw_line(465,180,476,192,badge_ink);
+			vita2d_draw_line(476,192,498,167,badge_ink);
+			vita2d_draw_line(465,181,476,193,badge_ink);
+			vita2d_draw_line(476,193,498,168,badge_ink);
+		} else {
+			vita2d_draw_rectangle(478,165,4,20,badge_ink);
+			vita2d_draw_rectangle(478,191,4,4,badge_ink);
+		}
+		draw_centered_text(270,COLOR_TEXT,UI_FONT_DISPLAY,
+		    message?message:vt_i18n_str(VT_STR_LOADING_DEFAULT_ERROR_MESSAGE));
+		if (detail && detail[0])
+			ui_text_block(64,324,832,28,5,detail,COLOR_MUTED,UI_FONT_BODY);
+		vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();
+		if (elapsed>=duration_ms) break;
 		sceCtrlPeekBufferPositive(0, &ctrl, 1);
 		unsigned int pressed = ctrl.buttons & ~previous.buttons;
 		previous = ctrl;
 		UiTouchEvent touch;
 		if (pressed || (ui_touch_poll(&touch) & UI_TOUCH_EVENT_TAP)) break;
 		sceKernelDelayThread(16 * 1000);
-		elapsed += 16;
 	}
+	ui_touch_reset();
 
 }
 

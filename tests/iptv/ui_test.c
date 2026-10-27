@@ -70,6 +70,7 @@ static const char *italian[] = {
 #undef VT_STR
 };
 const char *vt_i18n_str(VtStringId id) { return language ? italian[id] : english[id]; }
+int vt_i18n_current_language(void) { return language ? VT_LANG_IT : VT_LANG_EN; }
 static unsigned codepoint(const char **text) {
     const unsigned char *p=(const unsigned char *)*text;unsigned cp=*p++;
     if(cp>=0xc0&&cp<0xe0){cp=((cp&31)<<6)|(*p++&63);}
@@ -276,7 +277,15 @@ void vita2d_draw_texture_scale(const vita2d_texture *t,float x,float y,float sx,
 void vt_http_audio_stream_factory(const char *url,VtDecoderStreamFactory *out){memset(out,0,sizeof(*out));out->opaque=(void*)url;}
 int vt_hw_player_screen_run(const VtHwPlayerScreenSource *s,uint64_t*a,uint64_t*b,int*c,int*d,int*e){(void)s;(void)a;(void)b;(void)c;(void)d;(void)e;return next_result;}
 int vt_online_fetch_cover(VtOnlineItem *item,volatile int *cancel){(void)item;(void)cancel;return -1;}
-int vt_iptv_http_fetch(void*a,const char*b,size_t c,unsigned char**d,size_t*e,char*f,size_t g,volatile int*h){(void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;return -1;}
+static const char *input_list_fixture;
+static char input_list_requested[VT_IPTV_URL_MAX];
+int vt_iptv_http_fetch(void*a,const char*b,size_t c,unsigned char**d,size_t*e,char*f,size_t g,volatile int*h){
+    (void)a;(void)h;*d=NULL;*e=0;f[0]=0;
+    snprintf(input_list_requested,sizeof(input_list_requested),"%s",b);
+    if(!input_list_fixture)return VT_IPTV_INVALID;
+    *e=strlen(input_list_fixture);CHECK(*e<c);*d=malloc(*e);memcpy(*d,input_list_fixture,*e);
+    snprintf(f,g,"%s",b);return 0;
+}
 int vt_iptv_saved_load(VtIptvCatalog *out,int stars){
     memset(out,0,sizeof(*out));
     if(stored_channel.url[0]&&(!stars||stored_channel.starred)){out->items[0]=stored_channel;out->count=1;}
@@ -513,6 +522,25 @@ int main(int argc,char **argv) {
     CHECK(accept_link("https://user:secret@example.org/list.m3u")<0);
     CHECK(!strcmp(link,"https://example.org/new.m3u"));
     CHECK(accept_link("https://example.org/line\nbreak")<0);
+    /* Real QR -> acceptance -> production loader -> real M3U parser. The QR
+     * camera and HTTP delivery are stubbed; URL/routing/import are not. */
+    char scanned[VT_IPTV_URL_MAX];CHECK(ui_qr_scan_https_url(scanned,sizeof(scanned))==1);
+    CHECK(!accept_link(scanned)&&mode==VT_IPTV_LIST);
+    CHECK(!accept_link(" \xef\xbb\xbfHTTPS://example.org/LIST.M3U?sig=a%2Fb&x=1#client-label\r\n"));
+    CHECK(mode==VT_IPTV_LIST&&!strcmp(link,"https://example.org/LIST.M3U?sig=a%2Fb&x=1"));
+    input_list_fixture="#EXTM3U\n#EXTINF:-1,Channel one\nhttps://example.org/live.m3u8\n";
+    CHECK(!load_catalog(NULL)&&catalog.count==1);
+    CHECK(!strcmp(input_list_requested,link)&&!strcmp(catalog.items[0].title,"Channel one"));
+    input_list_fixture=NULL;
+    CHECK(failure_detail(VT_IPTV_INVALID)==TR(IPTV_MANIFEST_ERROR));
+    CHECK(failure_detail(VT_IPTV_MANIFEST)==TR(IPTV_MANIFEST_ERROR));
+    CHECK(failure_detail(VT_IPTV_VIDEO_CODEC)==TR(IPTV_VIDEO_CODEC_ERROR));
+    CHECK(failure_detail(VT_IPTV_AUDIO_CODEC)==TR(IPTV_AUDIO_CODEC_ERROR));
+    CHECK(failure_detail(VT_IPTV_VIDEO_SIZE)==TR(IPTV_VIDEO_SIZE_ERROR));
+    CHECK(failure_detail(VT_IPTV_AUDIO_FORMAT)==TR(IPTV_AUDIO_FORMAT_ERROR));
+    CHECK(failure_detail(VT_IPTV_HTTP_SERVER)==TR(IPTV_SERVER_ERROR));
+    CHECK(failure_detail(VT_IPTV_HTTP_RATE_LIMIT)==TR(IPTV_RATE_LIMIT_ERROR));
+    CHECK(failure_detail(VT_IPTV_RANGE)==TR(IPTV_RANGE_ERROR));
     current_list=item;saved_view=0;catalog.count=1;catalog.items[0]=item;catalog_focus=0;
     count=options_for_page(actions);int saves=0;deletes=0;
     for(int i=0;i<count;i++){saves+=actions[i].action==16;deletes+=actions[i].action==15;}

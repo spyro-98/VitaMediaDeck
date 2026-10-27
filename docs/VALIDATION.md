@@ -1,5 +1,7 @@
 # Validation guide — VitaMediaDeck 1.4.1
 
+QR/IPTV follow-up: [input, background workers and error reporting](iptv-qr-errors-2026-10-27.md); [QR regression command](../tests/qr/README.md).
+
 Latest correction: [local images beside Immich](local-images-2026-10-27.md).
 The Images tab always includes a Local images entry that opens image-filtered
 folders on the Vita, even with an empty or refreshing index. Immich and existing

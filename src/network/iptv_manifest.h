@@ -16,7 +16,11 @@ enum {
     VT_IPTV_MEMORY = -6, VT_IPTV_DNS = -7, VT_IPTV_ACCESS = -8,
     VT_IPTV_NOT_FOUND = -9, VT_IPTV_TIMEOUT = -10, VT_IPTV_TLS = -11,
     VT_IPTV_REDIRECT = -12, VT_IPTV_ENCRYPTED = -13,
-    VT_IPTV_RENDITIONS = -14, VT_IPTV_VARIANT_LIMIT = -15
+    VT_IPTV_RENDITIONS = -14, VT_IPTV_VARIANT_LIMIT = -15,
+    VT_IPTV_MANIFEST = -16, VT_IPTV_VIDEO_CODEC = -17,
+    VT_IPTV_AUDIO_CODEC = -18, VT_IPTV_VIDEO_SIZE = -19,
+    VT_IPTV_AUDIO_FORMAT = -20, VT_IPTV_HTTP_SERVER = -21,
+    VT_IPTV_HTTP_RATE_LIMIT = -22, VT_IPTV_RANGE = -23
 };
 typedef struct {
     char url[VT_IPTV_URL_MAX];
@@ -39,6 +43,11 @@ typedef struct {
     unsigned total_segments;
 } VtIptvManifest;
 
+/* Normalize a user/QR resource URL, not a fetched manifest reference. Accept
+ * outer ASCII whitespace, UTF-8 BOM, case-insensitive schemes and an optional
+ * terminal C-string NUL. Ignore the client-only fragment; reject embedded NUL,
+ * userinfo and internal whitespace. Never decode/alter signed paths or queries. */
+int vt_iptv_input_url(const void *bytes, size_t size, char *out, size_t capacity);
 /* HTTP(S) only, no userinfo/control characters or HTTPS-to-HTTP downgrade.
  * Resolves against the final response URL, never against a pre-redirect URL. */
 int vt_iptv_resolve_url(const char *base, const char *reference, char *out, size_t capacity);

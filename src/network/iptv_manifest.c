@@ -18,6 +18,28 @@ static int safe_url(const char *url) {
         (!strcasecmp(uri->scheme, "https") || !strcasecmp(uri->scheme, "http"));
     xmlFreeURI(uri); return valid;
 }
+int vt_iptv_input_url(const void *bytes, size_t size, char *out, size_t capacity) {
+    if (!out || !capacity) return VT_IPTV_INVALID;
+    out[0] = 0;
+    if (!bytes || !size) return VT_IPTV_INVALID;
+    const unsigned char *first = bytes, *end = first + size;
+    if (end[-1] == 0) --end; /* Some generators encode the C terminator. */
+    while (first < end && (*first==' ' || *first=='\t' || *first=='\r' || *first=='\n')) ++first;
+    if (end-first >= 3 && !memcmp(first, "\xef\xbb\xbf", 3)) first += 3;
+    while (first < end && (*first==' ' || *first=='\t' || *first=='\r' || *first=='\n')) ++first;
+    while (end > first && (end[-1]==' ' || end[-1]=='\t' || end[-1]=='\r' || end[-1]=='\n')) --end;
+    if (first == end || memchr(first, 0, (size_t)(end-first))) return VT_IPTV_INVALID;
+    const unsigned char *fragment = memchr(first, '#', (size_t)(end-first));
+    if (fragment) end = fragment; /* A fragment is never sent to an HTTP server. */
+    size_t n = (size_t)(end-first);
+    if (n >= VT_IPTV_URL_MAX || n >= capacity) return VT_IPTV_LIMIT;
+    char normalized[VT_IPTV_URL_MAX];
+    memcpy(normalized, first, n); normalized[n] = 0;
+    if (!safe_url(normalized)) return VT_IPTV_INVALID;
+    for (char *p=normalized; *p && *p!=':'; ++p) *p=(char)tolower((unsigned char)*p);
+    memcpy(out, normalized, n+1);
+    return VT_IPTV_OK;
+}
 int vt_iptv_resolve_url(const char *base, const char *ref, char *out, size_t capacity) {
     if (!out || !capacity) return VT_IPTV_INVALID;
     out[0] = 0;
@@ -30,7 +52,12 @@ int vt_iptv_resolve_url(const char *base, const char *ref, char *out, size_t cap
         (strncasecmp(base, "https://", 8) || !strncasecmp((const char *)absolute, "https://", 8))) {
         size_t size = strlen((const char *)absolute);
         if (size >= capacity) result = VT_IPTV_LIMIT;
-        else { memcpy(out, absolute, size + 1); result = VT_IPTV_OK; }
+        else {
+            memcpy(out, absolute, size + 1);
+            /* The HTTP client accepts canonical lower-case scheme names. */
+            for (char *p=out; *p && *p!=':'; ++p) *p=(char)tolower((unsigned char)*p);
+            result = VT_IPTV_OK;
+        }
     }
     xmlFree(absolute); return result;
 }

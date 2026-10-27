@@ -50,6 +50,9 @@ performance, validation and change records.
 
 ## Start here
 
+- [QR links and IPTV failure handling](iptv-qr-errors-2026-10-27.md): shared URL normalization, registered background loading, broadcaster identifiers and readable causes.
+- [QR payload regressions](../tests/qr/README.md): actual scanner handoff, validator and controlled negative revision.
+
 - [Reddit announcement for 1.4.1](REDDIT_POST_1.4.1.md), also available as [rich text](REDDIT_POST_1.4.1.rtf) for the Reddit editor.
 - [Current screenshot gallery](../README.md#screenshots--141): default VMD interface, playback and alternate themes.
 

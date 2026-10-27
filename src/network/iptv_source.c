@@ -97,7 +97,8 @@ static int failure(VtIptvSource *s, int result, uint64_t now) {
     if (result == VT_IPTV_CANCELLED || result == VT_IPTV_UNSUPPORTED || result == VT_IPTV_INVALID ||
         result == VT_IPTV_LIMIT || result == VT_IPTV_ACCESS || result == VT_IPTV_NOT_FOUND ||
         result == VT_IPTV_TLS || result == VT_IPTV_REDIRECT || result == VT_IPTV_ENCRYPTED ||
-        result == VT_IPTV_RENDITIONS || result == VT_IPTV_VARIANT_LIMIT || ++s->failures >= 3) s->terminal = result;
+        result == VT_IPTV_RENDITIONS || result == VT_IPTV_VARIANT_LIMIT ||
+        result <= VT_IPTV_MANIFEST || ++s->failures >= 3) s->terminal = result;
     s->retry_at = now + 500u * s->failures;
     int terminal = s->terminal;
     IPTV_TRACE("HLS source failure: result=%d failures=%u terminal=%d buffered=%u next=%llu\n",
