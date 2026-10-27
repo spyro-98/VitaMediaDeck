@@ -21,15 +21,15 @@ decoder settings cannot authorize the unsigned URL in that third-party list;
 provider login/signature renewal and DRM integration are not implemented here.
 
 1. Press **L1 → IPTV** (or tap the app logo and choose IPTV).
-2. Saved lists/channels are the landing page. Choose **Start / Add stream**,
-   or **R1 → Enter link / Scan QR**; enter an authorized HTTP(S) HLS, DASH,
-   M3U list or VOD file link. Select **Play stream / Open channel list**.
-   R1 exposes Save link and, for a selected saved entry, Rename and Remove from
-   saved. Removal requires confirmation (Cancel selected first), affects only
-   that entry, and keeps separately saved channels and media files. Inside an
-   opened channel list, R1 → Save this playlist saves it without starring it.
-   Start / Add stream clears the old URL, title and player identifier. Test-stream
-   shortcuts are not included in the app.
+2. Saved lists/channels are the landing page. **Start / Add stream** opens a
+   form with visible Enter/Edit, Open/Play, Save/Rename, Scan QR and Saved buttons.
+   Triangle scans QR, Square saves with a name, Select cycles the detected type.
+   Inside an opened list, **Save list** is visible and also available with Select;
+   the adjacent button stars the entire list. Saved entries expose Rename and
+   Remove directly. Up from the first channel enters these actions; Down returns
+   to the first channel. Touch uses the same controls. Removal confirms first
+   and retains separately saved channels and media. Circle returns a newly
+   entered list to its populated form; existing lists return to saved entries.
 3. **X / the on-screen pause button** pauses. For live HLS, resume closes both decoders and
    the old connection, then opens a fresh live point. **R1 → Reconnect live**
    does the same immediately. R1 also retains the screen-fit setting.
@@ -38,13 +38,13 @@ provider login/signature renewal and DRM integration are not implemented here.
 
 Unsaved links stay only in RAM; URL query tokens are hidden on the page and no URL
 path or query is logged (failed-request diagnostics include only hosts).
-Select / Save link explicitly persists a named list/stream; the
+Square / Save link in the form explicitly persists a named list/stream; the
 Saved lists/channels page supports starred entries. Square stars a channel,
-Select stars its list; R1 switches All / Starred saved entries. Triangle or the
+Select saves/renames an opened list; Star list is visible beside it. R1 switches All / Starred saved entries. Triangle or the
 toolbar search button filters saved playlists/channels or the open channel list.
 Search matches names, M3U group titles, channel IDs and public URL paths, not
 query tokens. It ignores ASCII case, spaces, punctuation and common Latin
-accents. Circle clears the active search before navigating back. Search and
+accents. Circle navigates back without first consuming Back to clear a search. Search and
 selection survive returning from playback; separately saved entries keep their
 metadata. Filtering uses a small index map over the catalogue, rebuilt only
 when needed, and still requests covers only for visible results. The local saved JSON can

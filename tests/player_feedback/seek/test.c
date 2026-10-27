@@ -19,12 +19,14 @@ void vt_decoder_render_complete(VtDecoderPlayer *p){(void)p;CHECK(fences);}
 void vt_decoder_prepare_background_restart(VtDecoderPlayer *p){(void)p;prepared++;}
 int vt_decoder_seek(VtDecoderPlayer *p,uint64_t pos){(void)p;CHECK(pos==10000);return seek_result;}
 int ui_player_loading_run(const UiPlayerLoadingInfo *info,UiLoadingTaskFn fn,void *ctx,volatile int *cancel,const volatile long *cur,const volatile long *tot){(void)cancel;(void)cur;(void)tot;CHECK(prepared);if(info->draw_backdrop)info->draw_backdrop(info->backdrop_ctx);return fn(ctx);}
-static int opens, fail_first, backend_calls, backend_hardware;
+static int opens, fail_first, backend_calls, backend_hardware, source_stops;
 static uint64_t expected_position;
 static VtDecoderBackend opened_backend[3];
 uint64_t sceKernelGetProcessTimeWide(void){return 1000000;}
 int sceKernelDelayThread(unsigned us){(void)us;return 0;}
 void log_printf(const char *f,...){(void)f;}
+void vt_iptv_session_cancel(VtIptvSession *s){(void)s;}
+void vt_iptv_session_stop_and_wait(VtIptvSession *s){(void)s;source_stops++;}
 void vt_iptv_session_status(VtIptvSession *session,VtIptvSourceStatus *status){(void)session;memset(status,0,sizeof(*status));status->startup_ready=1;}
 void vt_decoder_request_stop(VtDecoderPlayer *p){(void)p;}
 VtDecoderPlayer *vt_decoder_create(void){return (VtDecoderPlayer *)&texture;}
@@ -57,7 +59,7 @@ int main(void) {
  /* Run the actual reopening/rollback helper: IPTV must not inherit a seek,
   * and both successful and restored backends notify the CPU policy. */
  VtPerformanceClockGuard guard={0};
- OpenTask task={.live=1,.clock_guard=&guard};
+ OpenTask task={.live=1,.live_session=(void*)1,.clock_guard=&guard};
  task.config.preferred_backend=VT_DECODER_BACKEND_SOFTWARE;
  task.config.backend_start=decoder_clock_start;task.config.backend_start_ctx=&task;
  VtDecoderPlayer *player=(void*)&texture;
@@ -69,7 +71,8 @@ int main(void) {
  CHECK(run_backend_change(&player,&task,&info,&cancel,VT_DECODER_BACKEND_HARDWARE,43000,0,0)==1);
  CHECK(opens==2&&opened_backend[0]==VT_DECODER_BACKEND_HARDWARE&&opened_backend[1]==VT_DECODER_BACKEND_SOFTWARE);
  CHECK(!backend_hardware&&task.startup_backend==VT_DECODER_BACKEND_SOFTWARE&&backend_calls==3);
- task.live=0;opens=0;fail_first=0;expected_position=43000;
+ CHECK(!source_stops); /* Failed HW switch must preserve producer for SW rollback. */
+ task.live_session=NULL;task.live=0;opens=0;fail_first=0;expected_position=43000;
  CHECK(!run_backend_change(&player,&task,&info,&cancel,VT_DECODER_BACKEND_HARDWARE,43000,0,0));
  CHECK(opens==1&&task.config.start_position_ms==43000);
  printf("PASS: %u seek preview and actual live/file decoder reopen/clock/rollback checks\n",checks);

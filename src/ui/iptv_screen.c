@@ -53,6 +53,12 @@ static char saved_parent_url[VT_IPTV_URL_MAX];
 static unsigned artwork_generation,artwork_worker_generation;
 static volatile int catalog_cancel;
 static VtIptvChannel current_list;
+static int current_list_saved, form_link_saved, list_from_form;
+#define IPTV_CATALOG_Y 168
+/* One geometry for drawing, controller focus and touch hit testing. */
+static const int form_rects[6][4]={{18,110,924,90},{18,352,924,48},
+    {18,218,596,52},{484,286,458,52},{18,286,458,52},{630,218,312,52}};
+static const int form_actions[6]={0,6,1,5,3,4};
 static SceUID artwork_thread = -1;
 static volatile int artwork_cancel, artwork_done;
 static int artwork_index, catalog_visible=6;
@@ -142,9 +148,14 @@ static int load_catalog(void *ctx) {
         fetched,fetched?0:result,(unsigned)size,result?0:catalog.count,catalog.truncated,!!channel_agent[0]);
     free(data);
     VtIptvCatalog *saved = !result ? calloc(1,sizeof(*saved)) : NULL;
-    if(saved && !vt_iptv_saved_load(saved,0))
+    current_list_saved=0;
+    if(saved && !vt_iptv_saved_load(saved,0)) {
+        for(unsigned j=0;j<saved->count;j++)if(!strcmp(current_list.url,saved->items[j].url)) {
+            current_list_saved=1;current_list.starred=saved->items[j].starred;
+        }
         for(unsigned i=0;i<catalog.count;i++)for(unsigned j=0;j<saved->count;j++)
             if(!strcmp(catalog.items[i].url,saved->items[j].url))catalog.items[i].starred=saved->items[j].starred;
+    }
     if (!result)
         for (unsigned i = 0; i < catalog.count; i++) {
             VtLibraryItem v;
@@ -236,8 +247,8 @@ static int rename_saved_link(VtIptvChannel *item, const char **message) {
     if(save_link(&renamed)){*message=TR(IPTV_SAVE_FAILED);return -1;}
     *item=renamed;
     filter_dirty=1;
-    if(!strcmp(current_list.url,item->url))current_list=renamed;
-    if(!strcmp(link,item->url))snprintf(channel_title,sizeof(channel_title),"%s",renamed.title);
+    if(!strcmp(current_list.url,item->url)){current_list=renamed;current_list_saved=1;}
+    if(!strcmp(link,item->url)){snprintf(channel_title,sizeof(channel_title),"%s",renamed.title);form_link_saved=1;}
     *message=TR(IPTV_SAVED);return 1;
 }
 static void open_list(const char **message) {
@@ -306,6 +317,7 @@ static void new_link(void) {
     link[0]=channel_title[0]=channel_agent[0]=0;
     memset(&current_list,0,sizeof(current_list));
     catalog.count=0;saved_view=starred_view=0;mode=VT_IPTV_HLS;
+    current_list_saved=form_link_saved=list_from_form=0;
 }
 static int accept_link(const char *input) {
     if(!input)return -1;
@@ -318,6 +330,7 @@ static int accept_link(const char *input) {
     }
     snprintf(link,sizeof(link),"%s",checked);
     channel_title[0]=channel_agent[0]=0;mode=vt_iptv_link_kind(link);
+    form_link_saved=current_list_saved=0;
     memset(&current_list,0,sizeof(current_list));
     log_printf("IPTV link input: mode=%d length=%u\n",mode,(unsigned)strlen(link));
     log_save(VITAMEDIADECK_SESSION_LOG_PATH);
@@ -424,18 +437,26 @@ static int play_link(const char **message) {
         int event = vt_iptv_session_event(session);
         VtIptvSourceStatus status;
         vt_iptv_session_status(session, &status);
-        /* The player has closed both cursors before producer/session teardown. */
+        /* Also cover normal exits and loader-allocation failures: no UI-thread
+         * network join. The producer owns its HTTP state until it acknowledges
+         * cancel; redraw rather than freeing in-flight callback contexts. */
+        vt_iptv_session_cancel(session);
+        UiPlayerLoadingInfo closing={.title=source.title,.status=TR(IPTV_CLOSING)};
+        while(!vt_iptv_session_stopped(session)) {
+            ui_player_loading_present(&closing,NULL,NULL);sceKernelDelayThread(16000);
+        }
         vt_iptv_session_destroy(session);
         log_printf("IPTV playback: result=%d source=%d generation=%llu segments=%u bytes=%u\n",
             result, event, (unsigned long long)status.generation,
             status.buffered_segments, (unsigned)status.buffered_bytes);
         if (result < 0) {
-            *message = failure_detail(event ? event : status.last_error ? status.last_error : !status.buffered_segments ? VT_IPTV_IO : 0);
+            *message = failure_detail(event && event!=VT_IPTV_CANCELLED ? event : status.last_error && status.last_error!=VT_IPTV_CANCELLED ? status.last_error : !status.buffered_segments ? VT_IPTV_IO : 0);
             log_save(VITAMEDIADECK_SESSION_LOG_PATH);
             /* A short startup rejection must not look like an unexplained
              * player exit. Keep the reason in the footer after the notice. */
             ui_message_show(TR(IPTV_FAILED), *message, 12000);
-        } else if (status.terminal == VT_IPTV_END) *message = TR(IPTV_FINISHED);
+        } else if(event==VT_IPTV_CANCELLED) *message=TR(IPTV_CANCELLED);
+        else if (status.terminal == VT_IPTV_END) *message = TR(IPTV_FINISHED);
         else *message = TR(IPTV_EXIT_NOTE);
         if (result == VT_HW_PLAYER_ACTION_GO_LIVE) continue;
         if (result >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
@@ -487,9 +508,16 @@ static int options_for_page(UiContextAction items[8]) {
     }
     return n;
 }
+static void catalog_actions(UiContextAction items[4]) {
+    VtIptvChannel *item=selected_channel();
+    items[0]=(UiContextAction){item && item->mode==VT_IPTV_LIST?TR(IPTV_OPEN_SHORT):TR(IPTV_PLAY_SHORT),"X",18,item!=NULL};
+    items[1]=(UiContextAction){item && item->starred?TR(IPTV_UNSTAR_SHORT):TR(IPTV_STAR_SHORT),"Square",10,item!=NULL};
+    items[2]=(UiContextAction){saved_view?TR(IPTV_RENAME):current_list_saved?TR(IPTV_RENAME_LIST):TR(IPTV_SAVE_LIST_SHORT),"Select",saved_view?14:16,saved_view?item!=NULL:current_list.url[0]!=0};
+    items[3]=(UiContextAction){saved_view?TR(IPTV_DELETE_SHORT):current_list.starred?TR(IPTV_UNSTAR_LIST_SHORT):TR(IPTV_STAR_LIST_SHORT),NULL,saved_view?15:12,saved_view?item!=NULL:current_list.url[0]!=0};
+}
 int ui_iptv_screen(void) {
     const char *message = "";
-    int focus = 0;
+    int focus = 0, action_focus=-1;
     UiContextMenu options={0};
     UiFocusMotion focus_motion={0};
     if(!catalog.count) { saved_view=1; starred_view=0; catalog_focus=catalog_top=0;
@@ -540,15 +568,50 @@ int ui_iptv_screen(void) {
         ui_sections_sidebar_tick(&sidebar);
         int page_input = !was_open && !sidebar.open && sidebar.animation <= 0.01f && !options.open && options.animation<=.01f;
         if(option_action>=0) page_input=1;
+        if(page_input && (catalog.count || saved_view)) {
+            UiContextAction bar[4];catalog_actions(bar);
+            unsigned nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,
+                SCE_CTRL_LEFT|SCE_CTRL_RIGHT|SCE_CTRL_UP|SCE_CTRL_DOWN);
+            if(action_focus>=0) {
+                if(nav&SCE_CTRL_LEFT)action_focus=action_focus>0?action_focus-1:0;
+                else if(nav&SCE_CTRL_RIGHT)action_focus=action_focus<3?action_focus+1:3;
+                else if(nav&SCE_CTRL_DOWN){action_focus=-1;catalog_focus=catalog_top=0;}
+                else if((pressed&SCE_CTRL_CROSS)&&bar[action_focus].enabled)option_action=bar[action_focus].action;
+                pressed&=~(SCE_CTRL_CROSS|SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+                controls.buttons&=~(SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+                controls.lx=controls.ly=128;
+            } else if((nav&SCE_CTRL_UP)&&catalog_focus<2) {
+                action_focus=catalog_focus%2;pressed&=~SCE_CTRL_UP;
+                controls.buttons&=~SCE_CTRL_UP;controls.lx=controls.ly=128;
+            } else {
+                /* Navigation is consumed once; repeating it below would skip items. */
+                if((nav&SCE_CTRL_LEFT)&&catalog_focus%2)catalog_focus--;
+                else if((nav&SCE_CTRL_RIGHT)&&!(catalog_focus%2)&&catalog_focus+1<(int)result_count)catalog_focus++;
+                else if((nav&SCE_CTRL_UP)&&catalog_focus>=2)catalog_focus-=2;
+                else if((nav&SCE_CTRL_DOWN)&&catalog_focus/2*2+2<(int)result_count) {
+                    catalog_focus+=2;if(catalog_focus>=(int)result_count)catalog_focus=result_count-1;
+                }
+            }
+            if(pressed&SCE_CTRL_SELECT){option_action=saved_view?14:16;pressed&=~SCE_CTRL_SELECT;}
+            if(touches&UI_TOUCH_EVENT_TAP)for(int i=0;i<4;i++)
+                if(ui_touch_hit_rect(touch.x,touch.y,18+i*233,110,225,46)) {
+                    action_focus=i;if(bar[i].enabled)option_action=bar[i].action;touches=0;
+                }
+        }
         int root_action=-1;
         if(option_action>=0 && option_action<10) {
-            iptv_cover_stop();catalog.count=0;saved_view=0;root_action=option_action;
+            iptv_cover_stop();catalog.count=0;saved_view=0;action_focus=-1;root_action=option_action;
         }
         if(option_action==10)pressed|=SCE_CTRL_SQUARE;
         if(option_action==18)pressed|=SCE_CTRL_CROSS;
         if(option_action==19)pressed|=SCE_CTRL_TRIANGLE;
         if(option_action==11 && saved_view){iptv_cover_stop();starred_view=!starred_view;reload_saved();catalog_focus=catalog_top=0;}
-        if(option_action==12)pressed|=SCE_CTRL_SELECT;
+        if(option_action==12 && !saved_view && current_list.url[0]) {
+            int old=current_list.starred;
+            int result=toggle_star(&current_list);
+            message=result?TR(IPTV_SAVE_FAILED):old?TR(ONLINE_REMOVED):TR(IPTV_SAVED);
+            if(!result){current_list_saved=1;if(!strcmp(link,current_list.url))form_link_saved=1;}
+        }
         if(option_action==17) {
             availability_filter(&message);filter_catalog();memset(&focus_motion,0,sizeof(focus_motion));
             sceCtrlPeekBufferPositive(0,&previous,1);ui_touch_reset();ui_nav_repeat_reset(&repeat);
@@ -587,10 +650,10 @@ int ui_iptv_screen(void) {
             sceCtrlPeekBufferPositive(0,&previous,1);ui_touch_reset();ui_nav_repeat_reset(&repeat);
             pressed=touches=0;page_input=0;
         }
-        int catalog_rows=(ui_mini_player_top()-110-28+8)/120;
+        int catalog_rows=(ui_mini_player_top()-IPTV_CATALOG_Y-28+8)/112;
         if(catalog_rows<1)catalog_rows=1;
         if(catalog_rows>4)catalog_rows=4;
-        int catalog_step=(ui_mini_player_top()-110-28+8)/catalog_rows;
+        int catalog_step=(ui_mini_player_top()-IPTV_CATALOG_Y-28+8)/catalog_rows;
         catalog_visible=catalog_rows*2;
         if (page_input && ui_mini_player_handle_touch(touches, &touch)) touches = 0;
         filter_catalog();
@@ -609,22 +672,14 @@ int ui_iptv_screen(void) {
                 sceCtrlPeekBufferPositive(0,&previous,1);ui_touch_reset();ui_nav_repeat_reset(&repeat);
                 pressed=touches=0;
             }
-            unsigned nav = ui_nav_repeat_update(&repeat, pressed, controls.buttons, controls.lx, controls.ly,
-                SCE_CTRL_LEFT|SCE_CTRL_RIGHT|SCE_CTRL_UP|SCE_CTRL_DOWN);
-            if ((nav & SCE_CTRL_LEFT) && catalog_focus%2) catalog_focus--;
-            if ((nav & SCE_CTRL_RIGHT) && !(catalog_focus%2) && catalog_focus+1<(int)result_count) catalog_focus++;
-            if ((nav & SCE_CTRL_UP) && catalog_focus>=2) catalog_focus-=2;
-            if ((nav & SCE_CTRL_DOWN) && catalog_focus/2*2+2<(int)result_count) {
-                catalog_focus+=2; if(catalog_focus>=(int)result_count)catalog_focus=result_count-1;
-            }
-            if ((touches & UI_TOUCH_EVENT_UP) && !(touches & UI_TOUCH_EVENT_TAP) && touch.down_y>=110 && touch.down_y<ui_mini_player_top()-28) {
+            if ((touches & UI_TOUCH_EVENT_UP) && !(touches & UI_TOUCH_EVENT_TAP) && touch.down_y>=IPTV_CATALOG_Y && touch.down_y<ui_mini_player_top()-28) {
                 catalog_focus+=(touch.down_y-touch.y)/catalog_step*2;
                 if(catalog_focus<0)catalog_focus=0;
                 if(catalog_focus>=(int)result_count)catalog_focus=result_count?result_count-1:0;
             }
             if (touches & UI_TOUCH_EVENT_TAP) for (int i=0;i<catalog_visible && catalog_top+i<(int)result_count;i++)
-                if(ui_touch_hit_rect(touch.x,touch.y,UI_CONTENT_X+i%2*466,110+i/2*catalog_step,458,catalog_step-8)) {
-                    catalog_focus=catalog_top+i; pressed|=SCE_CTRL_CROSS;
+                if(ui_touch_hit_rect(touch.x,touch.y,UI_CONTENT_X+i%2*466,IPTV_CATALOG_Y+i/2*catalog_step,458,catalog_step-8)) {
+                    catalog_focus=catalog_top+i;action_focus=-1;pressed|=SCE_CTRL_CROSS;
                 }
             if(pressed&SCE_CTRL_SQUARE && selected_channel()) {
                 VtIptvChannel *item=selected_channel();char keep[VT_IPTV_URL_MAX];snprintf(keep,sizeof(keep),"%s",item->url);
@@ -632,16 +687,22 @@ int ui_iptv_screen(void) {
                 iptv_cover_stop();message=toggle_star(item)?TR(IPTV_SAVE_FAILED):was_starred?TR(ONLINE_REMOVED):TR(IPTV_SAVED);
                 if(saved_view){reload_saved();restore_saved_selection(keep,old_focus,old_top);}
             }
-            if((pressed&SCE_CTRL_SELECT) && !saved_view && current_list.url[0]) {
-                int old=current_list.starred;message=toggle_star(&current_list)?TR(IPTV_SAVE_FAILED):old?TR(ONLINE_REMOVED):TR(IPTV_SAVED);
-            }
             if ((touches&UI_TOUCH_EVENT_TAP) && ui_touch_hit_rect(touch.x,touch.y,UI_CONTENT_X,UI_TABS_Y,240,40))pressed|=SCE_CTRL_START;
-            if(pressed&SCE_CTRL_START) { iptv_cover_stop();new_link();focus=0;message="";memset(&focus_motion,0,sizeof(focus_motion)); }
+            if(pressed&SCE_CTRL_START) { iptv_cover_stop();new_link();focus=0;action_focus=-1;message="";memset(&focus_motion,0,sizeof(focus_motion)); }
             else if (pressed & SCE_CTRL_CIRCLE) {
                 iptv_cover_stop();
                 if(saved_view)return UI_SECTION_LOCAL_MEDIA;
-                saved_view=1;snprintf(search,sizeof(search),"%s",saved_search);
-                reload_saved();restore_saved_selection(saved_parent_url,saved_parent_focus,saved_parent_top);
+                action_focus=-1;
+                if(list_from_form) {
+                    snprintf(link,sizeof(link),"%s",current_list.url);
+                    snprintf(channel_title,sizeof(channel_title),"%s",current_list.title);
+                    snprintf(channel_agent,sizeof(channel_agent),"%s",current_list.user_agent);
+                    mode=VT_IPTV_LIST;form_link_saved=current_list_saved;
+                    catalog.count=0;saved_view=0;search[0]=0;filter_dirty=1;focus=2;
+                } else {
+                    saved_view=1;snprintf(search,sizeof(search),"%s",saved_search);
+                    reload_saved();restore_saved_selection(saved_parent_url,saved_parent_focus,saved_parent_top);
+                }
             }
             else if ((pressed & SCE_CTRL_CROSS) && selected_channel()) {
                 iptv_cover_stop(); VtIptvChannel *item=selected_channel();
@@ -650,7 +711,7 @@ int ui_iptv_screen(void) {
                 mode=item->mode;
                 if(mode==VT_IPTV_LIST){
                     if(saved_view){saved_parent_focus=catalog_focus;saved_parent_top=catalog_top;snprintf(saved_parent_url,sizeof(saved_parent_url),"%s",item->url);}
-                    current_list=*item;open_list(&message);
+                    list_from_form=0;current_list=*item;open_list(&message);action_focus=-1;
                 }
                 else {
                     section=play_link(&message);
@@ -661,19 +722,20 @@ int ui_iptv_screen(void) {
         } else if (page_input) {
             unsigned nav = ui_nav_repeat_update(&repeat, pressed, controls.buttons,
                 controls.lx, controls.ly, SCE_CTRL_LEFT | SCE_CTRL_RIGHT | SCE_CTRL_UP | SCE_CTRL_DOWN);
-            if (nav & SCE_CTRL_LEFT) focus = focus > 0 ? focus - 1 : 0;
-            if (nav & SCE_CTRL_RIGHT) focus = focus < 4 ? focus + 1 : 4;
-            if ((nav&SCE_CTRL_DOWN)&&focus<4)focus++;
-            if ((nav&SCE_CTRL_UP)&&focus>0)focus--;
-            if (pressed & SCE_CTRL_CIRCLE) root_action=5;
-            if (pressed & SCE_CTRL_TRIANGLE) mode=(mode+1)%4;
-            const int actions[]={0,6,1,5,3};
-            int action = root_action>=0?root_action:(pressed & SCE_CTRL_CROSS)?actions[focus]:-1;
-            if (pressed & SCE_CTRL_START) action = 0;
-            if (pressed & SCE_CTRL_SELECT) action = 4;
-            const int rects[][4]={{18,110,924,90},{18,218,458,52},{484,218,458,52},{18,286,458,52},{484,286,458,52}};
-            if(touches&UI_TOUCH_EVENT_TAP)for(int i=0;i<5;i++)
-                if(ui_touch_hit_rect(touch.x,touch.y,rects[i][0],rects[i][1],rects[i][2],rects[i][3])) {focus=i;action=actions[i];}
+            static const int up[6]={0,4,0,5,2,0},down[6]={2,1,4,1,1,3};
+            static const int left[6]={0,1,2,4,4,2},right[6]={0,1,5,3,3,5};
+            if(nav&SCE_CTRL_UP)focus=up[focus];
+            else if(nav&SCE_CTRL_DOWN)focus=down[focus];
+            else if(nav&SCE_CTRL_LEFT){if(focus==1)mode=(mode+3)%4;else focus=left[focus];}
+            else if(nav&SCE_CTRL_RIGHT){if(focus==1)mode=(mode+1)%4;else focus=right[focus];}
+            int action=root_action>=0?root_action:(pressed&SCE_CTRL_CROSS)?form_actions[focus]:-1;
+            if(pressed&SCE_CTRL_START)action=0;
+            else if(pressed&SCE_CTRL_TRIANGLE)action=3;
+            else if(pressed&SCE_CTRL_SQUARE)action=4;
+            else if(pressed&SCE_CTRL_SELECT)action=6;
+            else if(pressed&SCE_CTRL_CIRCLE)action=5;
+            if(touches&UI_TOUCH_EVENT_TAP)for(int i=0;i<6;i++)
+                if(ui_touch_hit_rect(touch.x,touch.y,form_rects[i][0],form_rects[i][1],form_rects[i][2],form_rects[i][3])) {focus=i;action=form_actions[i];}
             if (action == 0) {
                 char input[VT_IPTV_URL_MAX];
                 if (ui_text_input(TR(IPTV_LINK), link, input, sizeof(input)) > 0) {
@@ -687,7 +749,7 @@ int ui_iptv_screen(void) {
                 if(mode==VT_IPTV_LIST) {
                     memset(&current_list,0,sizeof(current_list));snprintf(current_list.url,sizeof(current_list.url),"%s",link);
                     snprintf(current_list.title,sizeof(current_list.title),"%s",channel_title[0]?channel_title:TR(IPTV_MODE_LIST));current_list.mode=VT_IPTV_LIST;
-                    open_list(&message);section=UI_SECTION_NONE;
+                    list_from_form=1;open_list(&message);action_focus=-1;section=UI_SECTION_NONE;
                 } else section = play_link(&message);
                 if (section != UI_SECTION_NONE && section != UI_SECTION_IPTV) return section;
             } else if(action==3) {
@@ -695,6 +757,8 @@ int ui_iptv_screen(void) {
                 int scan=ui_qr_scan_https_url(scanned,sizeof(scanned));
                 if(scan>0){if(!accept_link(scanned)){focus=2;message="";}else message=TR(IPTV_INVALID);}
                 else if(scan<0)message=ui_qr_scan_last_error();
+            } else if(action==4 && !link[0]) {
+                focus=0;message=TR(IPTV_EMPTY);
             } else if(action==4) {
                 VtIptvChannel item={0};char checked[VT_IPTV_URL_MAX];
                 if(vt_iptv_resolve_url(link,link,checked,sizeof(checked)))message=TR(IPTV_INVALID);
@@ -705,7 +769,7 @@ int ui_iptv_screen(void) {
                     rename_saved_link(&item,&message);
                 }
             } else if(action==5) {
-                iptv_cover_stop();saved_view=1;catalog_focus=catalog_top=0;
+                iptv_cover_stop();saved_view=1;action_focus=-1;catalog_focus=catalog_top=0;
                 snprintf(search,sizeof(search),"%s",saved_search);
                 message=reload_saved()?TR(IPTV_SAVE_FAILED):"";
                 restore_saved_selection(saved_parent_url,saved_parent_focus,saved_parent_top);
@@ -726,9 +790,15 @@ int ui_iptv_screen(void) {
             char count_label[192];snprintf(count_label,sizeof(count_label),"%s  %u/%u",search[0]?search:TR(IPTV_SEARCH_SHORT),result_count,catalog.count);
             ui_action_button(272,UI_TABS_Y,276,40,VT_THEME_SURFACE,"Triangle",count_label,0);
             ui_action_button(564,UI_TABS_Y,176,40,VT_THEME_SURFACE,"",saved_view?(starred_view?TR(UI_ALL):TR(ONLINE_FAVORITES)):hide_unavailable?TR(IPTV_SHOW_ALL_SHORT):TR(IPTV_FILTER_SHORT),saved_view?starred_view:hide_unavailable);
+            UiContextAction bar[4];catalog_actions(bar);
+            for(int i=0;i<4;i++) {
+                ui_action_button(18+i*233,110,225,46,bar[i].enabled?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,
+                    bar[i].detail?bar[i].detail:"",bar[i].label,0);
+                if(page_input && action_focus==i)ui_focus_motion_tick(&focus_motion,18+i*233,110,225,46);
+            }
             for(int i=0;i<catalog_visible && catalog_top+i<(int)result_count;i++) {
-                int x=UI_CONTENT_X+i%2*466,y=110+i/2*catalog_step;VtIptvChannel *item=&catalog.items[results[catalog_top+i]];
-                int selected=page_input && catalog_top+i==catalog_focus;
+                int x=UI_CONTENT_X+i%2*466,y=IPTV_CATALOG_Y+i/2*catalog_step;VtIptvChannel *item=&catalog.items[results[catalog_top+i]];
+                int selected=page_input && action_focus<0 && catalog_top+i==catalog_focus;
                 ui_panel(x,y,458,catalog_step-8,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
                 if(selected)ui_focus_motion_tick(&focus_motion,x,y,458,catalog_step-8);
                 vita2d_texture *cover=item->artwork_path[0] && strcmp(item->artwork_path,"-") ? vt_artwork_thumbnail_get(item->artwork_path) : NULL;
@@ -738,31 +808,28 @@ int ui_iptv_screen(void) {
                 text_line(x+112,y+38,332,title,VT_THEME_TEXT,UI_FONT_BODY);
                 text_line(x+112,y+68,332,item->group[0]?item->group:mode_label(item->mode),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
             }
-            if(page_input && result_count)ui_focus_outline_draw(&focus_motion);
+            if(page_input && (result_count || action_focus>=0))ui_focus_outline_draw(&focus_motion);
             if(!result_count) {
                 text_line(68,240,820,search[0]?TR(IPTV_NO_RESULTS):TR(IPTV_NO_SAVED),VT_THEME_TEXT,UI_FONT_BODY);
                 text_line(68,274,820,search[0]?TR(IPTV_CLEAR_SEARCH):TR(IPTV_NO_SAVED_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
             }
-            ui_scroll_rail(948,110,catalog_rows*catalog_step-8,catalog_top,catalog_visible,result_count);
+            ui_scroll_rail(948,IPTV_CATALOG_Y,catalog_rows*catalog_step-8,catalog_top,catalog_visible,result_count);
             text_line(UI_CONTENT_X,ui_mini_player_top()-12,UI_CONTENT_W,message[0]?message:TR(IPTV_MANAGE_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         } else {
         text_line(18,89,720,TR(IPTV_FORMATS),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         ui_panel(18,110,924,90,VT_THEME_SURFACE,VT_THEME_BORDER,0);
-        text_line(34,140,892,TR(IPTV_LINK),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+        text_line(34,140,892,TR(IPTV_LINK_EDIT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         text_line(34,178,892,link[0]?shown:TR(IPTV_EMPTY),VT_THEME_TEXT,UI_FONT_BODY);
-        ui_action_button(18,218,458,52,VT_THEME_SURFACE,"Triangle",mode_label(mode),0);
-        ui_action_button(484,218,458,52,link[0]?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,"X",mode==VT_IPTV_LIST?TR(IPTV_OPEN_LIST):TR(IPTV_PLAY),0);
-        ui_action_button(18,286,458,52,VT_THEME_SURFACE,"",TR(IPTV_COLLECTION),0);
-        ui_action_button(484,286,458,52,VT_THEME_SURFACE,"",TR(IPTV_QR),0);
+        ui_action_button(18,218,596,52,link[0]?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,"X",mode==VT_IPTV_LIST?TR(IPTV_OPEN_LIST):TR(IPTV_PLAY),0);
+        ui_action_button(630,218,312,52,VT_THEME_SURFACE,"Square",form_link_saved?TR(IPTV_RENAME):TR(IPTV_SAVE),0);
+        ui_action_button(18,286,458,52,VT_THEME_SURFACE,"Triangle",TR(IPTV_QR),0);
+        ui_action_button(484,286,458,52,VT_THEME_SURFACE,"Circle",TR(IPTV_COLLECTION),0);
+        ui_action_button(18,352,924,48,VT_THEME_SURFACE,"Select",mode_label(mode),0);
         if(page_input) {
-            ui_focus_motion_tick(&focus_motion,focus==2 || focus==4?484:18,
-                focus==0?110:focus<3?218:286,focus==0?924:458,focus==0?90:52);
+            ui_focus_motion_tick(&focus_motion,form_rects[focus][0],form_rects[focus][1],form_rects[focus][2],form_rects[focus][3]);
             ui_focus_outline_draw(&focus_motion);
         }
-        if(ui_mini_player_top()>462) {
-            text_line(18,ui_mini_player_top()-46,924,message[0]?message:TR(IPTV_ADD_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
-            text_line(18,ui_mini_player_top()-18,924,TR(IPTV_LIMITS),VT_THEME_TEXT_FAINT,UI_FONT_SMALL);
-        }
+        ui_text_block(18,430,924,24,2,message[0]?message:TR(IPTV_ADD_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         }
         ui_action_button(756,UI_TABS_Y,186,40,VT_THEME_SURFACE,"R1",TR(UI_OPTIONS),options.open);
         ui_mini_player_draw();

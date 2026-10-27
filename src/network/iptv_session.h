@@ -10,6 +10,11 @@ typedef struct VtIptvSession VtIptvSession;
 VtIptvSession *vt_iptv_session_create(const char *url, const VtIptvSourceConfig *config);
 void vt_iptv_session_factory(VtIptvSession *session, VtDecoderStreamFactory *out);
 void vt_iptv_session_cancel(VtIptvSession *session);
+/* Cancel and join the producer on a loading/cleanup worker. Readers/source
+ * stay valid until destroy; caller serializes this with destroy. Idempotent. */
+void vt_iptv_session_stop_and_wait(VtIptvSession *session);
+/* Nonblocking: after cancel, UI may animate until the producer has exited. */
+int vt_iptv_session_stopped(VtIptvSession *session);
 void vt_iptv_session_destroy(VtIptvSession *session);
 /* Returns a source error / DISCONTINUITY / LAGGED, or zero while usable.
  * END is only observed by readers after draining cached bytes. */

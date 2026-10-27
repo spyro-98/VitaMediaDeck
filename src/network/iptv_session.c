@@ -22,7 +22,7 @@ struct VtIptvSession {
     LiveCursor *readers[2];
     VtIptvCursor anchor;
     int anchor_valid, paired;
-    int cancelled, event;
+    int cancelled, event, worker_joined, worker_done;
 };
 static uint64_t now_ms(void) {
 #ifdef __vita__
@@ -70,6 +70,7 @@ static void *produce(void *opaque) {
         if (result == VT_IPTV_END) break;
         sleep_tick();
     }
+    __atomic_store_n(&s->worker_done,1,__ATOMIC_RELEASE);
     return NULL;
 }
 VtIptvSession *vt_iptv_session_create(const char *url, const VtIptvSourceConfig *config) {
@@ -97,16 +98,22 @@ void vt_iptv_session_cancel(VtIptvSession *s) {
     __atomic_store_n(&s->cancelled, 1, __ATOMIC_RELEASE);
     vt_iptv_source_cancel(s->source);
 }
-void vt_iptv_session_destroy(VtIptvSession *s) {
+int vt_iptv_session_stopped(VtIptvSession *s) { return !s || load_flag(&s->worker_done); }
+void vt_iptv_session_stop_and_wait(VtIptvSession *s) {
     if (!s) return;
     vt_iptv_session_cancel(s);
-    pthread_join(s->worker, NULL);
+    if(!s->worker_joined){pthread_join(s->worker,NULL);s->worker_joined=1;}
+}
+void vt_iptv_session_destroy(VtIptvSession *s) {
+    if (!s) return;
+    vt_iptv_session_stop_and_wait(s);
     vt_iptv_source_destroy(s->source);
     pthread_mutex_destroy(&s->mutex); free(s);
 }
 int vt_iptv_session_event(VtIptvSession *s) {
     if (!s) return VT_IPTV_INVALID;
-    return load_flag(&s->cancelled) ? VT_IPTV_CANCELLED : load_flag(&s->event);
+    int event=load_flag(&s->event);
+    return event?event:load_flag(&s->cancelled)?VT_IPTV_CANCELLED:0;
 }
 void vt_iptv_session_status(VtIptvSession *s, VtIptvSourceStatus *out) {
     vt_iptv_source_status(s ? s->source : NULL, out);

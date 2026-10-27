@@ -29,7 +29,8 @@ static int stored_result;
 static const char *rename_input;
 static int write_failure;
 static unsigned removed;
-static unsigned playback_notices;
+static unsigned playback_notices, closing_frames;
+static int stop_poll_budget;
 static const char *playback_notice;
 static int dash_selected;
 static unsigned probe_calls;
@@ -51,7 +52,7 @@ static char trail_text[2048];
 static int tap_frame=-1, tap_x, tap_y;
 static unsigned input_script[64], script_count, capture_frame;
 static SceCtrlData input_axes[64];static unsigned axis_count;
-static unsigned compact_home_labels;
+static unsigned compact_home_labels, cancellation_labels;
 static int allow_audio_fullscreen;
 static int clipped, clip_left, clip_top, clip_right=960, clip_bottom=544;
 static const char *output;
@@ -101,6 +102,7 @@ static void pixel(int x,int y,unsigned color,unsigned coverage) {
 int ui_font_draw_text(vita2d_font *font,int x,int y,unsigned color,unsigned size,const char *text) {
     if(y<54&&text&&(!strcmp(text,"Video locali")||!strcmp(text,"Libreria")||!strcmp(text,"Podcast")||!strcmp(text,"Radio")))compact_home_labels++;
 
+    if(!strcmp(text,vt_i18n_str(VT_STR_LOADING_CANCELLING)))cancellation_labels++;
     int width=ui_font_text_width(font,size,text);
     if (!clipped&&(x<0||y<(int)size||x+width>960||y>544))
         fprintf(stderr,"Text bounds: x=%d y=%d width=%d size=%u text=%s\n",x,y,width,size,text);
@@ -321,6 +323,11 @@ int vt_hw_player_screen_run_live(const VtHwPlayerScreenSource *s,VtIptvSession *
 }
 int vt_iptv_session_event(VtIptvSession *s) { (void)s;return next_event; }
 void vt_iptv_session_status(VtIptvSession *s,VtIptvSourceStatus *status) { (void)s;memset(status,0,sizeof(*status)); }
+void vt_iptv_session_cancel(VtIptvSession *s){(void)s;}
+int vt_iptv_session_stopped(VtIptvSession *s){(void)s;if(stop_poll_budget>0){stop_poll_budget--;return 0;}return 1;}
+#ifndef VMD_REAL_LOADING_TEST
+void ui_player_loading_present(const UiPlayerLoadingInfo *info,const volatile long *cur,const volatile long *tot){CHECK(info->status==TR(IPTV_CLOSING));(void)cur;(void)tot;closing_frames++;}
+#endif
 void vt_iptv_session_destroy(VtIptvSession *s) { (void)s;destroyed++;CHECK(destroyed<=plays); }
 static void png(const char *name) {
     char path[4096];snprintf(path,sizeof(path),"%s/%s.png",output,name);
@@ -594,6 +601,52 @@ int main(int argc,char **argv) {
     CHECK(failure_detail(VT_IPTV_ENCRYPTED)==TR(IPTV_ENCRYPTED_ERROR));
     CHECK(failure_detail(VT_IPTV_RENDITIONS)==TR(IPTV_RENDITIONS_ERROR));
     CHECK(failure_detail(VT_IPTV_VARIANT_LIMIT)==TR(IPTV_VARIANT_LIMIT_ERROR));
+    /* All essentials work without opening R1, in every theme/language.
+     * Controller and touch share the production rectangles and dispatch. */
+    FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));
+    for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++) {
+        ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+        new_link();memset(&stored_channel,0,sizeof(stored_channel));rename_input="My IPTV list";
+        unsigned add_script[]={0,SCE_CTRL_START,0,SCE_CTRL_TRIANGLE,0,SCE_CTRL_SQUARE,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
+        memcpy(input_script,add_script,sizeof(add_script));script_count=10;frame=0;capture_frame=6;
+        CHECK(ui_iptv_screen()==UI_SECTION_LOCAL_MEDIA);
+        CHECK(!strcmp(stored_channel.url,"https://example.org/list.m3u")&&!strcmp(stored_channel.title,"My IPTV list"));
+        CHECK(form_link_saved&&mode==VT_IPTV_LIST);
+        memcpy(pixels,first_pixels,sizeof(pixels));char name[80];snprintf(name,sizeof(name),"iptv-form-theme-%d-%d",theme,language);png(name);
+        new_link();memset(&stored_channel,0,sizeof(stored_channel));
+        unsigned touch_script[]={0,SCE_CTRL_START,0,SCE_CTRL_TRIANGLE,0,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
+        memcpy(input_script,touch_script,sizeof(touch_script));script_count=9;frame=0;tap_frame=4;tap_x=760;tap_y=240;capture_frame=0;
+        CHECK(ui_iptv_screen()==UI_SECTION_LOCAL_MEDIA&&form_link_saved&&!strcmp(stored_channel.title,"My IPTV list"));
+        new_link();memset(&stored_channel,0,sizeof(stored_channel));
+        input_list_fixture="#EXTM3U\n#EXTINF:-1,First channel\nhttps://example.org/first.m3u8\n#EXTINF:-1,Second channel\nhttps://example.org/second.m3u8\n";
+        unsigned open_script[]={0,SCE_CTRL_START,0,SCE_CTRL_TRIANGLE,0,SCE_CTRL_CROSS,0,SCE_CTRL_SELECT,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
+        memcpy(input_script,open_script,sizeof(open_script));script_count=14;frame=0;capture_frame=8;
+        CHECK(ui_iptv_screen()==UI_SECTION_LOCAL_MEDIA);
+        CHECK(list_from_form&&form_link_saved&&!strcmp(link,"https://example.org/list.m3u"));
+        CHECK(!strcmp(stored_channel.url,link)); /* Back preserves the newly entered list. */
+        UiContextAction visible[4];saved_view=0;catalog_actions(visible);
+        for(int i=0;i<4;i++) {
+            const char *key=visible[i].detail;
+            if(key&&!strcmp(key,"Square"))key=TR(UI_KEY_SQUARE);
+            int kw=key?ui_font_text_width((void*)face,UI_FONT_SMALL,key)+14:0;if(kw&&kw<34)kw=34;
+            int label_width=ui_font_text_width((void*)face,UI_FONT_SMALL,visible[i].label);
+            if(label_width>225-kw-24)fprintf(stderr,"Action label overflow: theme=%d language=%u key=%s label=%s available=%d width=%d\n",theme,language,key?key:"",visible[i].label,225-kw-24,label_width);
+            CHECK(label_width<=225-kw-24);
+        }
+        memcpy(pixels,first_pixels,sizeof(pixels));snprintf(name,sizeof(name),"iptv-list-theme-%d-%d",theme,language);png(name);
+        /* Up enters visible actions; Down enters the first channel exactly once. */
+        saved_view=0;search[0]=0;CHECK(!load_catalog(NULL));catalog_focus=catalog_top=0;filter_dirty=1;
+        unsigned nav_script[]={0,SCE_CTRL_UP,0,SCE_CTRL_DOWN,0,SCE_CTRL_CROSS,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE,0,SCE_CTRL_CIRCLE};
+        memcpy(input_script,nav_script,sizeof(nav_script));script_count=12;frame=0;capture_frame=0;
+        CHECK(ui_iptv_screen()==UI_SECTION_LOCAL_MEDIA);
+        CHECK(!strcmp(last_stream_url,"https://example.org/first.m3u8"));
+    }
+    rename_input=NULL;input_list_fixture=NULL;script_count=capture_frame=0;language=0;
+    next_event=VT_IPTV_CANCELLED;next_result=0;unsigned notices=playback_notices;
+    stop_poll_budget=3;closing_frames=0;
+    mode=VT_IPTV_HLS;CHECK(play_link(&message)==UI_SECTION_NONE&&message==TR(IPTV_CANCELLED));
+    CHECK(playback_notices==notices&&closing_frames==3&&!stop_poll_budget);next_event=0;
+    FT_Done_Face(mono);face=inter;
     FT_Done_Face(face);FT_Done_FreeType(ft);
     printf("IPTV UI/navigation/layout: %u assertions passed\n",checks);
     return 0;
