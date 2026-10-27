@@ -98,6 +98,10 @@ typedef struct VtDecoderPlayerConfig {
 	int start_paused;
 	/* IPTV-only decoded audio shape, retained across DASH -> ADTS remuxing. */
 	uint32_t live_audio_sample_rate, live_audio_channels;
+ /* Optional application policy, before each attempted backend, also on AUTO
+  * fallback. Context must outlive this player and all open/change workers. */
+ void (*backend_start)(void *ctx, VtDecoderBackend backend);
+ void *backend_start_ctx;
 } VtDecoderPlayerConfig;
 
 typedef struct VtDecoderPlayerStatus {

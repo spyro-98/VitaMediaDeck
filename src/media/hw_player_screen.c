@@ -59,8 +59,19 @@ typedef struct {
 	VtDecoderPlayerConfig config;
 	int live;
 	VtIptvSession *live_session;
+    uint64_t ui_started_us;
+    VtPerformanceClockGuard *clock_guard;
+    int startup_backend;
 } OpenTask;
 
+static void iptv_loading_detail(char *out,size_t size,void *ctx,uint64_t now) {
+ OpenTask *task=ctx;VtIptvSourceStatus status={0};
+ vt_iptv_session_status(task->live_session,&status);
+ int backend=__atomic_load_n(&task->startup_backend,__ATOMIC_ACQUIRE);
+ const char *phase=backend==VT_DECODER_BACKEND_HARDWARE?"HW":backend==VT_DECODER_BACKEND_SOFTWARE?"SW":"Buffer";
+ snprintf(out,size,"%s · %u segments · %.1f MiB · %llu s",phase,status.buffered_segments,
+   (double)status.buffered_bytes/(1024*1024),(unsigned long long)((now-task->ui_started_us)/1000000));
+}
 static int open_task(void *opaque) {
 	OpenTask *task = opaque;
 	if (task->live_session) {
@@ -223,7 +234,7 @@ static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
 	if (!*player_io) return -1;
 	open->player = *player_io;
 	open->config.preferred_backend = target;
-	open->config.start_position_ms = position_ms;
+	open->config.start_position_ms = open->live ? 0 : position_ms;
 	open->config.audio_track = audio_track;
 	open->config.subtitle_track = subtitle_track;
 	loading->cancel_ctx = *player_io;
@@ -371,10 +382,16 @@ static void draw_player_power_save_status_at(int x, int y) {
 	int baseline = y > 470 ? y - 5 : y + 16;
 	vita2d_draw_rectangle(x, y + 5, 12, 2, VT_THEME_COLD_DIM);
 	vita2d_draw_rectangle(x + 4, y + 1, 4, 10, VT_THEME_COLD_A(86));
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_media_text(1);
+#endif
 	if (small)
 		ui_font_draw_text(small, text_x, baseline, VT_THEME_COLD_DIM,
 		                  UI_FONT_SMALL,
 		                  vt_i18n_str(VT_STR_PLAYER_POWER_SAVE_ACTIVE));
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_media_text(0);
+#endif
 }
 
 static void format_video_bitrate(uint64_t bitrate_bps, char out[32]) {
@@ -484,8 +501,8 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 		         status->height, status->fps, bitrate);
 		if (small) ui_text_line(610,454,332,quality,text,UI_FONT_SMALL);
 		if (!live) {
-			draw_skip_button(small, PLAYER_BACK_X, "\xE2\x86\x90", hud_opacity);
-			draw_skip_button(small, PLAYER_FORWARD_X, "\xE2\x86\x92", hud_opacity);
+			draw_skip_button(small, PLAYER_BACK_X, "\xE2\x97\x81", hud_opacity);
+			draw_skip_button(small, PLAYER_FORWARD_X, "\xE2\x96\xB7", hud_opacity);
 		}
 #ifdef VMD_ENABLE_PAF_NATIVE
         int native_play = ui_native_vita_button_fade(PLAYER_PLAY_X - 24,
@@ -765,6 +782,12 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 #endif
 }
 
+static void decoder_clock_start(void *ctx, VtDecoderBackend backend) {
+ OpenTask *task=ctx;
+ __atomic_store_n(&task->startup_backend,backend,__ATOMIC_RELEASE);
+ vt_performance_select_backend(task->clock_guard, backend == VT_DECODER_BACKEND_HARDWARE);
+}
+
 static int player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms,
 	                        uint64_t *last_duration_ms,
@@ -788,7 +811,11 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 	open.player = player;
 	open.live = live;
 	open.live_session = live_session;
+    open.ui_started_us=sceKernelGetProcessTimeWide();
 	open.config.stream = source->stream;
+    open.config.backend_start = decoder_clock_start;
+    open.config.backend_start_ctx = &open;
+    open.clock_guard = &clock_guard;
 	open.config.external_subtitle_count = source->external_subtitle_count;
 	open.config.external_subtitles_replace_embedded =
 	    source->external_subtitles_replace_embedded;
@@ -816,7 +843,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 	open.config.start_paused = source->start_paused;
 	open.config.volume_percent = vt_audio_volume_percent();
 	open.config.cancel_flag = &cancel;
-	const char *opening_status = source->authenticated_remote
+	const char *opening_status = live ? vt_i18n_str(VT_STR_IPTV_LOADING) : source->authenticated_remote
 	                           ? vt_i18n_str(VT_STR_PLAYER_OPEN_REMOTE)
 	                           : vt_i18n_str(VT_STR_PLAYER_OPEN_LOCAL);
 	UiPlayerLoadingInfo loading = {
@@ -825,7 +852,9 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 		.status = opening_status,
 		.quality_height = source->expected_height,
 		.cancel_action = cancel_player_operation,
-		.cancel_ctx = player
+		.cancel_ctx = player,
+        .detail_text = live ? iptv_loading_detail : NULL,
+        .detail_ctx = &open
 	};
 	volatile int start_over_requested = 0;
 	if (open.config.start_position_ms > 0)
@@ -1072,16 +1101,16 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 				break;
 			}
 		} else if (right_open) {
-			int decoder_row = !live && decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
+			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? (live?2:4) : -1;
 			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
 			unsigned right_navigation = ui_nav_repeat_update(
 			    &right_nav_repeat, pressed, controls.buttons, controls.lx,
 			    controls.ly, SCE_CTRL_UP | SCE_CTRL_DOWN);
 			if ((right_navigation & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
-			int right_row_count = live ? 2 : restart_row + (resume_available ? 1 : 0);
+			int right_row_count = live ? 2+(decoder_row>=0) : restart_row + (resume_available ? 1 : 0);
 			if ((right_navigation & SCE_CTRL_DOWN) &&
 			    right_cursor + 1 < right_row_count) right_cursor++;
-			if (right_cursor == 2 &&
+			if (!live && right_cursor == 2 &&
 			    (pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
 				int count = vt_decoder_audio_track_count(player);
 				if (count > 1) {
@@ -1089,7 +1118,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					pending_audio_track =
 					    (pending_audio_track + (direction < 0 ? count - 1 : 1)) % count;
 				}
-			} else if (right_cursor == 3 &&
+			} else if (!live && right_cursor == 3 &&
 			           (pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT))) {
 				int choices = vt_decoder_subtitle_track_count(player) + 1;
 				if (choices > 1) {
@@ -1104,7 +1133,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (right_cursor == 1)
 					vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
-				else if (right_cursor == 2 || right_cursor == 3) {
+				else if (!live && (right_cursor == 2 || right_cursor == 3)) {
 					int selected_track = right_cursor == 3
 					                   ? pending_subtitle_track : pending_audio_track;
 					ret = run_track_change(player, &loading, &cancel,
@@ -1139,6 +1168,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					loading.status = opening_status;
 					if (change_ret < 0) { ret = change_ret; break; }
 					if (change_ret == 0) session_backend_override = target;
+                    else if(change_ret==1)ui_message_show(vt_i18n_str(VT_STR_PLAYER_DECODER),vt_i18n_str(VT_STR_PLAYER_BACKEND_RETAINED),2200);
 					pending_audio_track = vt_decoder_active_audio_track(player);
 					pending_subtitle_track = vt_decoder_active_subtitle_track(player);
 					vt_decoder_set_paused(player, paused);
@@ -1264,9 +1294,9 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			int handled = 0;
 			int track_change_failed = 0;
 			int track_change_completed = 0;
-			int decoder_row = !live && decoder_preference == VT_VIDEO_DECODER_AUTO ? 4 : -1;
+			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? (live?2:4) : -1;
 			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
-			int right_row_count = live ? 2 : restart_row + (resume_available ? 1 : 0);
+			int right_row_count = live ? 2+(decoder_row>=0) : restart_row + (resume_available ? 1 : 0);
 			for (int i = 0; i < right_row_count; i++) {
 				if (!ui_touch_hit_rect(touch.x, touch.y, panel_x + 18,
 				                       (int)(RIGHT_PANEL_ROW_Y + i * RIGHT_PANEL_ROW_STEP),
@@ -1279,7 +1309,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
 				else if (i == 1)
 					vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
-				else if (i == 2 || i == 3) {
+				else if (!live && (i == 2 || i == 3)) {
 					int count = i == 3
 					          ? vt_decoder_subtitle_track_count(player) + 1
 					          : vt_decoder_audio_track_count(player);
@@ -1313,6 +1343,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					track_change_failed = change_ret < 0;
 					track_change_completed = change_ret >= 0;
 					if (change_ret == 0) session_backend_override = target;
+                    else if(change_ret==1)ui_message_show(vt_i18n_str(VT_STR_PLAYER_DECODER),vt_i18n_str(VT_STR_PLAYER_BACKEND_RETAINED),2200);
 					if (change_ret >= 0) {
 						pending_audio_track = vt_decoder_active_audio_track(player);
 						pending_subtitle_track = vt_decoder_active_subtitle_track(player);
@@ -1494,6 +1525,9 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			                             subtitle, sizeof(subtitle)) > 0)
 				ui_subtitle_draw(subtitle, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 			if (live == 2) status.duration_ms = vod_duration;
+#ifdef VMD_ENABLE_PAF_NATIVE
+            ui_native_vita_media_text(1);
+#endif
 			if (hud_opacity > 0.01f || volume_opacity > 0.01f)
 				draw_hud(source, &status, paused, vt_audio_volume_percent(),
 				         hud_opacity, volume_opacity, dragging, drag_fraction, live);
@@ -1509,12 +1543,15 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			}
 			if (input_lock.locked && hud_opacity > 0.01f)
 				draw_player_input_lock_at(24, 86, hud_opacity);
+#ifdef VMD_ENABLE_PAF_NATIVE
+            ui_native_vita_media_text(0);
+#endif
 			if (sidebar.animation > 0.01f)
 				ui_sections_sidebar_draw(&sidebar);
 			draw_player_right_sidebar(right_animation, right_focus_position,
 			                          right_cursor, player, &status,
 			                          resume_available,
-			                          !live && decoder_preference == VT_VIDEO_DECODER_AUTO,
+			                          decoder_preference == VT_VIDEO_DECODER_AUTO,
 			                          pending_audio_track,
 			                          pending_subtitle_track, live);
 		}

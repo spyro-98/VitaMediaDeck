@@ -279,6 +279,10 @@ UiHomeControlResult ui_home_controls_update(const UiHomeControlSample *s){
  if(s->blocked){ui_home_controls_reset();out.pressed=0;return out;}
  unsigned nav=ui_nav_repeat_update(&home_content_repeat,s->pressed,s->held,s->lx,s->ly,
      SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
+ if(vt_ui_theme_legacy_layout(theme)&&s->focus_sections) {
+  unsigned rail=ui_home_tabs_navigation(s->pressed,s->held,s->lx,s->ly);
+  nav=(nav&~(SCE_CTRL_LEFT|SCE_CTRL_RIGHT))|rail;
+ }
  if(theme==VT_UI_THEME_GHOST_MESH){
   int dx=(int)s->rx-128,dy=(int)s->ry-128,length=dx*dx+dy*dy;
   if(length<=40*40){wheel_sector=-1;wheel_wait_neutral=0;}

@@ -669,7 +669,7 @@ static int present(void) {
                     if (vmd_paf_text_color(w, 2, 0, count, color) < 0)
                         return widget_failure("text-color", c->kind, number, -1);
                 }
-                if (fresh || old->text_align != c->text_align) {
+                if (fresh || text_changed || old->text_align != c->text_align) {
                     for (int attr = VMD_PAF_LAYOUT_ALIGN_X; attr <= VMD_PAF_LAYOUT_TEXT_ALIGN;
                          attr++) {
                         int rc = vmd_paf_text_layout_int(w, attr,
@@ -686,12 +686,12 @@ static int present(void) {
                                     number) < 0)
                         return -1;
                 }
-                if (fresh || old->w != c->w || old->h != c->h) {
+                if (fresh || text_changed || old->w != c->w || old->h != c->h) {
                     if (layout_vec(w, VMD_PAF_LAYOUT_SIZE, c->w, c->h, "text-size-layout",
                                    number) < 0)
                         return -1;
                 }
-                if (fresh || old->w != c->w || old->h != c->h) {
+                if (fresh || text_changed || old->w != c->w || old->h != c->h) {
                     if (layout_vec(w, VMD_PAF_LAYOUT_VISIBLE_POS, 0,
                                    0, "text-visible-position", number) < 0 ||
                         layout_vec(w, VMD_PAF_LAYOUT_VISIBLE_SIZE, c->w, c->h,

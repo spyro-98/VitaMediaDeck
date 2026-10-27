@@ -39,7 +39,9 @@
 _Static_assert(ARTWORK_EDGE * ARTWORK_EDGE <= THUMB_PIXELS, "Artwork exceeds thumbnail memory budget");
 #define THUMB_PATH_MAX              VT_NETWORK_PATH_MAX
 #define THUMB_REQUEST_CAPACITY      18
-#define THUMB_TEXTURE_CAPACITY      12
+#define THUMB_MEDIA_TEXTURE_CAPACITY 12
+#define THUMB_FLAG_TEXTURE_CAPACITY  24
+#define THUMB_TEXTURE_CAPACITY      (THUMB_MEDIA_TEXTURE_CAPACITY + THUMB_FLAG_TEXTURE_CAPACITY)
 #define THUMB_FAILURE_CAPACITY      24
 #define THUMB_DISK_SLOTS            128
 #define THUMB_CACHE_VERSION         6u
@@ -1488,8 +1490,10 @@ void vt_video_thumbnail_pump(void) {
 	}
 	thumbnail_unlock();
 	if (!result.pixels) return;
-	int slot = 0;
-	for (int i = 0; i < THUMB_TEXTURE_CAPACITY; i++) {
+	int first=!strncmp(result.path,"flag:",5)?THUMB_MEDIA_TEXTURE_CAPACITY:0;
+    int end=first?THUMB_TEXTURE_CAPACITY:THUMB_MEDIA_TEXTURE_CAPACITY;
+    int slot=first;
+	for (int i = first; i < end; i++) {
 		if (!g_thumbnail.textures[i].texture) { slot = i; break; }
 		if (g_thumbnail.textures[i].used_us <
 		    g_thumbnail.textures[slot].used_us) slot = i;

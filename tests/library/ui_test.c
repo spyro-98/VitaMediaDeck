@@ -378,6 +378,14 @@ int main(int argc, char **argv) {
     script_exit();
     input_script[2] = SCE_CTRL_CROSS;
     VtLibraryItem connection;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_SECTION_BASE + UI_SECTION_LOCAL_MEDIA);
+    /* Entering the server component alone must not open its first server. */
+    view=LIBRARY_HOME;dash_selected=UI_DASH_CONNECTIONS;script_exit();
+    input_script[2]=SCE_CTRL_CROSS;input_script[4]=SCE_CTRL_DOWN;input_script[6]=SCE_CTRL_CROSS;
+    CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
+    CHECK(connection.provider==VT_LIBRARY_JELLYFIN);
+    view=LIBRARY_HOME;dash_selected=UI_DASH_CONNECTIONS;memset(dash_offset,0,sizeof(dash_offset));memset(dash_anchor,0,sizeof(dash_anchor));script_exit();
+    input_script[2]=SCE_CTRL_CROSS;input_script[4]=SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
     CHECK(!strcmp(connection.title, "NAS / sample data") &&
           connection.provider == VT_LIBRARY_NETWORK);

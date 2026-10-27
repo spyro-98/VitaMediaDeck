@@ -7,7 +7,7 @@
 #include "ui/focus_glow.h"
 
 typedef struct {
-	int open, cursor;
+	int open, cursor, top, touch_start_cursor;
 	float animation;
 	uint64_t last_us;
 	UiNavRepeat repeat;

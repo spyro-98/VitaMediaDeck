@@ -2,6 +2,7 @@
 #define VMD_ONLINE_AUDIO_H
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #define VT_ONLINE_MAX 64
 #define VT_ONLINE_CACHE_MAX 256
 #define VT_ONLINE_FEED_LIMIT (8u * 1024u * 1024u)
@@ -21,6 +22,13 @@ typedef struct {
 	char published_date[11]; /* Feed-local calendar date, YYYY-MM-DD; empty if unknown. */
 	int kind;
 } VtOnlineItem;
+/* Saved countries are local navigation shortcuts, never stream endpoints. */
+static inline int vt_online_item_country(const VtOnlineItem *v) {
+ return v && v->id[0]>='A' && v->id[0]<='Z' && v->id[1]>='A' && v->id[1]<='Z' && !v->id[2] &&
+  (v->kind==VT_ONLINE_COUNTRY ||
+   ((v->kind==VT_ONLINE_RADIO || v->kind==VT_ONLINE_FEED) &&
+    !strncmp(v->url,"vmd-country:",12) && !strcmp(v->url+12,v->id)));
+}
 typedef struct {
 	VtOnlineItem items[VT_ONLINE_CACHE_MAX];
 	int count;

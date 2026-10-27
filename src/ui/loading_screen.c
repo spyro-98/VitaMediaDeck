@@ -139,10 +139,7 @@ static double update_download_rate(UiDownloadRateState *state, uint64_t current,
 static void draw_spinner_sized(float center_x, float center_y, uint64_t now_us,
 	                          float radius, float active_radius,
 	                          float idle_radius) {
-#ifdef VMD_ENABLE_PAF_NATIVE
-	if (!vt_preferences_reduce_motion() && ui_native_vita_busy(center_x, center_y, radius * 2))
-		return;
-#endif
+/* Keep activity in the submitted frame while native resources/decoder open. */
 
 	const int dots = 10;
 	const float tau = 6.28318530718f;

@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/mini_player.h"
 #include "media/video_thumbnail.h"
 
@@ -234,7 +237,7 @@ static void format_time(uint64_t ms, char out[24]) {
 		         (unsigned long long)seconds);
 }
 
-void ui_mini_player_draw(void) {
+static void mini_player_draw_frame(void) {
 	VtBackgroundPlaybackSnapshot snapshot;
 	int active = vt_background_playback_snapshot(&snapshot) != 0;
 	if (active) {
@@ -376,7 +379,7 @@ void ui_mini_player_draw(void) {
 		                      34.0f, 1.0f, VT_THEME_SPECTRAL_A(112));
 	}
 	if (small && !snapshot.is_live) {
-		const char *back = "\xE2\x86\x90", *forward = "\xE2\x86\x92";
+		const char *back = "\xE2\x97\x81", *forward = "\xE2\x96\xB7";
 		int back_w = ui_font_text_width(small, UI_FONT_SMALL, back);
 		int forward_w = ui_font_text_width(small, UI_FONT_SMALL, forward);
 		ui_font_draw_text(small, (int)transport_x[0] - back_w / 2, y + 40,
@@ -669,4 +672,14 @@ void ui_mini_player_shutdown(void) {
 	g_mini_lock_animation_last_us = 0;
 	g_mini_control_feedback = MINI_CONTROL_NONE;
 	g_mini_control_feedback_until_us = 0;
+}
+
+void ui_mini_player_draw(void) {
+#ifdef VMD_ENABLE_PAF_NATIVE
+ ui_native_vita_media_text(1);
+#endif
+ mini_player_draw_frame();
+#ifdef VMD_ENABLE_PAF_NATIVE
+ ui_native_vita_media_text(0);
+#endif
 }

@@ -493,7 +493,7 @@ static void draw_transport(int x, int control, int paused, int enabled,
 	float y=MUSIC_CONTROLS_Y;
 #ifdef VMD_ENABLE_PAF_NATIVE
     const char *native_label = control == MUSIC_CONTROL_PLAY ? (paused ? "\xE2\x96\xB6" : "II")
-                              : control == MUSIC_CONTROL_BACK ? "\xE2\x86\x90" : "\xE2\x86\x92";
+                              : control == MUSIC_CONTROL_BACK ? "\xE2\x97\x81" : "\xE2\x96\xB7";
     if (ui_native_vita_button_fade(x,y,48,44,native_label,
         enabled && control==feedback && now<until,opacity*(enabled?1.0f:.4f))) return;
 #endif
@@ -535,10 +535,16 @@ static void draw_power_save_status_at(int x, int y) {
 	int baseline = y > 470 ? y - 5 : y + 16;
 	vita2d_draw_rectangle(x, y + 5, 12, 2, VT_THEME_COLD_DIM);
 	vita2d_draw_rectangle(x + 4, y + 1, 4, 10, VT_THEME_COLD_A(86));
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_media_text(1);
+#endif
 	if (small)
 		ui_font_draw_text(small, text_x, baseline, VT_THEME_COLD_DIM,
 		                  UI_FONT_SMALL,
 		                  vt_i18n_str(VT_STR_PLAYER_POWER_SAVE_ACTIVE));
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_media_text(0);
+#endif
 }
 
 static void draw_marquee(vita2d_font *font, float size, const char *text,
@@ -789,7 +795,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		int lock_changed = player_input_lock_update(&input_lock, ctrl.buttons,
 		                                            input_now);
 		if (lock_changed) {
-			energy_redraw = 1;
+			energy_redraw = 3;
 			hud_visible = 1;
 			hud_deadline_us = input_now + MUSIC_HUD_VISIBLE_US;
 			dragging_timeline = 0;
@@ -819,7 +825,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		pressed &= ~SCE_CTRL_START;
 		if (power_event == PLAYER_POWER_SAVE_EVENT_TOGGLE) {
 			energy_saving = !energy_saving;
-			energy_redraw = 1;
+			energy_redraw = 3;
 			energy_lock_position = 0;
 			energy_lock_move_us = input_now + PLAYER_POWER_SAVE_LOCK_MOVE_US;
 			dragging_timeline = 0;
@@ -1125,7 +1131,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 				energy_lock_position =
 				    (energy_lock_position + 1) % PLAYER_POWER_SAVE_LOCK_POSITIONS;
 				energy_lock_move_us = now + PLAYER_POWER_SAVE_LOCK_MOVE_US;
-				energy_redraw = 1;
+				energy_redraw = 3;
 			}
 			if (energy_redraw) {
 				const unsigned *music_theme_before=ui_theme_media_begin();
@@ -1144,7 +1150,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		 vita2d_end_drawing();
 				vita2d_wait_rendering_done();
 				vita2d_swap_buffers();
-				energy_redraw = 0;
+				energy_redraw--;
 			}
 			sceKernelDelayThread(10000);
 			continue;
@@ -1153,6 +1159,9 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		 vita2d_start_drawing();
 		vita2d_clear_screen();
 		ui_theme_scene_begin(UI_SCENE_AUDIO,snapshot.title);
+#ifdef VMD_ENABLE_PAF_NATIVE
+        ui_native_vita_media_text(1);
+#endif
 		draw_flow_background(palette,now,foreground,music_theme);
 		ui_brand_draw_breadcrumbs(snapshot.is_live ? vt_i18n_str(VT_STR_ONLINE_RADIO) :
 		    snapshot.is_podcast ? "Podcast" : vt_i18n_str(VT_STR_LOCAL_MEDIA_LOCAL_AUDIO),
@@ -1255,6 +1264,9 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			draw_music_volume(vt_audio_volume_percent(), volume_opacity, foreground);
 		if (input_lock.locked && hud_opacity > 0.01f)
 			draw_input_lock_at(24, 86, hud_opacity);
+#ifdef VMD_ENABLE_PAF_NATIVE
+        ui_native_vita_media_text(0);
+#endif
 		if (sidebar.animation > 0.01f)
 			ui_sections_sidebar_draw(&sidebar);
 		draw_music_right_sidebar(right_animation, right_focus_position,

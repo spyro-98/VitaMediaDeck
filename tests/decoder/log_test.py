@@ -37,3 +37,9 @@ print("Multiple concatenated events preserve video FPS and GPU gaps without impo
 
 legacy = module.parse([rows[3].replace(" work=680 ms", "")])
 assert len(legacy["stops"]) == 1 and "work" not in legacy["stops"][0]
+
+adaptive=module.parse(["video clocks: backend=HW requested_CPU=333 actual_CPU=333 owner=app", "video clocks: backend=SW requested_CPU=444 actual_CPU=333 owner=external", "Authorization: NEVER_CAPTURE_THIS"])
+assert len(adaptive["decoder_clocks"])==2
+assert adaptive["decoder_clocks"][1]["requested_mhz"]==444 and adaptive["decoder_clocks"][1]["actual_mhz"]==333 and adaptive["decoder_clocks"][1]["owner"]=="external"
+assert "NEVER_CAPTURE_THIS" not in str(adaptive)
+print("Adaptive decoder clock extraction preserves requested/actual MHz and external ownership without credentials.")

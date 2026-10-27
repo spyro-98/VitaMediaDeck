@@ -47,7 +47,7 @@ UiDashboardLayout ui_dashboard_layout(int theme, int bottom) {
         l.title_y = 150;
         l.subtitle_y = 178;
     }
-    int limit = theme == VT_UI_THEME_APERTURE ? 394 : bottom - 32;
+    int limit = theme == VT_UI_THEME_APERTURE ? 420 : bottom - 8;
     int h = limit - y, gap = 8, actions = 36;
     l.footer_y = theme == VT_UI_THEME_APERTURE ? 409 : bottom - 10;
     l.content = (UiThemeRect){x, y, w, h};
@@ -85,12 +85,13 @@ UiDashboardLayout ui_dashboard_layout(int theme, int bottom) {
     if(theme==VT_UI_THEME_LEGACY_VITA) {
         /* Four distinct media components use the entire safe body; redundant
          * Sources/History shortcuts remain accessible from navigation. */
-        int body=h-4, left=(int)(w*.62f), right=w-left-12;
-        int upper=(int)(body*.60f), lower=body-upper-12;
+        int body=bottom-8-y, left=(int)(w*.62f), right=w-left-12;
+        int upper=(int)((h-28)*.60f)+24, lower=body-upper-12;
+        l.content.h=body; l.footer_y=0;
         l.cards[0]=(UiThemeRect){x,y,left,upper};
-        l.cards[1]=(UiThemeRect){x+left+12,y,right,upper};
+        l.cards[1]=(UiThemeRect){x+left+12,y,right,upper-48};
         l.cards[2]=(UiThemeRect){x,y+upper+12,left,lower};
-        l.cards[3]=(UiThemeRect){x+left+12,y+upper+12,right,lower};
+        l.cards[3]=(UiThemeRect){x+left+12,y+upper-36,right,lower+48};
         return l;
     }
     l.cards[4] = (UiThemeRect){x, limit - actions, (w - gap) / 2, actions};

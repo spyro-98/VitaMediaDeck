@@ -28,7 +28,7 @@ int ui_context_menu_input(UiContextMenu *menu, const UiContextAction *items, int
 	unsigned *pressed, unsigned held, unsigned char ly, unsigned *touches, const UiTouchEvent *touch) {
 	if (*pressed & SCE_CTRL_LTRIGGER) { menu->open=0; return -1; }
 	if (*pressed & SCE_CTRL_RTRIGGER) {
-		menu->open=!menu->open; menu->cursor=0; ui_nav_repeat_reset(&menu->repeat);
+		menu->open=!menu->open; menu->cursor=menu->top=0; ui_nav_repeat_reset(&menu->repeat);
 		*pressed=0; *touches=0; return -1;
 	}
 	if (!menu->open) return -1;
@@ -36,12 +36,21 @@ int ui_context_menu_input(UiContextMenu *menu, const UiContextAction *items, int
 	unsigned nav=ui_nav_repeat_update(&menu->repeat,*pressed,held,128,ly,SCE_CTRL_UP|SCE_CTRL_DOWN);
 	if ((nav&SCE_CTRL_UP) && menu->cursor>0) menu->cursor--;
 	if ((nav&SCE_CTRL_DOWN) && menu->cursor+1<count) menu->cursor++;
+    if(menu->cursor<menu->top)menu->top=menu->cursor;
+    if(menu->cursor>=menu->top+8)menu->top=menu->cursor-7;
+    if((*touches&UI_TOUCH_EVENT_DOWN)&&touch->x>=530)menu->touch_start_cursor=menu->cursor;
+    if(count>0 && (*touches&(UI_TOUCH_EVENT_MOVE|UI_TOUCH_EVENT_UP))&& !(*touches&UI_TOUCH_EVENT_TAP) && touch->down_x>=530) {
+        int next=menu->touch_start_cursor+(touch->down_y-touch->y)/52;
+        menu->cursor=next<0?0:next>=count?count-1:next;
+        if(menu->cursor<menu->top)menu->top=menu->cursor;
+        if(menu->cursor>=menu->top+8)menu->top=menu->cursor-7;
+    }
 	int action=-1;
 	if ((*pressed&SCE_CTRL_CROSS) && count && items[menu->cursor].enabled) action=items[menu->cursor].action;
 	if (*pressed&SCE_CTRL_CIRCLE) menu->open=0;
 	if ((*touches&UI_TOUCH_EVENT_TAP) && menu->animation>.99f) {
 		if (touch->x<530 || ui_touch_hit_rect(touch->x,touch->y,878,12,64,40)) menu->open=0;
-		for (int i=0;i<count;i++) if (ui_touch_hit_rect(touch->x,touch->y,548,94+i*52,394,46)) {
+		for (int i=menu->top;i<count && i<menu->top+8;i++) if (ui_touch_hit_rect(touch->x,touch->y,548,94+(i-menu->top)*52,394,46)) {
 			menu->cursor=i; if(items[i].enabled) action=items[i].action;
 		}
 	}
@@ -57,7 +66,7 @@ void ui_context_menu_tick(UiContextMenu *menu) {
 	menu->animation+=((menu->open?1.0f:0.0f)-menu->animation)*alpha;
 	if (vt_preferences_reduce_motion() || fabsf(menu->animation-(menu->open?1.0f:0.0f))<.025f)
 		menu->animation=menu->open?1.0f:0.0f;
-	if(menu->open) ui_focus_motion_tick(&menu->focus,18,94+menu->cursor*52,394,46);
+	if(menu->open) ui_focus_motion_tick(&menu->focus,18,94+(menu->cursor-menu->top)*52,394,46);
 	else ui_focus_motion_reset(&menu->focus);
 }
 void ui_context_menu_draw(const UiContextMenu *menu, const char *title,
@@ -80,19 +89,19 @@ void ui_context_menu_draw(const UiContextMenu *menu, const char *title,
 	ui_font_draw_text(font,ox+548,38,VT_THEME_TEXT,UI_FONT_SMALL,fitted);
 	ui_action_button(ox+878,12,64,40,VT_THEME_SURFACE,"R1","",0);
 	ui_font_draw_text(font,ox+548,76,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,vt_i18n_str(VT_STR_UI_CONTEXT_HINT));
-	for (int i=0;i<count && i<8;i++) {
-		ui_panel(ox+548,94+i*52,394,46,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+	for (int i=menu->top;i<count && i<menu->top+8;i++) {
+		ui_panel(ox+548,94+(i-menu->top)*52,394,46,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 		ui_font_fit_text(font,UI_FONT_SMALL,items[i].label,fitted,sizeof(fitted),366);
-		ui_font_draw_text(font,ox+562,94+i*52+(items[i].detail&&items[i].detail[0]?19:29),
+		ui_font_draw_text(font,ox+562,94+(i-menu->top)*52+(items[i].detail&&items[i].detail[0]?19:29),
 		    items[i].enabled?VT_THEME_TEXT:VT_THEME_TEXT_FAINT,UI_FONT_SMALL,fitted);
 		if(items[i].detail && items[i].detail[0]) {
 			ui_font_fit_text(font,UI_FONT_SMALL,items[i].detail,fitted,sizeof(fitted),366);
-			ui_font_draw_text(font,ox+562,94+i*52+39,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,fitted);
+			ui_font_draw_text(font,ox+562,94+(i-menu->top)*52+39,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,fitted);
 		}
 	}
 	if(menu->open) {
 		UiFocusMotion focus=menu->focus;
-		if(!focus.initialized) focus=(UiFocusMotion){.x=18,.y=94+menu->cursor*52,.width=394,.height=46,.initialized=1};
+		if(!focus.initialized) focus=(UiFocusMotion){.x=18,.y=94+(menu->cursor-menu->top)*52,.width=394,.height=46,.initialized=1};
 		focus.x+=x; ui_focus_outline_draw(&focus);
 	}
 	vita2d_disable_clipping();

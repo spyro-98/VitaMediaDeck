@@ -132,7 +132,7 @@ static void search_detail(const VtLibrarySearchStatus *s, int count, int filter,
             return;
         }
     snprintf(out, size,
-             tr("%s · %d results · Square: provider", "%s · %d risultati · Quadrato: provider"),
+             tr("%s · %d results · □: provider", "%s · %d risultati · □: provider"),
              group, count);
 }
 /* One compact eight-source rail: existing theme geometry, no textures, timers,
@@ -485,8 +485,8 @@ static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, in
         ui_action_button(r.x + 12, button_y, button_width, button_height, VT_THEME_SURFACE, "X", action, selected);
         if (count > 1) {
             char more[64];
-            snprintf(more, sizeof(more), "%d / %d  ·  R1", offset + 1, count);
-            ui_text_line(r.x + r.w - 130, r.y + r.h - 20, 116, more,
+            snprintf(more, sizeof(more), "□  %d/%d  R1", offset + 1, count);
+            ui_text_line(r.x + r.w - 160, r.y + r.h - 20, 146, more,
                          RGBA8(232, 240, 246, 255), UI_FONT_SMALL);
         }
         if (available && data->resuming && v->duration_ms && v->position_ms) {
@@ -607,7 +607,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
     VtLibrarySearchStatus status = {0};
     unsigned revision = ~0U, search_revision = ~0U;
     uint64_t refreshed = 0;
-    int dirty = 1, focus_sections = 0, result = UI_LIBRARY_BACK;
+    int dirty = 1, focus_sections = 0, in_collection=0, result = UI_LIBRARY_BACK;
     for (;;) {
         uint64_t now = sceKernelGetProcessTimeWide();
         ui_mini_player_pump();
@@ -686,6 +686,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         if (blocked) {
             pressed = nav = flags = 0;
         }
+        if(ui_brand_home_search_hit(flags,touch.x,touch.y)){pressed|=SCE_CTRL_TRIANGLE;flags=0;}
         if (pressed & SCE_CTRL_TRIANGLE) {
             if (dashboard_search()) {
                 result = LIBRARY_OPEN_DETAIL;
@@ -696,8 +697,22 @@ static int dashboard_screen(VtLibraryItem *chosen) {
             ui_touch_reset();
             continue;
         }
-        if (pressed & SCE_CTRL_CIRCLE)
-            focus_sections = 1;
+        if (pressed & SCE_CTRL_CIRCLE) {
+            if(in_collection)in_collection=0;
+            else focus_sections = 1;
+        }
+        if(focus_sections || (dash_selected<4&&!data->count[dash_selected]))in_collection=0;
+        if(!focus_sections && in_collection && nav && dash_selected<4) {
+            int count=data->count[dash_selected];
+            int previous=!!(nav&(SCE_CTRL_LEFT|SCE_CTRL_UP));
+            if(count>1) {
+                dash_offset[dash_selected]=(dash_offset[dash_selected]+count+(previous?-1:1))%count;
+                VtLibraryResult item;dashboard_item(data,dash_selected,dash_offset[dash_selected],&item);
+                snprintf(dash_anchor[dash_selected],16,"%s",item.item.id);
+                dirty=1;
+            }
+            nav=0;
+        }
         if (!focus_sections && nav) {
             int next = ui_dashboard_move(&layout, dash_selected, nav);
             if (next == dash_selected && ui_theme_id() != VT_UI_THEME_GHOST_MESH) {
@@ -743,6 +758,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
                             snprintf(dash_anchor[i], 16, "%s", hit.item.id);
                         }
                     }
+                    if(i!=UI_DASH_CONTINUE && i<4)in_collection=1;
                     pressed |= SCE_CTRL_CROSS;
                     break;
                 }
@@ -757,6 +773,10 @@ static int dashboard_screen(VtLibraryItem *chosen) {
             VtLibraryResult item;
             dashboard_item(data, dash_selected, dash_offset[dash_selected], &item);
             snprintf(dash_anchor[dash_selected], 16, "%s", item.item.id);
+        }
+        if ((pressed & SCE_CTRL_CROSS) && !focus_sections && !in_collection &&
+            dash_selected>UI_DASH_CONTINUE && dash_selected<4 && data->count[dash_selected]) {
+            in_collection=1;pressed&=~SCE_CTRL_CROSS;
         }
         if ((pressed & SCE_CTRL_CROSS) && !focus_sections) {
             VtLibraryResult selected;
@@ -818,6 +838,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
         ui_brand_set_loading(status.pending != 0);
         ui_brand_draw_home_header();
+        ui_brand_draw_home_search();
         ui_home_tabs_draw_with_focus(focus_sections, &tabs);
         ui_theme_scene_begin(UI_SCENE_HOME, "integrated-home");
         ui_text_line(layout.content.x, layout.title_y, layout.content.w,
@@ -837,17 +858,15 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         }
         if (!focus_sections) {
             UiThemeRect r = layout.cards[dash_selected];
+            if(in_collection && dash_selected!=UI_DASH_CONTINUE) {
+                ui_text_line(r.x+r.w-90,r.y+20,80,"×  ○",VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
+                r.y+=26;r.h-=30;
+                if(dash_selected==UI_DASH_FAVOURITES)r.w=(r.w-20)/(data->count[dash_selected]<3?data->count[dash_selected]:3);
+                else if(r.h>44)r.h=44;
+            }
             ui_focus_motion_tick(&focus_motion, r.x, r.y, r.w, r.h);
             ui_focus_outline_draw(&focus_motion);
         }
-        if (ui_theme_id()==VT_UI_THEME_LEGACY_VITA)
-            ui_panel(layout.content.x-2,layout.footer_y-23,layout.content.w+4,30,
-                     VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
-        ui_text_line(layout.content.x, layout.footer_y, layout.content.w,
-                     focus_sections ? ui_theme_home_controls_hint(1)
-                                    : tr("Triangle: search · R1/Square: next/previous",
-                                         "Triangolo: cerca · R1/Quadrato: altri"),
-                     VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
         ui_mini_player_draw();
         ui_sections_sidebar_draw(&sidebar);
         vita2d_end_drawing();
@@ -1193,8 +1212,8 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         snprintf(identity, sizeof(identity), "library:%d:%.128s:%.15s", view, query, folder.id);
         snprintf(detail, sizeof(detail), "%s",
                  query[0] ? query
-                          : tr("R1: Home · Triangle: search",
-                               "R1: Home · Triangolo: cerca"));
+                          : tr("R1: Home · △: search",
+                               "R1: Home · △: cerca"));
         if (view == 3 || in_folder)
             search_detail(&status, n, in_folder ? -1 : filter, detail, sizeof(detail));
         ui_home_tabs_set_expanded(1);
@@ -1276,13 +1295,13 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                     : tr("No items in this view yet", "Ancora nessun contenuto in questa vista"),
                 VT_THEME_TEXT, UI_FONT_BODY);
             ui_text_line(layout.x, viewport + 62, empty_width,
-                         tr("R1: Home · Triangle: search all sources",
-                            "R1: Home · Triangolo: cerca ovunque"),
+                         tr("R1: Home · △: search all sources",
+                            "R1: Home · △: cerca ovunque"),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
         }
         ui_theme_page_finish(UI_SCENE_HOME, layout.x, viewport, legacy ? 924 : 942 - layout.x,
                              bottom - 38);
-        const char *actions = tr("R1: Home · Triangle: search", "R1: Home · Triangolo: cerca");
+        const char *actions = tr("R1: Home · △: search", "R1: Home · △: cerca");
         int footer_x = layout.x,
             footer_w = ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w : 942 - layout.x;
         if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA)
@@ -1295,8 +1314,8 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             ui_text_line(footer_x, bottom - 26, footer_w, actions, VT_THEME_TEXT_MUTED,
                          UI_FONT_SMALL);
             ui_text_line(footer_x, bottom - 8, footer_w,
-                         view==3 ? tr("D-pad: select · X: open · Square: provider",
-                                       "Frecce: seleziona · X: apri · Quadrato: sorgente")
+                         view==3 ? tr("D-pad: select · X: open · □: provider",
+                                       "Frecce: seleziona · X: apri · □: sorgente")
                          : filter >= 0 ? vt_library_provider_name(filter)
                                        : ui_theme_home_controls_hint(focus),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);

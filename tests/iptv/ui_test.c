@@ -178,6 +178,8 @@ void ui_brand_draw_header(const char *title) {
 }
 #ifdef VMD_ONLINE_UI
 void ui_brand_draw_home_header(void){ui_brand_draw_header(NULL);}
+void ui_brand_draw_home_search(void){}
+int ui_brand_home_search_hit(unsigned flags,int x,int y){return (flags&UI_TOUCH_EVENT_TAP)&&x>=78&&x<148&&y>=4&&y<50;}
 #endif
 /* Shared by every page: theme backgrounds also draw lines in Legacy. */
 void vita2d_draw_line(float x,float y,float xx,float yy,unsigned color){

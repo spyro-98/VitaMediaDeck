@@ -1,6 +1,10 @@
 #include "media/vita_decoder.h"
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <stdatomic.h>
+#include <libavutil/log.h>
 #include <string.h>
 
 #include <psp2/io/fcntl.h>
@@ -225,7 +229,17 @@ int vt_decoder_prepare_hardware_runtime(void) {
 	return vita_hw_decoder_prepare_runtime();
 }
 
+/* The pinned backend's diagnostics contain numeric decoder facts, not URLs.
+ * Retain FFmpeg's normal handling for every other component. */
+static void codec_log(void *ctx,int level,const char *format,va_list args) {
+ if(!strncmp(format,"vita_h264 ",10)) {
+  char text[256];vsnprintf(text,sizeof(text),format,args);
+  text[strcspn(text,"\r\n")]=0;log_printf("codec: %s",text);
+ } else av_log_default_callback(ctx,level,format,args);
+}
+static atomic_int codec_log_initialized;
 VtDecoderPlayer *vt_decoder_create(void) {
+    if(!atomic_exchange(&codec_log_initialized,1))av_log_set_callback(codec_log);
 	VtDecoderPlayer *player = calloc(1, sizeof(VtDecoderPlayer));
 	if (!player) return NULL;
 	player->subtitles = vt_subtitle_reader_create();
@@ -420,6 +434,7 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		preference = VT_DECODER_BACKEND_NONE;
 	int result = -1;
 	if (preference != VT_DECODER_BACKEND_SOFTWARE) {
+        if (config->backend_start) config->backend_start(config->backend_start_ctx, VT_DECODER_BACKEND_HARDWARE);
 		VitaHwDecoderPlayerConfig hardware = {
 			.stream = {
 				.opaque = &player->source,
@@ -475,6 +490,7 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	/* The source contract creates fresh independent cursors, so fallback can
 	 * safely reopen after a failed hardware session. A software preference
 	 * arrives here directly without initializing the hardware backend. */
+ if (config->backend_start) config->backend_start(config->backend_start_ctx, VT_DECODER_BACKEND_SOFTWARE);
 	VitaSwDecoderPlayerConfig software = {
 		.stream = {
 			.opaque = &player->source,
@@ -540,6 +556,7 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 	VitaHwDecoderPlayer *hardware_candidate =
 		detach_hardware_candidate(player);
 	if (hardware_candidate) vita_hw_decoder_destroy(hardware_candidate);
+ if (player->config.backend_start) player->config.backend_start(player->config.backend_start_ctx, VT_DECODER_BACKEND_SOFTWARE);
 	VitaSwDecoderPlayerConfig software = {
 		.stream = {
 			.opaque = &player->source,

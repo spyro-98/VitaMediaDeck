@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/brand.h"
 #include "ui/breadcrumbs.h"
 #include "ui/components.h"
@@ -580,6 +583,9 @@ static void draw_header(const char *query, int editing,
 	}
 	draw_gradient_bar();
 	draw_logo();
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_media_text(1);
+#endif
 
 	vita2d_font *font = ui_runtime_font(UI_FONT_BODY);
 	if (font) {
@@ -649,7 +655,7 @@ static void draw_header(const char *query, int editing,
 		} else {
 			fit_search_text(font, source, fitted, sizeof(fitted));
 		}
-		unsigned int color = (query && query[0]) ? COLOR_TEXT : COLOR_MUTED;
+		unsigned int color = (query && query[0]) ? RGBA8(242,248,255,255) : RGBA8(185,207,228,255);
 		ui_font_draw_text(font, SEARCH_BOX_X + 18, SEARCH_BOX_Y + 36,
 		                       color, UI_FONT_BODY, fitted);
 		if (editing && caret_visible) {
@@ -680,6 +686,9 @@ static void draw_header(const char *query, int editing,
 		                 SEARCH_CLEAR_X + 11.0f, SEARCH_CLEAR_Y + 23.0f,
 		                 COLOR_TEXT);
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_media_text(0);
+#endif
 	/* Activity is a property of this rendered frame. This prevents one page's
 	 * asynchronous job from leaving the marker enabled on the next page. */
 	g_brand_loading = 0;
@@ -692,12 +701,23 @@ void ui_brand_draw_header(const char *query) {
 void ui_brand_draw_home_header(void) {
  draw_gradient_bar();
  draw_logo();
- if (!vt_ui_theme_legacy_layout(ui_theme_id()))
-	 ui_breadcrumb_draw(HEADER_NAME_X, 696, NULL, NULL, NULL, 1);
  ui_brand_draw_status_indicators();
  g_brand_loading = 0;
 }
 
+int ui_brand_home_search_hit(unsigned flags,int x,int y) {
+ return (flags&UI_TOUCH_EVENT_TAP)&&x>=78&&x<148&&y>=4&&y<50;
+}
+void ui_brand_draw_home_search(void) {
+ unsigned c=VT_THEME_TEXT;
+ /* Outline magnifier plus the matching controller glyph, no footer needed. */
+ for(int i=0;i<16;i++) {
+  float a=i*6.2831853f/16,b=(i+1)*6.2831853f/16;
+  vita2d_draw_line(94+9*cosf(a),24+9*sinf(a),94+9*cosf(b),24+9*sinf(b),c);
+ }
+ vita2d_draw_line(101,31,109,39,c);
+ ui_text_line(116,35,28,"△",c,UI_FONT_SMALL);
+}
 void ui_brand_draw_breadcrumbs(const char *section, const char *parent, const char *leaf) {
 	draw_gradient_bar();
 	draw_logo();

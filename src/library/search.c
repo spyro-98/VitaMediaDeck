@@ -179,6 +179,7 @@ static int process(Job *j) {
         }
         int n = vt_online_load_saved(saved, VT_ONLINE_MAX);
         for (int i = 0; i < n && current(j->generation); i++) {
+            if(vt_online_item_country(&saved[i]))continue;
             VtLibraryItem v;
             vt_library_online(&saved[i], NULL, &v);
             VtLibraryResult cached;

@@ -56,6 +56,15 @@ static void permutations(int p) {
 }
 int main(void) {
  permutations(0);
+ for(int theme=0;theme<=VT_UI_THEME_LEGACY_VITA;theme+=VT_UI_THEME_LEGACY_VITA) {
+  ui_theme_apply(theme);loaded=1;order_theme=theme;
+  for(int i=0;i<HOME_TAB_COUNT;i++)order[i]=i;
+  sample(0,0);ui_home_tab_set(HOME_LIBRARY);ui_home_controls_reset();
+  UiHomeControlSample entry={.lx=128,.ly=128,.rx=128,.ry=128,.count=6,.bottom=536,.focus_sections=1,.pressed=SCE_CTRL_RIGHT,.held=SCE_CTRL_RIGHT};
+  now+=300000;ui_home_controls_update(&entry);CHECK(active==HOME_VIDEO);
+  now+=16000;sample(0,SCE_CTRL_RIGHT);CHECK(active==HOME_VIDEO);sample(0,0);
+ }
+
  ui_theme_apply(VT_UI_THEME_RELAY);loaded=1;order_theme=VT_UI_THEME_RELAY;ui_home_tab_set(order[0]);ui_home_controls_reset();
  UiHomeControlSample vertical={.lx=128,.ly=128,.rx=128,.ry=128,.count=9,.bottom=536,.focus_sections=1};
  vertical.pressed=vertical.held=SCE_CTRL_DOWN;now+=10000;UiHomeControlResult result=ui_home_controls_update(&vertical);
