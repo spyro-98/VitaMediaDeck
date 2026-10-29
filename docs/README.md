@@ -1,6 +1,8 @@
-# VitaMediaDeck documentation — 1.4.2
+# VitaMediaDeck documentation — 1.4.3
 
-Current channel identity correction: [automatic channel names/icons, single-channel labels, saved metadata and cached artwork](iptv-channel-identity-1.4.2-2026-10-29.md).
+1.4.3: [cache-first startup, independent background work and Wi-Fi status](startup-cache-first-2026-10-29.md).
+
+Previous 1.4.2 channel identity correction: [automatic channel names/icons, single-channel labels, saved metadata and cached artwork](iptv-channel-identity-1.4.2-2026-10-29.md).
 
 Current import/playback correction: [local files, content-aware single channels and nested lists, player R1 saved action and current-console diagnosis](iptv-local-import-playback-1.4.2-2026-10-29.md).
 

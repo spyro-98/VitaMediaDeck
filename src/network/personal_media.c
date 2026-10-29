@@ -178,7 +178,7 @@ static int request(const VtNetworkSource *s, const VtNetworkCredential *c, const
         snprintf(header, sizeof(header), "x-api-key: %s", c->password);
     }
     VitaHttpsClientConfig config = {
-        .user_agent = "VitaMediaDeck/1.4.2",
+        .user_agent = "VitaMediaDeck/1.4.3",
         .connect_timeout_ms = 5000,
         .request_timeout_ms = b->timeout_ms ? b->timeout_ms : 12000,
         .low_speed_bytes_per_second = 256,

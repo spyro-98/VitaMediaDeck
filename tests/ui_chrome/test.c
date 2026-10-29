@@ -79,6 +79,18 @@ int main(int argc,char **argv){
   CHECK(!ui_brand_sections_hit(UI_TOUCH_EVENT_TAP,76,25)); /* Tab rail begins here. */
   CHECK(!ui_brand_sections_hit(UI_TOUCH_EVENT_TAP,700,25));
  }
+ /* Before network init / while offline, preserve four muted bars. Activity
+  * stays to their left, with every clock width and theme already checked. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
+  ui_theme_apply(theme);vita2d_clear_screen();
+  header_status unavailable={0};
+  int x=draw_wifi(&unavailable,CLOCK_RIGHT-CLOCK_MAX_W,1);
+  for(int i=0;i<WIFI_BARS;i++){
+   int bx=x+i*(WIFI_BAR_W+WIFI_BAR_GAP);
+   for(int c=0;c<3;c++)CHECK(pixels[WIFI_BOTTOM_Y-1][bx][c]==((COLOR_DIM>>(8*c))&255));
+  }
+  CHECK(x-STATUS_GAP-8+9<x);
+ }
  ui_theme_apply(VT_UI_THEME_GHOST_MESH);loaded=0;load();unsigned char before[6];memcpy(before,order,6);
  script_count=4;memset(input_script,0,sizeof(input_script));input_script[1]=SCE_CTRL_RIGHT;input_script[3]=SCE_CTRL_CIRCLE;frame=0;
  CHECK(ui_home_tabs_configure()==0&&!memcmp(order,before,6));

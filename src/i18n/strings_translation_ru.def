@@ -690,7 +690,7 @@ VT_TRANSLATION("Verified HTTPS library", "Проверенная библиот�
 VT_TRANSLATION("Verified HTTPS; credentials protected in transit", "Проверенный HTTPS; учетные данные защищены при транспортировке")
 VT_TRANSLATION("Verified HTTPS; memory-only access token", "Проверенный HTTPS; токен доступа только к памяти")
 VT_TRANSLATION("Verify SSH SHA-256 fingerprint", "Проверьте отпечаток SSH SHA-256")
-VT_TRANSLATION("Version 1.4.2", "Версия 1.4.2")
+VT_TRANSLATION("Version 1.4.3", "Версия 1.4.3")
 VT_TRANSLATION("Video", "Видео")
 VT_TRANSLATION("Video decoder", "Видео декодер")
 VT_TRANSLATION("Video quality", "Качество видео")

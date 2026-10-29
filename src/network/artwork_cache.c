@@ -60,18 +60,48 @@ static int valid_file(const char *path){
  unsigned char head[12];FILE *f=fopen(path,"rb");if(!f)return 0;
  size_t n=fread(head,1,sizeof(head),f);fclose(f);return encoding(head,n)>=0;
 }
-static void initialize(void){
- /* Startup/worker only. UI lookups subsequently touch this memory index only. */
+/* One tiny, atomic pointer per URL hash lets a worker restore a cached image
+ * directly, without waiting for the full directory walk after every launch.
+ * Only validated cache basenames are accepted; no URLs or private tokens. */
+static void save_reference(const char *key,const char *path){
+ char temp[192],ref[192];
+ snprintf(temp,sizeof(temp),ROOT "/%s.ref.tmp",key);
+ snprintf(ref,sizeof(ref),ROOT "/%s.ref",key);
+ const char *name=strrchr(path,'/');if(!name||!known_file(++name)||strncmp(name,key,64))return;
+ FILE *f=fopen(temp,"wb");if(!f)return;
+ int ok=fprintf(f,"%s\n",name)>0;if(fflush(f))ok=0;if(fclose(f))ok=0;
+ if(!ok||rename(temp,ref))remove(temp);
+}
+static void restore_reference(const char *key){
+ char ref[192],name[96],path[192];struct stat st;
+ pthread_mutex_lock(&mutex);int found=find(key)!=NULL;pthread_mutex_unlock(&mutex);
+ if(found)return;
+ snprintf(ref,sizeof(ref),ROOT "/%s.ref",key);
+ FILE *f=fopen(ref,"rb");int valid=f&&fgets(name,sizeof(name),f);if(f)fclose(f);
+ if(!valid)return;
+ name[strcspn(name,"\r\n")]=0;
+ if(!known_file(name)||strncmp(name,key,64))return;
+ snprintf(path,sizeof(path),ROOT "/%s",name);
+ if(stat(path,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>ITEM_LIMIT||!valid_file(path))return;
  pthread_mutex_lock(&mutex);
- DIR *dir=opendir(ROOT);if(!dir){pthread_mutex_unlock(&mutex);return;}struct dirent *d;
+ Entry *e=find(key);if(!e)e=slot(key);
+ if(e&&!e->path[0]){snprintf(e->path,sizeof(e->path),"%s",path);e->bytes=st.st_size;e->fetched=e->used=st.st_mtime;}
+ pthread_mutex_unlock(&mutex);
+}
+static void initialize(void){
+ /* Filesystem discovery is background-only. Publish each completed entry in a
+  * short critical section so visible cache hits survive a slow card scan. */
+ DIR *dir=opendir(ROOT);if(!dir)return;struct dirent *d;
  while((d=readdir(dir))){
   if(!known_file(d->d_name))continue;
   char path[192],key[65];snprintf(path,sizeof(path),ROOT "/%.90s",d->d_name);
   struct stat st;if(stat(path,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>ITEM_LIMIT||!valid_file(path))continue;
-  memcpy(key,d->d_name,64);key[64]=0;Entry *e=slot(key);
-  if(e&&(!e->path[0]||st.st_mtime>=e->fetched)){snprintf(e->path,sizeof(e->path),"%s",path);e->bytes=st.st_size;e->fetched=e->used=st.st_mtime;}
+  memcpy(key,d->d_name,64);key[64]=0;
+  pthread_mutex_lock(&mutex);Entry *e=slot(key);
+  if(e&&(!e->path[0]||st.st_mtime>e->fetched)){snprintf(e->path,sizeof(e->path),"%s",path);e->bytes=st.st_size;e->fetched=e->used=st.st_mtime;}
+  pthread_mutex_unlock(&mutex);
  }
- closedir(dir);pthread_mutex_unlock(&mutex);
+ closedir(dir);
 }
 void vt_artwork_cache_init(void){pthread_once(&initialized,initialize);}
 int vt_artwork_cache_peek(const char *url,char *path,size_t capacity){
@@ -108,6 +138,7 @@ static int make_room(size_t incoming,const char *keep){
   if((current||count<CACHE_ITEMS)&&bytes-old+incoming<=CACHE_LIMIT)return 0;
   if(!victim)return -1;
   if(victim->path[0])remove(victim->path);
+  char ref[192];snprintf(ref,sizeof(ref),ROOT "/%s.ref",victim->key);remove(ref);
   memset(victim,0,sizeof(*victim));
  }
 }
@@ -116,7 +147,9 @@ int vt_artwork_cache_get(const char *url,char *path,size_t capacity,volatile int
  path[0]=0;
  if(cancel&&*cancel)return -1;
  char key[65];if(url_key(url,key))return -1;
- vt_artwork_cache_init();pthread_mutex_lock(&mutex);
+ /* A directory scan may still be running, or its worker could not start.
+  * Keyed reads are independent and remain useful in both cases. */
+ restore_reference(key);pthread_mutex_lock(&mutex);
  Entry *e=find(key);time_t now=time(NULL);int hit=e&&e->path[0];
  if(hit&&!valid_file(e->path)){remove(e->path);e->path[0]=0;e->bytes=0;e->retry=0;hit=0;}
  if(hit)snprintf(path,capacity,"%s",e->path);
@@ -141,7 +174,7 @@ int vt_artwork_cache_get(const char *url,char *path,size_t capacity,volatile int
   if(f){ok=fwrite(data,1,size,f)==size;if(fflush(f))ok=0;if(fclose(f))ok=0;}
   if(cancel&&*cancel)ok=0;
   if(ok&&!rename(temp,next)){
-   e=slot(key);if(e){snprintf(e->path,sizeof(e->path),"%s",next);e->bytes=size;e->fetched=e->used=now;e->retry=0;snprintf(path,capacity,"%s",next);result=0;}
+   e=slot(key);if(e){snprintf(e->path,sizeof(e->path),"%s",next);e->bytes=size;e->fetched=e->used=now;e->retry=0;snprintf(path,capacity,"%s",next);save_reference(key,next);result=0;}
    if(old[0]&&strcmp(old,next))remove(old);
   }else remove(temp);
  }

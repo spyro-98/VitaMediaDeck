@@ -1,6 +1,13 @@
-# Validation guide — VitaMediaDeck 1.4.2
+# Validation guide — VitaMediaDeck 1.4.3
 
-Latest 29 October follow-up: [channel names/icons, single-channel classification,
+1.4.3 packages the [cache-first startup correction](startup-cache-first-2026-10-29.md).
+The user confirmed substantially improved startup on the preceding test VPK
+(SHA-256 `e3c5ac7df5e66808ec77ad85edb192ba1ca67d53002ec2b9171c667e3b3339cd`).
+This is qualitative device feedback, not a measured startup-time benchmark.
+The 1.4.3 package updates version metadata; its build and package checks are
+recorded separately in the local release bundle.
+
+Previous 1.4.2 channel identity follow-up: [channel names/icons, single-channel classification,
 legacy saved-entry repair and cached artwork](iptv-channel-identity-1.4.2-2026-10-29.md).
 The native build, PAF/LTO/license audits and relevant ASan/UBSan/TSan suites pass;
 USB read-back verifies the delivered VPK. Installation and physical playback of

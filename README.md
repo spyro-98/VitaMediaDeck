@@ -1,4 +1,4 @@
-# VitaMediaDeck 1.4.2
+# VitaMediaDeck 1.4.3
 
 <p align="center">
   <a href="assets/branding/vitamediadeck-icon.png"><img src="sce_sys/icon0.png" width="128" height="128" alt="VitaMediaDeck app icon"></a>
@@ -14,9 +14,9 @@
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 VitaMediaDeck is a **public-beta media app for PS Vita**, combining local files,
-personal media servers, internet radio, podcasts and IPTV. Version **1.4.2**
-focuses on clearer navigation, flexible IPTV imports, persistent playback choices
-and faster access to cached media.
+personal media servers, internet radio, podcasts and IPTV. Version **1.4.3**
+opens Home from saved local data while network setup and artwork discovery
+continue independently in the background.
 
 <p align="center">
   <a href="screenshots/1.4.1/vmd-home.png"><img src="screenshots/1.4.1/vmd-home.png" width="960" alt="VitaMediaDeck 1.4.1 Home: continue playback, saved connections, favourites and recently played media"></a>
@@ -41,7 +41,17 @@ and faster access to cached media.
   favourites and recently played items, plus background search across indexed
   titles, filenames, artists, albums and available provider metadata.
 
-## What's new in 1.4.2
+## What's new in 1.4.3
+
+- **Faster startup:** Home no longer waits for artwork discovery or network setup
+  before showing saved local data. Background results update the existing UI.
+- **Quicker cached artwork:** direct cache references restore images without
+  waiting for a full directory scan or downloading them again.
+- **Clearer connection status:** Wi-Fi bars stay visible in grey before setup or
+  while offline, separate from the activity indicator.
+
+<details>
+<summary><strong>Previous update — 1.4.2</strong></summary>
 
 - **Refined Vita interface:** blue VMD gradients and native PAF focus, clearer text,
   coloured button icons and organized L1/R1 menus. Continuous pixel scrolling,
@@ -63,6 +73,8 @@ and faster access to cached media.
 - **More options and better recovery:** restored interface languages, radio
   1×3 / 2×3 layouts, 20 MiB channel lists, more robust HLS handling, clearer
   playback errors and retained session logs.
+
+</details>
 
 [Detailed changes and validation](docs/README.md).
 

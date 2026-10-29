@@ -310,11 +310,12 @@ static int draw_wifi(const header_status *st, int clock_left, float opacity) {
 	/* Never let a wide clock push the bars into the search field. */
 	const int min_x = CLOCK_RIGHT - CLOCK_MAX_W - STATUS_GAP - WIFI_W;
 	if (x < min_x) x = min_x;
-	if (!st->wifi_valid) return x;  /* reserve its stable group position */
+	/* Keep an honest, dim signal outline before NetCtl is ready or while
+	 * disconnected. The independent activity icon never occupies this slot. */
 
 	unsigned int on_color =
 	    vt_ui_theme_legacy_layout(ui_theme_id()) ? COLOR_BLUE : VT_THEME_SIGNAL_BRIGHT;
-	if (!st->wifi_strength_known) {
+	if (!st->wifi_valid || !st->wifi_strength_known) {
 		/* Connecting, or connected with unknown signal strength. */
 		on_color = COLOR_MUTED;
 	}
@@ -325,7 +326,7 @@ static int draw_wifi(const header_status *st, int clock_left, float opacity) {
 		float h = (float)(WIFI_BAR_BASE_H + i * WIFI_BAR_STEP);
 		float bx = (float)(x + i * (WIFI_BAR_W + WIFI_BAR_GAP));
 		vita2d_draw_rectangle(bx, (float)WIFI_BOTTOM_Y - h, WIFI_BAR_W, h,
-		                      i < st->wifi_bars ? on_color : dim_color);
+		                      st->wifi_valid && i < st->wifi_bars ? on_color : dim_color);
 	}
 	return x;
 }

@@ -47,12 +47,13 @@ reavplayer-source.commit=abff24a21ffec3e57fc1cd3b1d17dc26666251b0
 vita-media-player-module.commit=0b5e7c933196227f955588c806c51b0b66c10654
 reavplayer-module.sha256=8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850
 
-# Component revisions used by VitaMediaDeck 1.4.2.
+# Component revisions used by VitaMediaDeck 1.4.3.
 # Includes presentation telemetry, bounded 1080p surfaces and 4096-byte HTTPS
-# effective URLs. Rebuild consumers against the matching component headers.
+# effective URLs plus safe HTTPS startup publication. Rebuild consumers against
+# the matching component headers.
 vita-hw-decoder.commit=4b1a7709fcd1b4a6ccdedd82fee95d6fbf837880
 vita-sw-decoder.commit=d2f4b757c706d8a170e52afc4faa2811f4fe8bcb
-vita-https.commit=b83016982b1fcf3ffd24c285f45f21f9bec29413
+vita-https.commit=792fcc733bd45bca790ea9ffbb45c70a40c0eef2
 
 # Native Legacy Vita theme: firmware imports only, no Sony binary is packaged.
 paf-abi-reference.url=https://github.com/GrapheneCt/ScePaf-RE

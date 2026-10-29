@@ -13,6 +13,7 @@
 #include <psp2/kernel/processmgr.h>
 
 #include "app_paths.h"
+#include "startup.h"
 #include "common/text_log.h"
 #include "history/playback_history.h"
 #include "i18n/i18n.h"
@@ -46,7 +47,6 @@
 
 #include <vita_https.h>
 
-static int g_network_ready;
 static uint64_t g_startup_started_us;
 
 typedef struct {
@@ -775,7 +775,7 @@ static int browse_local(void) {
 				continue;
 			}
 			if (action == UI_LIBRARY_CONNECT) {
-				if (!g_network_ready) {
+				if (!vt_startup_network_ready()) {
 					ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
 					                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 					continue;
@@ -807,7 +807,7 @@ static int browse_local(void) {
 				continue;
 			if (vt_background_playback_library_matches(chosen.id))
 				return UI_SECTION_PLAYER;
-			if (chosen.provider != VT_LIBRARY_LOCAL && !g_network_ready) {
+			if (chosen.provider != VT_LIBRARY_LOCAL && !vt_startup_network_ready()) {
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
 				                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 				continue;
@@ -956,7 +956,7 @@ static int browse_local(void) {
 }
 
 static int browse_network(int provider_section) {
-	if (!g_network_ready) {
+	if (!vt_startup_network_ready()) {
 		ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
 		                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 		return UI_SECTION_NETWORK;
@@ -974,46 +974,10 @@ static int browse_network(int provider_section) {
 	}
 }
 
-static int startup_services(void *unused) {
-    (void)unused;
-	uint64_t stage_started_us = sceKernelGetProcessTimeWide();
-	log_printf("startup: playback/history begin");
-	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-	vt_playback_history_init();
-	/* Initialize the sampled state before either checkpoint worker can read it. */
-	vt_background_playback_init();
-	vt_artwork_cache_init();
-	int library_ret = vt_library_init(vt_background_playback_library_sample);
-	if (library_ret < 0)
-		log_printf("library checkpoint worker unavailable: %d", library_ret);
-	log_printf(
-	    "startup stage: playback/history=%llu ms total=%llu ms",
-	    (unsigned long long)((sceKernelGetProcessTimeWide() - stage_started_us) / 1000ULL),
-	    (unsigned long long)((sceKernelGetProcessTimeWide() - g_startup_started_us) / 1000ULL));
-	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-	stage_started_us = sceKernelGetProcessTimeWide();
-	log_printf("startup: network begin");
-	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-	g_network_ready = vita_https_init() >= 0;
-	if (g_network_ready)
-		g_network_ready = vt_network_init() >= 0;
-	log_printf(
-	    "startup stage: network=%llu ms ready=%d total=%llu ms",
-	    (unsigned long long)((sceKernelGetProcessTimeWide() - stage_started_us) / 1000ULL),
-	    g_network_ready,
-	    (unsigned long long)((sceKernelGetProcessTimeWide() - g_startup_started_us) / 1000ULL));
-	log_printf("startup: search workers begin");
-	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-	int search_ret = vt_library_search_init();
-	log_printf("startup: search workers complete result=%d; opening Home", search_ret);
-	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-    return 0;
-}
-
 static int run_application(void) {
-    /* File parsing, library replay and network initialization never own the
-     * render thread. The existing loader draws/presents every worker frame. */
-    if(ui_loading_run(NULL,startup_services,NULL,NULL,NULL,NULL)<0)return -1;
+    /* Restore only the local registry before Home. Network initialization and
+     * artwork discovery never hold this loader open. */
+    if(ui_loading_run(NULL,vt_startup_load_local,NULL,NULL,NULL,NULL)<0)return -1;
 	int section = UI_SECTION_LOCAL_MEDIA;
 	if (!vt_preferences_startup_controls_seen()) {
 		int controls_section = ui_settings_show_controls_reference();
@@ -1044,7 +1008,7 @@ static int run_application(void) {
 		if (section == UI_SECTION_LOCAL_MEDIA)
 			section = browse_local();
 		else if (section == UI_SECTION_NETWORK || section == UI_SECTION_JELLYFIN) {
-			if (!g_network_ready) {
+			if (!vt_startup_network_ready()) {
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
 				                vt_i18n_str(VT_STR_MAIN_LOCAL_AVAILABLE), 2600);
 				section = UI_SECTION_LOCAL_MEDIA;
@@ -1062,7 +1026,7 @@ static int run_application(void) {
 		} else if (section == UI_SECTION_ONLINE_AUDIO) {
 			section = ui_online_audio_screen();
 		} else if (section == UI_SECTION_IPTV) {
-			if (g_network_ready)
+			if (vt_startup_network_ready())
 				section = ui_iptv_screen();
 			else {
 				ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
@@ -1103,7 +1067,7 @@ int main(int argc, char *argv[]) {
 	log_printf("startup stage: preferences/i18n=%llu ms",
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                stage_started_us) / 1000ULL));
-	log_printf("startup: diagnostics schema=2 theme=%d; graphics begin",
+	log_printf("startup: diagnostics schema=3 theme=%d; graphics begin",
 	           vt_preferences_interface_theme());
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	stage_started_us = sceKernelGetProcessTimeWide();
@@ -1116,6 +1080,7 @@ int main(int argc, char *argv[]) {
 	                                stage_started_us) / 1000ULL));
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	uint64_t assets_started_us = sceKernelGetProcessTimeWide();
+	vt_startup_background_begin(g_startup_started_us);
 	ui_runtime_load_boot_assets();
 	ui_loading_present(NULL);
 	log_printf("startup assets: boot-visible=%llu ms total=%llu ms",
@@ -1143,6 +1108,7 @@ int main(int argc, char *argv[]) {
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                g_startup_started_us) / 1000ULL));
 	run_application();
+	vt_startup_background_join();
 	vt_iptv_program_shutdown();
 	vt_library_search_shutdown();
 	ui_iptv_shutdown();

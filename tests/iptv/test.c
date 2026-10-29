@@ -205,7 +205,7 @@ void vita_https_client_destroy(VitaHttpsClient *c) { CHECK(c==(void*)1); }
 int vita_https_perform(VitaHttpsClient *c,const VitaHttpsRequest *request,VitaHttpsResponse *response) {
     (void)c; memset(response,0,sizeof(*response));response->status_code=http_mode==3?403:200;
     CHECK(!strncmp(request->url,"https://",8));
-    if(http_agent[0] && strcmp(http_agent,"VitaMediaDeck/1.4.2")) {
+    if(http_agent[0] && strcmp(http_agent,"VitaMediaDeck/1.4.3")) {
         int found=0;
         for(const char *const *h=request->headers;h && *h;h++)
             if(!strncmp(*h,"User-Agent: ",12)){CHECK(!strcmp(*h+12,http_agent));found++;}
@@ -240,7 +240,7 @@ static void http_tests(void) {
     unsigned char *data;size_t size;char effective[2048];volatile int cancel=0;
     CHECK(!vt_iptv_http_fetch(NULL,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));
     CHECK(size==strlen(media)&&strstr(effective,"/final/"));free(data);
-    CHECK(!strcmp(http_agent,"VitaMediaDeck/1.4.2"));
+    CHECK(!strcmp(http_agent,"VitaMediaDeck/1.4.3"));
     VtIptvHttpOptions options={.user_agent="HbbTV/1.6.1"};
     CHECK(!vt_iptv_http_fetch(&options,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));free(data);
     CHECK(!strcmp(http_agent,"HbbTV/1.6.1"));
