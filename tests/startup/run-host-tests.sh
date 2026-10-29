@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 vmd_out="$(mktemp -d "${TMPDIR:-/tmp}/vmd-startup.XXXXXX")"
+read -r -a vmd_crypto_flags <<<"$(pkg-config --cflags openssl)"
+read -r -a vmd_crypto_libs <<<"$(pkg-config --libs openssl)"
 clang -O1 -g -Wall -Wextra -Werror -Wno-unused-function -fsanitize=address,undefined \
  -Isrc -Itests/home_tabs/include tests/startup/runtime_test.c -o "$vmd_out/runtime"
 "$vmd_out/runtime"
@@ -16,3 +18,13 @@ clang -O1 -g -Wall -Wextra -Werror -Wno-unused-function -Wno-misleading-indentat
  -Itests/podcast_resume/include -Itests/podcast_metadata/include \
  tests/startup/library_replay_test.c -lpthread -o "$vmd_out/library-replay"
 "$vmd_out/library-replay"
+for sanitizer in address,undefined thread; do
+ clang -O1 -g -Wall -Wextra -Werror -fsanitize="$sanitizer" \
+  -Isrc -I../vita-https/include -Itests/podcast_resume/include -Itests/podcast_metadata/include \
+  tests/startup/services_test.c src/startup.c -lpthread -o "$vmd_out/services"
+ "$vmd_out/services"
+ "$vmd_out/services" --offline
+ clang -O1 -g -Wall -Wextra -Werror -Wno-deprecated-declarations -fsanitize="$sanitizer" \
+  -Isrc "${vmd_crypto_flags[@]}" tests/startup/artwork_discovery_test.c "${vmd_crypto_libs[@]}" -lpthread -o "$vmd_out/discovery"
+ "$vmd_out/discovery"
+done

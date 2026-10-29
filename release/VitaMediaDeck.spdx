@@ -1,17 +1,17 @@
 SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
-DocumentName: VitaMediaDeck-1.4.2-standard
-DocumentNamespace: urn:uuid:5100d2c5-42fb-43ff-b84e-04ba22973c07
+DocumentName: VitaMediaDeck-1.4.3-standard
+DocumentNamespace: urn:uuid:c5d7e5e8-fc7b-4520-b476-bd284de13d3e
 Creator: Tool: VitaMediaDeck release hardening manifest
-Created: 2026-10-23T17:10:20Z
+Created: 2026-10-29T22:51:52Z
 DocumentComment: Versions and immutable checksums are recorded in release/DEPENDENCIES.lock. The selected publication location is intentionally unspecified.
 
 ##### Package: VitaMediaDeck
 
 PackageName: VitaMediaDeck
 SPDXID: SPDXRef-Package-VitaMediaDeck
-PackageVersion: 1.4.2
+PackageVersion: 1.4.3
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -60,7 +60,7 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwDec
 
 PackageName: vita-https
 SPDXID: SPDXRef-Package-VitaHttps
-PackageVersion: b83016982b1fcf3ffd24c285f45f21f9bec29413
+PackageVersion: 792fcc733bd45bca790ea9ffbb45c70a40c0eef2
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only

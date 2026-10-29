@@ -3,8 +3,8 @@
 #include <stddef.h>
 /* Shared persistent raster cache for shows, episodes, stations and IPTV logos.
  * Worker-only. URL digest names never persist query tokens. */
-/* Init scans existing files on the startup/background worker. Peek/due are
- * nonblocking memory-only calls; get refreshes stale images on a worker. */
+/* Init discovers existing files on an independent background worker. Get uses
+ * a keyed disk reference without awaiting that scan; peek/due remain memory-only. */
 void vt_artwork_cache_init(void);
 int vt_artwork_cache_peek(const char *url,char *path,size_t capacity);
 /* Resolve persisted paths to the latest downloaded revision, without I/O. */

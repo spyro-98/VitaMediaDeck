@@ -19,7 +19,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(vitamediadeck VERSION 1.4.2 LANGUAGES C)
+project(vitamediadeck VERSION 1.4.3 LANGUAGES C)
 
 ## Complete public hardware-decoder backend from wiliwili's FFmpeg-vita
 ## patch.  This is deliberately a whole FFmpeg codec implementation, not the
@@ -228,9 +228,9 @@ set(VITA_APP_NAME "VitaMediaDeck")
 # TITLEID must contain exactly nine characters.
 set(VITA_TITLEID  "VMDK00001")
 
-# Vita package metadata uses the mandatory ##.## form. APP_VER 01.06 is the
-# monotonically increasing package code for the human-facing 1.4.2 release.
-set(VITA_VERSION  "01.06")
+# Vita package metadata uses the mandatory ##.## form. APP_VER 01.07 is the
+# monotonically increasing package code for the human-facing 1.4.3 release.
+set(VITA_VERSION  "01.07")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -286,6 +286,7 @@ target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps vita
 add_executable(${PROJECT_NAME}
   src/ui/iptv_screen.c
   src/main.c
+  src/startup.c
   src/common/debugScreen.c
   src/common/text_log.c
   src/i18n/i18n.c
