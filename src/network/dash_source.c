@@ -30,7 +30,7 @@ typedef struct {
 } DashTrack;
 struct DashSource {
     VtIptvSourceConfig config;
-    char url[VT_IPTV_URL_MAX];
+    char url[VT_IPTV_RESOURCE_URL_MAX];
     VtDashManifest *manifest;
     DashTrack tracks[2];
     volatile int *cancel;
@@ -50,15 +50,15 @@ static int download(DashSource *s,const char *url,size_t limit,unsigned char **d
         *data=NULL;*size=0;effective[0]=0;
         if(interrupted(s))return VT_IPTV_CANCELLED;
         int64_t started=av_gettime_relative();
-        int r=s->config.fetch(s->config.fetch_ctx,url,limit,data,size,effective,VT_IPTV_URL_MAX,s->cancel);
+        int r=s->config.fetch(s->config.fetch_ctx,url,limit,data,size,effective,VT_IPTV_RESOURCE_URL_MAX,s->cancel);
         int64_t elapsed=av_gettime_relative()-started;
         if(elapsed>=500000)log_printf("DASH slow fetch: bytes=%u elapsed=%lld ms result=%d attempt=%d\n",
             (unsigned)*size,(long long)(elapsed/1000),r,attempt+1);
         if(interrupted(s)){free(*data);*data=NULL;return VT_IPTV_CANCELLED;}
         if(!r) {
-            char verified[VT_IPTV_URL_MAX];
+            char verified[VT_IPTV_RESOURCE_URL_MAX];
             if(!*data||!*size||*size>limit)r=VT_IPTV_LIMIT;
-            else r=vt_iptv_resolve_url(url,effective,verified,sizeof(verified));
+            else r=vt_iptv_resource_resolve(url,effective,verified,sizeof(verified));
         }
         if(!r)return 0;
         free(*data);*data=NULL;
@@ -67,7 +67,7 @@ static int download(DashSource *s,const char *url,size_t limit,unsigned char **d
     return VT_IPTV_IO;
 }
 static int manifest_load(DashSource *s,uint64_t now) {
-    unsigned char *body=NULL;size_t size=0;char effective[VT_IPTV_URL_MAX];
+    unsigned char *body=NULL;size_t size=0;char effective[VT_IPTV_RESOURCE_URL_MAX];
     int r=download(s,s->url,VT_IPTV_PLAYLIST_LIMIT,&body,&size,effective);
     if(r)return r;
     VtDashManifest *fresh=NULL;int64_t utc=av_gettime()+s->clock_offset_us;
@@ -75,7 +75,7 @@ static int manifest_load(DashSource *s,uint64_t now) {
     if(!r&&fresh->dynamic&&!s->clock_set&&fresh->utc_value[0]) {
         char clock_text[256];clock_text[0]=0;
         if(fresh->utc_http) {
-            unsigned char *clock_body=NULL;size_t clock_size=0;char target[VT_IPTV_URL_MAX];
+            unsigned char *clock_body=NULL;size_t clock_size=0;char target[VT_IPTV_RESOURCE_URL_MAX];
             int cr=download(s,fresh->utc_value,255,&clock_body,&clock_size,target);
             if(!cr&&!memchr(clock_body,0,clock_size)){memcpy(clock_text,clock_body,clock_size);clock_text[clock_size]=0;}
             free(clock_body);
@@ -95,6 +95,10 @@ static int manifest_load(DashSource *s,uint64_t now) {
     int initial=!s->manifest;
     vt_dash_manifest_free(s->manifest);s->manifest=fresh;
     s->reload_at=fresh->dynamic?now+fresh->update_ms:UINT64_MAX;
+    if(initial&&s->config.stream_options){
+        VtIptvOptions *o=s->config.stream_options;o->active=fresh->active;
+        o->active_width=fresh->tracks[0].width;o->active_height=fresh->tracks[0].height;o->active_bandwidth=fresh->tracks[0].bandwidth;
+    }
     if(initial)log_printf("DASH manifest: live=%d video=%ux%u bitrate=%u audio=%u duration=%llu ms\n",
         fresh->dynamic,fresh->tracks[0].width,fresh->tracks[0].height,fresh->tracks[0].bandwidth,
         fresh->tracks[1].bandwidth,(unsigned long long)(fresh->duration_us/1000));
@@ -154,10 +158,10 @@ static int fragment_open(DashSource *s,int index) {
     if(r)return r;
     if(t->started&&segment.time!=t->next_tick)return VT_IPTV_DISCONTINUITY;
     if(!t->initialization) {
-        char effective[VT_IPTV_URL_MAX];
+        char effective[VT_IPTV_RESOURCE_URL_MAX];
         r=download(s,track->initialization,INIT_LIMIT,&t->initialization,&t->init_size,effective);if(r)return r;
     }
-    fragment_close(t);char effective[VT_IPTV_URL_MAX];
+    fragment_close(t);char effective[VT_IPTV_RESOURCE_URL_MAX];
     r=download(s,segment.url,s->config.segment_limit,&t->media,&t->media_size,effective);if(r)return r;
     t->offset=0;t->packets=0;
     unsigned char *buffer=av_malloc(IO_BUFFER);if(!buffer)return VT_IPTV_MEMORY;
@@ -178,7 +182,7 @@ static int fragment_open(DashSource *s,int index) {
         if(codec->ch_layout.nb_channels<1||codec->ch_layout.nb_channels>2||codec->sample_rate<=0||codec->sample_rate>48000||
            (object_type!=2&&object_type!=5&&object_type!=29))return VT_IPTV_AUDIO_FORMAT;
         s->audio_sample_rate=codec->sample_rate;s->audio_channels=codec->ch_layout.nb_channels;
-    } else if(codec->width<=0||codec->height<=0||codec->width>(int)s->config.width_limit||codec->height>(int)s->config.height_limit)return VT_IPTV_VIDEO_SIZE;
+    } else if(codec->width<=0||codec->height<=0||(s->config.width_limit&&codec->width>(int)s->config.width_limit)||(s->config.height_limit&&codec->height>(int)s->config.height_limit))return VT_IPTV_VIDEO_SIZE;
     t->segment=segment;t->next_tick=segment.time+segment.duration;t->started=1;s->segments++;
     return 0;
 }

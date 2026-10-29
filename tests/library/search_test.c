@@ -76,6 +76,9 @@ int sceKernelChangeThreadPriority(SceUID id, int priority) {
     return 0;
 }
 static int remember = 1, favourites_fixture;
+static unsigned fixture_online_revision,fixture_tv_revision;
+unsigned vt_online_saved_revision(void){return __atomic_load_n(&fixture_online_revision,__ATOMIC_ACQUIRE);}
+unsigned vt_iptv_saved_revision(void){return __atomic_load_n(&fixture_tv_revision,__ATOMIC_ACQUIRE);}
 int vita_https_is_connected(void) {
     return 1;
 }
@@ -164,7 +167,7 @@ int ui_local_media_search(const char *q, UiLocalMediaVisitor visit, void *ctx,
     return 0;
 }
 int vt_online_load_saved(VtOnlineItem *v, int cap) {
-    if (!favourites_fixture)
+    if (!__atomic_load_n(&favourites_fixture,__ATOMIC_ACQUIRE))
         return 0;
     CHECK(cap >= 3);
     memset(v, 0, 3 * sizeof(*v));
@@ -179,7 +182,7 @@ int vt_online_load_saved(VtOnlineItem *v, int cap) {
 int vt_iptv_saved_load(VtIptvCatalog *v, int stars) {
     (void)stars;
     memset(v, 0, sizeof(*v));
-    if (favourites_fixture) {
+    if (__atomic_load_n(&favourites_fixture,__ATOMIC_ACQUIRE)) {
         v->count = 2;
         for (int i = 0; i < 2; i++) {
             v->items[i].starred = i == 0;
@@ -411,6 +414,36 @@ int main(void) {
     vt_library_search_begin("", NULL);
     wait_results(out, &state, 1);
     CHECK(!vt_library_search_home_favourites(home, VT_LIBRARY_HOME_FAVOURITES, &state));
+    /* Mutating saved data refreshes the same Home session: no begin, exit or
+     * network query is needed. Revision polling is metadata-only on the UI. */
+    unsigned active_generation=state.generation;
+    __atomic_store_n(&favourites_fixture,1,__ATOMIC_RELEASE);
+    __atomic_add_fetch(&fixture_online_revision,1,__ATOMIC_RELEASE);
+    unsigned before_publication=vt_library_search_revision();
+    for(int tick=0;tick<2000;tick++){
+        vt_library_search_revision();
+        if(vt_library_search_home_favourites(home,VT_LIBRARY_HOME_FAVOURITES,&state)==4&&!state.pending)break;
+        usleep(1000);
+    }
+    CHECK(state.generation==active_generation&&vt_library_search_home_favourites(home,VT_LIBRARY_HOME_FAVOURITES,&state)==4);
+    CHECK(vt_library_search_revision()!=before_publication);
+    /* Existing IPTV favourites move to the front when that provider changes. */
+    __atomic_add_fetch(&fixture_tv_revision,1,__ATOMIC_RELEASE);
+    for(int tick=0;tick<2000;tick++){
+        vt_library_search_revision();vt_library_search_home_favourites(home,VT_LIBRARY_HOME_FAVOURITES,&state);
+        if(!state.pending&&home[0].provider==VT_LIBRARY_IPTV)break;
+        usleep(1000);
+    }
+    CHECK(home[0].provider==VT_LIBRARY_IPTV&&state.generation==active_generation);
+    __atomic_store_n(&favourites_fixture,0,__ATOMIC_RELEASE);
+    __atomic_add_fetch(&fixture_online_revision,1,__ATOMIC_RELEASE);
+    __atomic_add_fetch(&fixture_tv_revision,1,__ATOMIC_RELEASE);
+    for(int tick=0;tick<2000;tick++){
+        vt_library_search_revision();
+        if(!vt_library_search_home_favourites(home,VT_LIBRARY_HOME_FAVOURITES,&state)&&!state.pending)break;
+        usleep(1000);
+    }
+    CHECK(!vt_library_search_home_favourites(home,VT_LIBRARY_HOME_FAVOURITES,&state)&&state.generation==active_generation);
     free(home);
     vt_library_search_cancel();
     vt_library_search_shutdown();
@@ -464,3 +497,5 @@ int vt_online_fetch_cover(VtOnlineItem *v, volatile int *c) {
     strcpy(v->artwork_path, "fixture-cover-cache");
     return 0;
 }
+
+int vt_iptv_catalog_redirect(const void *d,size_t n,const char *b,char *o,size_t c){(void)d;(void)n;(void)b;(void)o;(void)c;return 1;}

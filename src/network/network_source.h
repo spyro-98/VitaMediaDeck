@@ -150,6 +150,7 @@ enum {
 int vt_network_init(void);
 void vt_network_shutdown(void);
 
+unsigned vt_network_sources_revision(void);
 int vt_network_sources_load(VtNetworkSource *sources, int capacity);
 int vt_network_sources_save(const VtNetworkSource *sources, int count);
 

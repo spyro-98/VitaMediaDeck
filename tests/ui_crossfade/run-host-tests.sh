@@ -4,7 +4,7 @@ vmd_repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$vmd_repo"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-crossfade-check.XXXXXX")"
 vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -Isrc -I../vita-https/include)
-clang "${vmd_flags[@]}" tests/ui_crossfade/page_motion_test.c -o "$vmd_output/page-motion-test"
+clang "${vmd_flags[@]}" -Itests/iptv/include tests/ui_crossfade/page_motion_test.c -o "$vmd_output/page-motion-test"
 "$vmd_output/page-motion-test"
 clang "${vmd_flags[@]}" -Itests/ui_crossfade/include -Itests/online_audio/include \
     tests/ui_crossfade/focus_test.c src/ui/focus_glow.c src/ui/theme.c -o "$vmd_output/focus-test"

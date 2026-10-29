@@ -1,3 +1,5 @@
+#include "ui/artwork_path.h"
+#include "network/artwork_cache.h"
 #include "library/catalog.h"
 #include "ui/theme_scene.h"
 #include "ui/online_audio_screen.h"
@@ -44,16 +46,18 @@ static char g_country_name[160] = "";
 static int g_home, g_mode_changed=1, g_menu;
 void ui_online_audio_set_home(int favorites_only) {g_home=!!favorites_only;g_mode_changed=1;}
 #define THEMED (!vt_ui_theme_legacy_layout(ui_theme_id()))
-#define HOME_LAYOUT (ui_theme_home_layout(ui_theme_id(),ui_mini_player_top()<UI_CONTENT_BOTTOM?ui_mini_player_top():UI_CONTENT_BOTTOM))
+#define HOME_BOTTOM (ui_mini_player_top()<UI_CONTENT_BOTTOM?ui_mini_player_top():UI_CONTENT_BOTTOM)
+#define HOME_LAYOUT (ui_theme_home_layout(ui_theme_id(),HOME_BOTTOM))
 #define PODCAST_HOME (!THEMED && g_home && g_tab==VT_ONLINE_FEED && !g_episodes)
 #define THEMED_OFFLINE (THEMED && g_home && g_tab==VT_ONLINE_FEED && !g_episodes && !g_menu && !g_catalog)
 #define LIST_Y (THEMED ? HOME_LAYOUT.y : g_home ? (PODCAST_HOME ? 88 : UI_HOME_CONTENT_Y) : 110)
 #define CATALOG_BOTTOM (ui_mini_player_top() - (g_home ? 24 : 0))
 #define CATALOG_COVERS (!THEMED && !g_menu && !PODCAST_HOME && (g_query.kind==VT_ONLINE_RADIO || g_query.kind==VT_ONLINE_FEED || g_query.kind==VT_ONLINE_SHOW))
-#define CATALOG_ROWS (THEMED ? HOME_LAYOUT.rows/HOME_LAYOUT.columns : CATALOG_COVERS ? g_cover_rows : vt_catalog_rows(LIST_Y,CATALOG_BOTTOM))
-#define CATALOG_COLUMNS (THEMED ? HOME_LAYOUT.columns : PODCAST_HOME ? 1 : CATALOG_COVERS ? 3 : vt_catalog_columns(g_query.kind))
-#define CATALOG_STEP (THEMED ? HOME_LAYOUT.step : (CATALOG_BOTTOM-28-LIST_Y+UI_CONTENT_GAP)/CATALOG_ROWS)
-#define CATALOG_HEIGHT (THEMED ? HOME_LAYOUT.step-6 : CATALOG_STEP - UI_CONTENT_GAP)
+#define RADIO_GRID (!g_menu&&g_query.kind==VT_ONLINE_RADIO)
+#define CATALOG_ROWS (RADIO_GRID ? g_cover_rows : THEMED ? HOME_LAYOUT.rows/HOME_LAYOUT.columns : CATALOG_COVERS ? g_cover_rows : vt_catalog_rows(LIST_Y,CATALOG_BOTTOM))
+#define CATALOG_COLUMNS (RADIO_GRID ? 3 : THEMED ? HOME_LAYOUT.columns : PODCAST_HOME ? 1 : CATALOG_COVERS ? 3 : vt_catalog_columns(g_query.kind))
+#define CATALOG_STEP (RADIO_GRID ? ((THEMED?ui_theme_home_content_bottom(ui_theme_id(),HOME_BOTTOM):CATALOG_BOTTOM-28)-LIST_Y)/g_cover_rows : THEMED ? HOME_LAYOUT.step : (CATALOG_BOTTOM-28-LIST_Y+UI_CONTENT_GAP)/CATALOG_ROWS)
+#define CATALOG_HEIGHT (RADIO_GRID ? CATALOG_STEP-12 : THEMED ? HOME_LAYOUT.step-6 : CATALOG_STEP - UI_CONTENT_GAP)
 #define OPTIONS_Y (g_home ? ui_mini_player_top() - 48 : UI_TABS_Y)
 #define PODCAST_X (UI_CONTENT_X + vt_catalog_width(2) + UI_CONTENT_GAP)
 #define ONLINE_ACTION_BROWSE (1<<24)
@@ -75,7 +79,7 @@ static int online_options(UiContextAction items[12], int offline_focus) {
     if((PODCAST_HOME && offline_focus)||(THEMED_OFFLINE&&g_selected==g_query.count))
         items[n++]=(UiContextAction){TR(HOME_PODCAST_OPEN),NULL,ONLINE_ACTION_OFFLINE,1};
     if(selected) {
-        items[n++]=(UiContextAction){vt_online_item_country(item)?(vt_i18n_current_language()==VT_LANG_IT?"Apri nazione":"Open country"):g_tab==VT_ONLINE_RADIO||g_episodes?TR(IPTV_PLAY):TR(ONLINE_EPISODES),NULL,SCE_CTRL_CROSS,1};
+        items[n++]=(UiContextAction){vt_online_item_country(item)?(vt_i18n_text("Open country","Apri nazione")):g_tab==VT_ONLINE_RADIO||g_episodes?TR(IPTV_PLAY):TR(ONLINE_EPISODES),NULL,SCE_CTRL_CROSS,1};
         if(can_favorite(item))items[n++]=(UiContextAction){saved_list()||favorite_index(item)>=0?TR(UI_UNSTAR):TR(UI_STAR),NULL,SCE_CTRL_SQUARE,1};
         if(!vt_online_item_country(item))items[n++]=(UiContextAction){TR(UI_DETAILS),NULL,SCE_CTRL_SELECT,1};
         if(g_episodes)items[n++]=(UiContextAction){TR(UI_DOWNLOAD),NULL,SCE_CTRL_START,1};
@@ -88,8 +92,15 @@ static int online_options(UiContextAction items[12], int offline_focus) {
     if(g_menu || (!g_home && g_catalog))items[n++]=(UiContextAction){TR(ONLINE_FAVORITES),NULL,ONLINE_ACTION_SAVED,1};
     else if(!g_episodes)items[n++]=(UiContextAction){TR(ONLINE_BROWSE),NULL,ONLINE_ACTION_BROWSE,1};
     if(!g_menu)items[n++]=(UiContextAction){TR(UI_REFRESH),NULL,ONLINE_ACTION_REFRESH,1};
-    if(CATALOG_COVERS)items[n++]=(UiContextAction){g_cover_rows==1?(vt_i18n_current_language()==VT_LANG_IT?"2 righe":"2 rows"):(vt_i18n_current_language()==VT_LANG_IT?"1 riga":"1 row"),NULL,ONLINE_ACTION_ROWS,1};
+    if(RADIO_GRID||CATALOG_COVERS)items[n++]=(UiContextAction){g_cover_rows==1?TR(ONLINE_GRID_2X3):TR(ONLINE_GRID_1X3),NULL,ONLINE_ACTION_ROWS,1};
     if(!g_home || g_episodes)items[n++]=(UiContextAction){TR(UI_BACK),NULL,SCE_CTRL_CIRCLE,1};
+    const int library[]={SCE_CTRL_SQUARE,SCE_CTRL_START,SCE_CTRL_TRIANGLE,ONLINE_ACTION_SAVED,ONLINE_ACTION_BROWSE,ONLINE_ACTION_OFFLINE,SCE_CTRL_CIRCLE};
+    for(unsigned i=0;i<sizeof(library)/sizeof(*library);i++)ui_context_menu_category(items,n,library[i],UI_MENU_GROUP_LIBRARY);
+    ui_context_menu_category(items,n,SCE_CTRL_CROSS,UI_MENU_GROUP_PLAYBACK);
+    ui_context_menu_category(items,n,ONLINE_ACTION_ROWS,UI_MENU_GROUP_VIEW);
+    ui_context_menu_category(items,n,ONLINE_ACTION_REFRESH,UI_MENU_GROUP_MAINTENANCE);
+    ui_context_menu_category(items,n,SCE_CTRL_SELECT,UI_MENU_GROUP_INFO);
+    for(int i=1;i<n;i++){UiContextAction v=items[i];int j=i;while(j&&(items[j-1].enabled>>8)>(v.enabled>>8)){items[j]=items[j-1];j--;}items[j]=v;}
     return n;
 }
 static VtOnlineQuery g_lazy;
@@ -158,6 +169,7 @@ static int g_lazy_result, g_lazy_direction;
 static int g_page_sizes[4], g_pages=1, g_return_sizes[4], g_return_pages;
 static int g_lazy_failed_offset=-1;
 static VtOnlineItem g_cover_item;
+static struct {uint64_t key,after;} g_cover_retry[VT_ONLINE_CACHE_MAX];
 static SceUID g_cover_thread=-1;
 static volatile int g_cover_cancel,g_cover_done;
 static volatile int g_action_cancel;
@@ -170,12 +182,18 @@ static void cover_stop(void) {
     if(g_cover_thread>=0)g_cover_cancel=1;
 }
 static void cover_tick(int rows) {
+    for(int r=-1;r<rows;r++){
+        int i=r<0?g_selected:g_top+r;if(i<0||i>=g_query.count)continue;
+        VtOnlineItem *item=&g_query.items[i];char cached[192];
+        if(item->artwork_url[0]&&!vt_artwork_cache_peek(item->artwork_url,cached,sizeof(cached)))
+            ui_artwork_path_update(item->artwork_path,sizeof(item->artwork_path),cached);
+    }
 	if(g_cover_thread>=0&&g_cover_done) {
 		sceKernelWaitThreadEnd(g_cover_thread,NULL,NULL);sceKernelDeleteThread(g_cover_thread);g_cover_thread=-1;
 		for(int i=0;i<g_query.count;i++)if(!g_cover_cancel && g_cover_generation==g_context_generation && !strcmp(g_query.items[i].url,g_cover_item.url)) {
 			int recovered=!g_query.items[i].artwork_url[0]&&g_cover_item.artwork_url[0];
 			if(!g_query.items[i].artwork_url[0])snprintf(g_query.items[i].artwork_url,sizeof(g_query.items[i].artwork_url),"%s",g_cover_item.artwork_url);
-			snprintf(g_query.items[i].artwork_path,sizeof(g_query.items[i].artwork_path),"%s",g_cover_item.artwork_path[0]?g_cover_item.artwork_path:"-");
+			if(g_cover_item.artwork_path[0])ui_artwork_path_update(g_query.items[i].artwork_path,sizeof(g_query.items[i].artwork_path),g_cover_item.artwork_path);
 			VtLibraryItem library_item;
 			vt_library_online(&g_query.items[i],
 				              g_query.kind == VT_ONLINE_EPISODE ? g_query.query : NULL,
@@ -189,13 +207,18 @@ static void cover_tick(int rows) {
 		return;
 	for (int r = -1; r < rows; r++) {
 		int i = r < 0 ? g_selected : g_top + r;
-		if (i < 0 || i >= g_query.count || vt_online_item_country(&g_query.items[i]) || g_query.items[i].artwork_path[0])
+		if (i < 0 || i >= g_query.count || vt_online_item_country(&g_query.items[i]))
 			continue;
 		if (!g_query.items[i].artwork_url[0] &&
 		    !(g_query.items[i].kind == VT_ONLINE_RADIO && g_query.items[i].id[0]) &&
 		    g_query.items[i].kind != VT_ONLINE_FEED)
 			continue;
+        if(g_query.items[i].artwork_url[0]&&!vt_artwork_cache_due(g_query.items[i].artwork_url))continue;
+        uint64_t now=sceKernelGetProcessTimeWide(),key=ui_page_key(g_query.items[i].url,g_query.items[i].artwork_url);
+        if(g_cover_retry[i].key==key&&now<g_cover_retry[i].after)continue;
+        g_cover_retry[i].key=key;g_cover_retry[i].after=now+30000000ULL;
 		g_cover_item = g_query.items[i];
+        if(g_cover_item.artwork_path[0]=='-')g_cover_item.artwork_path[0]=0;
 		g_cover_cancel = g_cover_done = 0;
 		g_cover_generation = g_context_generation;
 		g_cover_thread =
@@ -204,8 +227,7 @@ static void cover_tick(int rows) {
 			sceKernelDeleteThread(g_cover_thread);
 			g_cover_thread = -1;
 		}
-		if (g_cover_thread < 0)
-			snprintf(g_query.items[i].artwork_path, sizeof(g_query.items[i].artwork_path), "-");
+
 		break;
 	}
 }
@@ -257,7 +279,6 @@ static int online_leave(int section) {
 static void merge_cover_paths(VtOnlineQuery *next) {
     for(int i=0;i<next->count;i++)for(int j=0;j<g_query.count;j++)
         if(!strcmp(next->items[i].url,g_query.items[j].url) &&
-           !strcmp(next->items[i].artwork_url,g_query.items[j].artwork_url) &&
            g_query.items[j].artwork_path[0] && strcmp(g_query.items[j].artwork_path,"-")) {
             snprintf(next->items[i].artwork_path,sizeof(next->items[i].artwork_path),"%s",g_query.items[j].artwork_path);break;
         }
@@ -320,10 +341,17 @@ static UiPageView online_page(void) {
     char key[1536];
     snprintf(key,sizeof(key),"%d:%d:%d:%d:%d:%s:%s",g_tab,g_menu,g_catalog,g_episodes,
         g_query.kind,g_episodes?g_feed_title:g_query.country,g_query.query);
+    size_t key_length=strlen(key);snprintf(key+key_length,sizeof(key)-key_length,":rows=%d",g_cover_rows);
     return ui_theme_page(UI_SCENE_HOME,"online",key,g_top,list_count(),
         CATALOG_COLUMNS,CATALOG_ROWS*CATALOG_COLUMNS,CATALOG_STEP);
 }
 static UiThemeRect online_item_rect(int slot){
+ if(THEMED&&RADIO_GRID){
+  int available=ui_theme_id()==VT_UI_THEME_GHOST_MESH?HOME_LAYOUT.w:942-HOME_LAYOUT.x;
+  int width=(available-2*UI_CONTENT_GAP)/3;
+  int row=slot/3,col=slot%3;if(col<0){col+=3;row--;}
+  return ui_theme_page_rect(UI_SCENE_HOME,(UiThemeRect){HOME_LAYOUT.x+col*(width+UI_CONTENT_GAP),LIST_Y+row*CATALOG_STEP,width,CATALOG_HEIGHT});
+ }
  if(THEMED)return ui_theme_home_item_rect(ui_theme_id(),slot,ui_mini_player_top()<UI_CONTENT_BOTTOM?ui_mini_player_top():UI_CONTENT_BOTTOM);
  int columns=CATALOG_COLUMNS,width=PODCAST_HOME?vt_catalog_width(2):vt_catalog_width(columns);
  int row=slot/columns,col=slot%columns;if(col<0){col+=columns;row--;}
@@ -532,8 +560,8 @@ static void draw_provider_tabs(int focused,UiFocusMotion *motion) {
     int x=g_tab==VT_ONLINE_RADIO?UI_CONTENT_X:221;
     vita2d_draw_rectangle(x,UI_TABS_BOTTOM-2,195,2,VT_THEME_SIGNAL_BRIGHT);
     if(focused){ui_focus_motion_tick(motion,x,UI_TABS_Y,195,40);ui_focus_outline_draw(motion);}
-    ui_action_button(424,UI_TABS_Y,136,40,VT_THEME_SURFACE,"O",TR(UI_BACK),0);
-    ui_action_button(756,UI_TABS_Y,186,40,VT_THEME_SURFACE,"R1",TR(UI_OPTIONS),0);
+    ui_action_button(424,UI_TABS_Y,136,40,VT_THEME_SURFACE,UI_PAD_CIRCLE,TR(UI_BACK),0);
+    ui_action_button(756,UI_TABS_Y,186,40,VT_THEME_SURFACE,UI_PAD_R1,TR(UI_OPTIONS),0);
 }
 
 static vita2d_texture *online_artwork(const VtOnlineItem *item) {
@@ -551,7 +579,7 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
      g_query.kind==VT_ONLINE_TAG?TR(ONLINE_GENRES):TR(ONLINE_CATALOG);
  vita2d_start_drawing();vita2d_clear_screen();ui_chrome_background(VT_THEME_BG,VT_THEME_COLD_LIGHT);
  ui_brand_set_loading(g_lazy_thread>=0||g_refresh_pending);
- if(g_home){ui_brand_draw_header(NULL);ui_home_tabs_set_expanded(1);
+ if(g_home){ui_brand_draw_home_header();ui_home_tabs_set_expanded(1);
   ui_home_tabs_draw_with_focus(focus_sections&&page_focus,focus);
  }else{ui_brand_draw_breadcrumbs(g_tab==VT_ONLINE_RADIO?TR(ONLINE_RADIO):TR(HOME_PODCAST),context,g_episodes?g_feed_title:g_country_name);
   draw_provider_tabs(focus_sections&&page_focus,focus);
@@ -564,7 +592,7 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
   ui_text_line(HOME_LAYOUT.x,128,942-HOME_LAYOUT.x,name,VT_THEME_TEXT,UI_FONT_BODY);
   ui_text_line(HOME_LAYOUT.x,HOME_LAYOUT.y-14,942-HOME_LAYOUT.x,g_episodes?g_feed_title:g_country_name[0]?g_country_name:context,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  }
- vita2d_set_clip_rectangle(0,HOME_LAYOUT.y-4,960,bottom);vita2d_enable_clipping();
+ vita2d_set_clip_rectangle(0,HOME_LAYOUT.y-4,960,ui_theme_home_content_bottom(ui_theme_id(),bottom));vita2d_enable_clipping();
  for(int index=page.first;index<page.end;index++){
   int slot=index-g_top;const char *title,*detail="";char metadata[256];
   if(index<g_query.count){VtOnlineItem *item=&g_query.items[index];title=item->title;detail=item->detail;
@@ -575,7 +603,14 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
   int selected=index==g_selected&&!focus_sections&&page_focus;
   VtOnlineItem *item=index<g_query.count?&g_query.items[index]:NULL;
   int media=item&&(item->kind==VT_ONLINE_RADIO||item->kind==VT_ONLINE_FEED||item->kind==VT_ONLINE_SHOW||item->kind==VT_ONLINE_EPISODE||vt_online_item_country(item));
-  if(media)ui_theme_home_row_art(slot,index,title,detail,index==g_selected,!focus_sections&&page_focus,bottom,online_artwork(item),item->kind==VT_ONLINE_COUNTRY?"--":item->kind==VT_ONLINE_RADIO?"FM":"PD");
+  if(RADIO_GRID){
+   UiThemeRect r=online_item_rect(slot);ui_panel(r.x,r.y,r.w,r.h,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+   int art=r.h-68;if(art>r.w-20)art=r.w-20;if(art<24)art=24;
+   ui_artwork_tile(r.x+(r.w-art)/2,r.y+8,art,online_artwork(item),"FM");
+   ui_text_line(r.x+10,r.y+r.h-35,r.w-20,title,VT_THEME_TEXT,UI_FONT_SMALL);
+   ui_text_line(r.x+10,r.y+r.h-12,r.w-20,detail,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+  }
+  else if(media)ui_theme_home_row_art(slot,index,title,detail,index==g_selected,!focus_sections&&page_focus,bottom,online_artwork(item),item->kind==VT_ONLINE_COUNTRY?"--":item->kind==VT_ONLINE_RADIO?"FM":"PD");
   else ui_theme_home_row(slot,index,title,detail,index==g_selected,!focus_sections&&page_focus,bottom);
   if(index<g_query.count && can_favorite(&g_query.items[index]) && (saved_list()||favorite_index(&g_query.items[index])>=0)) {
    UiThemeRect star=online_item_rect(index-g_top);
@@ -597,7 +632,10 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
  if(g_home)ui_theme_home_footer_with_focus(vt_i18n_str(g_episodes?VT_STR_ONLINE_EPISODE_HINT:VT_STR_ONLINE_FAVORITE_HINT),bottom,focus_sections);
  else ui_text_line(18,bottom-12,924,focus_sections?TR(ONLINE_PROVIDER_TABS_HINT):online_content_hint(),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  ui_theme_home_position(g_selected,list_count(),bottom);
- if(!focus_sections&&page_focus&&list_count())ui_focus_outline_draw(focus);
+ if(!focus_sections&&page_focus&&list_count()){
+  vita2d_set_clip_rectangle(0,HOME_LAYOUT.y-4,960,ui_theme_home_content_bottom(ui_theme_id(),bottom));vita2d_enable_clipping();
+  ui_focus_outline_draw(focus);vita2d_disable_clipping();
+ }
  ui_mini_player_draw();UiContextAction items[12];int n=online_options(items,0);
  ui_context_menu_draw(options,TR(UI_OPTIONS),items,n);
  if(sidebar->animation>.01f)ui_sections_sidebar_draw(sidebar);
@@ -605,6 +643,7 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
 }
 
 int ui_online_audio_screen(void) {
+    g_cover_rows=vt_preferences_radio_rows();
  g_saved_valid=0;
  if(THEMED){
   sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
@@ -665,6 +704,11 @@ int ui_online_audio_screen(void) {
 		cover_tick(rows * columns);vt_video_thumbnail_resume();vt_video_thumbnail_pump();
 		if (!sidebar.open && sidebar.animation <= 0.01f &&
 		    ((!options.open && options.animation<=.01f) || option_action>=0)) {
+            if(option_action==ONLINE_ACTION_ROWS){
+                int rows=g_cover_rows==1?2:1;
+                if(!vt_preferences_set_radio_rows(rows)){g_cover_rows=rows;g_top=g_selected=0;}
+                reset_input(&previous,&repeat);continue;
+            }
 			if(option_action==ONLINE_ACTION_OFFLINE) {ui_home_podcast_set_offline(1);return online_leave(UI_SECTION_LOCAL_MEDIA);}
 			if(option_action==ONLINE_ACTION_BROWSE) {
 				if(g_home) {ui_online_audio_set_home(0);return online_leave(UI_SECTION_ONLINE_AUDIO);}
@@ -677,14 +721,16 @@ int ui_online_audio_screen(void) {
 			}
 			if(option_action>=0) {pressed|=(unsigned)option_action;focus_tabs=offline_focus=0;}
 			if (ui_mini_player_handle_touch(flags, &touch)) flags = 0;
-			if((!THEMED||(touch.down_x>=HOME_LAYOUT.x&&touch.down_x<HOME_LAYOUT.x+HOME_LAYOUT.columns*(HOME_LAYOUT.w+12)))&&
-       (flags&UI_TOUCH_EVENT_UP)&&!(flags&UI_TOUCH_EVENT_TAP)&&touch.down_y>=LIST_Y&&touch.down_y<LIST_Y+rows*CATALOG_STEP) {
-                int dx=touch.x-touch.down_x,dy=touch.down_y-touch.y;
-                int delta=abs(dx)>abs(dy)?(dx<-32?1:dx>32?-1:0):dy/56;
-				g_selected+=delta*columns;focus_tabs=0;
-				if(g_selected<0)g_selected=0;
-				if(g_selected>=g_query.count)g_selected=g_query.count?g_query.count-1:0;
-			}
+            online_page();
+            int scroll_x=THEMED?HOME_LAYOUT.x:UI_CONTENT_X;
+            int scroll_width=THEMED?(ui_theme_id()==VT_UI_THEME_GHOST_MESH?HOME_LAYOUT.w:942-scroll_x):
+                PODCAST_HOME?vt_catalog_width(2):UI_CONTENT_W;
+            if((flags&UI_TOUCH_EVENT_DOWN)&&touch.down_x>=scroll_x&&touch.down_x<scroll_x+scroll_width&&
+                touch.down_y>=LIST_Y&&touch.down_y<(THEMED?ui_theme_home_content_bottom(ui_theme_id(),HOME_BOTTOM):CATALOG_BOTTOM-28))focus_tabs=offline_focus=0;
+            if(!focus_tabs && !offline_focus)
+                ui_theme_page_input(UI_SCENE_HOME,"online",scroll_x,LIST_Y,scroll_width,
+                    (THEMED?ui_theme_home_content_bottom(ui_theme_id(),HOME_BOTTOM):CATALOG_BOTTOM-28)-LIST_Y,list_count(),0,&g_top,&g_selected,
+                    controls.buttons,controls.lx,controls.ly,&flags,&touch);
 			if (flags & UI_TOUCH_EVENT_TAP) {
 				if(PODCAST_HOME && ui_touch_hit_rect(touch.x,touch.y,PODCAST_X,LIST_Y,vt_catalog_width(2),rows*CATALOG_STEP-8)) {
 					ui_home_podcast_set_offline(1);return online_leave(UI_SECTION_LOCAL_MEDIA);
@@ -694,7 +740,7 @@ int ui_online_audio_screen(void) {
                 UiPageView visible=online_page();
                 for(int index=visible.first;index<visible.end;index++){
      UiThemeRect hit=online_item_rect(index-g_top);
-     if(touch.y>=LIST_Y && touch.y<CATALOG_BOTTOM && ui_touch_hit_rect(touch.x,touch.y,hit.x,hit.y,hit.w,hit.h)){
+     if(touch.y>=LIST_Y && touch.y<(THEMED?ui_theme_home_content_bottom(ui_theme_id(),HOME_BOTTOM):CATALOG_BOTTOM-28) && ui_touch_hit_rect(touch.x,touch.y,hit.x,hit.y,hit.w,hit.h)){
       focus_tabs=offline_focus=0;g_selected=index;pressed|=SCE_CTRL_CROSS;
      }
     }
@@ -702,7 +748,7 @@ int ui_online_audio_screen(void) {
 			unsigned nav=0;
    if(THEMED && g_home){
     UiHomeControlSample input={.pressed=pressed,.held=controls.buttons,.touch_flags=flags,
-     .lx=controls.lx,.ly=controls.ly,.rx=controls.rx,.ry=controls.ry,.selected=g_selected,
+     .lx=controls.lx,.ly=focus_tabs?controls.ly:128,.rx=controls.rx,.ry=controls.ry,.selected=g_selected,
      .count=list_count(),.bottom=ui_mini_player_top()<UI_CONTENT_BOTTOM?ui_mini_player_top():UI_CONTENT_BOTTOM,
      .focus_sections=focus_tabs,.blocked=ui_mini_player_input_locked(),.touch=&touch};
     UiHomeControlResult routed=ui_home_controls_update(&input);
@@ -737,7 +783,7 @@ int ui_online_audio_screen(void) {
         focus_tabs=0;g_selected=0;pressed&=~(SCE_CTRL_DOWN|SCE_CTRL_CROSS);nav=0;
     } else {
         if(!focus_tabs&&g_selected<columns&&(pressed&SCE_CTRL_UP)){focus_tabs=1;pressed&=~SCE_CTRL_UP;}
-        nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,
+        nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,focus_tabs?controls.ly:128,
             SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
     }
    }
@@ -889,10 +935,10 @@ int ui_online_audio_screen(void) {
 			if(!g_menu)ui_action_button(424,UI_TABS_Y,136,40,VT_THEME_SURFACE,"",TR(UI_BACK),0);
 			if(!g_episodes)ui_action_button(568,UI_TABS_Y,180,40,VT_THEME_SURFACE,"",TR(ONLINE_SEARCH),0);
 		}
-		ui_action_button(756,OPTIONS_Y,186,40,VT_THEME_SURFACE,"R1",TR(UI_OPTIONS),0);
+		ui_action_button(756,OPTIONS_Y,186,40,VT_THEME_SURFACE,UI_PAD_R1,TR(UI_OPTIONS),0);
 		vita2d_font *font = ui_runtime_font(UI_FONT_SMALL);
         UiPageView page=online_page();
-        vita2d_set_clip_rectangle(0,LIST_Y-4,960,CATALOG_BOTTOM);vita2d_enable_clipping();
+        vita2d_set_clip_rectangle(0,LIST_Y-4,960,THEMED?ui_theme_home_content_bottom(ui_theme_id(),HOME_BOTTOM):CATALOG_BOTTOM-28);vita2d_enable_clipping();
         for (int i=page.first;i<page.end;i++) {
             UiThemeRect rect=online_item_rect(i-g_top);
             int y=rect.y,width=rect.w,x=rect.x;
@@ -963,7 +1009,7 @@ int ui_online_audio_screen(void) {
 				ui_font_draw_text(font,PODCAST_X+14,LIST_Y+80,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,"ux0:podcast / ux0:podcasts");
 				ui_font_draw_text(font,PODCAST_X+14,LIST_Y+112,VT_THEME_TEXT_MUTED,UI_FONT_SMALL,"uma0:podcast / uma0:podcasts");
 			}
-			if(rows>=2)ui_action_button(PODCAST_X+14,LIST_Y+rows*CATALOG_STEP-66,vt_catalog_width(2)-28,44,VT_THEME_SURFACE,"X",vt_i18n_str(VT_STR_HOME_PODCAST_OPEN),0);
+			if(rows>=2)ui_action_button(PODCAST_X+14,LIST_Y+rows*CATALOG_STEP-66,vt_catalog_width(2)-28,44,VT_THEME_SURFACE,UI_PAD_CROSS,vt_i18n_str(VT_STR_HOME_PODCAST_OPEN),0);
 		}
 		if (font) {
 			char fitted[256];
@@ -972,7 +1018,10 @@ int ui_online_audio_screen(void) {
 			ui_font_draw_text(font, UI_CONTENT_X, ui_mini_player_top() - 12, VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted);
 		}
 		ui_scroll_rail(948,LIST_Y,rows*CATALOG_STEP-8,g_top,rows*columns,list_count());
-		if(draw_focus)ui_focus_outline_draw(&focus_motion);
+		if(draw_focus){
+            if(!focus_tabs&&!offline_focus){vita2d_set_clip_rectangle(0,LIST_Y-4,960,CATALOG_BOTTOM-28);vita2d_enable_clipping();}
+            ui_focus_outline_draw(&focus_motion);vita2d_disable_clipping();
+        }
 		ui_mini_player_draw();
 		option_count=online_options(option_items,offline_focus);
 		ui_context_menu_draw(&options,TR(UI_OPTIONS),option_items,option_count);

@@ -1,6 +1,10 @@
 #include "media/video_thumbnail.h"
+#include "network/artwork_cache.h"
 
 #include <errno.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <utime.h>
 #include <stdint.h>
 #include <setjmp.h>
 #include <stdio.h>
@@ -40,8 +44,9 @@ _Static_assert(ARTWORK_EDGE * ARTWORK_EDGE <= THUMB_PIXELS, "Artwork exceeds thu
 #define THUMB_PATH_MAX              VT_NETWORK_PATH_MAX
 #define THUMB_REQUEST_CAPACITY      18
 #define THUMB_MEDIA_TEXTURE_CAPACITY 12
+#define THUMB_ARTWORK_TEXTURE_CAPACITY 96
 #define THUMB_FLAG_TEXTURE_CAPACITY  24
-#define THUMB_TEXTURE_CAPACITY      (THUMB_MEDIA_TEXTURE_CAPACITY + THUMB_FLAG_TEXTURE_CAPACITY)
+#define THUMB_TEXTURE_CAPACITY      (THUMB_MEDIA_TEXTURE_CAPACITY + THUMB_ARTWORK_TEXTURE_CAPACITY + THUMB_FLAG_TEXTURE_CAPACITY)
 #define THUMB_FAILURE_CAPACITY      24
 #define THUMB_DISK_SLOTS            128
 #define THUMB_CACHE_VERSION         6u
@@ -247,7 +252,11 @@ static int write_fully(SceUID fd, const void *buffer, size_t size) {
 	return 0;
 }
 
-static void cache_paths(uint64_t key, char path[96], char temporary[96]) {
+static void cache_paths(uint64_t key,int artwork,char path[96],char temporary[96]) {
+    if(artwork){
+        snprintf(path,96,THUMB_CACHE_DIR "/art-%016llx.rgb",(unsigned long long)key);
+        snprintf(temporary,96,THUMB_CACHE_DIR "/art-%016llx.tmp",(unsigned long long)key);return;
+    }
 	unsigned int slot = (unsigned int)((key ^ (key >> 32)) &
 	                                   (THUMB_DISK_SLOTS - 1));
 	snprintf(path, 96, THUMB_CACHE_DIR "/%03u.rgb", slot);
@@ -256,7 +265,7 @@ static void cache_paths(uint64_t key, char path[96], char temporary[96]) {
 
 static int cache_load(const ThumbnailRequest *request, uint16_t *pixels) {
 	char path[96], temporary[96];
-	cache_paths(request->key, path, temporary);
+	cache_paths(request->key,request->still_image==2,path,temporary);
 	(void)temporary;
 	SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
 	if (fd < 0) return fd;
@@ -273,17 +282,35 @@ static int cache_load(const ThumbnailRequest *request, uint16_t *pixels) {
 	if (result == 0) result = read_fully(fd, pixels, THUMB_BYTES);
 	if (result == 0 && header.checksum != payload_checksum(pixels)) result = -1;
 	sceIoClose(fd);
+    if(!result&&request->still_image==2)utime(path,NULL);
 	return result;
 }
 
+/* Artwork has digest-named decoded files, independent from the 128 video slots.
+ * Only the worker performs bounded disk LRU maintenance. */
+static void artwork_disk_room(const char *keep){
+    struct stat existing;if(!stat(keep,&existing)&&S_ISREG(existing.st_mode))return;
+    DIR *dir=opendir(THUMB_CACHE_DIR);if(!dir)return;
+    struct dirent *entry;unsigned count=0;time_t oldest=0;char victim[192]="";
+    while((entry=readdir(dir))){
+        const char *n=entry->d_name;
+        if(strlen(n)!=24||strncmp(n,"art-",4)||strspn(n+4,"0123456789abcdef")!=16||strcmp(n+20,".rgb"))continue;
+        char path[192];snprintf(path,sizeof(path),THUMB_CACHE_DIR "/%.24s",n);struct stat st;
+        if(stat(path,&st)||!S_ISREG(st.st_mode))continue;
+        count++;if(!victim[0]||st.st_mtime<oldest){oldest=st.st_mtime;snprintf(victim,sizeof(victim),"%s",path);}
+    }
+    closedir(dir);if(count>=2048&&victim[0])remove(victim);
+}
 static void cache_store(const ThumbnailRequest *request,
 	                    const uint16_t *pixels) {
 	if (g_thumbnail.stop || !g_thumbnail.enabled || g_thumbnail.active_cancel ||
 	    request->generation != g_thumbnail.generation) return;
 	sceIoMkdir("ux0:data/VitaMediaDeck", 0777);
 	sceIoMkdir(THUMB_CACHE_DIR, 0777);
+
 	char path[96], temporary[96];
-	cache_paths(request->key, path, temporary);
+	cache_paths(request->key,request->still_image==2,path,temporary);
+    if(request->still_image==2)artwork_disk_room(path);
 	ThumbnailDiskHeader header;
 	memset(&header, 0, sizeof(header));
 	memcpy(header.magic, "VTTHMB3", 8);
@@ -1457,7 +1484,8 @@ void vt_video_thumbnail_prepare_playback(void) {
 	 * API self-contained because it is also called by mini-player restoration. */
 	vita2d_wait_rendering_done();
 	int released = 0;
-	for (int i = 0; i < THUMB_TEXTURE_CAPACITY; i++) {
+	/* Keep small cover/logo/flag textures alive across player round trips. */
+	for (int i = 0; i < THUMB_MEDIA_TEXTURE_CAPACITY; i++) {
 		if (g_thumbnail.textures[i].texture) {
 			vita2d_free_texture(g_thumbnail.textures[i].texture);
 			released++;
@@ -1490,8 +1518,10 @@ void vt_video_thumbnail_pump(void) {
 	}
 	thumbnail_unlock();
 	if (!result.pixels) return;
-	int first=!strncmp(result.path,"flag:",5)?THUMB_MEDIA_TEXTURE_CAPACITY:0;
-    int end=first?THUMB_TEXTURE_CAPACITY:THUMB_MEDIA_TEXTURE_CAPACITY;
+	int flag=!strncmp(result.path,"flag:",5);
+    int artwork=!strncmp(result.path,"ux0:data/VitaMediaDeck/artwork/",sizeof("ux0:data/VitaMediaDeck/artwork/")-1);
+    int first=flag?THUMB_MEDIA_TEXTURE_CAPACITY+THUMB_ARTWORK_TEXTURE_CAPACITY:artwork?THUMB_MEDIA_TEXTURE_CAPACITY:0;
+    int end=flag?THUMB_TEXTURE_CAPACITY:artwork?THUMB_MEDIA_TEXTURE_CAPACITY+THUMB_ARTWORK_TEXTURE_CAPACITY:THUMB_MEDIA_TEXTURE_CAPACITY;
     int slot=first;
 	for (int i = first; i < end; i++) {
 		if (!g_thumbnail.textures[i].texture) { slot = i; break; }
@@ -1608,14 +1638,14 @@ static vita2d_texture *thumbnail_get(
 	 * setup and every later stream read/seek observe this cancellation flag. */
 	if (g_thumbnail.active_valid &&
 	    (priority > g_thumbnail.active.priority ||
-	     (priority >= 100 && priority == g_thumbnail.active.priority))) {
+	     (still_image<2 && priority >= 100 && priority == g_thumbnail.active.priority))) {
 		g_thumbnail.active_cancel = 1;
 		if (g_thumbnail.active_abort && g_thumbnail.active_abort_opaque)
 			g_thumbnail.active_abort(g_thumbnail.active_abort_opaque);
 	}
 	/* There is only one selected cell. Demote an older selected request so it
 	 * cannot remain ahead of the current viewport after rapid navigation. */
-	if (priority >= 100) {
+	if (priority >= 100 && still_image<2) {
 		for (int i = 0; i < g_thumbnail.request_count; i++)
 			if (g_thumbnail.requests[i].priority >= 100)
 				g_thumbnail.requests[i].priority = 10;
@@ -1676,13 +1706,24 @@ vita2d_texture *vt_image_thumbnail_get(const char *path, uint64_t source_size) {
 }
 
 vita2d_texture *vt_artwork_thumbnail_get(const char *path) {
-	return thumbnail_get(NULL, NULL, path, 0, 10, 2);
+    char current[192];if(!vt_artwork_cache_current(path,current,sizeof(current)))path=current;
+	vita2d_texture *texture=thumbnail_get(NULL,NULL,path,0,200,2);
+    if(texture||!g_thumbnail.initialized||!path)return texture;
+    const char *prefix="ux0:data/VitaMediaDeck/artwork/";size_t n=strlen(prefix)+64;
+    if(strncmp(path,prefix,strlen(prefix))||strlen(path)<n)return NULL;
+    /* A newly downloaded revision is queued, while the last valid image stays
+     * on screen until its replacement has actually decoded and uploaded. */
+    for(int i=THUMB_MEDIA_TEXTURE_CAPACITY;i<THUMB_MEDIA_TEXTURE_CAPACITY+THUMB_ARTWORK_TEXTURE_CAPACITY;i++){
+        ThumbnailTexture *cached=&g_thumbnail.textures[i];
+        if(cached->texture&&!strncmp(cached->path,path,n)){cached->used_us=sceKernelGetProcessTimeWide();return cached->texture;}
+    }
+    return NULL;
 }
 
 vita2d_texture *vt_country_flag_get(const char *code) {
 	if (!code || strlen(code)!=2 || code[0]<'A' || code[0]>'Z' || code[1]<'A' || code[1]>'Z') return NULL;
 	char path[8]; snprintf(path, sizeof(path), "flag:%s", code);
-	return thumbnail_get(NULL, NULL, path, 0, 10, 3);
+	return thumbnail_get(NULL, NULL, path, 0, 200, 3);
 }
 
 vita2d_texture *vt_image_thumbnail_get_priority(

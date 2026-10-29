@@ -1,3 +1,4 @@
+#include "ui/list_scroll.h"
 #include "ui/log_viewer.h"
 
 #include <stdio.h>
@@ -149,7 +150,7 @@ static void draw_tabs(void) {
  ui_tab(226,TAB_Y,178,TAB_H,vt_i18n_str(VT_STR_ABOUT_TAB_LOGS),1);
 }
 
-static void draw_log_screen(int cursor, int viewing, int first_line,
+static void draw_log_screen(int cursor, int viewing, float offset,
 	                        const UiFocusMotion *focus_motion,
 	                        const UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
@@ -200,7 +201,8 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 			                      vt_i18n_str(VT_STR_ABOUT_LOG_TAIL_ONLY));
 		vita2d_set_clip_rectangle(36, LOG_CLIP_TOP, 924, 478);
 		vita2d_enable_clipping();
-		for (int row = 0; row < LOG_VISIBLE_LINES; row++) {
+		int first_line=(int)(offset/20);
+		for (int row = 0; row <= LOG_VISIBLE_LINES; row++) {
 			int line_index = first_line + row;
 			if (line_index >= g_log_line_count) break;
 			LogLine line = g_log_lines[line_index];
@@ -209,7 +211,7 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 			if (len > LOG_LINE_MAX_CHARS) len = LOG_LINE_MAX_CHARS;
 			memcpy(text, g_log_text + line.offset, len);
 			text[len] = '\0';
-			if (small) ui_font_draw_text(small, 40, LOG_TEXT_Y + row * 20,
+			if (small) ui_font_draw_text(small, 40, LOG_TEXT_Y+(first_line+row)*20-offset,
 			                                 COLOR_TEXT, UI_FONT_SMALL, text);
 		}
 		vita2d_disable_clipping();
@@ -221,7 +223,7 @@ static void draw_log_screen(int cursor, int viewing, int first_line,
 			if (thumb_h < 28.0f) thumb_h = 28.0f;
 			int max_first = g_log_line_count - LOG_VISIBLE_LINES;
 			float thumb_y = track_y + (track_h - thumb_h) *
-			                (float)first_line / (float)max_first;
+			                offset/(20*(float)max_first);
 			vita2d_draw_rectangle(930, track_y, 4, track_h,
 			                      VT_THEME_SURFACE_FOCUS);
 			vita2d_draw_rectangle(930, thumb_y, 4, thumb_h,
@@ -245,7 +247,7 @@ int ui_log_viewer_screen(void) {
 	int first_line = 0;
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
-	int drag_active = 0, drag_y = 0, drag_line = 0;
+	UiScrollView viewport={0};
 	UiSectionsSidebar sidebar;
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_INFO);
 	UiFocusMotion focus_motion;
@@ -309,21 +311,17 @@ int ui_log_viewer_screen(void) {
 		}
 
 		int direction = 0;
+        unsigned scroll_nav=0;
 		if (page_owns_input) {
 			unsigned int nav = ui_nav_repeat_update(
-			    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+			    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, viewing?128:ctrl.ly,
 			    SCE_CTRL_UP | SCE_CTRL_DOWN);
+			scroll_nav=nav;
 			if (nav & SCE_CTRL_UP) direction = -1;
 			else if (nav & SCE_CTRL_DOWN) direction = 1;
 		} else ui_nav_repeat_reset(&nav_repeat);
 		if (direction) {
-			if (viewing) {
-				first_line += direction;
-				int max_first = g_log_line_count > LOG_VISIBLE_LINES
-				              ? g_log_line_count - LOG_VISIBLE_LINES : 0;
-				if (first_line < 0) first_line = 0;
-				if (first_line > max_first) first_line = max_first;
-			} else {
+            if(!viewing){
 				cursor += direction;
 				if (cursor < 0) cursor = 0;
 				if (cursor >= (int)(sizeof(g_entries) / sizeof(g_entries[0])))
@@ -354,21 +352,12 @@ int ui_log_viewer_screen(void) {
 				}
 			}
 		}
-		if (viewing && (touch_flags & UI_TOUCH_EVENT_DOWN)) {
-			drag_active = 1;
-			drag_y = touch.y;
-			drag_line = first_line;
-		}
-		if (viewing && drag_active &&
-		    (touch_flags & (UI_TOUCH_EVENT_MOVE | UI_TOUCH_EVENT_HOLD))) {
-			first_line = drag_line + (drag_y - touch.y) / 20;
-			int max_first = g_log_line_count > LOG_VISIBLE_LINES
-			              ? g_log_line_count - LOG_VISIBLE_LINES : 0;
-			if (first_line < 0) first_line = 0;
-			if (first_line > max_first) first_line = max_first;
-		}
-		if (touch_flags & UI_TOUCH_EVENT_UP) drag_active = 0;
+        if(viewing&&page_owns_input){
+            if(first_line>=0){ui_scroll_reset(&viewport,first_line*20);first_line=-1;}
+            ui_list_scroll_input(&viewport,g_log_line_count,20,36,LOG_CLIP_TOP,888,
+                LOG_VISIBLE_LINES*20,scroll_nav,ctrl.buttons,ctrl.ly,&touch_flags,&touch,NULL);
+        }
 
-		draw_log_screen(cursor, viewing, first_line, &focus_motion, &sidebar);
+		draw_log_screen(cursor, viewing, viewport.position, &focus_motion, &sidebar);
 	}
 }

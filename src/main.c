@@ -1,3 +1,4 @@
+#include "network/artwork_cache.h"
 #include <psp2/ctrl.h>
 #include "library/catalog.h"
 #include "library/search.h"
@@ -25,6 +26,7 @@
 #include "ui/about_screen.h"
 #include "ui/loading_screen.h"
 #include "ui/home_tabs.h"
+#include "media/iptv_program_async.h"
 #include "ui/image_viewer.h"
 #include "ui/local_files_screen.h"
 #include "ui/folder_picker.h"
@@ -703,9 +705,7 @@ static int play_library_remote(const VtLibraryItem *v) {
 	UiNetworkSelection s = {0};
 	if (vt_library_source(v, &s.source, &s.credential) < 0) {
 		ui_message_show(vt_i18n_str(VT_STR_MAIN_NETWORK_UNAVAILABLE),
-		                vt_i18n_current_language() == VT_LANG_IT
-		                    ? "La sorgente e stata rimossa. Controlla Sorgenti."
-							: "Source removed. Check Sources.",
+		                vt_i18n_text("Source removed. Check Sources.","La sorgente e stata rimossa. Controlla Sorgenti."),
 		                2800);
 		return UI_SECTION_LOCAL_MEDIA;
 	}
@@ -831,9 +831,7 @@ static int browse_local(void) {
 				SceIoStat st;
 				if (sceIoGetstat(item.path, &st) < 0) {
 					ui_message_show(vt_i18n_str(VT_STR_MAIN_PLAYBACK_FAILED),
-					                vt_i18n_current_language() == VT_LANG_IT
-					                    ? "File non disponibile: controlla la scheda di memoria."
-										: "File unavailable: check the memory card.",
+					                vt_i18n_text("File unavailable: check the memory card.","File non disponibile: controlla la scheda di memoria."),
 					                2800);
 					continue;
 				}
@@ -976,13 +974,15 @@ static int browse_network(int provider_section) {
 	}
 }
 
-static int run_application(void) {
+static int startup_services(void *unused) {
+    (void)unused;
 	uint64_t stage_started_us = sceKernelGetProcessTimeWide();
 	log_printf("startup: playback/history begin");
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	vt_playback_history_init();
 	/* Initialize the sampled state before either checkpoint worker can read it. */
 	vt_background_playback_init();
+	vt_artwork_cache_init();
 	int library_ret = vt_library_init(vt_background_playback_library_sample);
 	if (library_ret < 0)
 		log_printf("library checkpoint worker unavailable: %d", library_ret);
@@ -991,7 +991,6 @@ static int run_application(void) {
 	    (unsigned long long)((sceKernelGetProcessTimeWide() - stage_started_us) / 1000ULL),
 	    (unsigned long long)((sceKernelGetProcessTimeWide() - g_startup_started_us) / 1000ULL));
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
-	ui_loading_present(NULL);
 	stage_started_us = sceKernelGetProcessTimeWide();
 	log_printf("startup: network begin");
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
@@ -1008,6 +1007,13 @@ static int run_application(void) {
 	int search_ret = vt_library_search_init();
 	log_printf("startup: search workers complete result=%d; opening Home", search_ret);
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
+    return 0;
+}
+
+static int run_application(void) {
+    /* File parsing, library replay and network initialization never own the
+     * render thread. The existing loader draws/presents every worker frame. */
+    if(ui_loading_run(NULL,startup_services,NULL,NULL,NULL,NULL)<0)return -1;
 	int section = UI_SECTION_LOCAL_MEDIA;
 	if (!vt_preferences_startup_controls_seen()) {
 		int controls_section = ui_settings_show_controls_reference();
@@ -1137,6 +1143,7 @@ int main(int argc, char *argv[]) {
 	           (unsigned long long)((sceKernelGetProcessTimeWide() -
 	                                g_startup_started_us) / 1000ULL));
 	run_application();
+	vt_iptv_program_shutdown();
 	vt_library_search_shutdown();
 	ui_iptv_shutdown();
 	vt_video_thumbnail_shutdown();

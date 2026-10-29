@@ -2,6 +2,7 @@
  * text rasterization and its drawing context. The app owns navigation and data.
  * No Sony implementation or extracted artwork is packaged with this adapter. */
 #include "ui/native_vita.h"
+#include "ui/input_prompts.h"
 #include "ui/native_paf_abi.h"
 #include "ui/theme.h"
 #include "i18n/i18n.h"
@@ -31,11 +32,11 @@ _Static_assert(sizeof(SceCommonDialogUpdateParam) == 96 &&
 #define PLUGIN_PARAMS_BYTES 148
 #define PAGE_PARAMS_BYTES 44
 #define PAF_HEAP_BYTES (8u * 1024u * 1024u)
-enum { NATIVE_TEXT, NATIVE_BUTTON, NATIVE_PANEL, NATIVE_BUSY, NATIVE_CHECK, NATIVE_KINDS };
+enum { NATIVE_TEXT, NATIVE_BUTTON, NATIVE_PANEL, NATIVE_BUSY, NATIVE_CHECK, NATIVE_GLOW, NATIVE_KINDS };
 #define NATIVE_COMMANDS 512
 #define NATIVE_LABEL_BYTES 512
 static const unsigned limits[NATIVE_KINDS] = {UI_NATIVE_TEXT_LIMIT, UI_NATIVE_BUTTON_LIMIT,
-                                              UI_NATIVE_PANEL_LIMIT, UI_NATIVE_BUSY_LIMIT, UI_NATIVE_CHECK_LIMIT};
+                                              UI_NATIVE_PANEL_LIMIT, UI_NATIVE_BUSY_LIMIT, UI_NATIVE_CHECK_LIMIT, UI_NATIVE_GLOW_LIMIT};
 typedef struct {
     float x, y, w, h, alpha;
     float clip[4];
@@ -62,7 +63,7 @@ static atomic_uint requested_generation, applied_generation, owner_callbacks;
 static atomic_flag mailbox_lock = ATOMIC_FLAG_INIT;
 #define NATIVE_TASK_TIMEOUT_US 2000000ULL
 #define NATIVE_ACTIVE_GAP_US 250000ULL
-static uint64_t progress_since_us, last_update_us;
+static uint64_t progress_since_us, last_update_us, renderer_started_us;
 static unsigned progress_generation, submitted_frames;
 static int progress_started, handshake_primed;
 static SceUID renderer_owner = -1;
@@ -89,7 +90,7 @@ static int renderer_main(SceSize args, void *argp) {
     return rc;
 }
 static int start_renderer(void) {
-    native_language = vt_i18n_current_language() == VT_LANG_IT ? 5 : 1;
+    native_language = vt_i18n_system_language();
     renderer_thread = sceKernelCreateThread("VMDNativePaf", renderer_main, 0x10000100,
                                             0x40000, 0, 0, NULL);
     if (renderer_thread < 0)
@@ -100,19 +101,8 @@ static int start_renderer(void) {
         renderer_thread = -1;
         return rc;
     }
-    /* Acquire publishes the complete owner-created graph, never half an init.
-     * A late owner observes abort before entering Run or applying commands;
-     * retained native storage is never freed underneath an in-flight init. */
-    for (unsigned attempt = 0; attempt < 5000; attempt++) {
-        if (atomic_load(&renderer_exited))
-            break;
-        if (renderer_running())
-            return 0;
-        sceKernelDelayThread(1000);
-    }
-    atomic_store(&renderer_abort, 1);
-    rc = atomic_load(&renderer_result);
-    return atomic_load(&renderer_exited) && rc < 0 ? rc : -0x5049;
+    renderer_started_us=sceKernelGetProcessTimeWide();
+    return 0; /* Poll at future frame boundaries; never sleep in the UI thread. */
 }
 static NativeSlot slots[NATIVE_KINDS][UI_NATIVE_TEXT_LIMIT];
 static NativeCommand commands[NATIVE_COMMANDS]; /* app capture only */
@@ -128,7 +118,7 @@ int ui_native_vita_scope(int scope) {
     return previous;
 }
 static void *previous_order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
-                            UI_NATIVE_BUSY_LIMIT + UI_NATIVE_CHECK_LIMIT];
+                            UI_NATIVE_BUSY_LIMIT + UI_NATIVE_CHECK_LIMIT + UI_NATIVE_GLOW_LIMIT];
 static int media_text, rendered_once, drawing_scene, decoration;
 static int state, error_code, visible, updating, capturing, clip_enabled, overflow_logged;
 static int clip_box[4] = {0, 0, 960, 544};
@@ -252,23 +242,27 @@ static int place(void *widget, float x, float y, float w, float h, int resize, i
 }
 
 int ui_native_vita_prepare(void) {
-    if (!state && ui_theme_id() == VT_UI_THEME_LEGACY_VITA) {
-        if (drawing_scene)
-            return 0; /* Defer first initialization to the next pre-scene boundary. */
-        int rc = start_renderer();
-        if (rc < 0)
-            log_failure(rc);
-        else {
-            state = 1;
-            checkpoint("ready; single PAF owner");
+    if(!state&&ui_theme_id()==VT_UI_THEME_LEGACY_VITA){
+        if(drawing_scene)return 0;
+        int rc=start_renderer();
+        if(rc<0)log_failure(rc);
+        else state=2; /* Owner initialization; app still presents startup frames. */
+    }
+    if(state==2){
+        if(atomic_load_explicit(&renderer_exited,memory_order_acquire)){
+            int rc=atomic_load(&renderer_result);log_failure(rc<0?rc:-0x5049);
+        }else if(renderer_running()){
+            state=1;checkpoint("ready; single PAF owner");
+        }else{
+            uint64_t now=sceKernelGetProcessTimeWide();
+            if(now>=renderer_started_us&&now-renderer_started_us>=5000000ULL)
+                log_failure(-0x5049);
         }
     }
-    if (state > 0 && (atomic_load(&renderer_error) || atomic_load(&renderer_exited) ||
-                      !renderer_running()))
-        log_failure(atomic_load(&renderer_error) ? atomic_load(&renderer_error) : -0x5049);
-    if (state < 0 && ui_theme_id() == VT_UI_THEME_LEGACY_VITA)
-        log_failure(error_code);
-    return state > 0;
+    if(state==1&&(atomic_load(&renderer_error)||atomic_load(&renderer_exited)||!renderer_running()))
+        log_failure(atomic_load(&renderer_error)?atomic_load(&renderer_error):-0x5049);
+    if(state<0&&ui_theme_id()==VT_UI_THEME_LEGACY_VITA)log_failure(error_code);
+    return state==1;
 }
 /* Called once by VMDNativePaf, before Run, on the same kernel thread. */
 static int initialize_owner(void) {
@@ -406,6 +400,7 @@ static void occlude(float x, float y, float w, float h, unsigned alpha, int medi
             continue;
         /* Media cutouts retain the immediate panel base, preventing Sony
          * button decoration from painting over artwork/camera/video pixels. */
+        if (media && c->kind == NATIVE_GLOW) continue; /* Additive focus cannot cover an icon. */
         if (media && c->kind != NATIVE_TEXT) {
             float bottom = v[1] + v[3], start = fmaxf(v[1], y + h);
             if (bottom - start >= 24) {
@@ -480,7 +475,7 @@ static int enqueue(int kind, float x, float y, float w, float h, unsigned color,
                          .identity = identity, .scope = capture_scope};
     /* A text or labelled control keeps its full logical box. Edge rows leave
      * the viewport as a unit, never by resizing/recentering their glyphs. */
-    if (clip_enabled && kind != NATIVE_PANEL && kind != NATIVE_BUSY &&
+    if (clip_enabled && kind != NATIVE_PANEL && kind != NATIVE_GLOW && kind != NATIVE_BUSY &&
         (top > y || bottom < y + h ||
          (clip_box[0] > 0 && left > x) || (clip_box[2] < 960 && right < x + w)))
         c->hidden = 1;
@@ -509,16 +504,21 @@ int ui_native_vita_text(float x, float baseline, float width, unsigned size, uns
                         const char *text) {
     if (media_text)
         return 0;
+    if (ui_input_prompt_contains(text))
+        return 0; /* Mixed text/sprites share the app renderer's exact metrics. */
     if (!text || !text[0])
         return ui_native_vita_active();
     unsigned lines = 1;
     for (const char *p = text; *p; p++)
         if (*p == '\n' && lines < 16)
             lines++;
+    /* Snap glyph origins only; focus and panel transforms retain subpixels. */
+    x=roundf(x);baseline=roundf(baseline);width=floorf(width);
     return enqueue(NATIVE_TEXT, x, baseline - size, width + 2, (size + 4) * lines + 4, color, size,
                    text, 0);
 }
 int ui_native_vita_button(float x, float y, float w, float h, const char *label, int selected) {
+    if (ui_input_prompt_contains(label)) return 0;
     /* The label belongs to Sony's Button, sharing its transform and clipping.
      * A bounded app-owned native style supplies the font/padding, not a second
      * independently positioned Text widget. */
@@ -543,12 +543,9 @@ int ui_native_vita_panel(float x, float y, float w, float h, unsigned color, int
     return enqueue(NATIVE_PANEL, x, y, w, h, color, 20, "", selected);
 }
 int ui_native_vita_focus(float x, float y, float w, float h) {
-    if (!ui_native_vita_active())
-        return 0;
-    /* One continuous app-owned focus overlay, including while it settles.
-     * Never switch between a moving GPU outline and a snapped native press. */
-    (void)x; (void)y; (void)w; (void)h;
-    return 0;
+    /* Pure additive firmware glow. App owns its continuous float transform;
+     * PAF owns the textured plane, never a second labelled/empty Button. */
+    return enqueue(NATIVE_GLOW, x, y, w, h, 0x70ffd582u, 0, "", 0);
 }
 int ui_native_vita_busy(float x, float y, float size) {
     return enqueue(NATIVE_BUSY, x - size * .5f, y - size * .5f, size, size, 0xffffffff, 0, "", 0);
@@ -606,14 +603,14 @@ static int present(void) {
         used[c->kind][best] = 1;
     }
     void *order[UI_NATIVE_TEXT_LIMIT + UI_NATIVE_BUTTON_LIMIT + UI_NATIVE_PANEL_LIMIT +
-                UI_NATIVE_BUSY_LIMIT + UI_NATIVE_CHECK_LIMIT];
+                UI_NATIVE_BUSY_LIMIT + UI_NATIVE_CHECK_LIMIT + UI_NATIVE_GLOW_LIMIT];
     int any = 0;
     /* CreateWidget consumes case-sensitive resource factory keys, not C++ class
      * names. The shipped firmware resource/sample uses these lowercase tags. */
-    const char *types[] = {"text", "button", "button", "busyindicator", "check_box"};
+    const char *types[] = {"text", "button", "plane", "busyindicator", "check_box", "plane"};
     const char *styles[] = {"_common_default_style_text", "vmd_button",
-                            "_common_default_style_button", "_common_style_busyindicator_8",
-                            "_common_default_style_check_box"};
+                            "vmd_panel", "_common_style_busyindicator_8",
+                            "_common_default_style_check_box", "vmd_menu_glow"};
     for (unsigned i = 0; i < owner_count; i++) {
         NativeCommand *c = &owner_commands[i];
         if (c->hidden)
@@ -633,13 +630,13 @@ static int present(void) {
                 return widget_failure("create", c->kind, number, -1);
         }
         void *w = slot->widget;
-        if (fresh && (c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL))
+        if (fresh && c->kind == NATIVE_BUTTON)
             vmd_paf_button_animator(w, 0); /* App owns focus; no gray Sony press animation. */
         NativeCommand *old = &slot->prior;
         const float logical[4] = {c->x, c->y, c->w, c->h};
         const float prior_logical[4] = {old->x, old->y, old->w, old->h};
-        const float *v = c->kind == NATIVE_PANEL ? c->clip : logical;
-        const float *prior = c->kind == NATIVE_PANEL ? old->clip : prior_logical;
+        const float *v = (c->kind == NATIVE_PANEL || c->kind == NATIVE_GLOW) ? c->clip : logical;
+        const float *prior = (c->kind == NATIVE_PANEL || c->kind == NATIVE_GLOW) ? old->clip : prior_logical;
         int resize = fresh || prior[2] != v[2] || prior[3] != v[3];
         int move = fresh || resize || prior[0] != v[0] || prior[1] != v[1];
         if (resize || move) {
@@ -647,7 +644,7 @@ static int present(void) {
             if (rc < 0) return widget_failure("geometry", c->kind, number, rc);
         }
         int text_changed = fresh || strcmp(old->label, c->label);
-        if (c->kind == NATIVE_TEXT || c->kind == NATIVE_BUTTON || c->kind == NATIVE_PANEL) {
+        if (c->kind == NATIVE_TEXT || c->kind == NATIVE_BUTTON) {
             uint16_t text[NATIVE_LABEL_BYTES];
             unsigned count = ui_native_vita_utf16(c->label, text, NATIVE_LABEL_BYTES);
             if (text_changed && c->kind != NATIVE_PANEL) {
@@ -712,7 +709,7 @@ static int present(void) {
             if (rc >= 0) rc = vmd_paf_label_layout_bool(label, VMD_PAF_LAYOUT_ELLIPSIS, false);
             if (rc < 0) return widget_failure("button-label-layout", c->kind, number, rc);
         }
-        if (c->kind == NATIVE_PANEL && (fresh || old->color != c->color)) {
+        if ((c->kind == NATIVE_PANEL || c->kind == NATIVE_GLOW) && (fresh || old->color != c->color)) {
             _Alignas(16) float color[4] = {(c->color & 255) / 255.f, ((c->color >> 8) & 255) / 255.f,
                               ((c->color >> 16) & 255) / 255.f, ((c->color >> 24) & 255) / 255.f};
             if (vmd_paf_widget_color(w, color, NULL, 0x10001, 0, 0, NULL, NULL) < 0)
@@ -793,6 +790,15 @@ static void apply_commands(void *unused) {
     owner_count = pending_count;
     memcpy(owner_commands, pending_commands, owner_count * sizeof(*owner_commands));
     atomic_flag_clear_explicit(&mailbox_lock, memory_order_release);
+    for(unsigned i=1;i<owner_count;i++){
+        NativeCommand current=owner_commands[i];unsigned j=i;
+        if(current.kind!=NATIVE_GLOW)continue;
+        while(j&&owner_commands[j-1].scope==current.scope&&
+              owner_commands[j-1].kind!=NATIVE_PANEL&&owner_commands[j-1].kind!=NATIVE_GLOW){
+            owner_commands[j]=owner_commands[j-1];j--;
+        }
+        owner_commands[j]=current;
+    }
     int rc = present();
     if (rc < 0) {
         show(page, 0);

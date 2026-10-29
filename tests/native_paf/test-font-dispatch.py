@@ -7,11 +7,14 @@ parser=argparse.ArgumentParser();parser.add_argument('--negative-ref');args=pars
 prefix=r'''
 #include <stdio.h>
 #include <stddef.h>
+#include "ui/input_prompts.h"
 #define VMD_ENABLE_PAF_NATIVE 1
 typedef void vita2d_font;
 static int native=1, measured=240, available=816, captured, fallback;
 int ui_native_vita_active(void){return native;}
 int ui_font_text_width(vita2d_font*f,unsigned s,const char*t){(void)f;(void)s;(void)t;return measured;}
+int ui_font_text_height(vita2d_font*f,unsigned s,const char*t){(void)f;(void)t;return s;}
+void ui_native_vita_cover(float x,float y,float w,float h,unsigned c){(void)x;(void)y;(void)w;(void)h;(void)c;}
 int ui_native_vita_text_span(float x,float y,unsigned s){(void)x;(void)y;(void)s;return available;}
 int ui_native_vita_text(float x,float y,float w,unsigned s,unsigned c,const char*t){(void)x;(void)y;(void)s;(void)c;(void)t;captured=w;return 1;}
 int mixed_layout(vita2d_font*f,int d,int x,int y,unsigned c,unsigned s,const char*t,void*h){(void)f;(void)d;(void)x;(void)y;(void)c;(void)s;(void)t;(void)h;fallback++;return 777;}
@@ -30,7 +33,7 @@ def run(source, directory, name):
  first=source.index('int ui_font_draw_text(');last=source.index('int ui_font_draw_textf(',first)
  c=directory/(name+'.c');c.write_text(prefix+source[first:last]+suffix)
  binary=directory/name
- subprocess.run(['clang','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(c),'-o',str(binary)],check=True)
+ subprocess.run(['clang','-O1','-g','-Wall','-Wextra','-Werror','-I'+str(root/'src'),'-fsanitize=address,undefined',str(c),'-o',str(binary)],check=True)
  return subprocess.run([str(binary)],check=False).returncode
 with tempfile.TemporaryDirectory(prefix='vmd-font-dispatch-') as folder:
  d=Path(folder)

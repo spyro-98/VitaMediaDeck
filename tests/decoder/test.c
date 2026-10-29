@@ -76,7 +76,9 @@ static void reference(uint8_t *out,unsigned pitch,unsigned height,const AVFrame 
 #endif
 }
 static void pixels_test(void){
- static const int dimensions[][2]={{1,1},{2,2},{15,15},{16,16},{17,17},{31,33},{33,31},{65,37},{640,360},{854,480},{960,544},{1280,720}};
+ CHECK(hardware_raster_supported(1920,1080));CHECK(hardware_raster_supported(1920,1088));
+ CHECK(!hardware_raster_supported(1921,1080)&&!hardware_raster_supported(1920,1089));
+ static const int dimensions[][2]={{1,1},{2,2},{15,15},{16,16},{17,17},{31,33},{33,31},{65,37},{640,360},{854,480},{960,544},{1280,720},{1920,1080},{1920,1088}};
  for(unsigned n=0;n<sizeof(dimensions)/sizeof(*dimensions);n++)for(int flip=0;flip<2;flip++){
   int w=dimensions[n][0],h=dimensions[n][1];AVFrame *f=av_frame_alloc();f->format=AV_PIX_FMT_YUV420P;f->width=w;f->height=h;CHECK(av_frame_get_buffer(f,32)==0);
   for(int p=0;p<3;p++)for(int y=0;y<(p?(h+1)/2:h);y++)for(int x=0;x<(p?(w+1)/2:w);x++)f->data[p][y*f->linesize[p]+x]=(x*11+y*7+p*67)&255;
@@ -136,6 +138,17 @@ static void surface_test(void){
  printf("Direct surfaces: shared AVFrame ownership, GPU-fence release and pool notification passed.\n");
 }
 static void allocation_test(void){
+ /* Actual CDRAM pool sizes and complete release for HD and Full HD. */
+ for(int high=0;high<2;high++){
+  SoftwareVideoState pool;state_init(&pool);
+  pool.texture_width=pool.pitch=high?1920:1280;pool.texture_height=high?1088:720;
+  pool.frame_bytes=pool.pitch*pool.texture_height*3/2;
+  CHECK(!allocate_zero_copy_pool(&pool));CHECK(pool.zero_surface_capacity==(high?12:20));
+  CHECK(live_bytes==(uint64_t)pool.zero_surfaces[0].allocation_size*(high?12:20));
+  if(high)CHECK(live_bytes==36ULL*1024*1024);
+  release_frame_buffers(&pool);CHECK(!live_bytes);
+ }
+
  AVFormatContext *demux=avformat_alloc_context();AVStream *stream=avformat_new_stream(demux,NULL);CHECK(stream);stream->time_base=(AVRational){1,1000};stream->codecpar->codec_type=AVMEDIA_TYPE_VIDEO;stream->codecpar->codec_id=AV_CODEC_ID_H264;stream->codecpar->width=64;stream->codecpar->height=64;stream->codecpar->format=AV_PIX_FMT_YUV420P;
  SoftwareVideoState s;state_init(&s);s.demux=demux;s.texture_width=s.pitch=64;s.texture_height=64;s.frame_bytes=6144;s.content_width=s.content_height=64;
  s.hardware_direct_available=1;unsigned before=allocations;

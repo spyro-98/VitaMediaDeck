@@ -16,7 +16,8 @@ for vmd_test in seek mini; do
         -Itests/player_feedback/seek/include -Itests/player_feedback/thumbnail/include \
         -Itests/iptv/include -Itests/online_navigation/include \
         -Itests/online_audio/include "-I$vmd_ffmpeg" \
-        "tests/player_feedback/$vmd_test/test.c" src/ui/theme.c -Wl,-dead_strip -o "$vmd_output/$vmd_test-test"
+        "tests/player_feedback/$vmd_test/test.c" src/ui/theme.c src/media/iptv_program_async.c -lpthread -Wl,-dead_strip -o "$vmd_output/$vmd_test-test"
     "$vmd_output/$vmd_test-test"
 done
+bash tests/player_feedback/programme/run-host-tests.sh
 printf 'Player feedback host test artifacts: %s\n' "$vmd_output"

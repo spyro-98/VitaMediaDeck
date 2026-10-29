@@ -275,13 +275,13 @@ static void draw_loading_frame(const char *query, const char *message,
 		                 vt_i18n_str(paused ? VT_STR_NETWORK_DOWNLOAD_RESUME
 		                                  : VT_STR_NETWORK_DOWNLOAD_PAUSE), 0);
 		if (background_action)
-			ui_action_button(360, 458, 240, 42, VT_THEME_SURFACE, "Triangle",
+			ui_action_button(360, 458, 240, 42, VT_THEME_SURFACE, UI_PAD_TRIANGLE,
 			                 vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_BACKGROUND), 0);
 		ui_action_button(background_action ? 648 : 498, 458, button_w, 42,
-		                 VT_THEME_SURFACE, "Circle",
+		                 VT_THEME_SURFACE, UI_PAD_CIRCLE,
 		                 vt_i18n_str(VT_STR_NETWORK_DOWNLOAD_ABORT), 0);
 	} else if (cancellable) {
-		ui_action_button(338,458,284,42,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
+		ui_action_button(338,458,284,42,VT_THEME_SURFACE,UI_PAD_CIRCLE,vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
@@ -322,7 +322,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 		if (small) ui_font_draw_text_centered(small,480,324,268,COLOR_TEXT,
 		    UI_FONT_SMALL,status);
 		if (info->cancellable)
-			ui_action_button(338,392,284,50,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
+			ui_action_button(338,392,284,50,VT_THEME_SURFACE,UI_PAD_CIRCLE,vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 		ui_theme_media_end(theme_before);
 		return;
 	}
@@ -364,7 +364,7 @@ void ui_player_loading_draw(const UiPlayerLoadingInfo *info,
 		}
 		if(info && info->cancellable)
 			ui_action_button(338,info->start_over_requested?446:392,284,50,
-			    VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
+			    VT_THEME_SURFACE,UI_PAD_CIRCLE,vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 	}
 
 	long current = progress_current ? *progress_current : 0;

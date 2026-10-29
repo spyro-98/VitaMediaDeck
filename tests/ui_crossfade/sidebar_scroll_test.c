@@ -103,7 +103,8 @@ int main(int argc,char **argv) {
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_MOVE,touch_x,180)==UI_SECTION_NONE);
   SCROLL_CHECK(menu.scroll>0&&menu.scroll==menu.scroll_target);
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_UP|UI_TOUCH_EVENT_TAP,touch_x,180)==UI_SECTION_NONE);
-  SCROLL_CHECK(menu.open&&!menu.touch_active);float stopped=menu.scroll;advance(&menu,90);SCROLL_CHECK(fabsf(menu.scroll-stopped)<.01f);
+  SCROLL_CHECK(menu.open&&!menu.touch_active);float stopped=menu.scroll;advance(&menu,90);SCROLL_CHECK(reduced?fabsf(menu.scroll-stopped)<.01f:menu.scroll>=stopped);
+  SCROLL_CHECK(menu.scroll<=sidebar_scroll_max(&menu)&&!menu.scroll_coasting);
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_DOWN,touch_x,420)==UI_SECTION_NONE);
   ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_MOVE,touch_x,-2000);SCROLL_CHECK(menu.scroll==sidebar_scroll_max(&menu));
   ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_UP,touch_x,-2000);
@@ -112,10 +113,10 @@ int main(int argc,char **argv) {
   ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_UP,touch_x,2000);
   /* Footer arrows scroll the viewport and preserve the modal; header/footer
    * taps never activate an offscreen item beneath those fixed areas. */
-  int before_arrow = menu.cursor, up_x = (vt_ui_theme_legacy_layout(theme) ? 318 : 806) + 18;
+  int before_arrow = menu.cursor, up_x = 318 + 18;
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_TAP,up_x,510)==UI_SECTION_NONE);
   SCROLL_CHECK(menu.cursor==before_arrow&&menu.scroll_target==0);
-  int arrow_x = (vt_ui_theme_legacy_layout(theme) ? 366 : 856) + 18;
+  int arrow_x = 366 + 18;
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_TAP,arrow_x,510)==UI_SECTION_NONE&&menu.open);
   SCROLL_CHECK(menu.scroll_target>0);advance(&menu,90);
   SCROLL_CHECK(ui_sections_sidebar_handle_touch(&menu,UI_TOUCH_EVENT_TAP,touch_x,95)==UI_SECTION_NONE&&menu.open);
@@ -170,8 +171,7 @@ int main(int argc,char **argv) {
  UiSectionsSidebar menu;ui_sections_sidebar_init(&menu,UI_SECTION_INFO);menu.open=1;frame=0;advance(&menu,1);
  ui_theme_apply(VT_UI_THEME_GHOST_MESH);advance(&menu,1);SCROLL_CHECK(menu.scroll_theme==VT_UI_THEME_GHOST_MESH);settled(&menu);
  FT_Done_Face(mono);FT_Done_Face(inter);FT_Done_FreeType(ft);
- printf("L1 lists/fixed decks: %u checks; eight themes, IT/EN, live tasks, spatial navigation and "
-        "zero-scroll grids/wheel, rapid reversal, clipped touch, drag release, arrows, reduced "
+ printf("L1 settings-style lists: %u checks; eight themes, IT/EN, live tasks, vertical navigation, rapid reversal, clipped touch, drag release, arrows, reduced "
         "motion and audio page isolation; max %u primitives/frame (host).\n",
         scroll_checks, max_draws);
  return 0;

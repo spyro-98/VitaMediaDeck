@@ -8,12 +8,21 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <spawn.h>
+#include <sys/wait.h>
+extern char **environ;
+#include <time.h>
+static time_t clock_seconds=1800000000;
+static time_t cache_time(time_t *out){if(out)*out=clock_seconds;return clock_seconds;}
+#define time cache_time
+#include "../../src/network/artwork_cache.c"
+#undef time
 static unsigned requests;
 static size_t response_size=64;
 static int bad;
 static char *fetch(const char *url,volatile int *cancel,size_t *size) {
     (void)url;if(cancel&&*cancel)return NULL;requests++;*size=response_size;
-    char *data=calloc(1,*size);memcpy(data,bad?"NOTIMAGE":"\x89PNG\r\n\x1a\n",8);return data;
+    char *data=calloc(1,*size);memcpy(data,bad?"NOTIMAGE":"\x89PNG\r\n\x1a\n",8);data[12]=(char)requests;return data;
 }
 static void bounds(void) {
     DIR *d=opendir("ux0:data/VitaMediaDeck/artwork");assert(d);struct dirent *entry;size_t bytes=0;unsigned count=0;
@@ -21,9 +30,16 @@ static void bounds(void) {
         char path[512];struct stat st;snprintf(path,sizeof(path),"ux0:data/VitaMediaDeck/artwork/%s",entry->d_name);
         assert(!stat(path,&st));bytes+=st.st_size;count++;
     }
-    closedir(d);assert(count<=128&&bytes<=64u*1024*1024);
+    closedir(d);assert(count<=4096&&bytes<=256u*1024*1024);
 }
 int main(int argc,char **argv) {
+    clock_seconds=time(NULL);
+    if(argc==4&&!strcmp(argv[1],"--restart")){
+        char current[192];volatile int cancel=0;vt_artwork_cache_init();
+        assert(!vt_artwork_cache_peek(argv[2],current,sizeof(current))&&!strcmp(current,argv[3]));
+        assert(!vt_artwork_cache_get(argv[2],current,sizeof(current),&cancel,fetch)&&!requests);
+        puts("Artwork cold restart: persisted index reconstructed; cached image returned without a network request.");return 0;
+    }
     mkdir("ux0:data",0700);mkdir("ux0:data/VitaMediaDeck",0700);
     char path[192],saved_path[192];volatile int cancel=0;
     assert(!vt_artwork_cache_get("https://example.org/a?private-token",path,sizeof(path),&cancel,fetch));
@@ -33,11 +49,29 @@ int main(int argc,char **argv) {
     FILE *f=fopen(path,"wb");assert(f);fputs("bad",f);fclose(f);
     assert(!vt_artwork_cache_get("https://example.org/a?private-token",path,sizeof(path),&cancel,fetch)&&requests==before+1);
     for(int i=0;i<140;i++){char url[96];snprintf(url,sizeof(url),"https://example.org/small/%d",i);assert(!vt_artwork_cache_get(url,path,sizeof(path),&cancel,fetch));}bounds();
+    assert(!vt_artwork_cache_peek("https://example.org/a?private-token",path,sizeof(path))&&!access(path,F_OK));
     response_size=2*1024*1024;
-    for(int i=0;i<40;i++){char url[96];snprintf(url,sizeof(url),"https://example.org/large/%d",i);assert(!vt_artwork_cache_get(url,path,sizeof(path),&cancel,fetch));}bounds();
+    for(int i=0;i<140;i++){char url[96];snprintf(url,sizeof(url),"https://example.org/large/%d",i);assert(!vt_artwork_cache_get(url,path,sizeof(path),&cancel,fetch));}bounds();
     response_size++;assert(vt_artwork_cache_get("https://example.org/oversized",path,sizeof(path),&cancel,fetch)<0);
     bad=1;response_size=64;assert(vt_artwork_cache_get("https://example.org/bad",path,sizeof(path),&cancel,fetch)<0);
     cancel=1;before=requests;assert(vt_artwork_cache_get("https://example.org/cancel",path,sizeof(path),&cancel,fetch)<0&&requests==before);
+    cancel=bad=0;response_size=64;
+    const char *refresh_url="https://example.org/refresh?secret-token";
+    assert(!vt_artwork_cache_get(refresh_url,path,sizeof(path),&cancel,fetch));strcpy(saved_path,path);
+    before=requests;char immediate[192]="";assert(!vt_artwork_cache_peek(refresh_url,immediate,sizeof(immediate))&&!strcmp(immediate,path));
+    assert(!vt_artwork_cache_due(refresh_url)&&requests==before);
+    clock_seconds+=24*60*60+1;assert(vt_artwork_cache_due(refresh_url));
+    bad=1;assert(!vt_artwork_cache_get(refresh_url,path,sizeof(path),&cancel,fetch)&&!strcmp(path,saved_path));
+    assert(!vt_artwork_cache_peek(refresh_url,immediate,sizeof(immediate))&&!strcmp(immediate,saved_path));
+    assert(!vt_artwork_cache_due(refresh_url));clock_seconds+=301;bad=0;
+    assert(!vt_artwork_cache_get(refresh_url,path,sizeof(path),&cancel,fetch)&&strcmp(path,saved_path));
+    assert(access(saved_path,F_OK)&&!access(path,F_OK));
+    assert(!vt_artwork_cache_current(saved_path,immediate,sizeof(immediate))&&!strcmp(path,immediate));
+    /* A busy publication must never stall the render-side lookup. */
+    pthread_mutex_lock(&mutex);assert(vt_artwork_cache_peek(refresh_url,immediate,sizeof(immediate))<0);pthread_mutex_unlock(&mutex);
+    pid_t child;char *restart[]={argv[0],"--restart",(char*)refresh_url,path,NULL};
+    assert(!posix_spawn(&child,argv[0],NULL,NULL,restart,environ));int status=0;
+    assert(waitpid(child,&status,0)==child&&WIFEXITED(status)&&WEXITSTATUS(status)==0);
     VtIptvCatalog *list=calloc(1,sizeof(*list));assert(list);
     const char *m3u="#EXTM3U\n#EXTINF:-1 tvg-logo=\"logo.png\",Channel, with comma\n#EXTVLCOPT:http-user-agent=HbbTV/1.6.1\na.m3u8\n#EXTINF:3600,Movie\nmovie.mp4?token=private\n#EXTINF:-1,DASH\na.mpd\n";
     assert(!vt_iptv_catalog_parse(m3u,strlen(m3u),"https://example.org/list.m3u",list));
@@ -61,6 +95,10 @@ int main(int argc,char **argv) {
         printf("Supplied IPTV-Italia playlist: %u entries, %u DASH entries, %u supplied logos\n",list->count,dash,logos);free(body);
     }
     free(list);
+    bad=0;response_size=64;cancel=0;
+    assert(!vt_artwork_cache_get("ux0:TV/local-icon.png",path,sizeof(path),&cancel,fetch));before=requests;
+    char local_cached[192];assert(!vt_artwork_cache_peek("ux0:TV/local-icon.png",local_cached,sizeof(local_cached))&&!strcmp(path,local_cached));
+    assert(!vt_artwork_cache_get("ux0:TV/local-icon.png",path,sizeof(path),&cancel,fetch)&&requests==before);
     for(int cols=1;cols<=3;cols++)for(int rows=1;rows<=5;rows++)for(int selected=0;selected<256;selected++) {
         int top=vt_catalog_top(selected,selected>100?200:0,cols,rows);
         assert(top>=0&&top%cols==0&&selected>=top&&selected<top+cols*rows);

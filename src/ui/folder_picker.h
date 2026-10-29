@@ -4,4 +4,5 @@
 /* Select within the initial mount. NULL defaults to existing ux0:download.
  * No directory is created unless the user explicitly selects New folder. */
 int ui_folder_picker(const char *initial, char *out, size_t out_size);
+int ui_playlist_file_picker(const char *initial,char *out,size_t out_size);
 #endif

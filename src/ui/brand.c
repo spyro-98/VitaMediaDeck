@@ -3,6 +3,7 @@
 #endif
 #include "ui/brand.h"
 #include "ui/breadcrumbs.h"
+#include "ui/home_tabs.h"
 #include "ui/components.h"
 
 #include <math.h>
@@ -48,12 +49,10 @@
  *                  included in that width budget.
  *   search field : 430px wide (UNCHANGED: it still fits), centred ->
  *                  x = (960-430)/2 = 265, right edge 695.
- *   status block : leftmost possible x is
- *                    960 - 16 (right margin)
- *                        - 33 (battery incl. positive terminal)
- *                        - 14 (gap) - 86 (worst-case clock text width)
- *                        - 14 (gap) - 25 (Wi-Fi bars)          = 762.
- *                  Gap to the search field: 762 - 695 = 67px minimum. OK.
+ *   status block : battery starts at 911; clock ends at 889 (22px gap).
+ *                  The 80px maximum clock leaves Wi-Fi at x=770 or later.
+ *                  Both activity indicators fit at x=710 or later, leaving
+ *                  at least 14px after the search field at x=695.
  *
  * Because 430px still clears both neighbours once centred, the field keeps its
  * original width and therefore its original text capacity (SEARCH_BOX_W - 96),
@@ -83,6 +82,7 @@
 /* Right-anchored status indicators, laid out from the right edge inwards. */
 #define STATUS_MARGIN_R 16
 #define STATUS_GAP      14
+#define STATUS_CLOCK_BATTERY_GAP 22
 
 static int g_brand_loading;
 static int g_brand_download_progress_hidden;
@@ -99,9 +99,9 @@ static int g_brand_download_progress_hidden;
  * relative to the *measured* text width, so 24h mode ("23:59") doesn't leave a
  * hole where 12h mode ("12:59 PM") would need room. CLOCK_MAX_W only bounds
  * the layout for the overlap proof above and clamps a pathological font. */
-#define CLOCK_RIGHT (BATT_X - STATUS_GAP)                              /* 897 */
+#define CLOCK_RIGHT (BATT_X - STATUS_CLOCK_BATTERY_GAP)
 #define CLOCK_FONT_SIZE UI_FONT_SMALL
-#define CLOCK_MAX_W 86
+#define CLOCK_MAX_W 80
 #define CLOCK_BASELINE ((UI_BRAND_HEADER_HEIGHT + CLOCK_FONT_SIZE) / 2 - 2)
 
 #define WIFI_BARS      4
@@ -295,12 +295,13 @@ static int draw_clock(const header_status *st, float opacity) {
 		snprintf(text, sizeof(text), "%02d:%02d", st->clock_hour, st->clock_minute);
 	}
 
-	int width = ui_font_text_width(font, CLOCK_FONT_SIZE, text);
-	if (width < 0) width = 0;
-	if (width > CLOCK_MAX_W) width = CLOCK_MAX_W;  /* keeps the overlap proof */
+	char fitted[32];
+	int width = ui_font_fit_text(font, CLOCK_FONT_SIZE, text, fitted, sizeof(fitted), CLOCK_MAX_W);
 	int x = CLOCK_RIGHT - width;
-	ui_font_draw_text(font, x, CLOCK_BASELINE,
-	                  status_color_alpha(COLOR_TEXT, opacity), CLOCK_FONT_SIZE, text);
+	/* Native PAF uses a different face. Its free text window must not enlarge
+	 * this right-aligned clock past the measured edge toward the battery. */
+	ui_font_draw_text_exact(font, x, CLOCK_BASELINE,
+	                  status_color_alpha(COLOR_TEXT, opacity), CLOCK_FONT_SIZE, fitted);
 	return x;
 }
 
@@ -339,9 +340,9 @@ static void draw_status_spinner(float center_x, float opacity) {
 		unsigned color = age == 0 ? VT_THEME_SPECTRAL_LIGHT
 		               : age <= 2 ? VT_THEME_SIGNAL_BRIGHT
 		                          : VT_THEME_BORDER;
-		float radius = age == 0 ? 2.7f : 1.7f;
-		vita2d_draw_fill_circle(center_x + cosf(angle) * 7.0f,
-		                        center_y + sinf(angle) * 7.0f, radius,
+		float radius = age == 0 ? 2.3f : 1.5f;
+		vita2d_draw_fill_circle(center_x + cosf(angle) * 6.0f,
+		                        center_y + sinf(angle) * 6.0f, radius,
 		                        status_color_alpha(color, opacity));
 	}
 }
@@ -372,9 +373,9 @@ static void draw_download_progress(float center_x, float opacity,
 		               ? (status && status->paused ? VT_THEME_COLD_LIGHT
 		                                            : VT_THEME_SIGNAL_BRIGHT)
 		               : VT_THEME_BORDER;
-		vita2d_draw_fill_circle(center_x + cosf(angle) * 7.0f,
-		                        center_y + sinf(angle) * 7.0f,
-		                        active ? 2.0f : 1.35f,
+		vita2d_draw_fill_circle(center_x + cosf(angle) * 6.0f,
+		                        center_y + sinf(angle) * 6.0f,
+		                        active ? 1.8f : 1.2f,
 		                        status_color_alpha(color, opacity));
 	}
 }
@@ -392,10 +393,10 @@ static void draw_status_activity(int status_left, float opacity) {
 
 	/* Download progress sits nearest the normal status group. If both signals
 	 * are active, the generic loader remains the first (leftmost) activity icon. */
-	float center_x = (float)(status_left - STATUS_GAP - 10);
+	float center_x = (float)(status_left - STATUS_GAP - 8);
 	if (background_download) {
 		draw_download_progress(center_x, opacity, &download);
-		center_x -= 28.0f;
+		center_x -= 30.0f;
 	}
 	if (g_brand_loading) draw_status_spinner(center_x, opacity);
 }
@@ -470,7 +471,7 @@ static void draw_logo(void) {
 		if (font) {
 			unsigned color =
 			    ui_theme_id() == VT_UI_THEME_SIGNAL ? VT_THEME_BG : VT_THEME_SIGNAL_BRIGHT;
-			ui_font_draw_text(font,25,33,color,UI_FONT_SMALL,"L1");
+			ui_font_draw_text(font,25,33,color,UI_FONT_SMALL,UI_PAD_L1);
 		}
 		return;
 	}
@@ -699,24 +700,23 @@ void ui_brand_draw_header(const char *query) {
 }
 
 void ui_brand_draw_home_header(void) {
- draw_gradient_bar();
- draw_logo();
- ui_brand_draw_status_indicators();
- g_brand_loading = 0;
+ if(!vt_ui_theme_legacy_layout(ui_theme_id())){ui_brand_draw_breadcrumbs(ui_home_tab_label(),NULL,NULL);return;}
+ draw_gradient_bar();draw_logo();ui_brand_draw_status_indicators();g_brand_loading=0;
 }
 
 int ui_brand_home_search_hit(unsigned flags,int x,int y) {
- return (flags&UI_TOUCH_EVENT_TAP)&&x>=78&&x<148&&y>=4&&y<50;
+ int top=vt_ui_theme_legacy_layout(ui_theme_id())?7:58;
+ return (flags&UI_TOUCH_EVENT_TAP)&&x>=78&&x<148&&y>=top&&y<top+46;
 }
 void ui_brand_draw_home_search(void) {
- unsigned c=VT_THEME_TEXT;
+ unsigned c=VT_THEME_TEXT;float cy=vt_ui_theme_legacy_layout(ui_theme_id())?24:78;
  /* Outline magnifier plus the matching controller glyph, no footer needed. */
  for(int i=0;i<16;i++) {
   float a=i*6.2831853f/16,b=(i+1)*6.2831853f/16;
-  vita2d_draw_line(94+9*cosf(a),24+9*sinf(a),94+9*cosf(b),24+9*sinf(b),c);
+  vita2d_draw_line(94+9*cosf(a),cy+9*sinf(a),94+9*cosf(b),cy+9*sinf(b),c);
  }
- vita2d_draw_line(101,31,109,39,c);
- ui_text_line(116,35,28,"△",c,UI_FONT_SMALL);
+ vita2d_draw_line(101,cy+7,109,cy+15,c);
+ ui_text_line(116,cy+11,28,UI_PAD_TRIANGLE,c,UI_FONT_SMALL);
 }
 void ui_brand_draw_breadcrumbs(const char *section, const char *parent, const char *leaf) {
 	draw_gradient_bar();

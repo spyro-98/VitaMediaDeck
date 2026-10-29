@@ -10,7 +10,7 @@
 #include <libxml/xmlmemory.h>
 
 static int safe_url(const char *url) {
-    if (!url || !*url || strlen(url) >= VT_IPTV_URL_MAX) return 0;
+    if (!url || !*url || strlen(url) >= VT_IPTV_RESOURCE_URL_MAX) return 0;
     for (const unsigned char *p = (const unsigned char *)url; *p; p++)
         if (*p <= 32 || *p == 127 || *p == '\\') return 0;
     xmlURI *uri = xmlParseURI(url);
@@ -43,7 +43,7 @@ int vt_iptv_input_url(const void *bytes, size_t size, char *out, size_t capacity
 int vt_iptv_resolve_url(const char *base, const char *ref, char *out, size_t capacity) {
     if (!out || !capacity) return VT_IPTV_INVALID;
     out[0] = 0;
-    if (!safe_url(base) || !ref || !*ref || strlen(ref) >= VT_IPTV_URL_MAX) return VT_IPTV_INVALID;
+    if (!safe_url(base) || !ref || !*ref || strlen(ref) >= VT_IPTV_RESOURCE_URL_MAX) return VT_IPTV_INVALID;
     for (const unsigned char *p = (const unsigned char *)ref; *p; p++)
         if (*p <= 32 || *p == 127 || *p == '\\') return VT_IPTV_INVALID;
     xmlChar *absolute = xmlBuildURI((const xmlChar *)ref, (const xmlChar *)base);
@@ -60,6 +60,60 @@ int vt_iptv_resolve_url(const char *base, const char *ref, char *out, size_t cap
         }
     }
     xmlFree(absolute); return result;
+}
+int vt_iptv_text_utf8(const void *input,size_t size,char **out,size_t *length){
+ *out=NULL;*length=0;if(!input||!size)return VT_IPTV_INVALID;
+ if(size>(20u*1024u*1024u))return VT_IPTV_CATALOG_BODY_LIMIT;
+ const unsigned char *p=input;size_t n=0;
+ if(size>=2&&((p[0]==255&&p[1]==254)||(p[0]==254&&p[1]==255))){
+  int le=p[0]==255;if(size&1)return VT_IPTV_INVALID;
+  size_t cap=size>(20u*1024u*1024u)/2?(20u*1024u*1024u)+1:size*2+1;
+  char *text=malloc(cap);if(!text)return VT_IPTV_MEMORY;
+  for(size_t i=2;i<size;i+=2){
+   unsigned cp=le?p[i]|p[i+1]<<8:p[i]<<8|p[i+1];
+   if(cp>=0xd800&&cp<=0xdbff){if(i+3>=size){free(text);return VT_IPTV_INVALID;}
+    unsigned low=le?p[i+2]|p[i+3]<<8:p[i+2]<<8|p[i+3];if(low<0xdc00||low>0xdfff){free(text);return VT_IPTV_INVALID;}
+    cp=0x10000+((cp-0xd800)<<10)+low-0xdc00;i+=2;
+   }else if(cp>=0xdc00&&cp<=0xdfff){free(text);return VT_IPTV_INVALID;}
+   if(!cp){free(text);return VT_IPTV_INVALID;}
+   unsigned need=cp<0x80?1:cp<0x800?2:cp<0x10000?3:4;
+   if(n+need>=cap){free(text);return VT_IPTV_CATALOG_BODY_LIMIT;}
+   if(need==1)text[n++]=(char)cp;
+   else{if(need==4)text[n++]=(char)(0xf0|(cp>>18));
+    if(need>=3)text[n++]=(char)((need==3?0xe0:0x80)|((cp>>12)&(need==3?15:63)));
+    text[n++]=(char)((need==2?0xc0:0x80)|((cp>>6)&(need==2?31:63)));text[n++]=(char)(0x80|(cp&63));}
+  }
+  text[n]=0;*out=text;*length=n;return 0;
+ }
+ if(memchr(input,0,size))return VT_IPTV_INVALID;
+ char *text=malloc(size+1);if(!text)return VT_IPTV_MEMORY;memcpy(text,input,size);text[size]=0;
+ *out=text;*length=size;return 0;
+}
+int vt_iptv_local_path(const char *p){return p&&(!strncmp(p,"ux0:",4)||!strncmp(p,"uma0:",5));}
+int vt_iptv_resource_resolve(const char *base,const char *ref,char *out,size_t cap){
+ if(!base||!ref||!out||!cap)return VT_IPTV_INVALID;
+ if(!vt_iptv_local_path(base))return vt_iptv_resolve_url(base,ref,out,cap);
+ if(!strncasecmp(ref,"http://",7)||!strncasecmp(ref,"https://",8))return vt_iptv_resolve_url(ref,ref,out,cap);
+ char joined[VT_IPTV_URL_MAX],normalized[VT_IPTV_URL_MAX];
+ for(const unsigned char *p=(const unsigned char*)ref;*p;p++)if(*p<32||*p==127||*p=='\\')return VT_IPTV_INVALID;
+ if(vt_iptv_local_path(ref)){if(strlen(ref)>=sizeof(joined))return VT_IPTV_LIMIT;strcpy(joined,ref);}
+ else{
+  if(strchr(ref,':')||strlen(base)+strlen(ref)+2>=sizeof(joined))return VT_IPTV_INVALID;
+  strcpy(joined,base);char *last=strrchr(joined,'/'),*colon=strchr(joined,':');
+  if(ref[0]=='/')colon[1]=0;else if(last&&last>colon)last[1]=0;else colon[1]=0;
+  strcat(joined,ref);
+ }
+ char *colon=strchr(joined,':');size_t used=(size_t)(colon-joined)+1;memcpy(normalized,joined,used);normalized[used]=0;
+ const char *part=colon+1;size_t offsets[256];unsigned depth=0;
+ while(*part){while(*part=='/')part++;if(!*part)break;const char *end=strchr(part,'/');if(!end)end=part+strlen(part);size_t n=end-part;
+  if(n==1&&*part=='.'){}
+  else if(n==2&&!memcmp(part,"..",2)){if(!depth)return VT_IPTV_INVALID;used=offsets[--depth];normalized[used]=0;}
+  else{if(depth>=256||used+n+2>=sizeof(normalized))return VT_IPTV_LIMIT;offsets[depth++]=used;
+   if(depth>1)normalized[used++]='/';memcpy(normalized+used,part,n);used+=n;normalized[used]=0;}
+  part=end;
+ }
+ if(!depth||used>=cap)return VT_IPTV_INVALID;
+ memcpy(out,normalized,used+1);return 0;
 }
 static int number(const char *text, uint64_t *out) {
     if (!text || !isdigit((unsigned char)*text)) return 0;
@@ -127,7 +181,7 @@ static int variant(const char *text, VtIptvVariant *out) {
     }
     /* RFC 8216 recommends CODECS and makes RESOLUTION optional. Missing
      * metadata is not an unsupported codec. The bounded TS demux and existing
-     * decoder checks validate the actual stream, including the 720p cap. */
+     * decoder checks validate the actual stream, without an IPTV-specific resolution cap. */
     out->codecs_declared=has_codecs;
     out->compatible = !has_codecs || codecs_supported(codecs);
     const char *groups[] = {"AUDIO", "VIDEO", "SUBTITLES"};
@@ -230,7 +284,7 @@ int vt_iptv_manifest_variant(const VtIptvManifest *m, uint32_t bandwidth, uint32
     int selected = -1;
     for (unsigned i = 0; i < m->variant_count; i++) {
         const VtIptvVariant *v = &m->variants[i];
-        if (!v->compatible || v->bandwidth > bandwidth || v->width > width || v->height > height) continue;
+        if (!v->compatible || (bandwidth&&v->bandwidth > bandwidth) || (width&&v->width > width) || (height&&v->height > height)) continue;
         if (selected < 0 || v->bandwidth < m->variants[selected].bandwidth) selected = (int)i;
     }
     return selected;

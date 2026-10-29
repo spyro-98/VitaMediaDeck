@@ -1,4 +1,4 @@
-# VitaMediaDeck 1.4.1
+# VitaMediaDeck 1.4.2
 
 <p align="center">
   <a href="assets/branding/vitamediadeck-icon.png"><img src="sce_sys/icon0.png" width="128" height="128" alt="VitaMediaDeck app icon"></a>
@@ -14,13 +14,13 @@
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 VitaMediaDeck is a **public-beta media app for PS Vita**, combining local files,
-personal media servers, internet radio, podcasts and IPTV. Version **1.4.1** brings
-the native **VMD** interface, faster playback and seeking, new server integrations
-and a more responsive library.
+personal media servers, internet radio, podcasts and IPTV. Version **1.4.2**
+focuses on clearer navigation, flexible IPTV imports, persistent playback choices
+and faster access to cached media.
 
 <p align="center">
   <a href="screenshots/1.4.1/vmd-home.png"><img src="screenshots/1.4.1/vmd-home.png" width="960" alt="VitaMediaDeck 1.4.1 Home: continue playback, saved connections, favourites and recently played media"></a>
-  <br><sub>The new Home, with VMD as the default theme</sub>
+  <br><sub>Home with the default VMD theme (1.4.1 screenshot)</sub>
 </p>
 
 ## Features
@@ -41,83 +41,60 @@ and a more responsive library.
   favourites and recently played items, plus background search across indexed
   titles, filenames, artists, albums and available provider metadata.
 
-## Improvements in 1.4.1
+## What's new in 1.4.2
 
-### Native interface and eight themes
+- **Refined Vita interface:** blue VMD gradients and native PAF focus, clearer text,
+  coloured button icons and organized L1/R1 menus. Continuous pixel scrolling,
+  touch dragging and inertia across all eight themes.
+- **Flexible IPTV imports:** add links, scan QR codes or choose local files from
+  `ux0:` / `uma0:`. M3U/M3U8, TXT, PLS, XSPF, ASX and URL files can contain
+  channels and nested playlist links; actual content determines their type.
+  Channel names and icons are recovered when available, with cached artwork.
+- **Clearer channel browsing:** separate or side-by-side playlist/channel views,
+  multi-column channel grids, name sorting and Save/Remove actions in player R1.
+  Saved channels and favourite stars remain separate.
+- **Playback choices that stay saved:** per-channel quality and audio language,
+  fallback when unavailable, and rollback after a failed quality change.
+  Smoothness checks run only from R1; Triangle toggles mute in the players.
+- **Background TV guide:** current programme, description, end time and upcoming
+  schedule load without covering the video, when guide data is available.
+- **More responsive browsing:** persistent channel/radio/podcast artwork,
+  background refresh and Home collections that update after playback or edits.
+- **More options and better recovery:** restored interface languages, radio
+  1×3 / 2×3 layouts, 20 MiB channel lists, more robust HLS handling, clearer
+  playback errors and retained session logs.
 
-**VMD is the new default theme**, using actual Sony PAF text, buttons, toggles
-and loading indicators. Its dark animated background combines thin cyan light
-trails with a subtle moving PlayStation-symbol pattern.
+[Detailed changes and validation](docs/README.md).
 
-- **Eight themes:** VMD, Legacy, Ghost Mesh, Deck 90, Signal, Aperture, Relay
-  and Mosaic. The alternatives have distinct layouts, lighting and animations.
-- Smoother folder/page transitions, menu movement and focus effects, with fewer
-  repeated entrance animations during rapid navigation.
-- Consistent styling across players, settings, dialogs, downloads and QR scanning.
-- Integrated Home components, clearer provider lists, touch scrolling and
-  independently saved tab order for each theme.
+## Screenshots
 
-### Faster playback and seeking
-
-**Hardware decoding is the recommended first choice.** The default Auto mode
-tries HW first for compatible video, keeping CPU load lower and leaving more
-headroom for the interface and streaming.
-
-- Faster video startup, playback-control response, indexed seeking and recovery
-  of picture and sound after a seek.
-- More efficient HW frame presentation, fewer unnecessary allocations/copies,
-  improved worker scheduling and cleaner cancellation/shutdown.
-- Improved SW YUV copying, padding and frame queues, reducing CPU-side overhead.
-- **333 MHz CPU for tested HW playback, including compatible 720p30 video**;
-  the automatic SW target is **444 MHz**. Both targets are configurable, and
-  manual PSVshell clock settings retain priority.
-- Complete app-owned LTO coverage across the app, decoder, HTTPS and IPTV
-  modules, alongside FFmpeg C LTO, Cortex-A9/NEON optimization and unused-code
-  removal at link time.
-
-### Browsing, streaming and resume
-
-- Cached catalogue data and artwork appear before background refreshes, reducing
-  loading interruptions between radio, podcasts and other media sections.
-- Global search runs in background workers and shows cached/progressive results
-  grouped by provider, without reopening every file to read its tags.
-- More reliable podcast resume after closing or suspending the app, with
-  lightweight playback checkpoints saved in the background.
-- Add/remove favourites with inline stars, including favourite countries for
-  regional radio and podcast discovery.
-- Improved IPTV loading feedback, decoder selection and hardware playback,
-  with corrected HLS timestamps and hardware-codec initialization/cleanup.
-
-## Bug fixes
-
-- QR/IPTV link validation, full broadcaster User-Agent headers and clearer
-  playlist, server, codec and resolution errors, with readable multiline notices.
-- MP4 files missing their total duration or refusing to seek.
-- Subtitles disappearing after seeking and unreliable audio-track recovery.
-- Missing thumbnails after returning from playback and lost browser position.
-- Clipped text, selection borders and button labels across the native interface.
-- Flickering player timing/volume labels, delayed HUD text and repeated menu
-  entrance animations.
-- Search-result selection, invisible search text and tab focus skipping items.
-- Home collections opening their first item before allowing item selection.
-- Local photos disappearing from Images when the index is empty or refreshing.
-- Unbounded image panning, unpredictable rotation and incorrect ECO-mode text.
-- Native PAF startup, rendering, widget lifecycle and recovery issues.
-
-## Screenshots — 1.4.1
-
-Select an image to view it at its original resolution.
+New captures are from **1.4.2**; earlier screenshots remain where no replacement is available. Select an image for full resolution.
 
 <table>
   <tr>
     <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-local-video.png"><img src="screenshots/1.4.1/vmd-local-video.png" width="480" alt="VitaMediaDeck 1.4.1 — Local video library"></a><br><sub>Local video library</sub></td>
-    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-video-player.png"><img src="screenshots/1.4.1/vmd-video-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Video player"></a><br><sub>Video player</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.2/vmd-video-player.png"><img src="screenshots/1.4.2/vmd-video-player.png" width="480" alt="VitaMediaDeck 1.4.2 — Live IPTV player"></a><br><sub>Live IPTV playback</sub></td>
   </tr>
   <tr>
     <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-music-player.png"><img src="screenshots/1.4.1/vmd-music-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Music player"></a><br><sub>Music player</sub></td>
-    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-podcast-player.png"><img src="screenshots/1.4.1/vmd-podcast-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Podcast player"></a><br><sub>Podcast player</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.2/vmd-podcast-player.png"><img src="screenshots/1.4.2/vmd-podcast-player.png" width="480" alt="VitaMediaDeck 1.4.2 — Podcast player and R1 options"></a><br><sub>Podcast player and R1 options</sub></td>
   </tr>
 </table>
+
+<details>
+<summary><strong>IPTV: channel views and programme guide — 1.4.2</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%" align="center"><a href="screenshots/1.4.2/vmd-iptv-channels.png"><img src="screenshots/1.4.2/vmd-iptv-channels.png" width="480" alt="VitaMediaDeck 1.4.2 — Three-column IPTV channel list"></a><br><sub>Full-width channel list</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.2/vmd-iptv-split-view.png"><img src="screenshots/1.4.2/vmd-iptv-split-view.png" width="480" alt="VitaMediaDeck 1.4.2 — Playlists and saved channels side by side"></a><br><sub>Playlists and channels side by side</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><a href="screenshots/1.4.2/vmd-iptv-programme-guide.png"><img src="screenshots/1.4.2/vmd-iptv-programme-guide.png" width="960" alt="VitaMediaDeck 1.4.2 — Current programme and upcoming TV schedule"></a><br><sub>Current programme and upcoming schedule</sub></td>
+  </tr>
+</table>
+
+</details>
 
 <details>
 <summary><strong>Other themes: Ghost Mesh, Deck 90, Signal, Aperture, Relay and Mosaic</strong></summary>
@@ -145,10 +122,10 @@ Select an image to view it at its original resolution.
 <table>
   <tr>
     <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-radio-player.png"><img src="screenshots/1.4.1/vmd-radio-player.png" width="480" alt="VitaMediaDeck 1.4.1 — Live radio"></a><br><sub>Live radio</sub></td>
-    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-playback-menu.png"><img src="screenshots/1.4.1/vmd-playback-menu.png" width="480" alt="VitaMediaDeck 1.4.1 — Playback options"></a><br><sub>Playback options</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.2/vmd-playback-menu.png"><img src="screenshots/1.4.2/vmd-playback-menu.png" width="480" alt="VitaMediaDeck 1.4.2 — IPTV playback options"></a><br><sub>Quality, audio and saved-channel controls</sub></td>
   </tr>
   <tr>
-    <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-sections-menu.png"><img src="screenshots/1.4.1/vmd-sections-menu.png" width="480" alt="VitaMediaDeck 1.4.1 — Sections and personal-media providers"></a><br><sub>Sections and personal-media providers</sub></td>
+    <td width="50%" align="center"><a href="screenshots/1.4.2/vmd-sections-menu.png"><img src="screenshots/1.4.2/vmd-sections-menu.png" width="480" alt="VitaMediaDeck 1.4.2 — Sections menu"></a><br><sub>L1 sections menu</sub></td>
     <td width="50%" align="center"><a href="screenshots/1.4.1/vmd-audio-miniplayer.png"><img src="screenshots/1.4.1/vmd-audio-miniplayer.png" width="480" alt="VitaMediaDeck 1.4.1 — Home with the audio mini-player"></a><br><sub>Home with the audio mini-player</sub></td>
   </tr>
   <tr>
@@ -164,7 +141,9 @@ Select an image to view it at its original resolution.
   direct play; server transcoding is not integrated. PGS/VobSub bitmap subtitles
   are not rendered.
 - IPTV supports compatible, non-DRM HLS/DASH streams. Automatic rendition
-  selection is capped at **720p**; seeking in segmented HLS/DASH is not available.
+  selection prefers lighter variants when available, with user-selectable quality
+  and audio in R1. There is no automatic 720p/4-Mbps rejection. Seeking in
+  segmented HLS/DASH is not available.
 - SW decoding remains more demanding: 720p30 can exceed the CPU budget,
   particularly at 333 MHz. HW remains the preferred backend.
 

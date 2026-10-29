@@ -5,6 +5,7 @@
 #include <string.h>
 #include <vita_https.h>
 #include <pthread.h>
+#include <unistd.h>
 
 static unsigned checks;
 #define CHECK(x) do { checks++; assert(x); } while (0)
@@ -128,14 +129,14 @@ static void source_tests(void) {
         "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,SUBTITLES=\"optional\"\nmedia.m3u8\n",
         "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,AUDIO=\"separate\"\nmedia.m3u8\n",
         "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1920x1080\nmedia.m3u8\n"};
-    const int expected[]={VT_IPTV_OK,VT_IPTV_RENDITIONS,VT_IPTV_VARIANT_LIMIT};
+    const int expected[]={VT_IPTV_OK,VT_IPTV_RENDITIONS,VT_IPTV_OK};
     for(unsigned i=0;i<3;i++) {
         Mock probe={.playlist=media,.master=masters[i]};
         VtIptvSourceConfig config={.buffer_limit=1128,.segment_limit=376,.fetch=mock_fetch,.fetch_ctx=&probe};
         VtIptvSource *source=vt_iptv_source_create("https://example.org/master.m3u8",&config);CHECK(source);
         CHECK(vt_iptv_source_poll(source,0)==expected[i]);
-        CHECK(probe.calls==(i?1u:3u));
-        if(i){CHECK(vt_iptv_source_poll(source,1000)==expected[i] && probe.calls==1);}
+        CHECK(probe.calls==(i==1?1u:3u));
+        if(i==1){CHECK(vt_iptv_source_poll(source,1000)==expected[i] && probe.calls==1);}
         vt_iptv_source_destroy(source);
     }
     Mock encrypted={.playlist="#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:5,\na.ts\n"};
@@ -204,7 +205,7 @@ void vita_https_client_destroy(VitaHttpsClient *c) { CHECK(c==(void*)1); }
 int vita_https_perform(VitaHttpsClient *c,const VitaHttpsRequest *request,VitaHttpsResponse *response) {
     (void)c; memset(response,0,sizeof(*response));response->status_code=http_mode==3?403:200;
     CHECK(!strncmp(request->url,"https://",8));
-    if(http_agent[0] && strcmp(http_agent,"VitaMediaDeck/1.4.1")) {
+    if(http_agent[0] && strcmp(http_agent,"VitaMediaDeck/1.4.2")) {
         int found=0;
         for(const char *const *h=request->headers;h && *h;h++)
             if(!strncmp(*h,"User-Agent: ",12)){CHECK(!strcmp(*h+12,http_agent));found++;}
@@ -239,7 +240,7 @@ static void http_tests(void) {
     unsigned char *data;size_t size;char effective[2048];volatile int cancel=0;
     CHECK(!vt_iptv_http_fetch(NULL,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));
     CHECK(size==strlen(media)&&strstr(effective,"/final/"));free(data);
-    CHECK(!strcmp(http_agent,"VitaMediaDeck/1.4.1"));
+    CHECK(!strcmp(http_agent,"VitaMediaDeck/1.4.2"));
     VtIptvHttpOptions options={.user_agent="HbbTV/1.6.1"};
     CHECK(!vt_iptv_http_fetch(&options,"https://example.org/media.m3u8",4096,&data,&size,effective,sizeof(effective),&cancel));free(data);
     CHECK(!strcmp(http_agent,"HbbTV/1.6.1"));
@@ -270,6 +271,19 @@ static void http_tests(void) {
         CHECK(http_mode==13?r==0:r==VT_IPTV_RANGE);free(data);
     }
 }
+static void local_http_tests(void){
+ char temp[]="/tmp/vmd-local-fetch.XXXXXX",previous[4096];CHECK(getcwd(previous,sizeof(previous)));CHECK(mkdtemp(temp)&&!chdir(temp));
+ FILE *f=fopen("ux0:channel.m3u","wb");CHECK(f);CHECK(fwrite(media,1,strlen(media),f)==strlen(media));CHECK(!fclose(f));
+ VtIptvHttpOptions options={.allow_local=1};unsigned char *data=NULL;size_t size;char effective[2048];volatile int cancel=0;
+ CHECK(vt_iptv_http_fetch(NULL,"ux0:channel.m3u",4096,&data,&size,effective,sizeof(effective),&cancel)==VT_IPTV_INVALID&&!data);
+ CHECK(!vt_iptv_http_fetch(&options,"ux0:channel.m3u",4096,&data,&size,effective,sizeof(effective),&cancel));CHECK(size==strlen(media)&&!memcmp(data,media,size));free(data);
+ CHECK(vt_iptv_http_fetch(&options,"ux0:channel.m3u",8,&data,&size,effective,sizeof(effective),&cancel)==VT_IPTV_LIMIT&&!data);
+ CHECK(!vt_iptv_http_fetch_range(&options,"ux0:channel.m3u",2,10,&data,&size,effective,sizeof(effective),&cancel));CHECK(size==10&&!memcmp(data,media+2,10));free(data);
+ CHECK(vt_iptv_http_fetch_range(&options,"ux0:channel.m3u",strlen(media),10,&data,&size,effective,sizeof(effective),&cancel)==VT_IPTV_RANGE&&!data);
+ CHECK(vt_iptv_http_fetch(&options,"ux0:missing.m3u",4096,&data,&size,effective,sizeof(effective),&cancel)==VT_IPTV_NOT_FOUND);
+ cancel=1;CHECK(vt_iptv_http_fetch(&options,"ux0:channel.m3u",4096,&data,&size,effective,sizeof(effective),&cancel)==VT_IPTV_CANCELLED&&!data);
+ CHECK(!unlink("ux0:channel.m3u")&&!chdir(previous)&&!rmdir(temp));
+}
 static void prebuffer_tests(void) {
     Mock mock={.playlist=media};
     VtIptvSourceConfig config={.fetch=mock_fetch,.fetch_ctx=&mock,
@@ -297,4 +311,4 @@ static void prebuffer_tests(void) {
     CHECK(vt_iptv_source_poll(s,0)==VT_IPTV_END);vt_iptv_source_status(s,&status);
     CHECK(status.startup_ready&&status.buffered_segments==1);vt_iptv_source_destroy(s);
 }
-int main(void) { parser_tests();source_tests();prebuffer_tests();concurrency_test();http_tests();printf("IPTV source: %u assertions passed\n",checks);return 0; }
+int main(void) { parser_tests();source_tests();prebuffer_tests();concurrency_test();http_tests();local_http_tests();printf("IPTV source: %u assertions passed\n",checks);return 0; }

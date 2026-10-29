@@ -23,7 +23,8 @@ typedef struct {
 } Resource;
 struct HlsSource {
     VtIptvSourceConfig config;
-    char url[VT_IPTV_URL_MAX];
+    VtIptvSelection active;
+    char url[VT_IPTV_RESOURCE_URL_MAX];
     volatile int *cancel;
     AVFormatContext *demux, *mux;
     AVIOContext *root_io, *output_io;
@@ -33,6 +34,8 @@ struct HlsSource {
     unsigned timestamp_probe_frames, startup_count, startup_pos;
     AVPacket *startup[STARTUP_PACKETS];
     uint32_t audio_rate, audio_channels;
+    char embedded_languages[16][64];
+    int ts_inspected;
     unsigned char *output;
     size_t output_size, output_capacity, resource_bytes;
     unsigned resources;
@@ -93,7 +96,7 @@ static int decrypt_segment(unsigned char *data,size_t *size,AVDictionary *option
     *size-=padding;return *size?0:VT_IPTV_INVALID;
 }
 static int download(HlsSource *s,const char *url,int64_t offset,int64_t end,
-    unsigned char **data,size_t *size,char effective[VT_IPTV_URL_MAX]) {
+    unsigned char **data,size_t *size,char effective[VT_IPTV_RESOURCE_URL_MAX]) {
     size_t limit=s->config.segment_limit;
     if(end>=0 && (offset<0 || end<=offset || (uint64_t)(end-offset)>limit))return VT_IPTV_LIMIT;
     for(int attempt=0;attempt<3;attempt++) {
@@ -102,13 +105,13 @@ static int download(HlsSource *s,const char *url,int64_t offset,int64_t end,
         int result;
         if(end>=0 && s->config.fetch_range)
             result=s->config.fetch_range(s->config.fetch_ctx,url,(uint64_t)offset,(size_t)(end-offset),
-                data,size,effective,VT_IPTV_URL_MAX,s->cancel);
-        else result=s->config.fetch(s->config.fetch_ctx,url,limit,data,size,effective,VT_IPTV_URL_MAX,s->cancel);
+                data,size,effective,VT_IPTV_RESOURCE_URL_MAX,s->cancel);
+        else result=s->config.fetch(s->config.fetch_ctx,url,limit,data,size,effective,VT_IPTV_RESOURCE_URL_MAX,s->cancel);
         s->requests++;
         if(interrupted(s))result=VT_IPTV_CANCELLED;
-        char checked[VT_IPTV_URL_MAX];
+        char checked[VT_IPTV_RESOURCE_URL_MAX];
         if(!result && (!*data || !*size || *size>limit))result=VT_IPTV_LIMIT;
-        if(!result)result=vt_iptv_resolve_url(url,effective,checked,sizeof(checked));
+        if(!result)result=vt_iptv_resource_resolve(url,effective,checked,sizeof(checked));
         if(!result && end>=0) {
             if(s->config.fetch_range) {if(*size!=(size_t)(end-offset))result=VT_IPTV_INVALID;}
             else if((uint64_t)end>*size)result=VT_IPTV_INVALID;
@@ -127,6 +130,44 @@ static int option_number(AVDictionary *options,const char *key,int64_t fallback,
     if(errno || *end || n<0)return VT_IPTV_INVALID;
     *number=n;return 0;
 }
+static int deny_metadata_io(AVFormatContext *fmt,AVIOContext **io,const char *url,int flags,AVDictionary **options){
+    (void)fmt;(void)io;(void)url;(void)flags;(void)options;return AVERROR(EPERM);
+}
+/* FFmpeg 6 HLS copies codec parameters but drops per-stream MPEG-TS language
+ * tags. Read just the first local segment's bounded PMT/PES prefix, without
+ * another fetch, decoder or nested I/O. Stream order within this single muxed
+ * playlist is preserved by HLS. External renditions already have their labels. */
+static void inspect_ts_languages(HlsSource *s,unsigned char *data,size_t size){
+    if(s->ts_inspected||!s->config.stream_options||
+       size<376||data[0]!=0x47||data[188]!=0x47)return;
+    s->ts_inspected=1;
+    Resource memory={.source=s,.data=data,.size=size>256u*1024u?256u*1024u:size};
+    unsigned char *buffer=av_malloc(IO_SIZE);if(!buffer)return;
+    AVIOContext *io=avio_alloc_context(buffer,IO_SIZE,0,&memory,read_resource,NULL,seek_resource);
+    if(!io){av_free(buffer);return;}
+    AVFormatContext *fmt=avformat_alloc_context();
+    if(fmt){
+        fmt->pb=io;fmt->flags|=AVFMT_FLAG_CUSTOM_IO;fmt->io_open=deny_metadata_io;
+        fmt->probesize=256u*1024u;fmt->max_analyze_duration=0;fmt->max_streams=16;
+        fmt->interrupt_callback=(AVIOInterruptCB){interrupted,s};
+        if(avformat_open_input(&fmt,NULL,av_find_input_format("mpegts"),NULL)>=0){
+            AVPacket *packet=av_packet_alloc();
+            if(packet){for(int i=0;i<4;i++){int r=av_read_frame(fmt,packet);av_packet_unref(packet);if(r<0)break;}av_packet_free(&packet);}
+            if(fmt->nb_programs==1&&!s->config.stream_options->channel_name[0]){
+                AVDictionaryEntry *name=av_dict_get(fmt->programs[0]->metadata,"service_name",NULL,0);
+                if(name)snprintf(s->config.stream_options->channel_name,sizeof(s->config.stream_options->channel_name),"%s",name->value);
+            }
+            unsigned audio=0;
+            for(unsigned i=0;i<fmt->nb_streams&&audio<16;i++)if(fmt->streams[i]->codecpar->codec_type==AVMEDIA_TYPE_AUDIO){
+                AVDictionaryEntry *v=av_dict_get(fmt->streams[i]->metadata,"language",NULL,0);
+                if(v)snprintf(s->embedded_languages[audio],sizeof(s->embedded_languages[audio]),"%s",v->value);
+                audio++;
+            }
+        }
+        avformat_close_input(&fmt);
+    }
+    av_freep(&io->buffer);avio_context_free(&io);
+}
 static int open_resource(AVFormatContext *format,AVIOContext **io,const char *url,int flags,AVDictionary **options) {
     HlsSource *s=format->opaque;int result=0;*io=NULL;
     /* FFmpeg normally skips a failed segment. After our bounded retries are
@@ -135,8 +176,9 @@ static int open_resource(AVFormatContext *format,AVIOContext **io,const char *ur
     if(s->error)return AVERROR(EIO);
     if(flags!=AVIO_FLAG_READ || s->resources>=12){s->error=VT_IPTV_LIMIT;return AVERROR(EPERM);}
     int crypto=!strncmp(url,"crypto+",7);const char *address=crypto?url+7:url;
-    char checked[VT_IPTV_URL_MAX],effective[VT_IPTV_URL_MAX];
-    result=vt_iptv_resolve_url(address,address,checked,sizeof(checked));
+    if(!strncmp(address,"file:",5)&&vt_iptv_local_path(s->url)&&vt_iptv_local_path(address+5))address+=5;
+    char checked[VT_IPTV_RESOURCE_URL_MAX],effective[VT_IPTV_RESOURCE_URL_MAX];
+    result=vt_iptv_resource_resolve(address,address,checked,sizeof(checked));
     int64_t offset=0,end=-1;
     if(!result)result=option_number(options?*options:NULL,"offset",0,&offset);
     if(!result)result=option_number(options?*options:NULL,"end_offset",-1,&end);
@@ -151,6 +193,7 @@ static int open_resource(AVFormatContext *format,AVIOContext **io,const char *ur
         if(result==VT_IPTV_INVALID)result=VT_IPTV_MANIFEST;
         free(data);data=prepared;size=prepared_size;
     }
+    if(!result)inspect_ts_languages(s,data,size);
     if(!result && size>RESOURCE_MEMORY-s->resource_bytes)result=VT_IPTV_LIMIT;
     if(!result) {
         unsigned char *exact=realloc(data,size);
@@ -205,13 +248,21 @@ static int initialize(HlsSource *s) {
     av_dict_set(&options,"http_seekable","0",0);av_dict_set(&options,"live_start_index","-4",0);
     av_dict_set(&options,"max_reload","6",0);av_dict_set(&options,"m3u8_hold_counters","6",0);
     av_dict_set(&options,"allowed_extensions","ALL",0);
-    r=avformat_open_input(&s->demux,s->url,hls,&options);av_dict_free(&options);
+    char demux_url[VT_IPTV_RESOURCE_URL_MAX+6];
+    snprintf(demux_url,sizeof(demux_url),"%s%s",vt_iptv_local_path(s->url)?"file:":"",s->url);
+    r=avformat_open_input(&s->demux,demux_url,hls,&options);av_dict_free(&options);
     if(s->error)return s->error;
     if(r<0)return s->error?s->error:VT_IPTV_MANIFEST;
     r=avformat_find_stream_info(s->demux,NULL);
     if(s->error)return s->error;
     if(r<0)return s->error?s->error:VT_IPTV_MANIFEST;
     if(s->demux->nb_streams>16)return VT_IPTV_LIMIT;
+    int embedded_choice=-1;
+    if(!strncmp(s->config.selection.audio,"embedded:",9))embedded_choice=atoi(s->config.selection.audio+9);
+    VtIptvOptions *available=s->config.stream_options;
+    int inspect_audio=available&&(!available->audio_count||!strncmp(available->audio[0].id,"embedded:",9));
+    if(inspect_audio)available->audio_count=0;
+    int audio_ordinal=0;
     int video=-1,audio=-1,saw_video=0,saw_h264=0,saw_audio=0,saw_aac=0;
     for(unsigned i=0;i<s->demux->nb_streams;i++) {
         AVStream *stream=s->demux->streams[i];AVCodecParameters *par=stream->codecpar;
@@ -219,9 +270,19 @@ static int initialize(HlsSource *s) {
         if(par->codec_type==AVMEDIA_TYPE_VIDEO){saw_video=1;saw_h264|=par->codec_id==AV_CODEC_ID_H264;}
         if(par->codec_type==AVMEDIA_TYPE_AUDIO){saw_audio=1;saw_aac|=par->codec_id==AV_CODEC_ID_AAC;}
         if(video<0 && par->codec_type==AVMEDIA_TYPE_VIDEO && par->codec_id==AV_CODEC_ID_H264 &&
-           par->width>0 && par->height>0 && (unsigned)par->width<=s->config.width_limit && (unsigned)par->height<=s->config.height_limit)video=(int)i;
-        if(audio<0 && par->codec_type==AVMEDIA_TYPE_AUDIO && par->codec_id==AV_CODEC_ID_AAC &&
+           par->width>0 && par->height>0 && (!s->config.width_limit || (unsigned)par->width<=s->config.width_limit) && (!s->config.height_limit || (unsigned)par->height<=s->config.height_limit))video=(int)i;
+        if(inspect_audio&&par->codec_type==AVMEDIA_TYPE_AUDIO&&available->audio_count<VT_IPTV_CHOICE_MAX){
+            VtIptvChoice *c=&available->audio[available->audio_count++];memset(c,0,sizeof(*c));
+            snprintf(c->id,sizeof(c->id),"embedded:%u",i);
+            AVDictionaryEntry *v=av_dict_get(stream->metadata,"language",NULL,0);
+            if(v)snprintf(c->language,sizeof(c->language),"%s",v->value);
+            else if(audio_ordinal<16)snprintf(c->language,sizeof(c->language),"%s",s->embedded_languages[audio_ordinal]);
+            v=av_dict_get(stream->metadata,"title",NULL,0);if(v)snprintf(c->name,sizeof(c->name),"%s",v->value);
+            c->supported=par->codec_id==AV_CODEC_ID_AAC&&par->sample_rate>0&&par->sample_rate<=48000&&par->ch_layout.nb_channels>0&&par->ch_layout.nb_channels<=2;
+        }
+        if(audio<0 && (embedded_choice<0||(unsigned)embedded_choice==i) && par->codec_type==AVMEDIA_TYPE_AUDIO && par->codec_id==AV_CODEC_ID_AAC &&
            par->sample_rate>0 && par->sample_rate<=48000 && par->ch_layout.nb_channels>0 && par->ch_layout.nb_channels<=2)audio=(int)i;
+        if(par->codec_type==AVMEDIA_TYPE_AUDIO)audio_ordinal++;
         IPTV_TRACE("HLS track: index=%u type=%d codec=%d size=%dx%d audio=%d/%d\n",i,par->codec_type,par->codec_id,par->width,par->height,par->sample_rate,par->ch_layout.nb_channels);
     }
     if(video<0)return saw_video&&saw_h264?VT_IPTV_VIDEO_SIZE:VT_IPTV_VIDEO_CODEC;
@@ -269,12 +330,22 @@ static int initialize(HlsSource *s) {
     av_dict_set(&options,"pat_period","0.1",0);av_dict_set(&options,"pcr_period","20",0);
     r=avformat_write_header(s->mux,&options);av_dict_free(&options);
     if(r<0)return VT_IPTV_UNSUPPORTED;
+    if(s->config.stream_options){
+        VtIptvOptions *o=s->config.stream_options;
+        o->active=s->active;
+        if(!o->active.audio[0])snprintf(o->active.audio,sizeof(o->active.audio),"embedded:%d",audio);
+        o->active_width=s->demux->streams[video]->codecpar->width;
+        o->active_height=s->demux->streams[video]->codecpar->height;
+        o->active_bandwidth=0;
+        for(unsigned i=0;i<o->video_count;i++)if(!strcmp(o->video[i].id,o->active.video))o->active_bandwidth=o->video[i].bandwidth;
+    }
+    s->config.active_selection=NULL;
     IPTV_TRACE("HLS remux ready: video=%d audio=%d separate renditions joined; requests=%llu AES segments=%llu\n",video,audio,(unsigned long long)s->requests,(unsigned long long)s->encrypted);
     return 0;
 }
 static void *source_open(const char *url,const VtIptvSourceConfig *config) {
     HlsSource *s=calloc(1,sizeof(*s));if(!s)return NULL;
-    s->config=*config;snprintf(s->url,sizeof(s->url),"%s",url);
+    s->config=*config;s->config.active_selection=&s->active;snprintf(s->url,sizeof(s->url),"%s",url);
     for(int i=0;i<16;i++){s->map[i]=-1;s->last_dts[i]=INT64_MIN;}
     s->packet=av_packet_alloc();if(!s->packet){free(s);return NULL;}return s;
 }
@@ -386,6 +457,7 @@ static int source_next(void *opaque,uint64_t now,volatile int *cancel,unsigned c
     if(!exact){result=VT_IPTV_MEMORY;goto failed;}
     *data=exact;*size=s->output_size;s->output=NULL;s->output_size=s->output_capacity=0;return 0;
 failed:
+    if(interrupted(s))result=VT_IPTV_CANCELLED;
     IPTV_TRACE("HLS remux stopped: result=%d requests=%llu packets=%llu AES=%llu\n",result,(unsigned long long)s->requests,(unsigned long long)s->packets,(unsigned long long)s->encrypted);
     return result;
 }

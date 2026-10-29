@@ -1,7 +1,7 @@
 /* Localizable UI strings for src/ui/about_screen.c. Format:
  * VT_STR(KEY_NAME, "italian text", "english text") */
 VT_STR(ABOUT_TITLE, "Informazioni", "About")
-VT_STR(ABOUT_VERSION, "Versione 1.4.1", "Version 1.4.1")
+VT_STR(ABOUT_VERSION, "Versione 1.4.2", "Version 1.4.2")
 VT_STR(ABOUT_DEVELOPER, "Sviluppato da spyro-98 su GitHub", "Developed by spyro-98 on GitHub")
 VT_STR(ABOUT_TAGLINE, "Player multimediale locale e di rete per PlayStation Vita", "Local and network media player for PlayStation Vita")
 VT_STR(ABOUT_SPECS_TITLE, "Specifiche prestazioni", "Performance specs")
@@ -15,8 +15,8 @@ VT_STR(ABOUT_LOG_STARTUP_NAVIGATION, "Avvio e navigazione", "Startup and navigat
 VT_STR(ABOUT_LOG_GRAPHICS_STARTUP, "Avvio grafico", "Graphics startup")
 VT_STR(ABOUT_LOG_KEYBOARD_IME, "Tastiera / IME", "Keyboard / IME")
 VT_STR(ABOUT_LOG_NOT_AVAILABLE, "Non disponibile", "Not available")
-VT_STR(ABOUT_LOG_OPEN_HINT, "X apri   SINISTRA specifiche   L1 sezioni   CERCHIO indietro", "X open   LEFT specs   L1 sections   CIRCLE back")
-VT_STR(ABOUT_LOG_VIEW_HINT, "SU/GIU scorri   TRIANGOLO aggiorna   CERCHIO elenco", "UP/DOWN scroll   TRIANGLE refresh   CIRCLE list")
+VT_STR(ABOUT_LOG_OPEN_HINT, "\uE000 apri   SINISTRA specifiche   \uE004 sezioni   \uE001 indietro", "\uE000 open   LEFT specs   \uE004 sections   \uE001 back")
+VT_STR(ABOUT_LOG_VIEW_HINT, "SU/GIU scorri   \uE003 aggiorna   \uE001 elenco", "UP/DOWN scroll   \uE003 refresh   \uE001 list")
 VT_STR(ABOUT_LOG_TAIL_ONLY, "Mostrata la parte piu' recente", "Showing the latest portion")
 VT_STR(ABOUT_LOG_WRITES_DISABLED, "Scrittura log disattivata nelle Impostazioni; i file precedenti restano leggibili.", "Log writing is disabled in Settings; existing files remain readable.")
-VT_STR(ABOUT_FOOTER_HINT, "SU/GIU o trascina per scorrere   -   CERCHIO indietro", "UP/DOWN or drag to scroll   -   CIRCLE to go back")
+VT_STR(ABOUT_FOOTER_HINT, "SU/GIU o trascina per scorrere   -   \uE001 indietro", "UP/DOWN or drag to scroll   -   \uE001 to go back")

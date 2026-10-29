@@ -18,7 +18,7 @@ for vmd_sanitizer in address,undefined thread; do
     vmd_fixture="$(mktemp -d "$vmd_output/audio.XXXXXX")"
     (cd "$vmd_fixture"; "$vmd_output/audio-test" "$vmd_output/tone.mp3")
     clang "${vmd_flags[@]}" "-fsanitize=$vmd_sanitizer" tests/online_audio/cache_test.c \
-        src/network/artwork_cache.c src/network/iptv_catalog.c src/network/iptv_manifest.c \
+        src/network/iptv_catalog.c src/network/iptv_manifest.c \
         src/network/iptv_saved.c "${vmd_link[@]}" -o "$vmd_output/cache-test"
     vmd_fixture="$(mktemp -d "$vmd_output/cache.XXXXXX")"
     (cd "$vmd_fixture"; "$vmd_output/cache-test")

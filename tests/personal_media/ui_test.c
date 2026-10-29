@@ -119,3 +119,5 @@ int main(int argc,char**argv){CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeT
  /* All twelve rows fit with live player + download actions. */
  live_slots=1;reset_inputs(SCE_CTRL_LTRIGGER);script_count=6;input_script[3]=SCE_CTRL_CIRCLE;input_script[4]=0;input_script[5]=SCE_CTRL_CIRCLE;capture_frame=1;CHECK(ui_personal_media_screen(VT_NETWORK_IMMICH)==UI_SECTION_LOCAL_MEDIA);memcpy(pixels,first_pixels,sizeof(pixels));png("personal-sidebar-all-sections");live_slots=0;
  ui_personal_media_shutdown();FT_Done_Face(mono);FT_Done_Face(inter);FT_Done_FreeType(ft);printf("Personal media native UI: %u checks, 7 themes, 2 languages, connection/edit/cancel/save failure and player handoff passed\n",checks);return 0;}
+
+#include "../i18n/bilingual_stubs.h"

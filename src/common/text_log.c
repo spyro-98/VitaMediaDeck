@@ -3,9 +3,11 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
 
 #include "debugScreen.h"
@@ -20,8 +22,11 @@
 
 static char g_log_buf[LOG_BUF_SIZE];
 static size_t g_log_len;
+static size_t g_log_header_len;
 static int g_log_total_lines; /* numero di '\n' presenti nel buffer */
 static volatile int g_log_lock;
+static char g_saved_paths[4][256];
+static unsigned g_saved_path_count;
 
 static PsvDebugScreenFont *g_big_font; /* created on the first log_view(), then reused */
 
@@ -37,16 +42,29 @@ static void log_unlock(void) {
 void log_init(void) {
 	g_log_lock = 0;
 	g_log_len = 0;
+    g_log_header_len=0;
 	g_log_total_lines = 0;
 	g_log_buf[0] = '\0';
+    g_saved_path_count=0;
+    time_t now=time(NULL);struct tm utc;
+    if(gmtime_r(&now,&utc)){
+        g_log_len=(size_t)snprintf(g_log_buf,sizeof(g_log_buf),"Session UTC: %04d-%02d-%02d %02d:%02d:%02d\n",
+            utc.tm_year+1900,utc.tm_mon+1,utc.tm_mday,utc.tm_hour,utc.tm_min,utc.tm_sec);
+        g_log_total_lines=1;
+        g_log_header_len=g_log_len;
+    }
 }
 
 static void log_append(const char *text) {
 	size_t len = strlen(text);
 	if (g_log_len + len >= LOG_BUF_SIZE) {
-		/* Buffer full: not fatal, it just stops recording new history. The
-		 * live-print (which has already happened) is not affected. */
-		return;
+        /* Keep complete recent records, including the error that filled the
+         * buffer, instead of silently losing all later playback diagnostics. */
+        size_t discard=g_log_len+len-(LOG_BUF_SIZE-1);
+        size_t first=g_log_header_len;
+        while(first+discard<g_log_len&&g_log_buf[first+discard-1]!='\n')discard++;
+        for(size_t i=first;i<first+discard;i++)if(g_log_buf[i]=='\n')g_log_total_lines--;
+        memmove(g_log_buf+first,g_log_buf+first+discard,g_log_len-first-discard);g_log_len-=discard;
 	}
 	memcpy(g_log_buf + g_log_len, text, len);
 	g_log_len += len;
@@ -204,6 +222,22 @@ int log_save(const char *path) {
 		written_total += (size_t)written;
 	}
 	sceIoClose(fd);
+    int seen=0;for(unsigned i=0;i<g_saved_path_count;i++)if(!strcmp(g_saved_paths[i],path))seen=1;
+    if(!seen){
+        SceIoStat st;
+        if(sceIoGetstat(path,&st)>=0){
+            char older[272],newer[272];
+            snprintf(older,sizeof(older),"%s.16",path);sceIoRemove(older);
+            for(int i=15;i>=1;i--){
+                snprintf(older,sizeof(older),"%s.%d",path,i);snprintf(newer,sizeof(newer),"%s.%d",path,i+1);
+                sceIoRename(older,newer);
+            }
+            snprintf(newer,sizeof(newer),"%s.1",path);
+            int archived=sceIoRename(path,newer);
+            if(archived<0){log_unlock();return archived;}
+        }
+        if(g_saved_path_count<4)snprintf(g_saved_paths[g_saved_path_count++],256,"%s",path);
+    }
 	sceIoRemove(path);
 	int rename_ret = sceIoRename(tmp_path, path);
 	log_unlock();

@@ -33,6 +33,7 @@
 #include "ui/home_tabs.h"
 #include "ui/online_audio_screen.h"
 #include "ui/components.h"
+#include "ui/navigation.h"
 #include "ui/focus_glow.h"
 #include "ui/format.h"
 #include "ui/mini_player.h"
@@ -72,6 +73,11 @@
 #define TAB_W 126
 #define TAB_STEP 132
 
+static float local_option_y(float row,int flattened){
+ int views=1+!!vt_ui_theme_legacy_layout(ui_theme_id())+(!flattened?2:0);
+ unsigned starts=1u|(1u<<views)|(1u<<(views+1))|(1u<<(views+2));
+ return ui_menu_group_focus_y(row,82,52,starts);
+}
 static int local_viewport_bottom(void) {
 	int mini_top = ui_mini_player_top();
 	return mini_top < UI_CONTENT_BOTTOM ? mini_top : UI_CONTENT_BOTTOM;
@@ -103,10 +109,12 @@ static int local_grid_render_rows(void) {
  return ui_media_grid_layout(LIST_Y, local_viewport_bottom()).rows;
 }
 
-static int grid_top_for_selection(int selected) {
+static int grid_top_for_selection(int selected,int top) {
 	int selected_row = selected / GRID_COLS;
 	int visible = local_grid_visible_rows();
-	return selected_row >= visible ? selected_row - visible + 1 : 0;
+	if(selected_row<top)return selected_row;
+    if(selected_row>=top+visible)return selected_row-visible+1;
+    return top;
 }
 
 static int thumbnail_viewport_priority(int index, int selected,
@@ -1074,16 +1082,17 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
 	ui_brand_set_loading(g_scan_job.thid >= 0 && !g_scan_job.done);
-	if (vt_ui_theme_legacy_layout(ui_theme_id()))
-		ui_brand_draw_home_header();
-	else ui_brand_draw_header(NULL);
+    const VtLocalMediaItem *header_item=screen_count(filter,flattened)?screen_item(filter,selected,flattened,NULL):NULL;
+    if(focus_tabs)ui_brand_draw_home_header();
+    else ui_brand_draw_path(ui_home_tab_label(),header_item&&header_item->path[0]?header_item->path:media_location_label(header_item));
 	int page_has_focus = !ui_mini_player_input_locked() &&
 	                     right_animation <= 0.01f &&
 	                     (!sidebar || (!sidebar->open &&
 	                                  sidebar->animation <= 0.01f));
 	int content_has_focus = page_has_focus && !focus_tabs;
 	ui_home_tabs_set_expanded(1);
-	ui_home_tabs_draw_with_focus(page_has_focus && focus_tabs, focus_motion);
+	if(focus_tabs||!vt_ui_theme_legacy_layout(ui_theme_id()))
+        ui_home_tabs_draw_with_focus(page_has_focus && focus_tabs, focus_motion);
 	int count = screen_count(filter, flattened);
 	int viewport_bottom = local_viewport_bottom();
     UiPageView page=home_page(filter,top,count,grid_mode,storage_filter,sort_mode,flattened);
@@ -1105,7 +1114,7 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		if (!count)
 			ui_text_line(LIST_X, LIST_Y + 26, LIST_W, vt_i18n_str(VT_STR_LOCAL_MEDIA_EMPTY),
 			             VT_THEME_TEXT_MUTED, UI_FONT_BODY);
-		vita2d_set_clip_rectangle(0, HOME_LAYOUT.y - 4, 960, viewport_bottom);
+		vita2d_set_clip_rectangle(0, HOME_LAYOUT.y - 4, 960, ui_theme_home_content_bottom(ui_theme_id(),viewport_bottom));
 		vita2d_enable_clipping();
 		for (int pos = page.first; pos < page.end; pos++) {
 			LocalMediaRoot *root = NULL;
@@ -1300,9 +1309,9 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
 		/* Modal drawers cover the complete display edge, including the brand bar.
 		 * This prevents the panel from reading as a detached card. */
 		float panel_x = 960.0f - 430.0f * right_animation;
-		vita2d_draw_rectangle(panel_x, 0, 430, 544, VT_THEME_BG_SOFT);
+		ui_menu_surface(panel_x,0,430,544,1);
 		vita2d_draw_rectangle(panel_x, 0, 1, 544, VT_THEME_BORDER);
-		if (body) ui_font_draw_text(body, (int)panel_x + 30, 92, VT_THEME_TEXT,
+		if (body) ui_font_draw_text_exact(body, (int)panel_x + 30, 47, UI_MENU_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
 		char storage_action[160], sort_action[160], navigation_action[160];
@@ -1335,14 +1344,19 @@ static void draw_screen(int filter, int selected, int top, int grid_mode,
             !screen_item(filter,selected,flattened,NULL)->is_directory)
 			actions[action_count++] = vt_i18n_str(VT_STR_LOCAL_MEDIA_ACTIONS);
 		for (int i = 0; i < action_count; i++) {
-			int ay = 124 + i * 62;
-			ui_action_button((int)panel_x + 22, ay, 384, 52, VT_THEME_SURFACE,
+            int ay = local_option_y(i,flattened);
+            int view_count=1+!!vt_ui_theme_legacy_layout(ui_theme_id())+(!flattened?2:0);
+            int group=i<view_count?UI_MENU_GROUP_VIEW:i==view_count?UI_MENU_GROUP_LIBRARY:
+                i==view_count+1?UI_MENU_GROUP_MAINTENANCE:UI_MENU_GROUP_LIBRARY;
+            if(!i||i==view_count||i==view_count+1||i==view_count+2)
+                ui_menu_category(panel_x+36,ay-UI_MENU_HEADING_HEIGHT,356,group);
+            ui_action_button((int)panel_x + 22, ay+4, 384, 48, UI_MENU_BG,
 			                 i + (!vt_ui_theme_legacy_layout(ui_theme_id())) < (flattened ? 2 : 4)
 			                     ? "Left/Right"
-								 : "Cross",
+								 : UI_PAD_CROSS,
 			                 actions[i], 0);
 		}
-		if(right_open){UiFocusMotion focus={.x=panel_x+22,.y=124+right_focus*62,.width=384,.height=52,.initialized=1};ui_focus_outline_draw(&focus);}
+		if(right_open){UiFocusMotion focus={.x=panel_x+22,.y=local_option_y(right_focus,flattened),.width=384,.height=52,.initialized=1};ui_menu_focus_draw(&focus);}
 #ifdef VMD_ENABLE_PAF_NATIVE
         ui_native_vita_scope(native_scope);
 #endif
@@ -1484,7 +1498,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 				int touched_row = -1;
 				for (int i = 0; i < drawer_row_count; i++) {
 					if (ui_touch_hit_rect(touch.x, touch.y, (int)panel_x + 22,
-					                      124 + i * 62, 384, 52)) {
+					                      local_option_y(i,flattened), 384, 52)) {
 						touched_row = i;
 						break;
 					}
@@ -1598,7 +1612,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			                       .held = ctrl.buttons,
 			                       .touch_flags = flags,
 			                       .lx = ctrl.lx,
-			                       .ly = ctrl.ly,
+			                       .ly = focus_tabs?ctrl.ly:128,
 			                       .rx = ctrl.rx,
 			                       .ry = ctrl.ry,
 			                       .selected = selected,
@@ -1616,7 +1630,7 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
   } else {
 	  nav = ui_nav_repeat_update(&page_repeat, pressed, overlay_owns_input ? 0 : ctrl.buttons,
 			                     overlay_owns_input ? 128 : ctrl.lx,
-			                     overlay_owns_input ? 128 : ctrl.ly,
+			                     overlay_owns_input || !focus_tabs ? 128 : ctrl.ly,
 			                     SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
 	  unsigned tab_nav =
 		  ui_home_tabs_navigation(pressed, focus_tabs && !overlay_owns_input ? ctrl.buttons : 0,
@@ -1664,20 +1678,10 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			nav &= ~SCE_CTRL_DOWN;
 		}
 		if (!focus_tabs && grid_mode) {
-			if ((nav & SCE_CTRL_LEFT) && selected > 0) selected--;
-			if ((nav & SCE_CTRL_RIGHT) && selected + 1 < count) selected++;
-			if ((nav & SCE_CTRL_UP) && selected >= 3) selected -= 3;
-			if ((nav & SCE_CTRL_DOWN) && selected + 3 < count) selected += 3;
+			selected=ui_grid_navigation(selected,count,3,nav);
 		} else if (!focus_tabs) {
 			int columns = vt_ui_theme_legacy_layout(ui_theme_id()) ? 1 : HOME_LAYOUT.columns;
-			if ((nav & SCE_CTRL_UP) && selected >= columns)
-				selected -= columns;
-			if ((nav & SCE_CTRL_DOWN) && selected + columns < count)
-				selected += columns;
-			if ((nav & SCE_CTRL_LEFT) && selected % columns)
-				selected--;
-			if ((nav & SCE_CTRL_RIGHT) && selected % columns + 1 < columns && selected + 1 < count)
-				selected++;
+			selected=ui_grid_navigation(selected,count,columns,nav);
 		}
 		if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
 			top = ui_theme_home_top(ui_theme_id(), selected, top, local_viewport_bottom());
@@ -1686,8 +1690,20 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			if (selected < top) top = selected;
 			if (selected >= top + visible) top = selected - visible + 1;
 		} else {
-			top = grid_top_for_selection(selected);
+			top = grid_top_for_selection(selected,top);
 		}
+
+        if(!overlay_owns_input&&(flags&UI_TOUCH_EVENT_DOWN)&&touch.down_y>=LIST_Y&&
+            touch.down_y<ui_theme_home_content_bottom(ui_theme_id(),local_viewport_bottom()))focus_tabs=0;
+        if(!focus_tabs && !overlay_owns_input){
+            home_page(filter,top,count,grid_mode,storage_filter,sort_mode,flattened);
+            int width=vt_ui_theme_legacy_layout(ui_theme_id())?UI_CONTENT_W:
+                ui_theme_id()==VT_UI_THEME_GHOST_MESH?HOME_LAYOUT.w:942-LIST_X;
+            ui_theme_page_input(UI_SCENE_HOME,"local-home",LIST_X,LIST_Y,width,
+                (vt_ui_theme_legacy_layout(ui_theme_id())?local_viewport_bottom():ui_theme_home_content_bottom(ui_theme_id(),local_viewport_bottom()))-LIST_Y,count,
+                vt_ui_theme_legacy_layout(ui_theme_id())&&grid_mode,&top,&selected,
+                ctrl.buttons,ctrl.lx,ctrl.ly,&flags,&touch);
+        }
 
 		if (!focus_tabs && (pressed & SCE_CTRL_CROSS) && count > 0) {
 			const VtLocalMediaItem *item = screen_item(filter, selected, flattened, NULL);
@@ -1704,24 +1720,6 @@ int ui_local_media_screen(VtLocalMediaItem *selected_out) {
 			} else
 				return local_media_leave(UI_LOCAL_MEDIA_ACTION_BACK);
   }
-		if ((flags & UI_TOUCH_EVENT_UP) && !(flags & UI_TOUCH_EVENT_TAP) &&
-		    !focus_tabs && count > 0) {
-			int dy = touch.y - touch.down_y;
-			int step = grid_mode ? GRID_COLS : local_list_visible_rows();
-			if (dy < -36) selected += step;
-			else if (dy > 36) selected -= step;
-			if (selected < 0) selected = 0;
-			if (selected >= count) selected = count - 1;
-			if (!vt_ui_theme_legacy_layout(ui_theme_id())) {
-				top = ui_theme_home_top(ui_theme_id(), selected, top, local_viewport_bottom());
-			} else if (!grid_mode) {
-				int visible = local_list_visible_rows();
-				if (selected < top) top = selected;
-				if (selected >= top + visible)
-					top = selected - visible + 1;
-			} else
-				top = grid_top_for_selection(selected);
-		}
 		if (flags & UI_TOUCH_EVENT_TAP) {
             UiPageView visible=home_page(filter,top,count,grid_mode,storage_filter,sort_mode,flattened);
             for(int pos=visible.first;pos<visible.end;pos++) {

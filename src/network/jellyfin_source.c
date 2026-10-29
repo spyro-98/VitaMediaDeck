@@ -22,7 +22,7 @@
 #define JELLYFIN_PREFETCH_THREAD_CREATE_PRIORITY  0x10000100
 #define JELLYFIN_PREFETCH_THREAD_RUNTIME_PRIORITY 0xB0
 #define JELLYFIN_PREFETCH_THREAD_STACK            0x20000
-#define JELLYFIN_CLIENT_VERSION "1.4.1"
+#define JELLYFIN_CLIENT_VERSION "1.4.2"
 #define JELLYFIN_DEVICE_ID "VMDK00001"
 
 typedef struct {
@@ -239,7 +239,7 @@ static int authorization_header(const char *token, char *out, size_t out_size) {
 static void jellyfin_client_config(const VtNetworkSource *source,
 	                               VitaHttpsClientConfig *config) {
 	memset(config, 0, sizeof(*config));
-	config->user_agent = "VitaMediaDeck/1.4.1";
+	config->user_agent = "VitaMediaDeck/1.4.2";
 	config->connect_timeout_ms = 5000;
 	config->request_timeout_ms = 12000;
 	config->low_speed_bytes_per_second = 1024;

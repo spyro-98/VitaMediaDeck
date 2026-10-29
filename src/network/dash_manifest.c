@@ -88,19 +88,19 @@ static int bounded_tree(xmlNode *n,unsigned depth,unsigned *count) {
     return 0;
 }
 static int base_url(xmlNode **nodes,unsigned count,const char *base,char *out) {
-    snprintf(out,VT_IPTV_URL_MAX,"%s",base);
+    snprintf(out,VT_IPTV_RESOURCE_URL_MAX,"%s",base);
     for(unsigned i=0;i<count;i++) {
         xmlNode *n=child(nodes[i],"BaseURL");if(!n)continue;
         xmlChar *p=xmlNodeGetContent(n);if(!p)return -1;
-        char resolved[VT_IPTV_URL_MAX];
-        int result=vt_iptv_resolve_url(out,(const char*)p,resolved,sizeof(resolved));xmlFree(p);
+        char resolved[VT_IPTV_RESOURCE_URL_MAX];
+        int result=vt_iptv_resource_resolve(out,(const char*)p,resolved,sizeof(resolved));xmlFree(p);
         if(result)return -1;
-        snprintf(out,VT_IPTV_URL_MAX,"%s",resolved);
+        snprintf(out,VT_IPTV_RESOURCE_URL_MAX,"%s",resolved);
     }
     return 0;
 }
 static int expand(const VtDashTrack *t,const char *input,uint64_t number,uint64_t time,char *out) {
-    char path[VT_IPTV_URL_MAX];size_t used=0;
+    char path[VT_IPTV_RESOURCE_URL_MAX];size_t used=0;
     while(*input) {
         char value[160];size_t size;
         if(*input!='$'){if(used+1>=sizeof(path))return -1;path[used++]=*input++;continue;}
@@ -130,7 +130,7 @@ static int expand(const VtDashTrack *t,const char *input,uint64_t number,uint64_
         }
         size=strlen(value);if(size>=sizeof(path)-used)return -1;memcpy(path+used,value,size);used+=size;
     }
-    path[used]=0;return vt_iptv_resolve_url(t->base,path,out,VT_IPTV_URL_MAX);
+    path[used]=0;return vt_iptv_resource_resolve(t->base,path,out,VT_IPTV_RESOURCE_URL_MAX);
 }
 static int64_t presentation(const VtDashManifest *m,const VtDashTrack *t,uint64_t tick) {
     int64_t delta=av_rescale((int64_t)tick-(int64_t)t->offset,1000000,(int64_t)t->timescale);
@@ -208,15 +208,15 @@ static int prepare_track(VtDashManifest *m,VtDashTrack *t,xmlNode **levels,const
         char complete[16];if(text_prop(segments[i],"availabilityTimeComplete",complete,sizeof(complete))>0&&strcmp(complete,"true"))return VT_IPTV_UNSUPPORTED;
     }
     if(kind==1) {
-        char initialization[VT_IPTV_URL_MAX];
+        char initialization[VT_IPTV_RESOURCE_URL_MAX];
         if(inherited(segments,4,"initialization",initialization,sizeof(initialization))<=0||
            inherited(segments,4,"media",t->media,sizeof(t->media))<=0||expand(t,initialization,0,0,t->initialization))return VT_IPTV_INVALID;
     } else {
         xmlNode *initialization=NULL;
         for(int i=0;i<4;i++){xmlNode *n=child(segments[i],"Initialization");if(n)initialization=n;}
-        char url[VT_IPTV_URL_MAX];
+        char url[VT_IPTV_RESOURCE_URL_MAX];
         if(!t->list||!initialization||xmlHasProp(initialization,BAD_CAST"range")||
-           text_prop(initialization,"sourceURL",url,sizeof(url))<=0||vt_iptv_resolve_url(t->base,url,t->initialization,sizeof(t->initialization)))return VT_IPTV_UNSUPPORTED;
+           text_prop(initialization,"sourceURL",url,sizeof(url))<=0||vt_iptv_resource_resolve(t->base,url,t->initialization,sizeof(t->initialization)))return VT_IPTV_UNSUPPORTED;
         for(xmlNode *n=t->list->children;n;n=n->next)if(named(n,"SegmentURL")&&
             (xmlHasProp(n,BAD_CAST"mediaRange")||xmlHasProp(n,BAD_CAST"indexRange")))return VT_IPTV_UNSUPPORTED;
     }
@@ -273,16 +273,23 @@ int vt_dash_manifest_parse(const void *data,size_t size,const char *base,int64_t
         if(text_prop(root,"availabilityStartTime",ast,sizeof(ast))<=0||av_parse_time(&start,ast,0)<0||start<0||utc_us<=start)goto fail;
         m->available_us=utc_us-start;
         if(m->duration_us&&m->available_us>m->period_us+m->duration_us)m->available_us=m->period_us+m->duration_us;
-        xmlNode *timing=child(root,"UTCTiming");char scheme[160],value[VT_IPTV_URL_MAX];
+        xmlNode *timing=child(root,"UTCTiming");char scheme[160],value[VT_IPTV_RESOURCE_URL_MAX];
         if(timing&&text_prop(timing,"schemeIdUri",scheme,sizeof(scheme))>0&&text_prop(timing,"value",value,sizeof(value))>0) {
             if(!strcmp(scheme,"urn:mpeg:dash:utc:direct:2014"))snprintf(m->utc_value,sizeof(m->utc_value),"%s",value);
             else if(!strcmp(scheme,"urn:mpeg:dash:utc:http-xsdate:2014")||!strcmp(scheme,"urn:mpeg:dash:utc:http-iso:2014")) {
-                if(vt_iptv_resolve_url(base,value,m->utc_value,sizeof(m->utc_value)))goto fail;
+                if(vt_iptv_resource_resolve(base,value,m->utc_value,sizeof(m->utc_value)))goto fail;
                 m->utc_http=1;
             }
         }
     } else if(!m->duration_us){result=VT_IPTV_UNSUPPORTED;goto fail;}
-    int selected[2]={0};
+    if(limits&&limits->inspect){
+        limits->inspect->video_count=limits->inspect->audio_count=0;
+        xmlNode *program=child(root,"ProgramInformation");
+        xmlNode *title=child(program,"Title"),*source=child(program,"Source");
+        if(title){xmlChar *v=xmlNodeGetContent(title);if(v){snprintf(limits->inspect->title,sizeof(limits->inspect->title),"%s",v);xmlFree(v);}}
+        if(source){xmlChar *v=xmlNodeGetContent(source);if(v){snprintf(limits->inspect->provider,sizeof(limits->inspect->provider),"%s",v);xmlFree(v);}}
+    }
+    int selected[2]={0},preferred[2]={0};
     for(xmlNode *adapt=period->children;adapt;adapt=adapt->next)if(named(adapt,"AdaptationSet")) {
         for(xmlNode *rep=adapt->children;rep;rep=rep->next)if(named(rep,"Representation")) {
             xmlNode *levels[]={root,period,adapt,rep};char mime[96],codec[96];uint64_t bandwidth,width,height;
@@ -292,17 +299,44 @@ int vt_dash_manifest_parse(const void *data,size_t size,const char *base,int64_t
             if(track<0|| (mime[0]&&strcmp(mime,track?"audio/mp4":"video/mp4")))continue;
             if(inherited_uint(levels,4,"bandwidth",0,&bandwidth)||!bandwidth||bandwidth>UINT32_MAX||
                inherited_uint(levels,4,"width",0,&width)||inherited_uint(levels,4,"height",0,&height))continue;
-            uint64_t cap=limits&&limits->bandwidth_limit?limits->bandwidth_limit:4000000;
-            if(track==0&&(!width||!height||width>(limits&&limits->width_limit?limits->width_limit:1280)||
-               height>(limits&&limits->height_limit?limits->height_limit:720)||bandwidth>cap||!frame_budget(levels,width,height)))continue;
-            if(track==1&&bandwidth>512000)continue;
-            if(selected[track]&&bandwidth<=m->tracks[track].bandwidth)continue;
+            char id[VT_IPTV_CHOICE_ID_MAX],rep_id[128]="",adapt_id[128]="",language[64]="";
+            text_prop(rep,"id",rep_id,sizeof(rep_id));text_prop(adapt,"id",adapt_id,sizeof(adapt_id));
+            inherited(levels,4,"lang",language,sizeof(language));
+            /* Stable identity, never representation array position. */
+            if(!rep_id[0])snprintf(rep_id,sizeof(rep_id),"%.60s-%ux%u-%u",codec,(unsigned)width,(unsigned)height,(unsigned)bandwidth);
+            if(!adapt_id[0]&&track)snprintf(adapt_id,sizeof(adapt_id),"%.60s",language);
+            snprintf(id,sizeof(id),"%s|%s",adapt_id,rep_id);
+            VtIptvChoice *choice=NULL;
+            if(limits&&limits->inspect){
+                VtIptvOptions *o=limits->inspect;unsigned *n=track?&o->audio_count:&o->video_count;
+                if(*n<VT_IPTV_CHOICE_MAX){VtIptvChoice *c=track?&o->audio[(*n)++]:&o->video[(*n)++];memset(c,0,sizeof(*c));
+                    snprintf(c->id,sizeof(c->id),"%s",id);snprintf(c->name,sizeof(c->name),"%s",rep_id);
+                    snprintf(c->language,sizeof(c->language),"%s",language);snprintf(c->codec,sizeof(c->codec),"%s",codec);
+                    c->width=width;c->height=height;c->bandwidth=bandwidth;c->supported=0;choice=c;
+                }
+            }
+            const char *wanted=limits?(track?limits->selection.audio:limits->selection.video):"";
+            if(*wanted&&strcmp(wanted,id))continue;
+            if(!track&&(!width||!height))continue;
+            if(!*wanted&&!track&&limits&&((limits->width_limit&&width>limits->width_limit)||
+               (limits->height_limit&&height>limits->height_limit)||(limits->bandwidth_limit&&bandwidth>limits->bandwidth_limit)))continue;
+            int within=track?1:width<=1280&&height<=720&&bandwidth<=4000000&&frame_budget(levels,width,height);
+            /* Preference only: a source with just 1080p/high-bitrate video is
+             * still attempted. Explicit user selection bypasses this ranking. */
+            int choose=1;
+            if(selected[track]&&!*wanted){
+                if(within<preferred[track])choose=0;
+                if(within==preferred[track]&&
+                   (within?bandwidth<=m->tracks[track].bandwidth:bandwidth>=m->tracks[track].bandwidth))choose=0;
+            }
+            if(!choose&&!choice)continue;
             VtDashTrack *candidate=calloc(1,sizeof(*candidate));if(!candidate){result=VT_IPTV_MEMORY;goto fail;}
             if(text_prop(rep,"id",candidate->id,sizeof(candidate->id))<0){free(candidate);continue;}
             snprintf(candidate->codec,sizeof(candidate->codec),"%s",codec);
             candidate->bandwidth=(uint32_t)bandwidth;candidate->width=(uint32_t)width;candidate->height=(uint32_t)height;
             int r=prepare_track(m,candidate,levels,base);
-            if(!r){m->tracks[track]=*candidate;selected[track]=1;}free(candidate);
+            if(choice)choice->supported=!r;
+            if(!r&&choose){m->tracks[track]=*candidate;selected[track]=1;preferred[track]=within;snprintf(track?m->active.audio:m->active.video,VT_IPTV_CHOICE_ID_MAX,"%s",id);}free(candidate);
         }
     }
     if(!selected[0]||!selected[1]){result=VT_IPTV_UNSUPPORTED;goto fail;}
@@ -320,9 +354,9 @@ int vt_dash_segment(const VtDashManifest *m,int index,uint64_t tick,VtDashSegmen
     if(out->start_us==INT64_MIN||out->end_us==INT64_MIN)return VT_IPTV_LIMIT;
     if(t->list) {
         xmlNode *n=t->list->children;for(;n;n=n->next)if(named(n,"SegmentURL")){if(!ordinal)break;ordinal--;}
-        char url[VT_IPTV_URL_MAX];
+        char url[VT_IPTV_RESOURCE_URL_MAX];
         if(!n||text_prop(n,"media",url,sizeof(url))<=0)return VT_IPTV_INVALID;
-        return vt_iptv_resolve_url(t->base,url,out->url,sizeof(out->url));
+        return vt_iptv_resource_resolve(t->base,url,out->url,sizeof(out->url));
     }
     return expand(t,t->media,out->number,time,out->url)?VT_IPTV_INVALID:0;
 }

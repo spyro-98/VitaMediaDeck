@@ -112,3 +112,5 @@ int main(void){
  printf("Actual main browse routing: %u assertions, category tabs/folders/playback/Back, offline/online podcast and integrated Home passed.\n",checks);
  return 0;
 }
+
+#include "../i18n/bilingual_stubs.h"

@@ -8,7 +8,7 @@
 #include "ui/media_grid_layout.h"
 int main(int argc,char **argv) {
  CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));
- CHECK(UI_HOME_CONTENT_Y==UI_TABS_Y); /* Recover the entire former tab row. */
+ CHECK(UI_HOME_TABS_BOTTOM<=54&&UI_HOME_CONTENT_Y>=62); /* Tabs stay in chrome; content begins below it. */
  for (int legacy = 0; legacy < 2; legacy++)
      for (language = 0; language < 2; language++)
          for (int tab = 0; tab < HOME_TAB_COUNT; tab++)

@@ -27,6 +27,7 @@
 #include "ui/layout.h"
 #include "ui/media_grid_layout.h"
 #include "ui/components.h"
+#include "ui/navigation.h"
 #include "ui/focus_glow.h"
 #include "ui/format.h"
 #include "ui/mini_player.h"
@@ -57,6 +58,7 @@ typedef struct {
 	int is_directory;
 } LocalFileEntry;
 
+#define BROWSER_OPTION_Y(row) ui_menu_group_focus_y((row),82,52,7u)
 static char g_last_path[VT_LOCAL_MEDIA_PATH_MAX];
 static char g_browser_root[VT_LOCAL_MEDIA_PATH_MAX];
 static VtLocalMediaType g_type_filter;
@@ -511,7 +513,10 @@ static void draw_files(const LocalFileEntry *entries, int count,
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
-	ui_brand_draw_path(vt_i18n_str(VT_STR_LOCAL_MEDIA_FILES_TITLE), g_last_path);
+	VtStringId section=g_type_filter==VT_LOCAL_MEDIA_VIDEO?VT_STR_LOCAL_MEDIA_LOCAL_VIDEO:
+        g_type_filter==VT_LOCAL_MEDIA_AUDIO?VT_STR_LOCAL_MEDIA_LOCAL_AUDIO:
+        g_type_filter==VT_LOCAL_MEDIA_IMAGE?VT_STR_LOCAL_MEDIA_LOCAL_IMAGES:VT_STR_LOCAL_MEDIA_FILES_TITLE;
+    ui_brand_draw_path(vt_i18n_str(section),g_last_path);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (small) {
@@ -521,7 +526,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		                  UI_FONT_SMALL, count_text);
 		const char *mode = vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE);
 		char hint[64];
-		snprintf(hint, sizeof(hint), "R1  %s", mode);
+		snprintf(hint, sizeof(hint), UI_PAD_R1 "  %s", mode);
 		int width = ui_font_text_width(small, UI_FONT_SMALL, hint);
 		ui_font_draw_text(small, FILE_X + FILE_W - width - 16, 91,
 		                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, hint);
@@ -686,9 +691,9 @@ static void draw_files(const LocalFileEntry *entries, int count,
         int native_scope = ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
 #endif
 		const int panel_x = 530;
-		vita2d_draw_rectangle(panel_x, 0, 430, 544, VT_THEME_BG_SOFT);
+		ui_menu_surface(panel_x,0,430,544,1);
 		vita2d_draw_rectangle(panel_x, 0, 1, 544, VT_THEME_BORDER);
-		if (body) ui_font_draw_text(body, panel_x + 30, 92, VT_THEME_TEXT,
+		if (body) ui_font_draw_text_exact(body, panel_x + 30, 47, UI_MENU_TEXT,
 		                            UI_FONT_BODY,
 		                            vt_i18n_str(VT_STR_LOCAL_MEDIA_VIEW_TITLE));
 		char view_action[96];
@@ -706,13 +711,14 @@ static void draw_files(const LocalFileEntry *entries, int count,
 		};
 		int action_count = file_selected ? 3 : 2;
 		for (int i = 0; i < action_count; i++) {
-			int y = 124 + i * 62;
-			ui_action_button(panel_x + 22, y, 384, 52,
-			                 VT_THEME_SURFACE,
-			                 i == 0 ? "Left/Right" : "Cross", actions[i],0);
+			int y = BROWSER_OPTION_Y(i);
+            ui_menu_category(panel_x+36,y-UI_MENU_HEADING_HEIGHT,356,i==0?UI_MENU_GROUP_VIEW:i==1?UI_MENU_GROUP_MAINTENANCE:UI_MENU_GROUP_LIBRARY);
+            ui_action_button(panel_x + 22, y+4, 384, 48,
+			                 UI_MENU_BG,
+			                 i == 0 ? "Left/Right" : UI_PAD_CROSS, actions[i],0);
 		}
         if(focus_motion) {
-         ui_focus_motion_tick(focus_motion,panel_x+22,124+right_cursor*62,384,52);
+         ui_focus_motion_tick(focus_motion,panel_x+22,BROWSER_OPTION_Y(right_cursor),384,52);
          ui_focus_outline_draw(focus_motion);
         }
 #ifdef VMD_ENABLE_PAF_NATIVE
@@ -825,7 +831,7 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 			int action_count = file_selected ? 3 : 2;
 			if (touch_flags & UI_TOUCH_EVENT_TAP) {
 				for (int i = 0; i < action_count; i++)
-					if (ui_touch_hit_rect(touch.x, touch.y, 552, 124 + i * 62,
+					if (ui_touch_hit_rect(touch.x, touch.y, 552, BROWSER_OPTION_Y(i),
 					                      384, 52)) {
 						right_cursor = i;
 						pressed |= SCE_CTRL_CROSS;
@@ -877,15 +883,10 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 			continue;
 		}
 		unsigned int nav = ui_nav_repeat_update(
-		    &repeat, pressed, controls.buttons, controls.lx, controls.ly,
+		    &repeat, pressed, controls.buttons, controls.lx, 128,
 		    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
 		if (grid_mode) {
-			if ((nav & SCE_CTRL_LEFT) && selected > 0) selected--;
-			if ((nav & SCE_CTRL_RIGHT) && selected + 1 < count) selected++;
-			if ((nav & SCE_CTRL_UP) && selected >= FILE_GRID_COLS)
-				selected -= FILE_GRID_COLS;
-			if ((nav & SCE_CTRL_DOWN) && selected + FILE_GRID_COLS < count)
-				selected += FILE_GRID_COLS;
+			selected=ui_grid_navigation(selected,count,FILE_GRID_COLS,nav);
 			int row = selected / FILE_GRID_COLS;
 			if (row < top) top = row;
 			if (row >= top + grid_visible_rows()) top = row - grid_visible_rows() + 1;
@@ -895,6 +896,13 @@ int ui_local_files_screen_open(const char *root, VtLocalMediaType filter,
 			if (selected < top) top = selected;
 			if (selected >= top + list_visible_rows()) top = selected - list_visible_rows() + 1;
 		}
+
+        files_page(top,count,grid_mode);
+        int scroll_y=vt_ui_theme_legacy_layout(ui_theme_id())?FILE_Y:
+            ui_theme_browser_layout(ui_theme_id(),viewport_bottom(),grid_mode).y;
+        ui_theme_page_input(UI_SCENE_BROWSER,"local-files",FILE_X,scroll_y,FILE_W,
+            viewport_bottom()-scroll_y,count,grid_mode,&top,&selected,controls.buttons,
+            controls.lx,controls.ly,&touch_flags,&touch);
 
 		if ((touch_flags & UI_TOUCH_EVENT_TAP) && count && touch.y>=FILE_Y && touch.y<viewport_bottom()) {
 			UiPageView visible=files_page(top,count,grid_mode);

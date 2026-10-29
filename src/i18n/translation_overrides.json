@@ -1,0 +1,11 @@
+{
+  "es": {"Play":"Reproducir","Continue":"Continuar","Home":"Inicio","Favourites":"Favoritos","Recently played":"Reproducidos recientemente","Saved connections":"Conexiones guardadas","View":"Vista","Playback":"Reproducción","Manage":"Gestionar"},
+  "fr": {"Play":"Lire","Continue":"Reprendre","Home":"Accueil","Favourites":"Favoris","Recently played":"Lus récemment","Saved connections":"Connexions enregistrées","View":"Affichage","Playback":"Lecture","Manage":"Gérer"},
+  "de": {"Play":"Abspielen","Continue":"Fortsetzen","Home":"Startseite","Favourites":"Favoriten","Recently played":"Zuletzt abgespielt","Saved connections":"Gespeicherte Verbindungen","View":"Ansicht","Playback":"Wiedergabe","Manage":"Verwalten"},
+  "pt": {"Play":"Reproduzir","Continue":"Retomar","Home":"Início","Favourites":"Favoritos","Recently played":"Reproduzidos recentemente","Saved connections":"Ligações guardadas","View":"Visualização","Playback":"Reprodução","Manage":"Gerir"},
+  "ru": {"Play":"Воспроизвести","Continue":"Продолжить","Home":"Главная","Favourites":"Избранное","Recently played":"Недавно воспроизведённые","Saved connections":"Сохранённые подключения","View":"Вид","Playback":"Воспроизведение","Manage":"Управление"},
+  "ja": {"Play":"再生","Continue":"再開","Home":"ホーム","System":"システム","Favourites":"お気に入り","Recently played":"最近再生した項目","Saved connections":"保存済みの接続","View":"表示","Playback":"再生","Manage":"管理"},
+  "ko": {"Play":"재생","Continue":"계속 재생","Home":"홈","System":"시스템","Favourites":"즐겨찾기","Recently played":"최근 재생","Saved connections":"저장된 연결","View":"보기","Playback":"재생","Manage":"관리"},
+  "zh_s": {"Play":"播放","Continue":"继续播放","Home":"主页","System":"系统","Favourites":"收藏","Recently played":"最近播放","Saved connections":"已保存的连接","View":"显示","Playback":"播放","Manage":"管理"},
+  "zh_t": {"Play":"播放","Continue":"繼續播放","Home":"首頁","System":"系統","Favourites":"我的最愛","Recently played":"最近播放","Saved connections":"已儲存的連線","View":"檢視","Playback":"播放","Manage":"管理"}
+}

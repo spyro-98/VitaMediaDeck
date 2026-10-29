@@ -1,3 +1,4 @@
+#include "ui/list_scroll.h"
 #include "ui/personal_media_screen.h"
 #include "library/catalog.h"
 #include "history/playback_history.h"
@@ -38,8 +39,7 @@ static void wipe(void *p, size_t n) {
     while (n--)
         *v++ = 0;
 }
-static int it(void) { return vt_i18n_current_language() == VT_LANG_IT; }
-static const char *tr(const char *en, const char *italian) { return it() ? italian : en; }
+static const char *tr(const char *en, const char *italian) { return vt_i18n_text(en,italian); }
 static int section_for(VtNetworkProtocol p) {
     return p==VT_NETWORK_JELLYFIN?UI_SECTION_JELLYFIN:p==VT_NETWORK_NAVIDROME?UI_SECTION_NAVIDROME:UI_SECTION_IMMICH;
 }
@@ -49,7 +49,7 @@ static void text(int x, int y, const char *s, int small) {
     if (font) {
         char fitted[512];
         ui_font_fit_text(font, size, s, fitted, sizeof(fitted), 932 - x);
-        ui_font_draw_text(font, x, y, small ? VT_THEME_TEXT_MUTED : VT_THEME_TEXT, size, fitted);
+        ui_font_draw_text_exact(font, x, y, small ? UI_MENU_MUTED : UI_MENU_TEXT, size, fitted);
     }
 }
 static int save_file(const char *path, const unsigned char *data, size_t size) {
@@ -383,6 +383,7 @@ static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection
             goto finish;
         }
     }
+    UiScrollView server_scroll={0};UiFocusMotion server_focus={0};
     UiContextMenu options={0};
     UiSectionsSidebar sidebar;
     ui_sections_sidebar_init(&sidebar, section_for(protocol));
@@ -430,6 +431,8 @@ static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection
             actions[action_count++]=(UiContextAction){tr("Edit connection", "Modifica collegamento"),NULL,SCE_CTRL_TRIANGLE,n>0};
             actions[action_count++]=(UiContextAction){tr("Remove connection", "Rimuovi collegamento"),NULL,1<<28,n>0};
         }
+        for(int i=0;i<action_count;i++)ui_context_menu_category(actions,action_count,actions[i].action,
+            actions[i].action==(1<<28)||remove?UI_MENU_GROUP_MAINTENANCE:UI_MENU_GROUP_CONNECTION);
         int selected_action=ui_context_menu_input(&options,actions,action_count,&pressed,pad.buttons,pad.ly,&flags,&touch);
         ui_context_menu_tick(&options);
         if(selected_action==(1<<28)){remove=selected+1;}
@@ -447,7 +450,7 @@ static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection
             break;
         }
         if (!sidebar.open && sidebar.animation < 0.01f && ((!options.open && options.animation<.01f)||selected_action>=0)) {
-            unsigned nav = ui_nav_repeat_update(&repeat, pressed, pad.buttons, pad.lx, pad.ly,
+            unsigned nav = ui_nav_repeat_update(&repeat, pressed, pad.buttons, pad.lx, 128,
                                                 SCE_CTRL_UP | SCE_CTRL_DOWN);
             if ((nav & SCE_CTRL_UP) && selected > 0) {
                 selected--;
@@ -457,11 +460,12 @@ static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection
                 selected++;
                 remove = 0;
             }
-            int top = selected / 5 * 5;
+            ui_list_scroll_input(&server_scroll,n,60,28,116,904,300,nav,pad.buttons,pad.ly,&flags,&touch,&selected);
+            int top=ui_list_scroll_first(&server_scroll,60);
             if (flags & UI_TOUCH_EVENT_TAP)
-                for (int row = 0; row < 5 && top + row < n; row++)
-                    if (ui_touch_hit_rect(touch.x, touch.y, 28, 116 + row * 60, 904, 52)) {
-                        selected = top + row;
+                for(int k=top;k<ui_list_scroll_end(&server_scroll,60,300,n);k++)
+                    if(touch.y>=116&&touch.y<416&&ui_touch_hit_rect(touch.x,touch.y,28,116+k*60-server_scroll.position,904,60)) {
+                        selected = k;
                         pressed |= SCE_CTRL_CROSS;
                     }
             if (pressed & SCE_CTRL_CIRCLE) {
@@ -559,35 +563,38 @@ static int provider_sources_screen(VtNetworkProtocol protocol,UiNetworkSelection
         ui_mini_player_pump();
         vita2d_start_drawing();
         vita2d_clear_screen();
-        ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);
+        ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);ui_menu_surface(0,54,960,490,1);
         ui_brand_draw_header_placeholder(NULL, vt_network_protocol_name(protocol));
         text(28, 90,
              protocol==VT_NETWORK_JELLYFIN?tr("Your video libraries", "Le tue librerie video"):protocol == VT_NETWORK_NAVIDROME
                  ? tr("Your music servers", "I tuoi server musicali")
                  : tr("Your photo libraries", "Le tue raccolte fotografiche"),
              0);
-        int top = selected / 5 * 5;
-        for (int row = 0; row < 5 && top + row < n; row++) {
-            int k = top + row, y = 116 + row * 60;
-            ui_panel(28, y, 904, 52, VT_THEME_SURFACE,
-                     k == selected ? VT_THEME_FOCUS : VT_THEME_BORDER, k == selected);
+        int top=ui_list_scroll_first(&server_scroll,60);
+        vita2d_set_clip_rectangle(28,116,932,416);vita2d_enable_clipping();
+        if(n){ui_focus_motion_tick(&server_focus,28,116+selected*60-server_scroll.position,904,52);ui_menu_focus_draw(&server_focus);}
+        for(int k=top;k<ui_list_scroll_end(&server_scroll,60,300,n);k++) {
+            int y=116+k*60-server_scroll.position;
+            ui_menu_row(28,y,904,60,k==selected,1);
             text(46, y + 25, sources[map[k]].name, 0);
             text(46, y + 45, sources[map[k]].host, 1);
         }
+        vita2d_disable_clipping();
+        ui_scroll_rail(934,116,300,server_scroll.position,300,n*60);
         if (!n)
             text(46, 170,
-                 tr("Press □ to add a server", "Premi □ per aggiungere un server"), 0);
+                 tr("Press " UI_PAD_SQUARE " to add a server", "Premi " UI_PAD_SQUARE " per aggiungere un server"), 0);
         text(28, 442,
-             tr("X Connect    □ Add    △ Edit",
-                "X Collega    □ Aggiungi    △ Modifica"),
+             tr(UI_PAD_CROSS " Connect    " UI_PAD_SQUARE " Add    " UI_PAD_TRIANGLE " Edit",
+                UI_PAD_CROSS " Collega    " UI_PAD_SQUARE " Aggiungi    " UI_PAD_TRIANGLE " Modifica"),
              1);
         text(28, 466,
              remove
-                 ? tr("X: remove connection only    ○: cancel", "X: rimuovi solo collegamento    ○: annulla")
-                 : tr("○ Back    R1 Options    L1 Sections",
-                      "○ Indietro    R1 Opzioni    L1 Sezioni"),
+                 ? tr(UI_PAD_CROSS ": remove connection only    " UI_PAD_CIRCLE ": cancel", UI_PAD_CROSS ": rimuovi solo collegamento    " UI_PAD_CIRCLE ": annulla")
+                 : tr(UI_PAD_CIRCLE " Back    " UI_PAD_R1 " Options    " UI_PAD_L1 " Sections",
+                      UI_PAD_CIRCLE " Indietro    " UI_PAD_R1 " Opzioni    " UI_PAD_L1 " Sezioni"),
              1);
-        ui_action_button(756,62,186,40,VT_THEME_SURFACE,"R1",vt_i18n_str(VT_STR_UI_OPTIONS),options.open);
+        ui_action_button(756,62,186,40,UI_MENU_BG,UI_PAD_R1,vt_i18n_str(VT_STR_UI_OPTIONS),options.open);
         ui_mini_player_draw();
         ui_context_menu_draw(&options,vt_i18n_str(VT_STR_UI_OPTIONS),actions,action_count);
         if (sidebar.open || sidebar.animation > 0.01f)

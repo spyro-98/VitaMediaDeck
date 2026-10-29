@@ -59,3 +59,12 @@ Catalogue snapshots are tested by `query_cache_test.c` under ASan/UBSan and
 TSan, including selector isolation, corruption, cancellation, concurrent writes
 and eviction. RSS channel-cover recovery is part of the production HTTP mock
 tests. Native UI transition tests are in `tests/iptv/cache_transition_test.c`.
+
+
+Artwork follow-up: `run-host-tests.sh` exercises the actual persistent artwork
+cache under ASan/UBSan and TSan. It keeps more than 128 small covers, enforces
+256 MiB/4096-entry bounds, reconstructs the memory index in a new process,
+returns local paths without HTTP, revalidates aged entries, preserves the last
+valid image on failure, publishes changed bytes atomically and resolves old
+persisted paths to the new revision. Render-side peek uses a nonblocking lock.
+The simulated HTTP/image bytes are test data, not device decoding acceptance.

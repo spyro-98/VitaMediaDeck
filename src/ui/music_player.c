@@ -49,7 +49,9 @@
 #define MUSIC_VOLUME_MAX 300
 #define MUSIC_RIGHT_PANEL_W 430.0f
 #define MUSIC_RIGHT_ROW_Y 82.0f
-#define MUSIC_RIGHT_ROW_STEP 68.0f
+#define MUSIC_RIGHT_ROW_STEP 52.0f
+#define MUSIC_RIGHT_GROUPS ((1u<<0)|(1u<<2)|(1u<<3))
+#define MUSIC_RIGHT_Y(row) ui_menu_group_focus_y((row),MUSIC_RIGHT_ROW_Y,MUSIC_RIGHT_ROW_STEP,MUSIC_RIGHT_GROUPS)
 #define MUSIC_CONTROL_FEEDBACK_US 170000ULL
 
 enum {
@@ -619,21 +621,21 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 #endif
 	const float width = MUSIC_RIGHT_PANEL_W;
 	float x = 960.0f - width * animation;
-	vita2d_draw_rectangle(x, 0, width, 544, VT_THEME_BG_SOFT);
+	ui_menu_surface(x,0,width,544,1);
 	vita2d_draw_rectangle(x, 0, 1, 544, VT_THEME_BORDER);
 	vita2d_draw_rectangle(x + 4, 0, width - 4, 1, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (body)
-		ui_font_draw_text(body, x + 28, 47, VT_THEME_TEXT, UI_FONT_BODY,
+		ui_font_draw_text_exact(body, x + 28, 47, UI_MENU_TEXT, UI_FONT_BODY,
 		                  vt_i18n_str(VT_STR_PLAYER_PANEL_TITLE));
 	if (small) {
-		vita2d_draw_rectangle(x + width - 65, 18, 42, 26, VT_THEME_SURFACE_RAISED);
-		int key_width = ui_font_text_width(small, UI_FONT_SMALL, "R1");
-		ui_font_draw_text(small,
+
+		int key_width = ui_font_text_width(small, UI_FONT_SMALL, UI_PAD_R1);
+		ui_font_draw_text_exact(small,
 		                  (int)(x + width - 44.0f - key_width * 0.5f), 38,
-		                  VT_THEME_TEXT,
-		                  UI_FONT_SMALL, "R1");
+		                  UI_MENU_TEXT,
+		                  UI_FONT_SMALL, UI_PAD_R1);
 	}
 	const char *labels[3] = {
 		vt_i18n_str(VT_STR_MUSIC_PLAYER_ORDER_LABEL),
@@ -648,8 +650,9 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 		music_theme_label(music_theme)
 	};
 	for (int i = 0; i < 3; i++) {
-		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
-		ui_panel(x + 18, y, width - 36, 56,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+		float y = MUSIC_RIGHT_Y(i);
+		ui_menu_row(x+18,y,width-36,MUSIC_RIGHT_ROW_STEP,focused&&i==cursor,1);
+        if(i==0||i==2)ui_menu_category(x+36,y-UI_MENU_HEADING_HEIGHT,width-72,i==0?UI_MENU_GROUP_PLAYBACK:UI_MENU_GROUP_VIEW);
 	}
 	const char *info_labels[3] = {
 		vt_i18n_str(VT_STR_MUSIC_PLAYER_FORMAT_LABEL),
@@ -667,42 +670,38 @@ static void draw_music_right_sidebar(float animation, float focus_position,
 		details_value
 	};
 	for (int i = 0; i < 3; i++) {
-		float y = MUSIC_RIGHT_ROW_Y + (i + 3) * MUSIC_RIGHT_ROW_STEP;
-		ui_panel(x + 18, y, width - 36, 56, VT_THEME_SURFACE,
-		         VT_THEME_BORDER_DIM, 0);
+		float y = MUSIC_RIGHT_Y(i+3);
+		ui_menu_row(x+18,y,width-36,MUSIC_RIGHT_ROW_STEP,0,1);
+        if(i==0){ui_menu_category(x+36,y-UI_MENU_HEADING_HEIGHT,width-72,UI_MENU_GROUP_INFO);}
 		if (!small) continue;
-		ui_font_draw_text(small, x + 36, y + 23, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(small, x + 36, y + 18, UI_MENU_MUTED,
 		                  UI_FONT_SMALL, info_labels[i]);
 		char fitted[96];
 		ui_font_fit_text(small, UI_FONT_SMALL, info_values[i], fitted,
 		                 sizeof(fitted), (int)width - 72);
 		int value_width = ui_font_text_width(small, UI_FONT_SMALL, fitted);
-		ui_font_draw_text(small, x + width - value_width - 30, y + 46,
+		ui_font_draw_text_exact(small, x + width - value_width - 30, y + 38,
 		                  VT_THEME_COLD_LIGHT, UI_FONT_SMALL, fitted);
 	}
-	if (focused) {
-		float focus_y = MUSIC_RIGHT_ROW_Y + focus_position * MUSIC_RIGHT_ROW_STEP;
-		UiFocusMotion focus={.x=x+18,.y=focus_y,.width=width-36,.height=56,.initialized=1};
-		ui_focus_outline_draw(&focus);
-	}
+    UiFocusMotion menu_focus={.x=x+18,.y=MUSIC_RIGHT_Y(focus_position),.width=width-36,.height=48,.initialized=1};
+    ui_menu_focus_draw(&menu_focus);
 	for (int i = 0; i < 3; i++) {
-		float y = MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP;
+		float y = MUSIC_RIGHT_Y(i);
 		if (!small) continue;
-		ui_font_draw_text(small, x + 36, y + 23,
-		                  focused && i == cursor ? VT_THEME_TEXT
-		                                           : VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(small, x + 36, y + 20,
+		                  focused && i == cursor ? UI_MENU_TEXT
+		                                           : UI_MENU_MUTED,
 		                  UI_FONT_SMALL, labels[i]);
 		int value_width = ui_font_text_width(small, UI_FONT_SMALL, values[i]);
-		ui_font_draw_text(small, x + width - value_width - 30, y + 46,
-		                  focused && i == cursor ? VT_THEME_BLUE_LIGHT
-		                                           : VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(small, x + width - value_width - 30, y + 38,
+		                  focused && i == cursor ? UI_MENU_ACCENT
+		                                           : UI_MENU_MUTED,
 		                  UI_FONT_SMALL, values[i]);
 	}
 #ifdef VMD_ENABLE_PAF_NATIVE
-    if(ui_native_vita_active())ui_panel(x+14,492,width-28,40,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 #endif
 	if (small)
-		ui_font_draw_text(small, x + 28, 518, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(small, x + 28, 518, UI_MENU_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_MUSIC_PLAYER_PANEL_HINT));
 #ifdef VMD_ENABLE_PAF_NATIVE
     ui_native_vita_scope(native_scope);
@@ -819,6 +818,11 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			touch_flags = UI_TOUCH_EVENT_NONE;
 			dragging_timeline = 0;
 		}
+        if(pressed&SCE_CTRL_TRIANGLE){
+            vt_audio_volume_toggle_mute();volume_visible_until_us=input_now+MUSIC_VOLUME_VISIBLE_US;
+            hud_visible=1;hud_deadline_us=input_now+MUSIC_HUD_VISIBLE_US;
+            pressed&=~SCE_CTRL_TRIANGLE;
+        }
 		int power_event = player_power_save_update(
 		    &power_save_input, ctrl.buttons, input_now,
 		    input_available && !input_lock.locked);
@@ -981,11 +985,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			control_feedback = MUSIC_CONTROL_SHUFFLE;
 			control_feedback_until_us = input_now + MUSIC_CONTROL_FEEDBACK_US;
 		}
-		if (!snapshot.is_live && !panels_open && (pressed & SCE_CTRL_TRIANGLE)) {
-			g_repeat_one = !g_repeat_one;
-			control_feedback = MUSIC_CONTROL_REPEAT;
-			control_feedback_until_us = input_now + MUSIC_CONTROL_FEEDBACK_US;
-		}
+
 		if (!panels_open && (pressed & SCE_CTRL_CIRCLE)) {
 			action = UI_MUSIC_PLAYER_STOP;
 			break;
@@ -995,7 +995,7 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 		if (!panels_open && !input_lock.locked &&
 		    (ry_dev > MUSIC_STICK_DEADZONE || ry_dev < -MUSIC_STICK_DEADZONE) &&
 		    input_now - last_volume_us >= MUSIC_VOLUME_INTERVAL_US) {
-			int volume = vt_audio_volume_percent() +
+			int volume = vt_audio_volume_level_percent() +
 			             (ry_dev < 0 ? MUSIC_VOLUME_STEP : -MUSIC_VOLUME_STEP);
 			if (volume < 0) volume = 0;
 			if (volume > MUSIC_VOLUME_MAX) volume = MUSIC_VOLUME_MAX;
@@ -1023,8 +1023,8 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			int handled = 0;
 			for (int i = 0; i < 3; i++) {
 				if (!ui_touch_hit_rect(touch.x, touch.y, panel_x + 18,
-				                       (int)(MUSIC_RIGHT_ROW_Y + i * MUSIC_RIGHT_ROW_STEP),
-				                       (int)MUSIC_RIGHT_PANEL_W - 36, 56)) continue;
+				                       (int)(MUSIC_RIGHT_Y(i)),
+				                       (int)MUSIC_RIGHT_PANEL_W - 36, 48)) continue;
 				right_cursor = i;
 				handled = 1;
 				if (i == 0) g_shuffle = !g_shuffle;
@@ -1239,10 +1239,10 @@ int ui_music_player_run(const char *artwork_path, const char *album,
 			    snapshot.is_live?"Live":current,duration);
 			ui_font_draw_text(small,18,478,fade_color(foreground,hud_opacity),UI_FONT_SMALL,elapsed);
 			char hint[128];
-			snprintf(hint,sizeof(hint),"L1  %s / %s",vt_i18n_str(VT_STR_SECTIONS_TITLE),vt_i18n_str(VT_STR_MUSIC_LAYOUT_TITLE));
+			snprintf(hint,sizeof(hint),UI_PAD_TRIANGLE "  %s   " UI_PAD_L1 "  %s",vt_i18n_str(vt_audio_volume_muted()?VT_STR_PLAYER_UNMUTE:VT_STR_PLAYER_MUTE),vt_i18n_str(VT_STR_SECTIONS_TITLE));
 			char fitted[128];ui_font_fit_text(small,UI_FONT_SMALL,hint,fitted,sizeof(fitted),580);
 			ui_font_draw_text(small,18,526,fade_color(foreground,hud_opacity),UI_FONT_SMALL,fitted);
-			snprintf(hint,sizeof(hint),"R1  %s",vt_i18n_str(VT_STR_PLAYER_PANEL_TITLE));
+			snprintf(hint,sizeof(hint),UI_PAD_R1 "  %s",vt_i18n_str(VT_STR_PLAYER_PANEL_TITLE));
 			ui_font_fit_text(small,UI_FONT_SMALL,hint,fitted,sizeof(fitted),310);
 			int width=ui_font_text_width(small,UI_FONT_SMALL,fitted);
 			ui_font_draw_text(small,942-width,526,fade_color(foreground,hud_opacity),UI_FONT_SMALL,fitted);

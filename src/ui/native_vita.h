@@ -8,6 +8,7 @@
 #define UI_NATIVE_PANEL_LIMIT 48
 #define UI_NATIVE_BUSY_LIMIT 4
 #define UI_NATIVE_CHECK_LIMIT 16
+#define UI_NATIVE_GLOW_LIMIT 8
 enum { UI_NATIVE_SCOPE_CONTENT, UI_NATIVE_SCOPE_SECTIONS, UI_NATIVE_SCOPE_ACTIONS };
 /* Scope affects stable widget identities only; input remains app-owned. */
 int ui_native_vita_scope(int scope);

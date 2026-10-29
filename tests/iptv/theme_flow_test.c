@@ -81,6 +81,7 @@ static void exit_via_sidebar(unsigned after){
  input_script[after+3+2*length]=SCE_CTRL_CROSS;script_count=after+4+2*length;
 }
 
+#ifndef VMD_THEME_FLOW_LIBRARY
 int main(int argc,char **argv){
  CHECK(argc==3);output=argv[2];CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));loaded=1;
  FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));
@@ -190,7 +191,9 @@ int main(int argc,char **argv){
   CHECK(favorite_index(&g_query.items[0])>=0);
   UiContextAction actions[12];int action_count=online_options(actions,0),remove_actions=0;
   for(int i=0;i<action_count;i++)remove_actions+=actions[i].action==SCE_CTRL_SQUARE;
-  CHECK(action_count<=8&&remove_actions==1);
+  /* Discovery's cover-row option adds a ninth action; the production array is 12.
+   * Keep the independent exactly-one Remove-action check. */
+  CHECK(action_count<=9&&remove_actions==1);
   CHECK(toggle_favorite()==1&&!favorite_count&&g_query.count==1);
   CHECK(favorite_index(&g_query.items[0])<0);
   /* Last-item removal stays empty and cannot resurrect a cached favourite. */
@@ -208,6 +211,27 @@ int main(int argc,char **argv){
   exit_via_sidebar(0);int section=ui_online_audio_screen();CHECK(section==UI_SECTION_NETWORK||section==UI_SECTION_IPTV);
   CHECK(!g_home&&g_tab==VT_ONLINE_RADIO&&ui_home_tab()==HOME_RADIO);axis_count=0;
  }
+ /* Exercise the real R1 density action and hit geometry in every palette. */
+ host_reduced_motion=1;
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(int mini=0;mini<2;mini++)for(int rows=1;rows<=2;rows++){
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  fixture(0);mini_top=mini?472:544;host_radio_rows=g_cover_rows=rows;
+  UiContextAction actions[12];int count=online_options(actions,0),index=-1;
+  for(int i=0;i<count;i++)if(actions[i].action==ONLINE_ACTION_ROWS){index=i;CHECK((actions[i].enabled>>8)==UI_MENU_GROUP_VIEW);}
+  CHECK(index>=0);unsigned at=1;input_script[at++]=SCE_CTRL_RTRIGGER;at++;
+  for(int i=0;i<index;i++){input_script[at++]=SCE_CTRL_DOWN;at++;}
+  input_script[at++]=SCE_CTRL_CROSS;capture_frame=at+2;
+  exit_via_sidebar(at+18);
+  int section=ui_online_audio_screen();CHECK(section==UI_SECTION_NETWORK||section==UI_SECTION_IPTV);
+  CHECK(g_cover_rows==3-rows&&host_radio_rows==3-rows);
+  CHECK(CATALOG_COLUMNS==3&&CATALOG_ROWS==3-rows);
+  int bottom=THEMED?ui_theme_home_content_bottom(theme,HOME_BOTTOM):CATALOG_BOTTOM-28;
+  for(int i=0;i<CATALOG_ROWS*3;i++){
+   UiThemeRect a=online_item_rect(i);CHECK(a.x>=18&&a.x+a.w<=942&&a.y>=LIST_Y&&a.y+a.h<=bottom);
+   for(int j=0;j<i;j++){UiThemeRect b=online_item_rect(j);CHECK(!(a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y));}
+  }
+  memcpy(pixels,first_pixels,sizeof(pixels));char name[96];snprintf(name,sizeof(name),"radio-density-%d-%d%s",theme,3-rows,mini?"-mini":"");png(name);
+ }
  clear_history();face=inter;FT_Done_Face(mono);ui_theme_apply(VT_UI_THEME_LEGACY);
  FT_Done_Face(face);FT_Done_FreeType(ft);
  printf("Themed online flows: %u checks, eight themes, favourite removal/failure/empty state, "
@@ -217,3 +241,5 @@ int main(int argc,char **argv){
 
 int vt_online_query_cache_read(VtOnlineQuery *q){(void)q;return -1;}
 int vt_online_query_cache_write(const VtOnlineQuery *q){(void)q;return 0;}
+
+#endif

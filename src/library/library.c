@@ -2,6 +2,7 @@
  * work runs in put/started/progress/query or on the audio/render thread. */
 #include "library/library.h"
 #include "app_paths.h"
+#include "common/crc32.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +35,7 @@ _Static_assert(sizeof(State) == 48, "Stable checkpoint record");
 _Static_assert(sizeof(Header) == 20, "Stable journal header");
 static Slot slots[VT_LIBRARY_MAX];
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static int count, stop, urgent, repair;
+static int count, stop, urgent, repair, compact_pending;
 static unsigned revision;
 static uint64_t next_order = 1, cache_order = 1;
 static SceUID worker = -1;
@@ -45,16 +46,8 @@ static const char *providers[] = {"Local", "Jellyfin", "Navidrome", "Immich",
 const char *vt_library_provider_name(int p) {
     return p >= 0 && p < VT_LIBRARY_PROVIDER_COUNT ? providers[p] : "?";
 }
-static uint32_t crc(const void *data, size_t n) {
-    uint32_t v = ~0U;
-    const unsigned char *p = data;
-    while (n--) {
-        v ^= *p++;
-        for (int i = 0; i < 8; i++)
-            v = (v >> 1) ^ (0xedb88320U & (uint32_t)-(int32_t)(v & 1));
-    }
-    return ~v;
-}
+static uint32_t crc(const void *data,size_t n){return vt_crc32(data,n);}
+
 static uint64_t hash_text(uint64_t h, const char *s) {
     for (; *s; s++) {
         h ^= (unsigned char)*s;
@@ -328,6 +321,27 @@ static int frame(int fd, int type, const void *p, size_t size) {
     Header h = {0x564d444c, 1, (unsigned)type, (unsigned)size, crc(p, size)};
     return write_all(fd, &h, sizeof(h)) || write_all(fd, p, size) ? -1 : 0;
 }
+/* Read large contiguous chunks rather than two storage calls per journal
+ * record. Keep the original framed format and validate every payload CRC. */
+typedef struct {int fd;unsigned used,size;unsigned char *bytes;} LibraryReader;
+static int reader_read(LibraryReader *r,void *out,size_t size){
+ unsigned char *p=out;size_t done=0;
+ while(done<size){
+  if(!r->bytes){
+   int n=sceIoRead(r->fd,p+done,(unsigned)(size-done));
+   if(n<=0)return n==0&&!done?0:-1;
+   done+=(unsigned)n;continue;
+  }
+  if(r->used==r->size){
+   int n=sceIoRead(r->fd,r->bytes,64*1024);
+   if(n<=0)return n==0&&!done?0:-1;
+   r->used=0;r->size=(unsigned)n;
+  }
+  size_t take=r->size-r->used;if(take>size-done)take=size-done;
+  memcpy(p+done,r->bytes+r->used,take);r->used+=(unsigned)take;done+=take;
+ }
+ return 1;
+}
 static int load(void) {
     SceIoStat stat;
     if (sceIoGetstat(DB, &stat) < 0)
@@ -341,8 +355,9 @@ static int load(void) {
     }
     int result = 0;
     Header h = {0};
+    LibraryReader input={.fd=fd,.bytes=malloc(64*1024)};
     for (;;) {
-        int n = sceIoRead(fd, &h, sizeof(h));
+        int n = reader_read(&input, &h, sizeof(h));
         if (!n)
             break;
         union {
@@ -350,9 +365,9 @@ static int load(void) {
             State state;
         } payload;
         size_t size = h.type == 1 ? sizeof(VtLibraryItem) : sizeof(State);
-        if (n != sizeof(h) || h.magic != 0x564d444c || h.version != 1 ||
+        if (n != 1 || h.magic != 0x564d444c || h.version != 1 ||
             (h.type != 1 && h.type != 2) || h.size != size ||
-            sceIoRead(fd, &payload, size) != (int)size || crc(&payload, size) != h.crc) {
+            reader_read(&input, &payload, size) != 1 || crc(&payload, size) != h.crc) {
             result = -1;
             break;
         }
@@ -372,6 +387,7 @@ static int load(void) {
             }
         }
     }
+    free(input.bytes);
     sceIoClose(fd);
     for (int i = 0; i < count; i++)
         slots[i].metadata_revision = slots[i].state_revision = 0;
@@ -458,8 +474,8 @@ static int saver(SceSize args, void *arg) {
             dirty |= slots[i].metadata_revision || slots[i].state_revision;
         }
         pthread_mutex_unlock(&mutex);
-        if (dirty && (done || force || now - last >= INTERVAL)) {
-            int compact = repair || journal_bytes > 4U * VT_LIBRARY_MAX *
+        if ((dirty||compact_pending) && (done || force || compact_pending || now - last >= INTERVAL)) {
+            int compact = repair || compact_pending || journal_bytes > 4U * VT_LIBRARY_MAX *
                                                         (sizeof(Header) * 2 +
                                                          sizeof(VtLibraryItem) + sizeof(State));
             if (!flush(compact)) {
@@ -471,7 +487,7 @@ static int saver(SceSize args, void *arg) {
                         slots[i].state_revision = 0;
                 }
                 pthread_mutex_unlock(&mutex);
-                repair = 0;
+                repair = compact_pending = 0;
             } else
                 repair = 1;
             last = now;
@@ -496,6 +512,8 @@ int vt_library_init(VtLibrarySample sample) {
     journal_bytes = 0;
     sceIoMkdir(VITAMEDIADECK_DATA_DIR, 0777);
     repair = load() < 0;
+    compact_pending=!repair&&journal_bytes>2U*VT_LIBRARY_MAX*
+        (sizeof(Header)*2+sizeof(VtLibraryItem)+sizeof(State));
     worker = sceKernelCreateThread("LibraryCheckpoint", saver, 191 /* lowest user priority; 0x10000140 is rejected on retail */, 0x10000, 0, 0, NULL);
     if (worker < 0)
         return -1;

@@ -3,6 +3,7 @@
 #endif
 #include "ui/theme_home.h"
 #include "ui/theme_scene.h"
+#include "ui/wave_motion.h"
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -101,7 +102,7 @@ static void fx_frame(float x,float y,float w,float h,unsigned color){
  vita2d_draw_rectangle(x,y,1,h,color);vita2d_draw_rectangle(x+w-1,y,1,h,color);
 }
 /* Dark console poster: original line geometry, no textures or new shader.
- * Fixed upper bound 4,096 vertices / 65,536 pool bytes, one GPU draw. */
+ * Fixed upper bound 8,192 vertices / 131,072 pool bytes, one GPU draw. */
 static void vmd_quad(vita2d_color_vertex *v, unsigned *count,
                      const float x[4], const float y[4], unsigned color) {
     static const unsigned order[6] = {0,1,2,0,2,3};
@@ -248,33 +249,11 @@ static void vmd_symbol(vita2d_color_vertex *v,unsigned *count,int symbol,
 }
 static void vmd_wave_background(unsigned base) {
     (void)base;
-    static const float curve[20][4] = {
-        {0.00000000f,1.00000000f,0.00000000f,1.00000000f},
-        {0.32469947f,0.94581724f,0.61421271f,0.78914051f},
-        {0.61421271f,0.78914051f,0.96940027f,0.24548549f},
-        {0.83716648f,0.54694816f,0.91577333f,-0.40169542f},
-        {0.96940027f,0.24548549f,0.47594739f,-0.87947375f},
-        {0.99658449f,-0.08257935f,-0.16459459f,-0.98636130f},
-        {0.91577333f,-0.40169542f,-0.73572391f,-0.67728157f},
-        {0.73572391f,-0.67728157f,-0.99658449f,-0.08257935f},
-        {0.47594739f,-0.87947375f,-0.83716648f,0.54694816f},
-        {0.16459459f,-0.98636130f,-0.32469947f,0.94581724f},
-        {-0.16459459f,-0.98636130f,0.32469947f,0.94581724f},
-        {-0.47594739f,-0.87947375f,0.83716648f,0.54694816f},
-        {-0.73572391f,-0.67728157f,0.99658449f,-0.08257935f},
-        {-0.91577333f,-0.40169542f,0.73572391f,-0.67728157f},
-        {-0.99658449f,-0.08257935f,0.16459459f,-0.98636130f},
-        {-0.96940027f,0.24548549f,-0.47594739f,-0.87947375f},
-        {-0.83716648f,0.54694816f,-0.91577333f,-0.40169542f},
-        {-0.61421271f,0.78914051f,-0.96940027f,0.24548549f},
-        {-0.32469947f,0.94581724f,-0.61421271f,0.78914051f},
-        {-0.00000000f,1.00000000f,-0.00000000f,1.00000000f}
-    };
 #ifdef __vita__
-    vita2d_color_vertex *vertices=vita2d_pool_memalign(4096*sizeof(*vertices),16);
+    vita2d_color_vertex *vertices=vita2d_pool_memalign(UI_WAVE_VERTEX_LIMIT*sizeof(*vertices),16);
     if(!vertices)return;
 #else
-    vita2d_color_vertex storage[4096],*vertices=storage;
+    vita2d_color_vertex storage[UI_WAVE_VERTEX_LIMIT],*vertices=storage;
 #endif
     unsigned count=0;
     for(int band=0;band<12;band++) {
@@ -290,22 +269,22 @@ static void vmd_wave_background(unsigned base) {
         vmd_symbol(vertices,&count,symbol,col*128.f+row*30+offset*128,
             row*110.f-col*32-offset*32+36,RGBA8(68,178,224,34));
     }
-    float time=fx_phase(120000000ULL)*6.28318530718f;
+    static unsigned seed;
+    if(!seed)seed=(unsigned)sceKernelGetProcessTimeWide()|1u;
+    float phase=fx_phase(384000000ULL);
     for(int wave=0;wave<5;wave++) {
-        float phase=time*(12+wave*3),ss=sinf(phase),cc=cosf(phase);
-        unsigned ink=RGBA8(40,198,242,1);
-        for(int i=0;i<19;i++) {
-            float x[2]={i*(960.f/19),(i+1)*(960.f/19)},y[2];
-            for(int j=0;j<2;j++)y[j]=104+wave*84+(x[j]-480)*(wave%2?.09f:-.07f)+
-                (curve[i+j][0]*cc+curve[i+j][1]*ss)*(22+wave*4)+curve[i+j][2]*(8+wave*2);
+        float x0=0,y0,width0;ui_wave_sample(wave,x0,phase,seed,&y0,&width0);
+        for(int i=0;i<UI_WAVE_SEGMENTS;i++) {
+            float x1=(i+1)*(960.f/UI_WAVE_SEGMENTS),y1,width1;
+            ui_wave_sample(wave,x1,phase,seed,&y1,&width1);
             for(int lane=0;lane<3;lane++) {
                 static const float half_width[3]={5.5f,2.5f,.65f};
-                static const unsigned opacity[3]={9,24,150};
-                float half=half_width[lane];
-                const float qx[4]={x[0],x[1],x[1],x[0]};
-                const float qy[4]={y[0]-half,y[1]-half,y[1]+half,y[0]+half};
-                vmd_quad(vertices,&count,qx,qy,(ink&0xffffffu)|(opacity[lane]<<24));
+                static const unsigned opacity[3]={9,24,120};
+                float h0=half_width[lane]*width0,h1=half_width[lane]*width1;
+                const float qx[4]={x0,x1,x1,x0},qy[4]={y0-h0,y1-h1,y1+h1,y0+h0};
+                vmd_quad(vertices,&count,qx,qy,RGBA8(40,198,242,opacity[lane]));
             }
+            x0=x1;y0=y1;width0=width1;
         }
     }
 #ifdef VMD_ENABLE_PAF_NATIVE
@@ -421,125 +400,6 @@ void ui_theme_service_icon(float x,float y,float w,float h,int service) {
   vita2d_draw_rectangle(x+66*sx,y+34*sy,6*sx,6*sy,light);
  }
 }
-/* Actual 3D model space, perspective projection and GPU triangle batches.
- * The CPU transforms a bounded mesh; GXM rasterizes coloured triangle lists. */
-typedef struct {float x,y,z;} FxVec3;
-#define FX_BATCH_CAPACITY 4096
-static vita2d_color_vertex fx_mesh_vertices[FX_BATCH_CAPACITY];
-static unsigned fx_mesh_count;
-static void fx_mesh_flush(void) {
- if(fx_mesh_count){
-#ifdef __vita__
-  /* draw_array retains its pointer: use mapped frame-pool memory, never the
-   * CPU scratch array that the next batch immediately overwrites. */
-  unsigned bytes=fx_mesh_count*sizeof(vita2d_color_vertex);
-  vita2d_color_vertex *gpu=vita2d_pool_memalign(bytes,16);
-  if(gpu){memcpy(gpu,fx_mesh_vertices,bytes);vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,gpu,fx_mesh_count);}
-#else
-  vita2d_draw_array(SCE_GXM_PRIMITIVE_TRIANGLES,fx_mesh_vertices,fx_mesh_count);
-#endif
- }
- fx_mesh_count=0;
-}
-static FxVec3 fx_rotate(FxVec3 v,float sx,float cx,float sy,float cy,float sz,float cz) {
- FxVec3 a={v.x,v.y*cx-v.z*sx,v.y*sx+v.z*cx};
- FxVec3 b={a.x*cy+a.z*sy,a.y,-a.x*sy+a.z*cy};
- return (FxVec3){b.x*cz-b.y*sz,b.x*sz+b.y*cz,b.z};
-}
-static vita2d_color_vertex fx_project(FxVec3 v,unsigned color) {
- float perspective=620.0f/(620.0f+v.z);
- return (vita2d_color_vertex){690+v.x*perspective,272+v.y*perspective,.5f,color};
-}
-static void fx_triangle(FxVec3 a,FxVec3 b,FxVec3 c,unsigned color) {
- if(fx_mesh_count+3>FX_BATCH_CAPACITY)fx_mesh_flush();
- fx_mesh_vertices[fx_mesh_count++]=fx_project(a,color);
- fx_mesh_vertices[fx_mesh_count++]=fx_project(b,color);
- fx_mesh_vertices[fx_mesh_count++]=fx_project(c,color);
-}
-static void fx_3d_ring(float radius,float thickness,float tilt_x,float tilt_y,float turn,int pass,unsigned color) {
- static float circle[65][2];static int ready;
- if(!ready){for(int i=0;i<=64;i++){float a=i*6.28318530718f/64;circle[i][0]=cosf(a);circle[i][1]=sinf(a);}ready=1;}
- float sx=sinf(tilt_x),cx=cosf(tilt_x),sy=sinf(tilt_y),cy=cosf(tilt_y),sz=sinf(turn),cz=cosf(turn);
- for(int i=0;i<64;i++) {
-  if(i%16>=13)continue;
-  FxVec3 a=fx_rotate((FxVec3){circle[i][0]*radius,circle[i][1]*radius,0},sx,cx,sy,cy,sz,cz);
-  FxVec3 b=fx_rotate((FxVec3){circle[i+1][0]*radius,circle[i+1][1]*radius,0},sx,cx,sy,cy,sz,cz);
-  if(((a.z+b.z)>0?0:1)!=pass)continue;
-  float inner=(radius-thickness)/radius;
-  FxVec3 c={b.x*inner,b.y*inner,b.z*inner},d={a.x*inner,a.y*inner,a.z*inner};
-  unsigned shade=fx_mix(color,VT_THEME_BG,(unsigned)(a.z+b.z>0?100:15));
-  shade=fx_alpha(shade,(color>>24)&255);
-  fx_triangle(a,b,c,shade);fx_triangle(a,c,d,shade);
- }
-}
-static void fx_icosahedron(float turn) {
- const float t=1.61803398875f,scale=29;
- static const unsigned char faces[20][3]={
-  {0,11,5},{0,5,1},{0,1,7},{0,7,10},{0,10,11},{1,5,9},{5,11,4},{11,10,2},{10,7,6},{7,1,8},
-  {3,9,4},{3,4,2},{3,2,6},{3,6,8},{3,8,9},{4,9,5},{2,4,11},{6,2,10},{8,6,7},{9,8,1}};
- FxVec3 vertices[12]={{-1,t,0},{1,t,0},{-1,-t,0},{1,-t,0},{0,-1,t},{0,1,t},{0,-1,-t},{0,1,-t},{t,0,-1},{t,0,1},{-t,0,-1},{-t,0,1}};
- float sx=sinf(.45f),cx=cosf(.45f),sy=sinf(turn),cy=cosf(turn),sz=sinf(turn*.5f),cz=cosf(turn*.5f);
- for(int i=0;i<12;i++){vertices[i].x*=scale;vertices[i].y*=scale;vertices[i].z*=scale;vertices[i]=fx_rotate(vertices[i],sx,cx,sy,cy,sz,cz);}
- struct {float depth;unsigned char face;} ordered[20];
- for(int i=0;i<20;i++) {
-  float depth=0;for(int j=0;j<3;j++)depth+=vertices[faces[i][j]].z;
-  int pos=i;while(pos>0&&ordered[pos-1].depth<depth){ordered[pos]=ordered[pos-1];pos--;}
-  ordered[pos].depth=depth;ordered[pos].face=(unsigned char)i;
- }
- for(int i=0;i<20;i++) {
-  int face=ordered[i].face;FxVec3 a=vertices[faces[face][0]],b=vertices[faces[face][1]],c=vertices[faces[face][2]];
-  FxVec3 u={b.x-a.x,b.y-a.y,b.z-a.z},v={c.x-a.x,c.y-a.y,c.z-a.z};
-  FxVec3 n={u.y*v.z-u.z*v.y,u.z*v.x-u.x*v.z,u.x*v.y-u.y*v.x};
-  float length=sqrtf(n.x*n.x+n.y*n.y+n.z*n.z);
-  float light=(-.35f*n.x-.5f*n.y-.79f*n.z)/length;
-  if(light<0)light=0;
-  unsigned color=fx_mix(VT_THEME_SURFACE_RAISED,VT_THEME_COLD,(unsigned)(42+light*180));
-  if(light>.8f)color=fx_mix(color,VT_THEME_SIGNAL_BRIGHT,(unsigned)((light-.8f)*650));
-  fx_triangle(a,b,c,color);
- }
-}
-static float fx_wheel_from,fx_wheel_to;static int fx_wheel_selected=-1;
-static uint64_t fx_wheel_changed;
-static float fx_wheel_angle(int selected) {
- uint64_t now=sceKernelGetProcessTimeWide();
- float elapsed=now>=fx_wheel_changed?(float)(now-fx_wheel_changed)/240000.0f:1;
- if(elapsed>1)elapsed=1;
- float eased=elapsed*elapsed*(3-2*elapsed);
- float current=fx_wheel_from+(fx_wheel_to-fx_wheel_from)*eased;
- if(fx_wheel_selected!=selected) {
-  float target=-1.57079632679f+selected*1.0471975512f;
-  if(fx_wheel_selected<0)current=target;
-  while(target-current>3.14159265359f)target-=6.28318530718f;
-  while(target-current< -3.14159265359f)target+=6.28318530718f;
-  fx_wheel_from=current;fx_wheel_to=target;fx_wheel_changed=now;fx_wheel_selected=selected;
- }
- return vt_preferences_reduce_motion()?fx_wheel_to:current;
-}
-static void fx_ghost_core(int selected) {
- float turn=fx_phase(24000000ULL)*6.28318530718f;
- float angle=fx_wheel_angle(selected);
- fx_mesh_count=0;
- /* Concentric outer guides share the same exact center as the six nodes. */
- for(int pass=0;pass<2;pass++) {
-  fx_3d_ring(170,1.2f,0,0,turn,pass,fx_alpha(VT_THEME_COLD,185));
-  fx_3d_ring(166,1,0,0,-turn,pass,fx_alpha(VT_THEME_SIGNAL_BRIGHT,195));
-  fx_3d_ring(108,2.2f,.8f,.16f,turn,pass,fx_alpha(VT_THEME_COLD,235));
-  fx_3d_ring(92,2.6f,-.45f,.9f,-turn,pass,fx_alpha(VT_THEME_SIGNAL_BRIGHT,245));
-  fx_3d_ring(76,1.7f,.6f,-.8f,turn*.5f,pass,fx_alpha(VT_THEME_COLD,235));
-  fx_mesh_flush();
-  if(pass==0){fx_icosahedron(turn);fx_mesh_flush();}
- }
- /* A smoothly moving angular cursor, rather than snapping an entire ring. */
- for(int i=0;i<12;i++) {
-  float a=angle-.12f+i*.02f,b=a+.02f;
-  FxVec3 p={cosf(a)*173,sinf(a)*173,0},q={cosf(b)*173,sinf(b)*173,0};
-  FxVec3 r={cosf(b)*178,sinf(b)*178,0},t={cosf(a)*178,sinf(a)*178,0};
-  fx_triangle(p,q,r,VT_THEME_SIGNAL_BRIGHT);fx_triangle(p,r,t,VT_THEME_SIGNAL_BRIGHT);
- }
- fx_mesh_flush();
- vita2d_draw_line(690+cosf(angle)*58,272+sinf(angle)*58,690+cosf(angle)*149,272+sinf(angle)*149,fx_alpha(VT_THEME_SIGNAL_BRIGHT,120));
-}
-
 static void corners(UiThemeRect r,unsigned color){
  const int n=12;
  vita2d_draw_rectangle(r.x,r.y,n,2,color);vita2d_draw_rectangle(r.x,r.y,2,n,color);
@@ -575,71 +435,13 @@ static void fx_category_icon(float x,float y,float scale,int category,unsigned c
 }
 
 void ui_theme_home_menu(int theme,int selected,const char *const labels[6],const unsigned char *categories,int focused,UiFocusMotion *motion){
- static UiFocusMotion menu_motion;
- static int menu_theme=-1;
- if(menu_theme!=theme){ui_focus_motion_reset(&menu_motion);menu_theme=theme;}
+ (void)categories;fx_select(theme,selected);
  UiThemeRect target=ui_theme_home_tab_rect(theme,selected,1);
- ui_focus_motion_tick(&menu_motion,target.x,target.y,target.w,target.h);
- fx_select(theme,selected);
- if(theme==VT_UI_THEME_GHOST_MESH){
-  fx_ghost_core(selected);
-  ui_text_line(625,400,130,labels[selected],VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
- }else if(theme==VT_UI_THEME_DECK_90){
-  vita2d_draw_rectangle(234,70,1,388,VT_THEME_BORDER);
-  ui_text_line(28,92,184,vt_i18n_str(VT_STR_SECTIONS_TITLE),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
- }else if(theme==VT_UI_THEME_APERTURE){
-  vita2d_draw_rectangle(18,416,924,1,VT_THEME_BORDER);
- }else if(theme==VT_UI_THEME_RELAY){
-  for(int i=1;i<6;i++){
-   UiThemeRect a=ui_theme_home_tab_rect(theme,i-1,1),b=ui_theme_home_tab_rect(theme,i,1);
-   vita2d_draw_line(a.x+12,a.y+a.h*.5f,b.x+12,b.y+b.h*.5f,VT_THEME_COLD);
-  }
- }
+ if(focused){ui_focus_motion_tick(motion,target.x,target.y,target.w,target.h);ui_menu_focus_draw(motion);}
  for(int i=0;i<6;i++){
-  UiThemeRect r=ui_theme_home_tab_rect(theme,i,1);int active=i==selected;int category=categories?categories[i]:i;
-  unsigned fg=active?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT_MUTED;
-  if(theme==VT_UI_THEME_GHOST_MESH){
-   ui_theme_fx_surface(r.x,r.y,r.w,r.h,active?fx_mix(VT_THEME_SURFACE,VT_THEME_COLD,48):VT_THEME_SURFACE,active);
-   if(active){vita2d_draw_rectangle(r.x-5,r.y+8,3,r.h-16,VT_THEME_SIGNAL_BRIGHT);vita2d_draw_rectangle(r.x+9,r.y-3,r.w*.55f,2,VT_THEME_COLD);}
-   float dx=r.x+r.w*.5f-690,dy=r.y+r.h*.5f-272,len=sqrtf(dx*dx+dy*dy);
-   vita2d_draw_line(690+dx*72/len,272+dy*72/len,r.x+r.w*.5f,r.y+r.h*.5f,active?VT_THEME_FOCUS:VT_THEME_BORDER_DIM);
-  }
-  if(theme==VT_UI_THEME_DECK_90&&active&&focused){
-   vita2d_draw_rectangle(r.x,r.y,r.w,r.h,VT_THEME_SURFACE_RAISED);fg=VT_THEME_SIGNAL_BRIGHT;
-  }
-  if(theme==VT_UI_THEME_RELAY||theme==VT_UI_THEME_MOSAIC){
-   vita2d_draw_rectangle(r.x,r.y,r.w,r.h,active?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE);
-   corners(r,active&&focused?VT_THEME_FOCUS:VT_THEME_BORDER_DIM);
-   if(active)vita2d_draw_rectangle(r.x+12,r.y+12,22,3,VT_THEME_SIGNAL_BRIGHT);
-  }
-  if(theme==VT_UI_THEME_RELAY)ui_theme_scene_card(UI_SCENE_HOME,r,active,i);
-  if(theme==VT_UI_THEME_APERTURE){
-   for(int p=0;p<r.w-12;p+=18)vita2d_draw_rectangle(r.x+6+p,r.y-6,7,3,VT_THEME_BORDER);
-   ui_theme_scene_transport(r.x+5,r.y+5,r.w-10,r.h-10,active,active?1:.2f);
-  }
-  if(theme==VT_UI_THEME_DECK_90){
-   vita2d_draw_line(r.x+8,r.y+r.h-2,r.x+r.w-8,r.y+r.h-2,VT_THEME_BORDER_DIM);
-   if(active)vita2d_draw_rectangle(r.x+2,r.y+4,3,r.h-8,fg);
-  }
-  if(theme==VT_UI_THEME_SIGNAL)ui_theme_scene_transport(r.x+5,r.y+4,r.w-10,r.h-8,active,active?.8f:.15f);
-  if(theme==VT_UI_THEME_MOSAIC&&active)ui_theme_scene_transport(r.x,r.y,r.w,r.h,1,1);
-  if(theme==VT_UI_THEME_SIGNAL || (theme==VT_UI_THEME_DECK_90&&active&&focused))
-   ui_theme_fx_surface(r.x,r.y,r.w,r.h,theme==VT_UI_THEME_DECK_90&&active&&focused?VT_THEME_SURFACE_RAISED:active?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,active);
-  int inset=12,baseline=r.y+(r.h>60?66:r.h>44?35:27);
-  if(theme==VT_UI_THEME_GHOST_MESH){fx_category_icon(r.x+10,r.y+11,.8f,category,fg);inset=42;}
-  if(theme==VT_UI_THEME_MOSAIC){fx_category_icon(r.x+10,r.y+13,.8f,category,fg);inset=42;}
-  if(theme==VT_UI_THEME_RELAY){fx_category_icon(r.x+10,r.y+11,.8f,category,fg);inset=42;}
-  ui_text_line(r.x+inset,baseline,r.w-inset-12,labels[i],fg,UI_FONT_SMALL);
-  if(active&&theme!=VT_UI_THEME_DECK_90&&theme!=VT_UI_THEME_RELAY&&theme!=VT_UI_THEME_MOSAIC)
-   vita2d_draw_rectangle(r.x+12,r.y+r.h-2,r.w-24,2,VT_THEME_SIGNAL_BRIGHT);
- }
- if(focused&&motion){
-  *motion=menu_motion;
-  if(theme==VT_UI_THEME_GHOST_MESH||theme==VT_UI_THEME_RELAY||theme==VT_UI_THEME_MOSAIC){
-   UiThemeRect moving={(int)motion->x,(int)motion->y,(int)motion->width,(int)motion->height};
-   ui_theme_fx_focus(motion->x,motion->y,motion->width,motion->height);corners(moving,VT_THEME_FOCUS);
-  }
-  else ui_focus_outline_draw(motion);
+  UiThemeRect r=ui_theme_home_tab_rect(theme,i,1);
+  ui_menu_row(r.x,r.y,r.w,r.h,0,1);
+  ui_menu_text(r.x+12,r.y+r.h*.5f+7,r.w-24,labels[i],i==selected?VT_THEME_SIGNAL_BRIGHT:VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  }
 }
 void ui_theme_home_heading(const char *title,const char *path,int bottom){
@@ -733,7 +535,6 @@ const char *ui_theme_home_controls_hint(int sections_focused){
 }
 void ui_theme_home_footer_with_focus(const char *path,int bottom,int sections_focused){
 #ifdef VMD_ENABLE_PAF_NATIVE
- if(ui_native_vita_active())ui_panel(14,bottom-52,932,52,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
 #endif
  UiThemeHomeLayout l=ui_theme_home_layout(ui_theme_id(),bottom);
  const char *hint=ui_theme_home_controls_hint(sections_focused);

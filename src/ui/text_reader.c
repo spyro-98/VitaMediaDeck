@@ -1,3 +1,4 @@
+#include "ui/list_scroll.h"
 #include "ui/text_reader.h"
 
 #include <stdint.h>
@@ -95,7 +96,7 @@ static void draw_reader_tabs(vita2d_font *font, const char *parent_title, const 
 }
 
 static void draw_reader(const char *parent_title, const char *title,
-	                    const char *text, int first_line,
+	                    const char *text, float offset,
 	                    const UiSectionsSidebar *sidebar) {
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -103,6 +104,7 @@ static void draw_reader(const char *parent_title, const char *title,
 	int visible_lines = tabbed ? TEXT_READER_TABBED_VISIBLE_LINES
 	                           : TEXT_READER_VISIBLE_LINES;
 	int text_top = tabbed ? TEXT_READER_TABBED_TOP : TEXT_READER_TOP;
+    int first_line=(int)(offset/TEXT_READER_LINE_HEIGHT);
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
@@ -116,7 +118,7 @@ static void draw_reader(const char *parent_title, const char *title,
 	         VT_THEME_SURFACE, VT_THEME_BLUE_BRIGHT, 0);
 	vita2d_set_clip_rectangle(40, tabbed ? 122 : 96, 920, 522);
 	vita2d_enable_clipping();
-	for (int row = 0; row < visible_lines; row++) {
+	for (int row = 0; row <= visible_lines; row++) {
 		int index = first_line + row;
 		if (index >= g_reader_line_count) break;
 		TextReaderLine line = g_reader_lines[index];
@@ -128,7 +130,7 @@ static void draw_reader(const char *parent_title, const char *title,
 		rendered[length] = '\0';
 		if (small)
 			ui_font_draw_text(small, 44,
-				                       text_top + row * TEXT_READER_LINE_HEIGHT,
+				                       text_top+(first_line+row)*TEXT_READER_LINE_HEIGHT-offset,
 			                       VT_THEME_TEXT, UI_FONT_SMALL, rendered);
 	}
 	vita2d_disable_clipping();
@@ -140,7 +142,7 @@ static void draw_reader(const char *parent_title, const char *title,
 		if (thumb_h < 28.0f) thumb_h = 28.0f;
 		int max_first = g_reader_line_count - visible_lines;
 		float thumb_y = track_y + (track_h - thumb_h) *
-		                (max_first > 0 ? (float)first_line / (float)max_first : 0.0f);
+		                (max_first > 0 ? offset/(TEXT_READER_LINE_HEIGHT*(float)max_first) : 0.0f);
 		vita2d_draw_rectangle(930, track_y, 4, track_h, VT_THEME_SURFACE_FOCUS);
 		vita2d_draw_rectangle(930, thumb_y, 4, thumb_h, VT_THEME_BLUE_LIGHT);
 	}
@@ -161,7 +163,7 @@ static int text_reader_run_internal(const char *parent_title, const char *title,
 	int tabbed = parent_title && parent_title[0];
 	int visible_lines = tabbed ? TEXT_READER_TABBED_VISIBLE_LINES
 	                           : TEXT_READER_VISIBLE_LINES;
-	int first_line = 0;
+	UiScrollView viewport={0};
 	int max_first = g_reader_line_count > visible_lines
 	              ? g_reader_line_count - visible_lines : 0;
 	SceCtrlData ctrl, previous;
@@ -170,7 +172,7 @@ static int text_reader_run_internal(const char *parent_title, const char *title,
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
-	int touch_y = 0;
+
 	int result = UI_SECTION_NONE;
 	UiSectionsSidebar sidebar;
 	ui_sections_sidebar_init(&sidebar, tabbed ? UI_SECTION_SETTINGS : UI_SECTION_GUIDE);
@@ -208,10 +210,12 @@ static int text_reader_run_internal(const char *parent_title, const char *title,
 		    (pressed & (SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT))) break;
 		unsigned int nav = ui_nav_repeat_update(
 		    &nav_repeat, pressed, page_owns_input ? ctrl.buttons : 0,
-		    page_owns_input ? ctrl.lx : 128, page_owns_input ? ctrl.ly : 128,
+		    page_owns_input ? ctrl.lx : 128, 128,
 		    SCE_CTRL_UP | SCE_CTRL_DOWN);
-		if ((nav & SCE_CTRL_UP) && first_line > 0) first_line--;
-		if ((nav & SCE_CTRL_DOWN) && first_line < max_first) first_line++;
+        if(page_owns_input)
+            ui_list_scroll_input(&viewport,g_reader_line_count,TEXT_READER_LINE_HEIGHT,40,
+                tabbed?134:106,880,visible_lines*TEXT_READER_LINE_HEIGHT,
+                nav,ctrl.buttons,ctrl.ly,&flags,&touch,NULL);
 		if (page_owns_input && tabbed && (flags & UI_TOUCH_EVENT_TAP) &&
 		    ui_touch_hit_rect(touch.x, touch.y, TEXT_READER_TAB_X,
 		                      TEXT_READER_TAB_Y, TEXT_READER_TAB_W,
@@ -222,22 +226,11 @@ static int text_reader_run_internal(const char *parent_title, const char *title,
 			int track_height = tabbed ? 374 : 402;
 			if (touch.y >= track_top && touch.y < track_top + track_height &&
 			    max_first > 0) {
-				first_line = (touch.y - track_top) * max_first / track_height;
-				if (first_line < 0) first_line = 0;
-				if (first_line > max_first) first_line = max_first;
+				viewport.target=(touch.y-track_top)*(float)(max_first*TEXT_READER_LINE_HEIGHT)/track_height;
+                viewport.coasting=0;
 			}
 		}
-		if (flags & UI_TOUCH_EVENT_DOWN) touch_y = touch.y;
-		if (flags & (UI_TOUCH_EVENT_MOVE | UI_TOUCH_EVENT_HOLD)) {
-			int delta = touch_y - touch.y;
-			if (delta >= TEXT_READER_LINE_HEIGHT || delta <= -TEXT_READER_LINE_HEIGHT) {
-				first_line += delta / TEXT_READER_LINE_HEIGHT;
-				if (first_line < 0) first_line = 0;
-				if (first_line > max_first) first_line = max_first;
-				touch_y = touch.y;
-			}
-		}
-		draw_reader(parent_title, title, text, first_line, &sidebar);
+		draw_reader(parent_title, title, text, viewport.position, &sidebar);
 		sceKernelDelayThread(vt_preferences_reduce_motion() ? 16000 : 1000);
 	}
 	ui_touch_reset();
@@ -298,6 +291,7 @@ int ui_controls_guide_run(const char *title, const char *text) {
  for(int i=0;i<count;i++)if(chapters[i].length>=sizeof(content))
   return ui_text_reader_run(title,text);
  int cursor=0,loaded=-1,first=0,content_focus=0;
+ UiScrollView content_scroll={0},index_scroll={0};
  UiFocusMotion focus={0};UiNavRepeat repeat={0};UiSectionsSidebar sidebar;
  ui_sections_sidebar_init(&sidebar,UI_SECTION_GUIDE);
  SceCtrlData previous={0};sceCtrlPeekBufferPositive(0,&previous,1);
@@ -327,44 +321,51 @@ int ui_controls_guide_run(const char *title, const char *text) {
   if(visible<1)visible=1;
   if(owns) {
    if(pressed&SCE_CTRL_CIRCLE){ui_touch_reset();return UI_SECTION_NONE;}
-   unsigned nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,controls.ly,
+   unsigned nav=ui_nav_repeat_update(&repeat,pressed,controls.buttons,controls.lx,128,
                                     SCE_CTRL_UP|SCE_CTRL_DOWN|SCE_CTRL_LEFT|SCE_CTRL_RIGHT);
    if(nav&SCE_CTRL_LEFT)content_focus=0;
    if((nav&SCE_CTRL_RIGHT) || (pressed&SCE_CTRL_CROSS))content_focus=1;
-   if(nav&SCE_CTRL_UP){if(content_focus)first--;else if(cursor>0)cursor--;}
-   if(nav&SCE_CTRL_DOWN){if(content_focus)first++;else if(cursor+1<count)cursor++;}
+   if((nav&SCE_CTRL_UP)&&!content_focus&&cursor>0)cursor--;
+   if((nav&SCE_CTRL_DOWN)&&!content_focus&&cursor+1<count)cursor++;
    if(flags&UI_TOUCH_EVENT_TAP) {
-    for(int i=0;i<count;i++)if(ui_touch_hit_rect(touch.x,touch.y,18,62+i*52,264,44)){
+    for(int i=0;i<count;i++)if(ui_touch_hit_rect(touch.x,touch.y,18,62+i*52-index_scroll.position,264,44)){
      cursor=i;content_focus=0;
     }
     if(touch.x>=298 && touch.y>=62 && touch.y<ui_mini_player_top()-36)content_focus=1;
    }
-   if(content_focus && (flags&UI_TOUCH_EVENT_UP) && !(flags&UI_TOUCH_EVENT_TAP))
-    first+=(touch.down_y-touch.y)/TEXT_READER_LINE_HEIGHT;
+   ui_list_scroll_input(&content_scroll,g_reader_line_count,24,298,108,644,visible*24,
+       content_focus?nav:0,controls.buttons,content_focus?controls.ly:128,&flags,&touch,NULL);
+   ui_list_scroll_input(&index_scroll,count,52,18,62,264,ui_mini_player_top()-106,
+       content_focus?0:nav,controls.buttons,content_focus?128:controls.ly,&flags,&touch,&cursor);
   } else ui_nav_repeat_reset(&repeat);
   if(cursor!=loaded) {
    if(guide_chapter_content(&chapters[cursor],content,sizeof(content))<0)
     return ui_text_reader_run(title,text);
-   index_text(ui_runtime_font(UI_FONT_SMALL),content,604);loaded=cursor;first=0;
+   index_text(ui_runtime_font(UI_FONT_SMALL),content,604);loaded=cursor;first=0;ui_scroll_reset(&content_scroll,0);
   }
   int max_first=g_reader_line_count>visible?g_reader_line_count-visible:0;
-  if(first<0)first=0;
-  if(first>max_first)first=max_first;
+  first=ui_list_scroll_first(&content_scroll,24);
+  (void)max_first;
   vita2d_start_drawing();vita2d_clear_screen();
   ui_chrome_background(VT_THEME_BG,VT_THEME_SIGNAL);
   ui_brand_draw_breadcrumbs(title,NULL,chapters[cursor].title);
-  for(int i=0;i<count;i++)ui_tab(18,62+i*52,264,44,chapters[i].title,i==cursor);
+  vita2d_set_clip_rectangle(18,62,282,ui_mini_player_top()-44);vita2d_enable_clipping();
+  for(int i=ui_list_scroll_first(&index_scroll,52);i<ui_list_scroll_end(&index_scroll,52,ui_mini_player_top()-106,count);i++)
+   ui_tab(18,62+i*52-index_scroll.position,264,52,chapters[i].title,i==cursor);
+  vita2d_disable_clipping();
   int panel_height=ui_mini_player_top()-106;
   ui_panel(298,62,644,panel_height,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
   ui_text_line(318,94,604,chapters[cursor].title,VT_THEME_TEXT,UI_FONT_BODY);
-  for(int i=0;i<visible && first+i<g_reader_line_count;i++) {
+  vita2d_set_clip_rectangle(318,108,922,ui_mini_player_top()-44);vita2d_enable_clipping();
+  for(int i=0;i<=visible && first+i<g_reader_line_count;i++) {
    TextReaderLine line=g_reader_lines[first+i];char rendered[512];
    int n=line.length;if(n>511)n=511;
    memcpy(rendered,content+line.offset,n);rendered[n]=0;
-   ui_text_line(318,128+i*24,604,rendered,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+   ui_text_line(318,128+(first+i)*24-content_scroll.position,604,rendered,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
   }
+  vita2d_disable_clipping();
   if(owns) {
-   ui_focus_motion_tick(&focus,content_focus?298:18,content_focus?62:62+cursor*52,
+   ui_focus_motion_tick(&focus,content_focus?298:18,content_focus?62:62+cursor*52-index_scroll.position,
                         content_focus?644:264,content_focus?panel_height:44);
    ui_focus_outline_draw(&focus);
   }

@@ -36,6 +36,22 @@ static void search_tests(void) {
     CHECK(!strcmp(catalog.items[0].group,"News;General") && !strcmp(catalog.items[0].channel_id,"RaiNews24.it"));
 }
 static void parse_tests(void) {
+    /* Real channel lists can exceed the playback-manifest cap. Comments keep
+     * this fixture below the entry cap while exercising the complete body. */
+    size_t large_size=VT_IPTV_CATALOG_LIMIT;char *large=malloc(VT_IPTV_CATALOG_LIMIT+1);CHECK(large);
+    const char *entry="#EXTM3U\n#EXTINF:-1,Channel\nhttps://example.org/live.m3u8\n";
+    size_t at=strlen(entry);memcpy(large,entry,at);
+    while(at+1024<large_size){large[at++]='#';memset(large+at,'a',1022);at+=1022;large[at++]='\n';}
+    CHECK(at>VT_IPTV_PLAYLIST_LIMIT);
+    CHECK(!vt_iptv_catalog_parse(large,at,"https://example.org/list.m3u",&catalog));
+    CHECK(catalog.count==1&&!catalog.truncated);
+    memset(large+at,' ',large_size-at);
+    CHECK(!vt_iptv_catalog_parse(large,large_size,"https://example.org/list.m3u",&catalog));
+    CHECK(vt_iptv_catalog_parse(large,VT_IPTV_CATALOG_LIMIT+1,"https://example.org/list.m3u",&catalog)==VT_IPTV_CATALOG_BODY_LIMIT);
+    char overlong[4200];memset(overlong,'x',sizeof(overlong));memcpy(overlong,"#EXTM3U\n",8);
+    CHECK(vt_iptv_catalog_parse(overlong,sizeof(overlong),"https://example.org/list.m3u",&catalog)==VT_IPTV_CATALOG_LINE_LIMIT);
+    large[20]=0;CHECK(vt_iptv_catalog_parse(large,at,"https://example.org/list.m3u",&catalog)==VT_IPTV_INVALID);free(large);
+
     const char *m3u="\xef\xbb\xbf \t#EXTM3U x-tvg-url=\"https://example.org/epg.xml\" \r\n"
         "\n #EXTINF:-1 tvg-logo=\"logo.png\",Channel, with comma\r\n"
         "#EXTVLCOPT:http-user-agent=HbbTV/1.6.1\r\n  http://example.org/live.m3u8 \t\r\n"
@@ -43,6 +59,7 @@ static void parse_tests(void) {
         "#EXTINF:3600,Movie\nmovie.mp4?token=private\n";
     CHECK(!vt_iptv_catalog_parse(m3u,strlen(m3u),"https://example.org/list.m3u",&catalog));
     CHECK(catalog.count==3 && !catalog.truncated);
+    CHECK(!strcmp(catalog.items[0].guide_url,"https://example.org/epg.xml")&&!strcmp(catalog.items[2].guide_url,"https://example.org/epg.xml"));
     CHECK(!strcmp(catalog.items[0].url,"http://example.org/live.m3u8"));
     CHECK(!strcmp(catalog.items[0].logo,"https://example.org/logo.png"));
     CHECK(!strcmp(catalog.items[0].title,"Channel, with comma"));
@@ -72,8 +89,8 @@ static void parse_tests(void) {
 int main(int argc,char **argv) {
     if(argc>1) {
         FILE *fixture=fopen(argv[1],"rb");CHECK(fixture);
-        char *body=malloc(VT_IPTV_PLAYLIST_LIMIT);CHECK(body);
-        size_t size=fread(body,1,VT_IPTV_PLAYLIST_LIMIT,fixture);CHECK(feof(fixture));fclose(fixture);
+        char *body=malloc(VT_IPTV_CATALOG_LIMIT);CHECK(body);
+        size_t size=fread(body,1,VT_IPTV_CATALOG_LIMIT,fixture);CHECK(feof(fixture));fclose(fixture);
         int result=vt_iptv_catalog_parse(body,size,"https://iptv-org.github.io/iptv/languages/ita.m3u",&catalog);
         fprintf(stderr,"Reported IPTV playlist: bytes=%zu result=%d entries=%u truncated=%d\n",size,result,catalog.count,catalog.truncated);
         CHECK(!result && !catalog.truncated);free(body);
@@ -84,17 +101,29 @@ int main(int argc,char **argv) {
     CHECK(!mkdir("ux0:data",0700) && !mkdir("ux0:data/VitaMediaDeck",0700));
     VtIptvChannel list={.url="https://example.org/list.m3u",.title="Saved playlist",.mode=VT_IPTV_LIST,.starred=1,.user_agent="HbbTV/1.6.1"};
     VtIptvChannel channel={.url="https://example.org/live.m3u8",.title="Channel",.mode=VT_IPTV_HLS,.starred=1,.logo="https://example.org/logo.png"};
+    strcpy(channel.guide_url,"https://example.org/guide.xml.gz,https://example.org/guide2.xml");
+    strcpy(channel.guide_name,"Rai Uno");channel.guide_shift=1800;
     strcpy(channel.group,"News");strcpy(channel.channel_id,"Channel.it");
     CHECK(!vt_iptv_saved_load(&catalog,0) && !catalog.count);
     memset(list.user_agent,'A',136);list.user_agent[136]=0;
+    unsigned revision=vt_iptv_saved_revision();
     CHECK(!vt_iptv_saved_set(&list) && !vt_iptv_saved_set(&channel));
+    CHECK(vt_iptv_saved_revision()==revision+2);
+    strcpy(channel.preferred.video_key,"0123456789abcdef");strcpy(channel.preferred.audio_key,"fedcba9876543210");
+    channel.preferred.width=1920;channel.preferred.height=1080;channel.preferred.bandwidth=9000000;
+    CHECK(!vt_iptv_saved_set(&channel));
     strcpy(list.title,"Renamed list");CHECK(!vt_iptv_saved_set(&list));
     CHECK(!vt_iptv_saved_load(&catalog,0) && catalog.count==2);
+    revision=vt_iptv_saved_revision();
     fail_commit=1;CHECK(vt_iptv_saved_remove(list.url)<0);fail_commit=0;
+    CHECK(vt_iptv_saved_revision()==revision);
     CHECK(!vt_iptv_saved_load(&catalog,0) && catalog.count==2 && !strcmp(catalog.items[0].title,list.title));
-    CHECK(!vt_iptv_saved_remove(list.url));
+    CHECK(!vt_iptv_saved_remove(list.url));CHECK(vt_iptv_saved_revision()==revision+1);
     CHECK(!vt_iptv_saved_load(&catalog,1) && catalog.count==1);
     CHECK(!strcmp(catalog.items[0].url,channel.url) && !strcmp(catalog.items[0].logo,channel.logo));
+    CHECK(!strcmp(catalog.items[0].guide_url,channel.guide_url));
+    CHECK(!strcmp(catalog.items[0].guide_name,channel.guide_name)&&catalog.items[0].guide_shift==channel.guide_shift);
+    CHECK(!memcmp(&catalog.items[0].preferred,&channel.preferred,sizeof(channel.preferred)));
     CHECK(!strcmp(catalog.items[0].group,channel.group) && !strcmp(catalog.items[0].channel_id,channel.channel_id));
     CHECK(!vt_iptv_saved_remove(list.url)); /* Idempotent and exact URL match. */
     CHECK(vt_iptv_saved_remove("file:///private/local")<0);
@@ -107,6 +136,10 @@ int main(int argc,char **argv) {
     CHECK(!strcmp(catalog.items[0].user_agent,list.user_agent));
     CHECK(!vt_iptv_saved_remove(list.url));
     CHECK(!vt_iptv_saved_load(&catalog,0) && !catalog.count);
+    list.name_source=VT_IPTV_NAME_CUSTOM;list.single_channel=1;strcpy(list.logo,"ux0:TV/icon.png");
+    CHECK(!vt_iptv_saved_set(&list)&&!vt_iptv_saved_load(&catalog,0)&&catalog.count==1);
+    CHECK(catalog.items[0].name_source==VT_IPTV_NAME_CUSTOM&&catalog.items[0].single_channel&&!strcmp(catalog.items[0].logo,list.logo));
+    CHECK(!vt_iptv_saved_remove(list.url));
     FILE *f=fopen(SAVED,"wb");CHECK(f);CHECK(fputs("broken",f)>=0);CHECK(!fclose(f));
     CHECK(vt_iptv_saved_set(&list)<0 && vt_iptv_saved_remove(list.url)<0);
     f=fopen(SAVED,"rb");CHECK(f);char bytes[16]={0};CHECK(fread(bytes,1,sizeof(bytes),f)==6);fclose(f);

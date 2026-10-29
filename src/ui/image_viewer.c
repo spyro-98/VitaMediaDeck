@@ -1,3 +1,6 @@
+#ifdef VMD_ENABLE_PAF_NATIVE
+#include "ui/native_vita.h"
+#endif
 #include "ui/image_viewer.h"
 #include "ui/image_view_controls.h"
 
@@ -267,9 +270,12 @@ static void change_zoom(ImageViewState *state, vita2d_texture *texture,
 static void draw_image_info_panel(float animation, const VtImageInfo *info,
 	                              const ImageViewState *state) {
 	if (animation <= .01f || !info || !state) return;
-	const float width = 430.0f;
+	#ifdef VMD_ENABLE_PAF_NATIVE
+    int native_scope=ui_native_vita_scope(UI_NATIVE_SCOPE_ACTIONS);
+#endif
+    const float width = 430.0f;
 	float x = 960.0f - width * animation;
-	vita2d_draw_rectangle(x, 0, width, 544, VT_THEME_BG_SOFT);
+	ui_menu_surface(x,0,width,544,1);
 	vita2d_draw_rectangle(x, 0, 1, 544, VT_THEME_BORDER);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
@@ -277,11 +283,9 @@ static void draw_image_info_panel(float animation, const VtImageInfo *info,
 		ui_font_draw_text(body, x + 28, 48, VT_THEME_TEXT, UI_FONT_BODY,
 		                  vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_TITLE));
 	if (small) {
-		vita2d_draw_rectangle(x + width - 65, 18, 42, 26,
-		                      VT_THEME_SURFACE_RAISED);
-		int key_width = ui_font_text_width(small, UI_FONT_SMALL, "R1");
+		int key_width = ui_font_text_width(small, UI_FONT_SMALL, UI_PAD_R1);
 		ui_font_draw_text(small, x + width - 44 - key_width / 2, 38,
-		                  VT_THEME_TEXT, UI_FONT_SMALL, "R1");
+		                  VT_THEME_TEXT, UI_FONT_SMALL, UI_PAD_R1);
 	}
 	char dimensions[64], file_size[32], zoom[32];
 	snprintf(dimensions, sizeof(dimensions), "%ux%u", info->source_width,
@@ -289,23 +293,25 @@ static void draw_image_info_panel(float animation, const VtImageInfo *info,
 	ui_format_file_size(info->file_size, file_size, sizeof(file_size));
 	snprintf(zoom, sizeof(zoom), "%.0f%%", state->zoom * 100.0f);
 	const char *labels[4] = {
+		vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_ZOOM),
 		vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_FORMAT),
 		vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_DIMENSIONS),
-		vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_FILE_SIZE),
-		vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_ZOOM)
+		vt_i18n_str(VT_STR_IMAGE_VIEWER_PANEL_FILE_SIZE)
 	};
-	const char *values[4] = { info->format, dimensions, file_size, zoom };
+	const char *values[4] = { zoom, info->format, dimensions, file_size };
 	for (int i = 0; i < 4; i++) {
-		float y = 82.0f + i * 72.0f;
-		ui_panel(x + 20, y, width - 40, 60, VT_THEME_SURFACE,
-		         VT_THEME_BORDER_DIM, 0);
+		float y = ui_menu_group_y(i,82,60,3u);
+		ui_menu_row(x+20,y,width-40,60,0,1);
+        if(i==0||i==1)ui_menu_category(x+38,y-UI_MENU_HEADING_HEIGHT,width-76,i==0?UI_MENU_GROUP_VIEW:UI_MENU_GROUP_INFO);
 		if (!small) continue;
-		ui_font_draw_text(small, x + 38, y + 37, VT_THEME_TEXT_MUTED,
-		                  UI_FONT_SMALL, labels[i]);
-		int value_width = ui_font_text_width(small, UI_FONT_SMALL, values[i]);
-		ui_font_draw_text(small, x + width - value_width - 38, y + 37,
-		                  VT_THEME_COLD_LIGHT, UI_FONT_SMALL, values[i]);
+		ui_menu_text(x+38,y+37,170,labels[i],UI_MENU_MUTED,UI_FONT_SMALL);
+		char fitted[96];ui_font_fit_text(small,UI_FONT_SMALL,values[i],fitted,sizeof(fitted),180);
+        int value_width=ui_font_text_width(small,UI_FONT_SMALL,fitted);
+        ui_menu_text(x+width-value_width-38,y+37,value_width+2,fitted,UI_MENU_ACCENT,UI_FONT_SMALL);
 	}
+#ifdef VMD_ENABLE_PAF_NATIVE
+    ui_native_vita_scope(native_scope);
+#endif
 }
 
 static void draw_native_detail(const ImageNativeDetail *detail,

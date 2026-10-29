@@ -1,9 +1,10 @@
 #ifndef VMD_IPTV_SOURCE_H
 #define VMD_IPTV_SOURCE_H
 #include "network/iptv_manifest.h"
+#include "network/iptv_options.h"
 
 typedef struct VtIptvSource VtIptvSource;
-typedef struct { char user_agent[VT_IPTV_USER_AGENT_MAX]; } VtIptvHttpOptions;
+typedef struct { char user_agent[VT_IPTV_USER_AGENT_MAX]; int allow_local; } VtIptvHttpOptions;
 typedef struct {
     uint64_t generation, sequence, discontinuity;
     size_t offset;
@@ -35,6 +36,10 @@ struct VtIptvSourceConfig {
     void *fetch_ctx;
     VtIptvProducer producer; /* All-zero retains the original HLS path. */
     unsigned startup_segments; /* Zero preserves one-chunk startup. */
+    VtIptvSelection selection;
+    VtIptvSelection *active_selection; /* Producer-private, initialization only. */
+    VtIptvOptions *stream_options; /* HLS init writes once, before publishing its first chunk. */
+    VtIptvOptions *inspect; /* Only synchronous discovery may write this. NULL in sessions. */
     VtIptvFetchRange fetch_range; /* Optional verified exact HTTP byte ranges. */
 };
 typedef struct {
@@ -48,8 +53,8 @@ typedef struct {
     int startup_ready; /* Target reached, cache full, or buffered short VOD. */
 } VtIptvSourceStatus;
 
-/* Defaults: 12 MiB compressed cache, 4 MiB/segment, 4 Mbps and 1280x720 variant
- * filters. These are conservative test policies, not proven Vita decoder limits. */
+/* Defaults: 12 MiB compressed cache, 4 MiB/segment, no default bitrate or resolution rejection.
+ * Explicit caller limits are optional policies, not decoder capabilities. */
 VtIptvSource *vt_iptv_source_create(const char *url, const VtIptvSourceConfig *config);
 /* One producer calls poll on a worker, with a monotonic millisecond clock.
  * It performs at most one segment fetch per call. WAIT is not EOF; retries

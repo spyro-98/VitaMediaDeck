@@ -1,0 +1,21 @@
+{
+  "pack": "Kenney Input Prompts 1.5A",
+  "source": "https://kenney.nl/assets/input-prompts",
+  "license": "CC0-1.0",
+  "archive_sha256": "ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1",
+  "files": {
+    "License.txt": "ca2f58f80f903512119da5828868199478119818cd7ecffb303d625cb74cbb5a",
+    "playstation_button_color_circle_outline.png": "7b739563cb7be6282f0a78deb668fd0b1665874e559365fff5f7bf42680451ff",
+    "playstation_button_color_circle_outline.svg": "98bf009be40623d2b06c7b0b78e07c753c5b56b25a446aab221d9f8dd22d90d3",
+    "playstation_button_color_cross_outline.png": "41047a7eaf41b47214687c1d50a94240f10a20d30292f4d202f48fda0965dea0",
+    "playstation_button_color_cross_outline.svg": "8d79048217d67e59bafa518a59b9771bbca9522233df30ec0f8b11c01aa4d390",
+    "playstation_button_color_square_outline.png": "9af57bb1b8867005c6bced8bd339c0b8498faf3606dba148bc2160883656d15e",
+    "playstation_button_color_square_outline.svg": "3e09635713257af6afeeb02988d4218252ebcb4e2de5d587f678b1f212e2ae15",
+    "playstation_button_color_triangle_outline.png": "ad061bfd4a3e32a90b3e17e6a7d8e398c76be07d256715535a582d16039b9280",
+    "playstation_button_color_triangle_outline.svg": "c24dd98758642ec3c604d8cfa2e16cc437c6e59801a89e8d540c21a3732a722d",
+    "playstation_trigger_l1_alternative.png": "7cd3bf75085d3afcf58aa164260bb305e69281e77da778f2f4687d8da78f1a5b",
+    "playstation_trigger_l1_alternative.svg": "7309df3bc07a0810692b536826ca1dfee10c1b8011270bb67951bb65edc8afea",
+    "playstation_trigger_r1_alternative.png": "3bd8f36c25e50e4cb933bcbd9e3eaba91876203abb90493ac4f8b277bee9ad6c",
+    "playstation_trigger_r1_alternative.svg": "1838e7fd5a1b2dcf8798f9f5bd7576e7e031b7a9730da0a43133f3708f972493"
+  }
+}

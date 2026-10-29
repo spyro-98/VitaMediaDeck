@@ -70,18 +70,19 @@ static int choose_action(const VtLocalMediaItem *item, int confirmation) {
 		char fitted[VT_LOCAL_MEDIA_PATH_MAX];
 		if (body) {
 			ui_font_fit_text(body, UI_FONT_BODY, item->name, fitted, sizeof(fitted), 560);
-			ui_font_draw_text(body, 200, 132, VT_THEME_TEXT, UI_FONT_BODY, fitted);
+			ui_font_draw_text_exact(body, 200, 132, VT_THEME_TEXT, UI_FONT_BODY, fitted);
 		}
 		if (small) {
 			ui_font_fit_text(small, UI_FONT_SMALL, item->path, fitted, sizeof(fitted), 560);
-			ui_font_draw_text(small, 200, 164, VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted);
+			ui_font_draw_text_exact(small, 200, 164, VT_THEME_TEXT_MUTED, UI_FONT_SMALL, fitted);
 			if(confirmation) ui_text_block(200,228,560,28,3,vt_i18n_str(VT_STR_LOCAL_MEDIA_DELETE_ONLY_FILE),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
 		}
 		for (int i = 0; i < count; i++)
 			ui_action_button(confirmation ? 200+i*285 : 200, confirmation ? 350 : 202+i*59, confirmation ? 275 : 560, 50,
-			    VT_THEME_SURFACE_RAISED, "Cross", labels[i], 0);
+			    VT_THEME_SURFACE_RAISED, "", labels[i], 0);
+ ui_footer(536,vt_i18n_str(VT_STR_UI_SELECTION_HINT),"");
  ui_focus_motion_tick(&focus,confirmation?200+cursor*285:200,confirmation?350:202+cursor*59,confirmation?275:560,50);
- ui_focus_outline_draw(&focus);
+ ui_menu_focus_draw(&focus);
 		vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();

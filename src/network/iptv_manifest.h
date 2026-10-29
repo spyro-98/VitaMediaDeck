@@ -4,6 +4,8 @@
 #include <stdint.h>
 
 #define VT_IPTV_URL_MAX 2048
+/* Signed segment/variant addresses can exceed the user-facing root URL. */
+#define VT_IPTV_RESOURCE_URL_MAX 4096
 #define VT_IPTV_USER_AGENT_MAX 256
 #define VT_IPTV_PLAYLIST_LIMIT (256u * 1024u)
 #define VT_IPTV_MAX_SEGMENTS 64
@@ -21,7 +23,8 @@ enum {
     VT_IPTV_AUDIO_CODEC = -18, VT_IPTV_VIDEO_SIZE = -19,
     VT_IPTV_AUDIO_FORMAT = -20, VT_IPTV_HTTP_SERVER = -21,
     VT_IPTV_HTTP_RATE_LIMIT = -22, VT_IPTV_RANGE = -23, VT_IPTV_TIMESTAMPS = -24,
-    VT_IPTV_REMUX = -25, VT_IPTV_MEDIA_DATA = -26
+    VT_IPTV_REMUX = -25, VT_IPTV_MEDIA_DATA = -26,
+    VT_IPTV_CATALOG_BODY_LIMIT = -27, VT_IPTV_CATALOG_LINE_LIMIT = -28
 };
 typedef struct {
     char url[VT_IPTV_URL_MAX];
@@ -52,6 +55,11 @@ int vt_iptv_input_url(const void *bytes, size_t size, char *out, size_t capacity
 /* HTTP(S) only, no userinfo/control characters or HTTPS-to-HTTP downgrade.
  * Resolves against the final response URL, never against a pre-redirect URL. */
 int vt_iptv_resolve_url(const char *base, const char *reference, char *out, size_t capacity);
+/* Local playlist imports are confined to user storage. Remote manifests keep
+ * the strict HTTP policy and cannot reference a console file. */
+int vt_iptv_local_path(const char *path);
+int vt_iptv_text_utf8(const void *data,size_t size,char **out,size_t *length);
+int vt_iptv_resource_resolve(const char *base,const char *reference,char *out,size_t capacity);
 /* Narrow HLS MPEG-TS subset. Unsupported required features fail explicitly;
  * this is not a generic M3U channel-list parser or a complete HLS implementation. */
 int vt_iptv_manifest_parse(const void *data, size_t size, const char *base, VtIptvManifest *out);

@@ -37,6 +37,8 @@ void ui_runtime_prepare_theme(void);
 
 /* Resources shared for the whole session, owned by ui_runtime. */
 vita2d_font *ui_runtime_font(unsigned int size);
+/* Preserves weight/family while resolving an independent exact-size atlas. */
+vita2d_font *ui_runtime_exact_font(vita2d_font *font,unsigned int size);
 /* Subtitle faces are loaded as independent exact-size instances so switching
  * weight never reuses a blurry atlas created at another size. Variant values
  * match VT_SUBTITLE_FONT_*; system variants return NULL intentionally and are

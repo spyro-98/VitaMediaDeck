@@ -817,6 +817,12 @@ void vt_decoder_render_complete(VtDecoderPlayer *player) {
 		vita_sw_decoder_render_complete(player->software);
 }
 
+int vt_decoder_presented_time(VtDecoderPlayer *player,uint64_t *pts_us){
+ if(pts_us)*pts_us=0;
+ if(!player||!pts_us)return 0;
+ return player->backend==VT_DECODER_BACKEND_HARDWARE?vita_hw_decoder_presented_time(player->hardware,pts_us):
+        player->backend==VT_DECODER_BACKEND_SOFTWARE?vita_sw_decoder_presented_time(player->software,pts_us):0;
+}
 void vt_decoder_get_status(VtDecoderPlayer *player, VtDecoderPlayerStatus *status) {
 	if (!status) return;
 	memset(status, 0, sizeof(*status));
@@ -829,7 +835,7 @@ void vt_decoder_get_status(VtDecoderPlayer *player, VtDecoderPlayerStatus *statu
 		VitaHwDecoderPlayerStatus source;
 		vita_hw_decoder_get_status(player->hardware, &source);
 		memcpy(status, &source, sizeof(*status));
-		status->hardware_accelerated = 1;
+		status->hardware_accelerated = source.hardware_accelerated;
 	} else if (player->backend == VT_DECODER_BACKEND_SOFTWARE) {
 		VitaSwDecoderPlayerStatus source;
 		vita_sw_decoder_get_status(player->software, &source);

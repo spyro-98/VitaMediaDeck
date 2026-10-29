@@ -16,9 +16,12 @@ for v in meta['functions']:
     assert expected==int(v['nid'],16),v['name']
     assert v['name'].startswith('vmd_paf_') and v['library'].startswith('ScePaf')
 resource=bytes(int(v,16) for v in re.findall(r'0x([0-9a-f]{2})', (r/'src/ui/native_vita_resource.inc').read_text()))
-assert len(resource)==2400 and hashlib.sha256(resource).hexdigest()=='32c0303b318e3e637ef51aac7979012748bf1b5085a8be94520b08d265cdd331'
+assert len(resource)==2560 and hashlib.sha256(resource).hexdigest()=='b0ba4b0dcba4516b72bba4ca1cb34892462de99ae2559c0697cc8739924221b9'
 # PAF styles/textures are symbolic runtime references, not packed Sony files.
 xml=(r/'assets/paf/legacy_vita.xml').read_text();assert xml.count('<busyindicator ')==4
+assert 'id="vmd_menu_glow"' in xml and 'blend="2"' in xml
+assert '_common_texture_list_glow_70px' in xml and '_common_texture_list_70px' in xml
+assert '_common_texture_option_menu_button_single' not in xml
 assert '<texturetable />' in xml and '<filetable />' in xml
 for p in (r/'src').rglob('*.c'):
     if p.name!='font.c':assert not re.search(r'vita2d_(?:font|pgf|pvf)_draw_text',p.read_text()),str(p)
