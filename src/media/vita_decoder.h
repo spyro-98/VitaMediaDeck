@@ -171,6 +171,7 @@ int vt_decoder_present_rect(VtDecoderPlayer *player, float x, float y,
  * flight on the GPU. */
 void vt_decoder_discard_video_to_clock(VtDecoderPlayer *player);
 void vt_decoder_render_complete(VtDecoderPlayer *player);
+int vt_decoder_presented_time(VtDecoderPlayer *player,uint64_t *pts_us);
 void vt_decoder_get_status(VtDecoderPlayer *player, VtDecoderPlayerStatus *status);
 VtDecoderBackend vt_decoder_backend(const VtDecoderPlayer *player);
 const char *vt_decoder_backend_name(const VtDecoderPlayer *player);

@@ -11,6 +11,9 @@ void ui_theme_fx_background(unsigned base);
 void ui_theme_fx_surface(float x,float y,float w,float h,unsigned fill,int selected);
 void ui_theme_fx_focus(float x,float y,float w,float h);
 UiThemeRect ui_theme_home_tab_rect(int theme,int position,int expanded);
+static inline int ui_theme_home_content_bottom(int theme,int bottom){
+ return theme==VT_UI_THEME_APERTURE&&bottom-38>398?398:bottom-38;
+}
 UiThemeHomeLayout ui_theme_home_layout(int theme,int bottom);
 UiThemeRect ui_theme_home_item_rect(int theme,int slot,int bottom);
 int ui_theme_home_menu_columns(int theme);

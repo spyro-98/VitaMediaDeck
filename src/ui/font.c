@@ -2,6 +2,7 @@
 #include "ui/native_vita.h"
 #endif
 #include "ui/font.h"
+#include "ui/runtime.h"
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -29,7 +30,7 @@ typedef enum SystemFontKind {
 
 static vita2d_pgf *g_system_fonts[SYSTEM_FONT_COUNT];
 static int g_system_base_heights[SYSTEM_FONT_COUNT];
-static int g_system_init_attempted;
+static int g_system_init_attempted, g_system_init_next;
 static int g_system_language = SCE_SYSTEM_PARAM_LANG_ENGLISH_US;
 static int g_system_preference = UI_FONT_SYSTEM_AUTO;
 
@@ -305,6 +306,7 @@ static int mixed_layout(vita2d_font *latin_font, int draw, int x, int y,
 	                    const char *text, int *height) {
 	if (height) *height = 0;
 	if (!text || !text[0]) return 0;
+	latin_font = ui_runtime_exact_font(latin_font,size);
 	/* Most on-screen copy is short ASCII. Bypass the UTF-8 run builder and the
 	 * contextual CJK scan in that hot path; this is significant on list screens
 	 * that redraw dozens of labels at 60 Hz. */
@@ -341,6 +343,25 @@ static int mixed_layout(vita2d_font *latin_font, int draw, int x, int y,
 			cursor += bytes;
 			continue;
 		}
+		int prompt = ui_input_prompt_id(cp);
+		if (prompt >= 0) {
+			pen_x += flush_run(latin_font, draw, pen_x,
+			                   y + (lines - 1) * advance_y, color, size,
+			                   run_system_font, run, &run_length);
+			have_run = 0;
+			int width = ui_input_prompt_width(prompt, size);
+			if (draw && !ui_input_prompt_draw(prompt, pen_x,
+			        y + (lines - 1) * advance_y, size, color >> 24)) {
+				/* A damaged/missing resource remains readable; never show a
+				 * missing private-use glyph or change the reserved advance. */
+				static const char *const fallback[] = {"X", "O", "[]", "/\\", "L1", "R1"};
+				draw_run(latin_font, pen_x, y + (lines - 1) * advance_y,
+				         color, size, NULL, fallback[prompt]);
+			}
+			pen_x += width;
+			cursor += bytes;
+			continue;
+		}
 		vita2d_pgf *system_font = system_font_for_codepoint(
 			cp, latin_font, cjk_font);
 		if (have_run && (system_font != run_system_font ||
@@ -366,26 +387,30 @@ static int mixed_layout(vita2d_font *latin_font, int draw, int x, int y,
 	return max_width;
 }
 
-int ui_font_fallback_init(void) {
-	if (first_cjk_font() && g_system_fonts[SYSTEM_FONT_LATIN]) return 0;
-	if (g_system_init_attempted) return -1;
+int ui_font_fallback_init_step(void) {
+    if(g_system_init_attempted&&g_system_init_next>=SYSTEM_FONT_COUNT)
+        return ui_font_fallback_ready()?1:-1;
+    if(!g_system_init_attempted){
 	g_system_init_attempted = 1;
 	int detected_language = SCE_SYSTEM_PARAM_LANG_ENGLISH_US;
 	if (sceRegMgrSystemParamGetInt(SCE_SYSTEM_PARAM_ID_LANG,
 	                               &detected_language) >= 0)
 		g_system_language = detected_language;
 	int ret = sceSysmoduleLoadModule(SCE_SYSMODULE_PGF);
-	if (ret < 0) return ret;
+	if (ret < 0){g_system_init_next=SYSTEM_FONT_COUNT;return -1;}
+    return 0;
+    }
 	static const SceFontLanguageCode languages[SYSTEM_FONT_COUNT] = {
 		SCE_FONT_LANGUAGE_JAPANESE,
 		SCE_FONT_LANGUAGE_CHINESE,
 		SCE_FONT_LANGUAGE_KOREAN,
 		SCE_FONT_LANGUAGE_LATIN
 	};
-	for (int i = 0; i < SYSTEM_FONT_COUNT; i++) {
+	int i=g_system_init_next++;
+    {
 		vita2d_system_pgf_config config = { languages[i], NULL };
 		g_system_fonts[i] = vita2d_load_system_pgf(1, &config);
-		if (!g_system_fonts[i]) continue;
+		if (!g_system_fonts[i])return g_system_init_next<SYSTEM_FONT_COUNT?0:ui_font_fallback_ready()?1:-1;
 		static const char *const probes[SYSTEM_FONT_COUNT] = {
 			"\xe6\x97\xa5",       /* Japanese: 日 */
 			"\xe5\x9b\xbd",       /* Chinese: 国 */
@@ -396,7 +421,10 @@ int ui_font_fallback_init(void) {
 			g_system_fonts[i], 1.0f, probes[i]);
 		if (g_system_base_heights[i] <= 0) g_system_base_heights[i] = 20;
 	}
-	return first_cjk_font() || g_system_fonts[SYSTEM_FONT_LATIN] ? 0 : -1;
+	return g_system_init_next<SYSTEM_FONT_COUNT?0:ui_font_fallback_ready()?1:-1;
+}
+int ui_font_fallback_init(void){
+ int rc;do{rc=ui_font_fallback_init_step();}while(rc==0);return rc>0?0:-1;
 }
 
 void ui_font_fallback_term(void) {
@@ -405,7 +433,7 @@ void ui_font_fallback_term(void) {
 		g_system_fonts[i] = NULL;
 		g_system_base_heights[i] = 0;
 	}
-	g_system_init_attempted = 0;
+	g_system_init_attempted = g_system_init_next = 0;
 	/* PGF stays resident until process exit, like the other once-loaded Vita
 	 * UI modules; unloading it while weak-import users still exist is unsafe. */
 }
@@ -435,6 +463,14 @@ int ui_font_draw_text(vita2d_font *latin_font, int x, int y,
 #ifdef VMD_ENABLE_PAF_NATIVE
 	if (ui_native_vita_active()) {
 		int width = ui_font_text_width(latin_font, size, text);
+		if (ui_input_prompt_contains(text)) {
+			int height = ui_font_text_height(latin_font, size, text);
+			/* Sony draws after the app scene. Reserve this complete mixed
+			 * line before drawing, so native fills cannot cover its sprites.
+			 * Text and sprites use the same Inter/PGF advances in this line. */
+			ui_native_vita_cover(x, (float)y - size, width, height + 4, 0xff000000);
+			return mixed_layout(latin_font, 1, x, y, color, size, text, NULL);
+		}
 		/* Inter/PGF advance is a positioning metric, not the Sony glyph window. */
         int available=ui_native_vita_text_span(x,y,size);
 		if (ui_native_vita_text(x, y, available, size, color, text))
@@ -442,6 +478,11 @@ int ui_font_draw_text(vita2d_font *latin_font, int x, int y,
 	}
 #endif
 	return mixed_layout(latin_font, 1, x, y, color, size, text, NULL);
+}
+
+int ui_font_draw_text_exact(vita2d_font *latin_font, int x, int y,
+                            unsigned color, unsigned size, const char *text) {
+    return mixed_layout(latin_font, 1, x, y, color, size, text, NULL);
 }
 
 int ui_font_draw_textf(vita2d_font *latin_font, int x, int y,

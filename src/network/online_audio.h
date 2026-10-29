@@ -49,6 +49,7 @@ int vt_online_fetch_query(void *query);
 int vt_online_query_cache_read(VtOnlineQuery *query);
 int vt_online_query_cache_write(const VtOnlineQuery *query);
 int vt_online_parse_feed(const char *data, size_t size, const char *url, VtOnlineQuery *out);
+unsigned vt_online_saved_revision(void);
 int vt_online_load_saved(VtOnlineItem *out, int capacity);
 int vt_online_save(const VtOnlineItem *item);
 /* Exact kind + URL; removes only the local favourite, preserving other media. */

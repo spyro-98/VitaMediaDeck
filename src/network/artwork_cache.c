@@ -5,96 +5,146 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <utime.h>
+#include <time.h>
 #ifdef __vita__
 #include <mbedtls/sha256.h>
 #else
 #include <openssl/sha.h>
 #endif
-
 #define ROOT "ux0:data/VitaMediaDeck/artwork"
-#define ITEM_LIMIT (2u * 1024u * 1024u)
-#define CACHE_LIMIT (64u * 1024u * 1024u)
-#define CACHE_ITEMS 128
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static const char *extensions[] = {"jpg", "png", "webp", "gif", "bmp"};
-static int encoding(const unsigned char *p, size_t n) {
-    if (n >= 3 && p[0] == 255 && p[1] == 216 && p[2] == 255) return 0;
-    if (n >= 8 && !memcmp(p, "\x89PNG\r\n\x1a\n", 8)) return 1;
-    if (n >= 12 && !memcmp(p, "RIFF", 4) && !memcmp(p + 8, "WEBP", 4)) return 2;
-    if (n >= 6 && (!memcmp(p, "GIF87a", 6) || !memcmp(p, "GIF89a", 6))) return 3;
-    return n >= 2 && !memcmp(p, "BM", 2) ? 4 : -1;
+#define ITEM_LIMIT (2u*1024u*1024u)
+#define CACHE_LIMIT (256u*1024u*1024u)
+#define CACHE_ITEMS 4096
+#define REFRESH_SECONDS (24*60*60)
+#define RETRY_SECONDS 300
+static pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t initialized=PTHREAD_ONCE_INIT;
+static const char *extensions[]={"jpg","png","webp","gif","bmp"};
+typedef struct {char key[65],path[192];size_t bytes;time_t fetched,used,retry;} Entry;
+static Entry entries[CACHE_ITEMS];
+static int encoding(const unsigned char *p,size_t n){
+ if(n>=3&&p[0]==255&&p[1]==216&&p[2]==255)return 0;
+ if(n>=8&&!memcmp(p,"\x89PNG\r\n\x1a\n",8))return 1;
+ if(n>=12&&!memcmp(p,"RIFF",4)&&!memcmp(p+8,"WEBP",4))return 2;
+ if(n>=6&&(!memcmp(p,"GIF87a",6)||!memcmp(p,"GIF89a",6)))return 3;
+ return n>=2&&!memcmp(p,"BM",2)?4:-1;
 }
-static int lookup(const char *key, char *path, size_t capacity) {
-    for (unsigned i = 0; i < sizeof(extensions)/sizeof(*extensions); i++) {
-        snprintf(path, capacity, ROOT "/%s.%s", key, extensions[i]);
-        struct stat st;
-        if (stat(path, &st) || !S_ISREG(st.st_mode)) continue;
-        unsigned char head[12]; size_t n = 0;
-        FILE *f = fopen(path, "rb"); if (f) { n = fread(head, 1, sizeof(head), f); fclose(f); }
-        if (st.st_size > 0 && st.st_size <= ITEM_LIMIT && encoding(head, n) == (int)i) {
-            utime(path, NULL); return 0;
-        }
-        remove(path); /* Only a validated digest path inside our cache. */
-    }
-    path[0] = 0; return -1;
-}
-/* Evict oldest access first, not hash collisions. Bound both bytes and files. */
-static int make_room(size_t incoming) {
-    for (;;) {
-        DIR *dir = opendir(ROOT); if (!dir) return -1;
-        struct dirent *entry; size_t bytes = 0; unsigned count = 0;
-        time_t oldest = 0; char victim[192] = "";
-        while ((entry = readdir(dir))) {
-            if (strlen(entry->d_name) < 68 || strspn(entry->d_name, "0123456789abcdef") != 64 || entry->d_name[64] != '.') continue;
-            int known = 0;
-            for (unsigned i = 0; i < sizeof(extensions)/sizeof(*extensions); i++)
-                if (!strcmp(entry->d_name + 65, extensions[i])) known = 1;
-            if (!known) continue;
-            char path[192]; struct stat st;
-            snprintf(path, sizeof(path), ROOT "/%.69s", entry->d_name);
-            if (stat(path, &st) || !S_ISREG(st.st_mode)) continue;
-            count++; bytes += st.st_size;
-            if (!victim[0] || st.st_mtime < oldest) { oldest = st.st_mtime; snprintf(victim, sizeof(victim), "%s", path); }
-        }
-        closedir(dir);
-        if (count < CACHE_ITEMS && bytes + incoming <= CACHE_LIMIT) return 0;
-        if (!victim[0] || remove(victim)) return -1;
-    }
-}
-int vt_artwork_cache_get(const char *url, char *path, size_t capacity,
-                        volatile int *cancel, VtArtworkFetch fetch) {
-    if (!url || !*url || !path || capacity < 160 || !fetch) return -1;
-    path[0] = 0;
-    if (cancel && *cancel) return -1;
-    unsigned char digest[32]; char key[65];
+static int digest(const void *data,size_t size,unsigned char out[32]){
 #ifdef __vita__
-    if (mbedtls_sha256((const unsigned char *)url, strlen(url), digest, 0)) return -1;
+ return mbedtls_sha256(data,size,out,0);
 #else
-    SHA256((const unsigned char *)url, strlen(url), digest);
+ return SHA256(data,size,out)?0:-1;
 #endif
-    for (int i = 0; i < 32; i++) snprintf(key + 2 * i, 3, "%02x", digest[i]);
-    pthread_mutex_lock(&mutex);
-    int hit = lookup(key, path, capacity);
-    pthread_mutex_unlock(&mutex);
-    if (!hit) return 0;
-    size_t size = 0; char *data = fetch(url, cancel, &size);
-    int format = data ? encoding((const unsigned char *)data, size) : -1;
-    if (format < 0 || !size || size > ITEM_LIMIT || (cancel && *cancel)) { free(data); return -1; }
-    pthread_mutex_lock(&mutex);
-    /* Recheck after the network wait in case another worker published it. */
-    int result = lookup(key, path, capacity);
-    if (result) {
-        mkdir(ROOT, 0777);
-        if (!make_room(size)) {
-            char temp[192]; snprintf(temp, sizeof(temp), ROOT "/pending.tmp");
-            snprintf(path, capacity, ROOT "/%s.%s", key, extensions[format]);
-            FILE *f = fopen(temp, "wb"); int ok = 0;
-            if (f) { ok = fwrite(data, 1, size, f) == size; if (fflush(f)) ok = 0; if (fclose(f)) ok = 0; }
-            if (cancel && *cancel) ok = 0;
-            if (ok && !rename(temp, path)) result = 0;
-            else { remove(temp); path[0] = 0; }
-        }
-    }
-    pthread_mutex_unlock(&mutex); free(data); return result;
+}
+static int url_key(const char *url,char key[65]){
+ if(!url||!*url)return -1;
+ unsigned char d[32];if(digest(url,strlen(url),d))return -1;
+ for(int i=0;i<32;i++)snprintf(key+i*2,3,"%02x",d[i]);
+ return 0;
+}
+static Entry *find(const char *key){for(unsigned i=0;i<CACHE_ITEMS;i++)if(!strcmp(entries[i].key,key))return &entries[i];return NULL;}
+static Entry *slot(const char *key){
+ Entry *e=find(key);if(e)return e;
+ for(unsigned i=0;i<CACHE_ITEMS;i++)if(!entries[i].key[0]){snprintf(entries[i].key,sizeof(entries[i].key),"%s",key);return &entries[i];}
+ return NULL;
+}
+static int known_file(const char *name){
+ size_t n=strlen(name);if(n<68||strspn(name,"0123456789abcdef")!=64)return 0;
+ const char *ext=name+64;
+ if(*ext=='-'){if(n<85||strspn(ext+1,"0123456789abcdef")!=16)return 0;ext+=17;}
+ if(*ext++!='.')return 0;
+ for(unsigned i=0;i<5;i++)if(!strcmp(ext,extensions[i]))return 1;
+ return 0;
+}
+static int valid_file(const char *path){
+ unsigned char head[12];FILE *f=fopen(path,"rb");if(!f)return 0;
+ size_t n=fread(head,1,sizeof(head),f);fclose(f);return encoding(head,n)>=0;
+}
+static void initialize(void){
+ /* Startup/worker only. UI lookups subsequently touch this memory index only. */
+ pthread_mutex_lock(&mutex);
+ DIR *dir=opendir(ROOT);if(!dir){pthread_mutex_unlock(&mutex);return;}struct dirent *d;
+ while((d=readdir(dir))){
+  if(!known_file(d->d_name))continue;
+  char path[192],key[65];snprintf(path,sizeof(path),ROOT "/%.90s",d->d_name);
+  struct stat st;if(stat(path,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>ITEM_LIMIT||!valid_file(path))continue;
+  memcpy(key,d->d_name,64);key[64]=0;Entry *e=slot(key);
+  if(e&&(!e->path[0]||st.st_mtime>=e->fetched)){snprintf(e->path,sizeof(e->path),"%s",path);e->bytes=st.st_size;e->fetched=e->used=st.st_mtime;}
+ }
+ closedir(dir);pthread_mutex_unlock(&mutex);
+}
+void vt_artwork_cache_init(void){pthread_once(&initialized,initialize);}
+int vt_artwork_cache_peek(const char *url,char *path,size_t capacity){
+ char key[65];if(!path||!capacity||url_key(url,key))return -1;
+ /* Never wait for filesystem work or network completion in a render pass. */
+ if(pthread_mutex_trylock(&mutex))return -1;
+ Entry *e=find(key);int result=-1;
+ if(e&&e->path[0]&&strlen(e->path)<capacity){snprintf(path,capacity,"%s",e->path);e->used=time(NULL);result=0;}
+ pthread_mutex_unlock(&mutex);return result;
+}
+int vt_artwork_cache_current(const char *old_path,char *path,size_t capacity){
+ const char *root=ROOT "/";size_t n=strlen(root);
+ if(!old_path||strncmp(old_path,root,n)||strlen(old_path)<n+65||!path||!capacity)return -1;
+ char key[65];memcpy(key,old_path+n,64);key[64]=0;if(strspn(key,"0123456789abcdef")!=64)return -1;
+ if(pthread_mutex_trylock(&mutex))return -1;
+ Entry *e=find(key);int result=-1;
+ if(e&&e->path[0]&&strlen(e->path)<capacity){snprintf(path,capacity,"%s",e->path);e->used=time(NULL);result=0;}
+ pthread_mutex_unlock(&mutex);return result;
+}
+int vt_artwork_cache_due(const char *url){
+ char key[65];if(url_key(url,key))return 0;
+ if(pthread_mutex_trylock(&mutex))return 0;
+ Entry *e=find(key);time_t now=time(NULL);
+ int due=!e||(now>=e->retry&&(!e->path[0]||now-e->fetched>=REFRESH_SECONDS));
+ pthread_mutex_unlock(&mutex);return due;
+}
+static int make_room(size_t incoming,const char *keep){
+ for(;;){size_t bytes=0;unsigned count=0;Entry *victim=NULL;
+  for(unsigned i=0;i<CACHE_ITEMS;i++)if(entries[i].key[0]){
+   count++;bytes+=entries[i].bytes;
+   if(strcmp(entries[i].key,keep)&&(!victim||entries[i].used<victim->used))victim=&entries[i];
+  }
+  Entry *current=find(keep);size_t old=current?current->bytes:0;
+  if((current||count<CACHE_ITEMS)&&bytes-old+incoming<=CACHE_LIMIT)return 0;
+  if(!victim)return -1;
+  if(victim->path[0])remove(victim->path);
+  memset(victim,0,sizeof(*victim));
+ }
+}
+int vt_artwork_cache_get(const char *url,char *path,size_t capacity,volatile int *cancel,VtArtworkFetch fetch){
+ if(!path||capacity<160||!fetch)return -1;
+ path[0]=0;
+ if(cancel&&*cancel)return -1;
+ char key[65];if(url_key(url,key))return -1;
+ vt_artwork_cache_init();pthread_mutex_lock(&mutex);
+ Entry *e=find(key);time_t now=time(NULL);int hit=e&&e->path[0];
+ if(hit&&!valid_file(e->path)){remove(e->path);e->path[0]=0;e->bytes=0;e->retry=0;hit=0;}
+ if(hit)snprintf(path,capacity,"%s",e->path);
+ int due=!e||(!hit?now>=e->retry:now>=e->retry&&now-e->fetched>=REFRESH_SECONDS);
+ if(e)e->used=now;
+ pthread_mutex_unlock(&mutex);
+ if(!due)return hit?0:-1;
+ size_t size=0;char *data=fetch(url,cancel,&size);int format=data?encoding((unsigned char*)data,size):-1;
+ if(format<0||!size||size>ITEM_LIMIT||(cancel&&*cancel)){
+  free(data);pthread_mutex_lock(&mutex);e=slot(key);if(e&&!(cancel&&*cancel))e->retry=now+RETRY_SECONDS;pthread_mutex_unlock(&mutex);
+  return hit?0:-1; /* Never discard the last image when an update fails. */
+ }
+ unsigned char content[32];if(digest(data,size,content)){free(data);return hit?0:-1;}
+ char revision[17];for(int i=0;i<8;i++)snprintf(revision+i*2,3,"%02x",content[i]);
+ pthread_mutex_lock(&mutex);int result=hit?0:-1;
+ mkdir(ROOT,0777);
+ if(!make_room(size,key)){
+  char temp[192],next[192],old[192]="";snprintf(temp,sizeof(temp),ROOT "/%s.tmp",key);
+  snprintf(next,sizeof(next),ROOT "/%s-%s.%s",key,revision,extensions[format]);
+  e=find(key);if(e)snprintf(old,sizeof(old),"%s",e->path);
+  FILE *f=fopen(temp,"wb");int ok=0;
+  if(f){ok=fwrite(data,1,size,f)==size;if(fflush(f))ok=0;if(fclose(f))ok=0;}
+  if(cancel&&*cancel)ok=0;
+  if(ok&&!rename(temp,next)){
+   e=slot(key);if(e){snprintf(e->path,sizeof(e->path),"%s",next);e->bytes=size;e->fetched=e->used=now;e->retry=0;snprintf(path,capacity,"%s",next);result=0;}
+   if(old[0]&&strcmp(old,next))remove(old);
+  }else remove(temp);
+ }
+ e=find(key);if(e)e->retry=now+RETRY_SECONDS;
+ pthread_mutex_unlock(&mutex);free(data);return result;
 }

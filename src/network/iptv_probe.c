@@ -10,7 +10,7 @@ int vt_iptv_http_probe(const VtIptvHttpOptions *options,const char *url,volatile
     if(!cancel || __atomic_load_n(cancel,__ATOMIC_ACQUIRE) ||
        vt_iptv_resolve_url(url,url,checked,sizeof(checked)) ||
        (options && !vt_iptv_user_agent_valid(options->user_agent)))return VT_IPTV_PROBE_UNKNOWN;
-    VitaHttpsClientConfig config={.user_agent=options&&options->user_agent[0]?options->user_agent:"VitaMediaDeck/1.4.1",
+    VitaHttpsClientConfig config={.user_agent=options&&options->user_agent[0]?options->user_agent:"VitaMediaDeck/1.4.2",
         .allow_http=1,.connect_timeout_ms=3000,.request_timeout_ms=5000};
     VitaHttpsClient *client=vita_https_client_create(&config);if(!client)return VT_IPTV_PROBE_UNKNOWN;
     int saw_body=0;

@@ -121,7 +121,12 @@ void ui_focus_outline_draw(const UiFocusMotion *m) {
 #ifdef VMD_ENABLE_PAF_NATIVE
     int decoration=ui_native_vita_decoration(1);
 #endif
-    if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA) { x-=2;y-=2;w+=4;h+=4; }
+    if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA) {
+        x-=2;y-=2;w+=4;h+=4;
+#ifdef VMD_ENABLE_PAF_NATIVE
+        if(ui_native_vita_focus(x,y,w,h)){ui_native_vita_decoration(decoration);return;}
+#endif
+    }
 	ui_theme_fx_focus(x, y, w, h);
 	vita2d_draw_rectangle(x,y,w,2,VT_THEME_FOCUS);
 	vita2d_draw_rectangle(x,y+h-2,w,2,VT_THEME_FOCUS);

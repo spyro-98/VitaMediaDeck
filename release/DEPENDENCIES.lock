@@ -47,11 +47,12 @@ reavplayer-source.commit=abff24a21ffec3e57fc1cd3b1d17dc26666251b0
 vita-media-player-module.commit=0b5e7c933196227f955588c806c51b0b66c10654
 reavplayer-module.sha256=8b6d26c97b7e9a3b24ae69d2eadf1f6e7223102dcc375b9ca30e466815a04850
 
-# Local component revisions used by VitaMediaDeck 1.4.1 standard.
-# HW/SW changes from 1.4.0 are documentation only; runtime ABI remains 2.0.0.
-vita-hw-decoder.commit=f418b6ae0baa01fa66b37a155fac79f6aa6e5d5c
-vita-sw-decoder.commit=54e811b135b1a07270317f20b0b170e6e0f4b3c2
-vita-https.commit=a67dc3154ae38158283a53e54d9baea56c61948d
+# Component revisions used by VitaMediaDeck 1.4.2.
+# Includes presentation telemetry, bounded 1080p surfaces and 4096-byte HTTPS
+# effective URLs. Rebuild consumers against the matching component headers.
+vita-hw-decoder.commit=4b1a7709fcd1b4a6ccdedd82fee95d6fbf837880
+vita-sw-decoder.commit=d2f4b757c706d8a170e52afc4faa2811f4fe8bcb
+vita-https.commit=b83016982b1fcf3ffd24c285f45f21f9bec29413
 
 # Native Legacy Vita theme: firmware imports only, no Sony binary is packaged.
 paf-abi-reference.url=https://github.com/GrapheneCt/ScePaf-RE
@@ -62,6 +63,6 @@ psp2cxml-tool.commit=d971a9a9892c122b4edef15d335326b2a551fec4
 psp2cxml-tool.role=build-time-only
 psp2cxml-tool.license=GPL-3.0-only
 psp2cxml-tool.source.sha256=a8b63375f8763c66fd6082af145cd8a18b1682b24b8e2243dfdfe8cc8dbb313f
-paf-resource.xml.sha256=dc83aeac979fcdd9a733a4fa9bccd1ff45c7732147ce1fd460e54a18354b5ecf
-paf-resource.embedded.sha256=a92b02cdbc3cbd18bc8884636b26854c2a74c290a358a131f9f5f935dd9293ed
+paf-resource.xml.sha256=f2e7630b85aa7fcbcd087bc0d90933c3e718efc30624a8ac26451f9e64b01c87
+paf-resource.embedded.sha256=9e0842640042211011881c9f9bb8746f47e70f4ef3a5c5d0ca9dcec11a64f8da
 paf-imports.sha256=3580b9c1bdf6db9077d858a55b564ea95e7d42a2406e6c52bb647fe2bedf750f

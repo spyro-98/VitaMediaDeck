@@ -8,31 +8,30 @@
 
 static int g_current_language = VT_LANG_EN;
 
+static const char *const language_codes[VT_LANG_COUNT]={"en","en","it","es","fr","de","pt","ru","ja","ko","zh-CN","zh-TW"};
+static const int system_languages[VT_LANG_COUNT]={1,1,5,3,2,4,7,8,0,9,11,10};
 static int detect_system_language(void) {
-	int lang = SCE_SYSTEM_PARAM_LANG_ENGLISH_US;
-	int ret = sceRegMgrSystemParamGetInt(SCE_SYSTEM_PARAM_ID_LANG, &lang);
-	/* Keep the registry result in the opt-in diagnostic log so language
-	 * fallback problems can be diagnosed without blocking application startup. */
-	log_printf("i18n: sceRegMgrSystemParamGetInt(LANG) -> 0x%08X, lang=%d (IT=%d)",
-	          (unsigned)ret, lang, SCE_SYSTEM_PARAM_LANG_ITALIAN);
-	if (ret < 0) return VT_LANG_EN;
-	if (lang == SCE_SYSTEM_PARAM_LANG_ITALIAN) return VT_LANG_IT;
-	return VT_LANG_EN;
+ int system=1;int ret=sceRegMgrSystemParamGetInt(SCE_SYSTEM_PARAM_ID_LANG,&system);
+ log_printf("i18n: system language read=%d value=%d",ret,system);
+ if(ret<0)return VT_LANG_EN;
+ for(int i=1;i<VT_LANG_COUNT;i++)if(system_languages[i]==system)return i;
+ if(system==18)return VT_LANG_PT; /* Brazil Portuguese */
+ return VT_LANG_EN;
 }
-
-static int resolve_language(int preference) {
-	if (preference == VT_LANGUAGE_EN) return VT_LANG_EN;
-	if (preference == VT_LANGUAGE_IT) return VT_LANG_IT;
-	return detect_system_language();
+static int resolve_language(int preference){
+ return preference>VT_LANGUAGE_AUTO&&preference<VT_LANGUAGE_COUNT?preference:detect_system_language();
 }
-
+const char *vt_i18n_language_code(void){return language_codes[g_current_language];}
+int vt_i18n_system_language(void){return system_languages[g_current_language];}
+const char *vt_i18n_language_name(int language){
+ static const char *const names[VT_LANG_COUNT]={"System","English","Italiano","Español","Français","Deutsch","Português","Русский","日本語","한국어","简体中文","繁體中文"};
+ if(language==0)return vt_i18n_str(VT_STR_SETTINGS_LANGUAGE_SYSTEM);
+ return names[language>0&&language<VT_LANG_COUNT?language:VT_LANG_EN];
+}
 void vt_i18n_init(void) {
 	int preference = vt_preferences_language();
 	g_current_language = resolve_language(preference);
-	static const char *const codes[] = { "?", "EN", "IT" };
-	log_printf("i18n: preference=%d -> active language=%s", preference,
-	          g_current_language >= VT_LANG_EN && g_current_language <= VT_LANG_IT
-	              ? codes[g_current_language] : "EN");
+	log_printf("i18n: preference=%d active=%s",preference,vt_i18n_language_code());
 }
 
 int vt_i18n_current_language(void) {

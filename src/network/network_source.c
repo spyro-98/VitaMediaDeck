@@ -44,6 +44,8 @@ typedef struct {
 	char host_key_sha256[VT_NETWORK_FINGERPRINT_MAX];
 } VtNetworkSourceV1;
 
+static unsigned network_sources_revision_value;
+unsigned vt_network_sources_revision(void){return __atomic_load_n(&network_sources_revision_value,__ATOMIC_ACQUIRE);}
 static int g_initialized;
 
 static int path_exists(const char *path) {
@@ -176,6 +178,7 @@ int vt_network_sources_save(const VtNetworkSource *sources, int count) {
 	}
 	sceIoSync("ux0:", 0);
 	if (had_previous) sceIoRemove(SOURCE_DB_BACKUP);
+    __atomic_add_fetch(&network_sources_revision_value,1,__ATOMIC_RELEASE);
 	return 0;
 }
 

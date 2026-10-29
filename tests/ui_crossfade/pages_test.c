@@ -1,5 +1,6 @@
 /* Native page composition with host fonts, platform/preview substitutes.
  * PNGs validate layout, not Vita rendering or the subtitle engine. */
+#define VMD_PAGE_PREFS
 #define main iptv_ui_main
 #include "../iptv/ui_test.c"
 #undef main
@@ -50,7 +51,7 @@ int main(int argc,char **argv) {
   for(int tab=0;tab<TAB_COUNT;tab++)for(int owner=0;owner<2;owner++){
    UiSectionsSidebar sidebar;ui_sections_sidebar_init(&sidebar,UI_SECTION_SETTINGS);
    UiFocusMotion focus={0};ui_focus_motion_tick(&focus,owner?18+tab*186:18,owner?62:118,owner?178:tab==TAB_SUBTITLES?386:924,owner?40:56);
-   frame=0;draw_screen(tab,0,owner,&focus,&sidebar);
+   settings_scroll_context(tab);frame=0;draw_screen(tab,0,owner,&focus,&sidebar);
    char name[80];snprintf(name,sizeof(name),"settings-%d-%s-%s%s",tab,owner?"tabs":"rows",language?"it":"en",mini?"-mini":"");png(name);
   }
   GuideChapter chapters[8];const char *guide=vt_i18n_str(VT_STR_SETTINGS_CONTROLS_REFERENCE_IT);
@@ -130,7 +131,11 @@ int main(int argc,char **argv) {
   ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;mini_top=mini?472:544;
   UiSectionsSidebar sidebar;ui_sections_sidebar_init(&sidebar,UI_SECTION_SETTINGS);
   int cursor=tab==TAB_INTERFACE?4:0;SettingRow rows[9];
-  int first=first_visible_row(cursor,rows_for_tab(tab,rows),visible_rows_for_tab(tab));
+  settings_scroll_context(tab);
+  ui_scroll_bounds(&settings_scroll,rows_for_tab(tab,rows)*ROW_STEP,visible_rows_for_tab(tab)*ROW_STEP-8);
+  ui_scroll_reveal(&settings_scroll,cursor*ROW_STEP,cursor*ROW_STEP+ROW_H,visible_rows_for_tab(tab)*ROW_STEP-8);
+  settings_scroll.position=settings_scroll.target;
+  int first=ui_list_scroll_first(&settings_scroll,ROW_STEP);
   UiFocusMotion focus={0};ui_focus_motion_tick(&focus,ROW_X,ROW_Y+(cursor-first)*ROW_STEP,
    tab==TAB_SUBTITLES?SUBTITLE_ROW_W:ROW_W,ROW_H);
   frame=0;draw_screen(tab,cursor,0,&focus,&sidebar);

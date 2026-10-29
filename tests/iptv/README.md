@@ -1,5 +1,64 @@
 # IPTV host checks (not on-device playback)
 
+Current 1.4.2 browser checks: `browser_layout_test.c` covers distinct playlist and
+channel collections, separate screens, two panes and the actual R1 switches in
+all eight themes and IT/EN. `browser_scroll_test.c` verifies independent touch
+inertia/analog pixel scrolling, catalogue/selection preservation while switching
+and returning to the browser after an invalid playlist. `quality_flow_test.c`
+asserts that startup and Automatic never create quality trials: only explicit
+R1 calibration does. It also checks cancellation and favourite resolution.
+`tests/ui_crossfade/preferences_test.c` covers layout persistence, unrelated bits
+and failed-write rollback. Set `VMD_IPTV_UI_CASES` to select individual UI cases.
+
+## IPTV variants, languages and programme data
+
+With the pinned FFmpeg 6 host source/libraries (including the existing custom
+HLS I/O patch):
+
+```sh
+VMD_IPTV_FFMPEG_ROOT=/path/to/ffmpeg6 bash tests/iptv/run-options-tests.sh
+python3 tests/iptv/make-selection-fixtures.py /tmp/vmd-selection-fixtures
+VMD_IPTV_FFMPEG_ROOT=/path/to/ffmpeg6 \
+VMD_IPTV_SELECTION_FIXTURE=/tmp/vmd-selection-fixtures \
+  bash tests/iptv/run-selection-tests.sh
+bash tests/iptv/run-ui-tests.sh
+```
+
+Options fixtures exercise HLS/DASH high-quality-only masters, explicit video and
+audio IDs, group compatibility, rotating signed query strings, missing choices,
+XMLTV matching/current-next/timezones/locales, plain/gzip guides, malformed XML,
+external-entity rejection and cancellation. ASan/UBSan and TSan are both run.
+Real producer/session/FFmpeg tests decode five 6-second selections: Auto SD,
+1080p at 9 Mbps with Italian or English external audio, and Italian/English
+embedded MPEG-TS tracks. Independent audio rates verify that the requested
+track actually changes. Embedded labels survive reconnects without another fetch.
+
+The real IPTV loop also tests failed-quality rollback, while the panel renderer
+checks 64-item lists, long labels, active badges and scrollable programme data
+in IT/EN across eight themes. Programme data is a synthetic fixture; previews
+are host images, never console screenshots. The former direct-1080p negative
+fixture now must enter the remux buffer successfully. Other incompatible codec,
+AAC layout, HTML, cancellation and timing checks remain separate.
+
+## Guided playlist flow and spatial navigation
+
+```sh
+bash tests/navigation/run-host-tests.sh
+bash tests/iptv/run-ui-tests.sh
+```
+
+The second command runs the production IPTV loop with the real M3U parser,
+ASan/UBSan, Inter/IBM Plex Mono metrics and substituted host rendering. It
+covers all eight themes in IT/EN: Cross/D-pad-only addition, manual URL or QR, automatic naming, validated
+save, channel playback handoff and Back; both presentations; partial last rows;
+accessible header options; cancelled/invalid scans; failed storage and retry;
+existing saved-name preservation; and open-without-saving. The Add action does
+not open a second naming keyboard.
+No network request or real playback occurs. Synthetic signed-query URLs must
+not appear in displayed labels. It produces PNGs for the empty collection,
+URL form, ready form, channels and saved collection. These are host previews,
+not console screenshots.
+
 ## QR / IPTV errors follow-up
 
 The host suite now passes QR output through the production input handler and
@@ -297,3 +356,97 @@ session readers must decode 600 video and 564 audio frames with bounded A/V
 delta. The ordinary and low-delay fixtures keep their previous expectations.
 UI checks reject the duplicate IPTV management legend in all themes/languages
 and verify separate timestamp, media-data and remux error mapping.
+
+The photo follow-up also covers explicit saved-link membership without a star
+(`saved_membership_test`), 2/3-column navigation and independent pane scrolling.
+The catalogue parser accepts a synthetic 512 KiB channel list under its own
+8 MiB body cap; playback manifests keep their 256 KiB cap. The reported Peppenamir playlist was reproduced via its QR landing page and
+parses to 380 channels after resolving the declared M3U link. Existing
+channel-count and line limits remain. `bash tests/iptv/run-catalog-redirect-tests.sh`
+checks the shared resolver across arbitrary hosts, unique/ambiguous anchors,
+relative URLs, HTML entities, meta refresh, cycles, hop limits and cancellation.
+Optional arguments supply an actual HTML response, its effective-URL file,
+expected target-URL file and M3U response; these private files are not committed.
+
+
+Per-channel persistence regression:
+
+```sh
+VMD_HOST_JANSSON=/path/to/host-jansson bash tests/iptv/run-playback-restart-tests.sh
+```
+
+This links the actual IPTV owner and preference store. Its first child confirms
+1080p/Italian and receives SIGKILL while still inside the mock player's live
+session. Fresh processes restore the choice with rotated channel/rendition/audio
+IDs, preserve it during a temporary missing rendition, and restore it afterwards.
+The native-player feedback harness separately checks the real startup callback,
+error propagation and trial suppression. Fixtures are local and synthetic;
+physical Vita startup/storage behaviour remains a separate acceptance step.
+
+
+Programme/EPG regression (FFmpeg 6 host source/libraries as above):
+
+```sh
+VMD_IPTV_FFMPEG_ROOT=/path/to/ffmpeg bash tests/iptv/run-options-tests.sh
+VMD_IPTV_UI_CASES='programme_flow_test player_panel_test' bash tests/iptv/run-ui-tests.sh
+```
+
+The options runner tests HLS/DASH discovery plus production XMLTV matching,
+streamed gzip expansion above 8 MiB, optional-stop inference, timezone/locales,
+ambiguous aliases, country/+1 isolation, cancellation/entities, four-slot raw
+cache reuse/failure recovery, public fallback and M3U/provider declarations.
+Optionally set `VMD_PUBLIC_EPG_FIXTURE` to a downloaded Open-EPG italy3 gzip, and
+`VMD_PUBLIC_EPG_PLAYLIST` to a local M3U fixture, to check current schedules against
+real data without making test-network requests. The synthetic core needs neither.
+R1 flow tests cover configuration, cancellation/write failure, reset after a
+channel URL replaced the input and lazy metadata recovery for recent items.
+Panel previews cover all themes and scroll to the actual end of the schedule;
+they use host text/control substitutes, not physical firmware pixels.
+
+
+Channel name ordering:
+
+```sh
+VMD_IPTV_UI_CASES='channel_sort_test browser_layout_test browser_scroll_test' bash tests/iptv/run-ui-tests.sh
+```
+
+Exercises production sorting/filtering, original-order restoration, selected
+identity/artwork-index retention, favourites/search, case/accents/natural numbers,
+stable equal names, failed preference writes, every theme and actual R1 D-pad
+activation in both presentations. `tests/ui_crossfade/preferences_test.c` covers
+persistence across a fresh settings load and preservation of unrelated bits.
+
+
+Local-file and content import regressions:
+
+```sh
+VMD_IPTV_UI_CASES='local_import_flow_test player_saved_panel_test saved_membership_test' bash tests/iptv/run-ui-tests.sh
+```
+
+`import_formats_test.c` links `iptv_catalog.c` and `iptv_manifest.c` with libxml2
+and ASan/UBSan. It checks mixed/nested M3U/TXT/PLS/XSPF/ASX/URL files, actual HLS
+classification, local mount resolution, UTF-16, entities and traversal.
+`rotating_session_test.c` additionally links `hls_manifest.c` and takes four
+private host fixture paths: two independently fetched Rakuten masters, the
+reported .m3u HLS master and a Pluto master with signed paths over 2 KiB.
+Fixtures are never shipped because they contain transient session addresses.
+The selection/remux/decode runner also exercises local-mount HLS addresses.
+The ordinary source suite checks opt-in local IO, ranges, limits and cancellation;
+`tests/ui_crossfade/run-motion.sh` covers the production file picker in all themes.
+
+
+Channel identity and cached logos:
+
+```sh
+VMD_IPTV_UI_CASES='identity_flow_test cached_artwork_test' bash tests/iptv/run-ui-tests.sh
+```
+
+`identity_test.c` links `iptv_catalog.c` and `iptv_manifest.c` with libxml2 and
+ASan/UBSan. It checks explicit HLS/channel session metadata, DASH titles,
+M3U/XSPF/local icons, custom names, programme-title exclusion and unsafe XML/
+remote-to-local rejection. The real UI flow checks legacy entries, single-file
+channel grouping, stored stars/quality, cache-first publication, failed writes
+and all eight themes in IT/EN. The options/programme suite checks XMLTV canonical
+names and logos; the FFmpeg selection suite checks SDT names from the already
+fetched TS prefix. Background programme tests require metadata publication on
+the UI thread and exclude cancelled/stale/failed jobs.

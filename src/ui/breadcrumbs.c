@@ -1,4 +1,5 @@
 #include "ui/breadcrumbs.h"
+#include "ui/components.h"
 #include <stdio.h>
 #include <string.h>
 #include "ui/runtime.h"
@@ -48,10 +49,13 @@ void ui_breadcrumb_draw(int x, int right, const char *section,
     if (!c[0]) { label_copy(c, sizeof(c), a); a[0] = 0; }
     int width = ui_font_fit_text(font, UI_FONT_SMALL, "VitaMediaDeck", root,
                                  sizeof(root), right - x);
-    ui_font_draw_text(font, x, 33, tint(VT_THEME_TEXT, opacity), UI_FONT_SMALL, root);
-    x += width;
+    /* PAF's firmware face has different advances/ink bounds from the packaged
+     * measuring font. Give the fixed brand a real slot, including its last k. */
+    int root_slot=width+18;if(root_slot>right-x)root_slot=right-x;
+    ui_menu_text(x,33,root_slot,root,tint(VT_THEME_TEXT,opacity),UI_FONT_SMALL);
+    x += root_slot;
     if (!c[0] || right - x < 40) return;
-    ui_font_draw_text(font, x + 9, 33, tint(VT_THEME_SIGNAL, opacity), UI_FONT_SMALL, "/");
+    ui_menu_text(x+9,33,12,"/",tint(VT_THEME_SIGNAL,opacity),UI_FONT_SMALL);
     x += 26;
     int available = right - x;
     snprintf(prefix, sizeof(prefix), "%s%s%s%s", a, a[0] ? " / " : "",
@@ -83,8 +87,7 @@ void ui_breadcrumb_draw(int x, int right, const char *section,
         snprintf(prefix, sizeof(prefix), "%.255s%s", fitted, fitted[0] ? " / " : "");
         width = ui_font_text_width(font, UI_FONT_SMALL, prefix);
     }
-    if (prefix[0]) ui_font_draw_text(font, x, 33, tint(VT_THEME_TEXT_MUTED, opacity),
-                                    UI_FONT_SMALL, prefix);
+    if(prefix[0])ui_menu_text(x,33,width,prefix,tint(VT_THEME_TEXT_MUTED,opacity),UI_FONT_SMALL);
     ui_font_fit_text(font, UI_FONT_SMALL, c, fitted, sizeof(fitted), available - width);
-    ui_font_draw_text(font, x + width, 33, tint(VT_THEME_TEXT, opacity), UI_FONT_SMALL, fitted);
+    ui_menu_text(x+width,33,available-width,fitted,tint(VT_THEME_TEXT,opacity),UI_FONT_SMALL);
 }

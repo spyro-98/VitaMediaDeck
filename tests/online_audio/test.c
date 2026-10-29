@@ -207,9 +207,10 @@ static void saved_test(void) {
     /* The same URL may be a radio and a feed: remove only the requested kind. */
     feed.kind=VT_ONLINE_FEED;strcpy(feed.url,item.url);strcpy(feed.title,"Other provider");
     CHECK(!vt_online_save(&feed));CHECK(vt_online_load_saved(loaded,64)==2);
-    saved_fail_commit=1;CHECK(vt_online_remove(item.kind,item.url)<0);saved_fail_commit=0;
+    unsigned saved_revision=vt_online_saved_revision();
+    saved_fail_commit=1;CHECK(vt_online_remove(item.kind,item.url)<0);saved_fail_commit=0;CHECK(vt_online_saved_revision()==saved_revision);
     CHECK(vt_online_load_saved(loaded,64)==2);
-    CHECK(!vt_online_remove(item.kind,item.url));CHECK(vt_online_load_saved(loaded,64)==1);
+    CHECK(!vt_online_remove(item.kind,item.url));CHECK(vt_online_saved_revision()==saved_revision+1);CHECK(vt_online_load_saved(loaded,64)==1);
     CHECK(loaded[0].kind==VT_ONLINE_FEED&&!strcmp(loaded[0].title,feed.title));
     CHECK(!vt_online_remove(item.kind,item.url)); /* Exact-match idempotency. */
     CHECK(vt_online_remove(VT_ONLINE_EPISODE,item.url)<0);

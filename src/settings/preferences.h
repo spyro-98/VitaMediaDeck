@@ -24,6 +24,11 @@
 #define VT_LANGUAGE_DE   5
 #define VT_LANGUAGE_PT   6
 #define VT_LANGUAGE_RU   7
+#define VT_LANGUAGE_JA   8
+#define VT_LANGUAGE_KO   9
+#define VT_LANGUAGE_ZH_S 10
+#define VT_LANGUAGE_ZH_T 11
+#define VT_LANGUAGE_COUNT 12
 
 #define VT_CLOCK_SOURCE_PSVSHELL 0
 #define VT_CLOCK_SOURCE_APP      1
@@ -125,7 +130,7 @@ int vt_preferences_set_default_frame_rate(int frame_rate);
 /* Stored language preference; may be VT_LANGUAGE_AUTO. */
 int vt_preferences_language(void);
 
-/* Persists VT_LANGUAGE_AUTO/EN/IT immediately. The in-memory value changes
+/* Persists any supported language immediately. The in-memory value changes
  * only after the disk commit succeeds. */
 int vt_preferences_set_language(int language);
 
@@ -167,6 +172,14 @@ int vt_preferences_set_music_keep_display_awake(int enabled);
 int vt_preferences_music_theme(void);
 int vt_preferences_set_music_theme(int theme);
 enum { VT_AUDIO_LAYOUT_CENTER, VT_AUDIO_LAYOUT_LEFT, VT_AUDIO_LAYOUT_RIGHT };
+/* IPTV presentation: 0 = separate playlist/channel screens, 1 = side by side. */
+int vt_preferences_radio_rows(void);
+int vt_preferences_set_radio_rows(int rows);
+int vt_preferences_iptv_split(void);
+int vt_preferences_set_iptv_split(int enabled);
+/* Channel ordering: source order (0) or name A-Z (1), shared by IPTV views. */
+int vt_preferences_iptv_name_sort(void);
+int vt_preferences_set_iptv_name_sort(int enabled);
 int vt_preferences_audio_layout(void);
 int vt_preferences_set_audio_layout(int layout);
 

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <vita2d.h>
+#include "ui/input_prompts.h"
 
 /* Mixed UTF-8 text rendering tuned for the Vita's native 960x544 output.
  * Latin, Greek and Cyrillic use exact-size Inter instances rendered by
@@ -11,6 +12,8 @@
  * Width calculations share the exact same routing as drawing, so clipping,
  * centering and marquee animation cannot drift from the rendered pixels. */
 int ui_font_fallback_init(void);
+/* One native face per call: 0 pending, 1 complete, -1 unavailable. */
+int ui_font_fallback_init_step(void);
 void ui_font_fallback_term(void);
 int ui_font_fallback_ready(void);
 int ui_font_fallback_language_mask(void);
@@ -28,6 +31,10 @@ void ui_font_set_system_preference(int preference);
 int ui_font_draw_text(vita2d_font *latin_font, int x, int y,
 	                  unsigned int color, unsigned int size,
 	                  const char *text);
+
+/* Metric-critical status text keeps the exact measured face even in PAF. */
+int ui_font_draw_text_exact(vita2d_font *latin_font, int x, int y,
+                            unsigned color, unsigned size, const char *text);
 
 __attribute__((__format__(__printf__, 6, 7)))
 int ui_font_draw_textf(vita2d_font *latin_font, int x, int y,

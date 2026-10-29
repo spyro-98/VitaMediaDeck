@@ -5,7 +5,7 @@
 
 /* VitaMediaDeck header shared by search, results, and the IME keyboard. */
 void ui_brand_draw_header(const char *query);
-/* Logo and system status, with the central area reserved for Home tabs. */
+/* Logo, section breadcrumbs and system status; tabs use their own lower rail. */
 void ui_brand_draw_home_header(void);
 void ui_brand_draw_home_search(void);
 int ui_brand_home_search_hit(unsigned flags,int x,int y);

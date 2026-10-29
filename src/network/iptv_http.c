@@ -4,6 +4,7 @@
 #include <strings.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <vita_https.h>
 #include <curl/curl.h>
 #include "network/iptv_trace.h"
@@ -64,13 +65,27 @@ static int fetch(void *ctx, const char *url, size_t limit, unsigned char **data,
     const VtIptvHttpOptions *options=ctx;
     if (!data || !size || !effective || !capacity || !limit || limit > 32u * 1024u * 1024u) return VT_IPTV_INVALID;
     *data = NULL; *size = 0; effective[0] = 0;
-    char checked[VT_IPTV_URL_MAX];
+    if(vt_iptv_local_path(url)){
+        if(!options||!options->allow_local||vt_iptv_resource_resolve(url,url,effective,capacity))return VT_IPTV_INVALID;
+        if(cancel&&*cancel)return VT_IPTV_CANCELLED;
+        FILE *file=fopen(effective,"rb");if(!file)return VT_IPTV_NOT_FOUND;
+        if(fseek(file,0,SEEK_END)){fclose(file);return VT_IPTV_IO;}long total=ftell(file);
+        if(total<0){fclose(file);return VT_IPTV_IO;}
+        uint64_t begin=ranged?offset:0;size_t n=ranged?limit:(size_t)total;
+        if((!ranged&&(uint64_t)total>limit)||begin>(uint64_t)total||n>(uint64_t)total-begin){fclose(file);return ranged?VT_IPTV_RANGE:VT_IPTV_LIMIT;}
+        if(begin>LONG_MAX||fseek(file,(long)begin,SEEK_SET)){fclose(file);return VT_IPTV_RANGE;}
+        *data=malloc(n?n:1);if(!*data){fclose(file);return VT_IPTV_MEMORY;}
+        *size=fread(*data,1,n,file);int failed=ferror(file);fclose(file);
+        if(cancel&&*cancel)return VT_IPTV_CANCELLED;
+        return failed||*size!=n?VT_IPTV_IO:0;
+    }
+    char checked[VT_IPTV_RESOURCE_URL_MAX];
     if (vt_iptv_resolve_url(url, url, checked, sizeof(checked))) {
         IPTV_TRACE("IPTV request rejected: invalid URL length=%u\n",url?(unsigned)strlen(url):0);
         return VT_IPTV_INVALID;
     }
     if (cancel && *cancel) return VT_IPTV_CANCELLED;
-    VitaHttpsClientConfig config = {.user_agent = "VitaMediaDeck/1.4.1", .allow_http = 1,
+    VitaHttpsClientConfig config = {.user_agent = "VitaMediaDeck/1.4.2", .allow_http = 1,
         .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
     if(options && options->user_agent[0]) {
         size_t n=strnlen(options->user_agent,sizeof(options->user_agent));

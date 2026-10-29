@@ -62,3 +62,19 @@ ASan/UBSan. The negative source exits normally with status 1. Run
 `python3 tests/library/test-browse-navigation.py` for the actual app router,
 including image-filtered device browsing, viewer return and category retention.
 These are host contracts, not Vita screenshots or hardware input tests.
+
+
+Reactive Home follow-up:
+
+```sh
+VMD_LIBRARY_UI_CASES=home_refresh_test bash tests/library/run-ui.sh
+bash tests/library/run-source-revision-tests.sh
+```
+
+The production Home loop accepts same-session registry/favourite/source changes
+within 1–3 fixture frames in every theme, resets stale entry anchors, includes
+resumable items in recent playback and never reintroduces removed entries.
+These are host fixture timings. The worker test adds/removes favourites without
+starting a new generation; source/online/IPTV storage tests verify successful-only
+change publication and failed-write rollback. The full `run-ui.sh` also retains
+the existing Home/search/navigation/animation and mini-player regression.

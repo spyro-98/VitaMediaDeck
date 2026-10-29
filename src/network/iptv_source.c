@@ -38,18 +38,15 @@ static void evict(VtIptvSource *s) {
 }
 VtIptvSource *vt_iptv_source_create(const char *url, const VtIptvSourceConfig *config) {
     VtIptvSource *s = calloc(1, sizeof(*s)); if (!s) return NULL;
-    if (vt_iptv_resolve_url(url, url, s->url, sizeof(s->url))) { free(s); return NULL; }
+    if (vt_iptv_resource_resolve(url, url, s->url, sizeof(s->url))) { free(s); return NULL; }
     /* One host-only identity per playback attempt: successful manifests must
      * also be attributable without persisting signed paths or query tokens. */
-    const char *host=strstr(s->url,"://")+3;size_t host_length=strcspn(host,"/?#");
+    const char *host=strstr(s->url,"://");host=host?host+3:"local-file";size_t host_length=strcspn(host,"/?#");
     if(host_length>255)host_length=255;
     IPTV_TRACE("IPTV source host=%.*s\n",(int)host_length,host);
     if (config) s->config = *config;
     if (!s->config.buffer_limit) s->config.buffer_limit = 12u * 1024u * 1024u;
     if (!s->config.segment_limit) s->config.segment_limit = 4u * 1024u * 1024u;
-    if (!s->config.bandwidth_limit) s->config.bandwidth_limit = 4000000;
-    if (!s->config.width_limit) s->config.width_limit = 1280;
-    if (!s->config.height_limit) s->config.height_limit = 720;
     if (!s->config.fetch) s->config.fetch = vt_iptv_http_fetch;
     if ((s->config.producer.open || s->config.producer.next || s->config.producer.close) &&
         (!s->config.producer.open || !s->config.producer.next || !s->config.producer.close)) { free(s); return NULL; }
@@ -82,7 +79,7 @@ static int fetch(VtIptvSource *s, const char *url, size_t limit, unsigned char *
     if (result) return result;
     if (!*data || !*size || *size > limit) return VT_IPTV_LIMIT;
     char validated[VT_IPTV_URL_MAX];
-    return vt_iptv_resolve_url(url, effective, validated, sizeof(validated));
+    return vt_iptv_resource_resolve(url, effective, validated, sizeof(validated));
 }
 static unsigned live_start(const VtIptvManifest *m) {
     if (m->ended) return 0;
@@ -170,7 +167,7 @@ int vt_iptv_source_poll(VtIptvSource *s, uint64_t now) {
                 const VtIptvVariant *v=&m->variants[i];
                 IPTV_TRACE("HLS candidate %u: %ux%u bitrate=%u codecs_declared=%d compatible=%d external_av=%d subtitles=%d over_limit=%d\n",
                     i,v->width,v->height,v->bandwidth,v->codecs_declared,v->compatible,v->external_av,v->subtitle_group,
-                    v->width>s->config.width_limit || v->height>s->config.height_limit || v->bandwidth>s->config.bandwidth_limit);
+                    (s->config.width_limit&&v->width>s->config.width_limit) || (s->config.height_limit&&v->height>s->config.height_limit) || (s->config.bandwidth_limit&&v->bandwidth>s->config.bandwidth_limit));
                 (void)v;
             }
             if (index < 0) {

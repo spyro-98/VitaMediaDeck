@@ -14,6 +14,7 @@ typedef struct {
 } VtDashTrack;
 typedef struct {
     xmlDoc *document;
+    VtIptvSelection active;
     VtDashTrack tracks[2]; /* H.264 video, AAC audio */
     int dynamic;
     int64_t period_us, duration_us, available_us;

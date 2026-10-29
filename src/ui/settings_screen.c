@@ -1,3 +1,4 @@
+#include "ui/list_scroll.h"
 #ifdef VMD_ENABLE_PAF_NATIVE
 #include "ui/native_vita.h"
 #endif
@@ -187,7 +188,7 @@ static void draw_toggle(float x, float y, int enabled) {
 	vita2d_draw_rectangle(x, y, 54, 28,
 	                      enabled ? VT_THEME_BLUE : VT_THEME_BORDER);
 	vita2d_draw_fill_circle(x + (enabled ? 40.0f : 14.0f), y + 14.0f,
-	                        10.0f, VT_THEME_TEXT);
+	                        10.0f, UI_MENU_TEXT);
 }
 
 static void draw_value(vita2d_font *small, int y, int row_width,
@@ -199,24 +200,12 @@ static void draw_value(vita2d_font *small, int y, int row_width,
 	    row_width==SUBTITLE_ROW_W ? row_width-32 : row_width/2-32);
 	value=fitted;
 	float width = ui_font_text_width(small, UI_FONT_SMALL, value);
-	ui_font_draw_text(small, ROW_X + row_width - width - 22, y + 34,
-	                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, value);
+	ui_font_draw_text_exact(small, ROW_X + row_width - width - 22, y + 34,
+	                  UI_MENU_ACCENT, UI_FONT_SMALL, value);
 }
 
-/* The redesigned local/network UI currently ships complete English and
- * Italian catalogues. Keep the selector honest until the remaining language
- * catalogues have been translated against the new screens. */
-static int language_count(void) { return 3; }
-
-static const char *language_label(int language) {
-	static const VtStringId labels[] = {
-		VT_STR_SETTINGS_LANGUAGE_SYSTEM,
-		VT_STR_SETTINGS_LANGUAGE_ENGLISH,
-		VT_STR_SETTINGS_LANGUAGE_ITALIAN
-	};
-	return vt_i18n_str(language >= 0 && language < language_count()
-	                   ? labels[language] : labels[0]);
-}
+static int language_count(void) { return VT_LANG_COUNT; }
+static const char *language_label(int language) {return vt_i18n_language_name(language);}
 
 static const char *decoder_label(int decoder) {
 	static const VtStringId labels[] = {
@@ -410,22 +399,18 @@ static int visible_rows_for_tab(int tab) {
 	return tab == TAB_SYSTEM ? 4 : tab == TAB_SUBTITLES ? SUBTITLE_VISIBLE_ROWS : SETTINGS_VISIBLE_ROWS;
 }
 
-static int first_visible_row(int cursor, int row_count, int visible_rows) {
-	if (row_count <= visible_rows) return 0;
-	int first = cursor - visible_rows / 2;
-	if (first < 0) first = 0;
-	int maximum = row_count - visible_rows;
-	if (first > maximum) first = maximum;
-	return first;
+static UiScrollView settings_scroll;
+static int settings_scroll_tab=-1;
+static void settings_scroll_context(int tab){
+    if(settings_scroll_tab!=tab){ui_scroll_reset(&settings_scroll,0);settings_scroll_tab=tab;}
 }
-
 static void draw_subtitle_preview(vita2d_font *label_font) {
 	const int x = SUBTITLE_PREVIEW_X, y = SUBTITLE_PREVIEW_Y;
 	const int w = SUBTITLE_PREVIEW_W, h = SUBTITLE_PREVIEW_H;
 	/* A complete Vita viewport, uniformly scaled instead of vertically cropped. */
 	ui_panel(x - 2, y - 2, w + 4, h + 4, VT_THEME_BG, VT_THEME_COLD_DIM, 0);
 	if (label_font)
-		ui_font_draw_text(label_font, x, y - 15, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(label_font, x, y - 15, UI_MENU_MUTED,
 		                  UI_FONT_SMALL, vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_PREVIEW));
 	for (int i = 0; i < 10; i++) {
 		int bh = 20 + (i * 29) % 84;
@@ -453,32 +438,35 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 	SettingRow rows[9];
 	int row_count = rows_for_tab(tab, rows);
 	int row_limit = visible_rows_for_tab(tab);
-	int first_row = first_visible_row(cursor, row_count, row_limit);
-	int visible_rows = row_count - first_row;
-	if (visible_rows > row_limit) visible_rows = row_limit;
+	int first_row=ui_list_scroll_first(&settings_scroll,ROW_STEP);
+	int viewport_height=row_limit*ROW_STEP-8;
+    int visible_rows=ui_list_scroll_end(&settings_scroll,ROW_STEP,viewport_height,row_count)-first_row;
 	int page_has_focus = !ui_mini_player_input_locked() && !sidebar->open &&
 	                     sidebar->animation <= 0.01f;
 	int row_width = tab == TAB_SUBTITLES ? SUBTITLE_ROW_W : ROW_W;
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_BRIGHT);
+    ui_menu_surface(0,54,960,490,1);
 	ui_brand_draw_breadcrumbs(vt_i18n_str(VT_STR_SECTIONS_SETTINGS), NULL, tab_label(tab));
 
 	for (int i = 0; i < TAB_COUNT; i++) {
 		int x = TAB_X + i * (TAB_W + 8);
-		ui_tab(x, TAB_Y, TAB_W, TAB_H, tab_label(i), i == tab);
+		ui_menu_text(x+14,TAB_Y+27,TAB_W-28,tab_label(i),i==tab?UI_MENU_ACCENT:UI_MENU_MUTED,UI_FONT_SMALL);
+        if(i==tab)vita2d_draw_rectangle(x+14,TAB_Y+TAB_H-2,TAB_W-28,2,UI_MENU_ACCENT);
 	}
 
+	vita2d_set_clip_rectangle(ROW_X,ROW_Y,ROW_X+row_width,ROW_Y+viewport_height);
+    vita2d_enable_clipping();
+    if(page_has_focus&&!focus_tabs)ui_menu_focus_draw(focus);
 	for (int slot = 0; slot < visible_rows; slot++) {
 		int i = first_row + slot;
-		int y = ROW_Y + slot * ROW_STEP;
-		ui_panel(ROW_X, y, row_width, ROW_H, VT_THEME_SURFACE,
-		         page_has_focus && i == cursor
-		             ? VT_THEME_SIGNAL_LIGHT : VT_THEME_BORDER_DIM, 0);
-		if (body) ui_text_line(ROW_X + 16,
+		int y=ROW_Y+i*ROW_STEP-settings_scroll.position;
+        ui_menu_row(ROW_X,y,row_width,ROW_STEP,page_has_focus&&!focus_tabs&&i==cursor,1);
+		if (body) ui_menu_text(ROW_X + 16,
 		    y + (tab == TAB_SUBTITLES ? 22 : 35),
 		    tab == TAB_SUBTITLES ? row_width-32 : row_width/2-32,
-		    rows[i].label, VT_THEME_TEXT, UI_FONT_BODY);
+		    rows[i].label, UI_MENU_TEXT, UI_FONT_BODY);
 		if (rows[i].kind == ROW_TOGGLE)
 			draw_toggle(ROW_X + row_width - 78, y + 14, rows[i].value);
 		else if (rows[i].kind == ROW_LANGUAGE)
@@ -534,27 +522,20 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 			draw_value(small, y, row_width, subtitle_position_label(rows[i].value));
 		else draw_value(small, y, row_width, vt_i18n_str(VT_STR_SETTINGS_OPEN));
 	}
-	if (row_count > row_limit && small) {
-		if (first_row > 0)
-			ui_font_draw_text(small, ROW_X + row_width - 18, ROW_Y - 7,
-			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "^");
-		if (first_row + visible_rows < row_count)
-			ui_font_draw_text(small, ROW_X + row_width - 18,
-			                  453,
-			                  VT_THEME_BLUE_LIGHT, UI_FONT_SMALL, "v");
-	}
+    vita2d_disable_clipping();
+    ui_scroll_rail(ROW_X+row_width-5,ROW_Y,viewport_height,settings_scroll.position,viewport_height,row_count*ROW_STEP);
 	if (tab == TAB_SYSTEM && small && cursor == 2) {
 		char path[192];
 		snprintf(path, sizeof(path), vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PATH),
 		         VITAMEDIADECK_NETWORK_PASSWORDS_PATH);
-		ui_font_draw_text(small, ROW_X + 12, 394, VT_THEME_WARNING,
+		ui_font_draw_text_exact(small, ROW_X + 12, 394, VT_THEME_WARNING,
 		                  UI_FONT_SMALL,
 		                  vt_i18n_str(VT_STR_SETTINGS_PASSWORD_PLAINTEXT_WARNING));
-		ui_font_draw_text(small, ROW_X + 12, 418, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(small, ROW_X + 12, 418, UI_MENU_MUTED,
 		                  UI_FONT_SMALL, path);
 	}
     if (tab == TAB_SYSTEM && small && cursor != 2) {
-        ui_text_line(ROW_X+12,394,ROW_W-24,vt_i18n_str(VT_STR_SETTINGS_CLOCK_PRIORITY),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
+        ui_menu_text(ROW_X+12,394,ROW_W-24,vt_i18n_str(VT_STR_SETTINGS_CLOCK_PRIORITY),UI_MENU_MUTED,UI_FONT_SMALL);
     }
 	if (tab == TAB_SUBTITLES) {
 		draw_subtitle_preview(small);
@@ -565,17 +546,19 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
             footer = vt_i18n_str(VT_STR_SETTINGS_THEME_VMD_RESTART_HINT);
 #endif
 #ifdef VMD_ENABLE_PAF_NATIVE
-        if (ui_native_vita_active())
-            ui_panel(ROW_X - 2, 438, ROW_W + 4, 36, VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
 #endif
 		char fitted[512];
 		ui_font_fit_text(small, UI_FONT_SMALL, footer, fitted, sizeof(fitted),
 		                 ROW_W);
-		ui_font_draw_text(small, ROW_X, 462, VT_THEME_TEXT_MUTED,
+		ui_font_draw_text_exact(small, ROW_X, 462, UI_MENU_MUTED,
 		                  UI_FONT_SMALL, fitted);
 	}
 
-	if (page_has_focus) ui_focus_outline_draw(focus);
+	if(page_has_focus){
+        if(!focus_tabs){vita2d_set_clip_rectangle(ROW_X,ROW_Y,ROW_X+row_width,ROW_Y+viewport_height);vita2d_enable_clipping();}
+        if(focus_tabs)ui_menu_focus_draw(focus);
+        vita2d_disable_clipping();
+    }
 	(void)focus_tabs;
 	ui_mini_player_draw();
 	if (sidebar->animation > 0.01f)
@@ -594,6 +577,7 @@ int ui_settings_screen(void) {
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
 	int tab = 0, cursor = 0, focus_tabs = 1;
+    settings_scroll_tab=-1;settings_scroll_context(tab);
 	UiFocusMotion focus = {0};
 	UiNavRepeat nav_repeat;
 	ui_nav_repeat_reset(&nav_repeat);
@@ -639,7 +623,7 @@ int ui_settings_screen(void) {
 
 		if (page_owns_input) {
 			unsigned int nav = ui_nav_repeat_update(
-			    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+			    &nav_repeat, pressed, ctrl.buttons, ctrl.lx, focus_tabs?ctrl.ly:128,
 			    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
 			if (nav & SCE_CTRL_LEFT) {
 				tab = tab > 0 ? tab - 1 : TAB_COUNT - 1;
@@ -680,6 +664,11 @@ int ui_settings_screen(void) {
 				cursor = 0;
 				focus_tabs = 1;
 			}
+            settings_scroll_context(tab);
+            if(!focus_tabs || ((touch_flags&UI_TOUCH_EVENT_DOWN)&&touch.down_y>=ROW_Y))
+                ui_list_scroll_input(&settings_scroll,count,ROW_STEP,ROW_X,ROW_Y,
+                    tab==TAB_SUBTITLES?SUBTITLE_ROW_W:ROW_W,visible_rows_for_tab(tab)*ROW_STEP-8,
+                    nav,ctrl.buttons,focus_tabs?128:ctrl.ly,&touch_flags,&touch,&cursor);
 			if (touch_flags & UI_TOUCH_EVENT_TAP) {
 				for (int i = 0; i < TAB_COUNT; i++) {
 					int x = TAB_X + i * (TAB_W + 8);
@@ -691,15 +680,16 @@ int ui_settings_screen(void) {
 				}
 				count = rows_for_tab(tab, rows);
 				int row_limit = visible_rows_for_tab(tab);
-				int first_row = first_visible_row(cursor, count, row_limit);
+				settings_scroll_context(tab);
+                int first_row=ui_list_scroll_first(&settings_scroll,ROW_STEP);
 				int visible_rows = count - first_row;
-				if (visible_rows > row_limit) visible_rows = row_limit;
+				if(visible_rows>row_limit+1)visible_rows=row_limit+1;
 				for (int slot = 0; slot < visible_rows; slot++) {
 					int i = first_row + slot;
 					int row_width = tab == TAB_SUBTITLES
 					              ? SUBTITLE_ROW_W : ROW_W;
-					if (ui_touch_hit_rect(touch.x, touch.y, ROW_X,
-					                      ROW_Y + slot * ROW_STEP, row_width, ROW_H)) {
+					if (touch.y>=ROW_Y&&touch.y<ROW_Y+row_limit*ROW_STEP-8&&ui_touch_hit_rect(touch.x, touch.y, ROW_X,
+					                      ROW_Y+i*ROW_STEP-settings_scroll.position, row_width, ROW_H)) {
 						cursor = i;
 						focus_tabs = 0;
 						if (tab == TAB_CONTROLS && cursor == 1) {
@@ -719,10 +709,10 @@ int ui_settings_screen(void) {
 		} else ui_nav_repeat_reset(&nav_repeat);
 		SettingRow focus_rows[9];
 		int focus_count = rows_for_tab(tab, focus_rows);
-		int focus_first = first_visible_row(cursor, focus_count,
-		                                    visible_rows_for_tab(tab));
+        (void)focus_count;
+        settings_scroll_context(tab);
 		if (focus_tabs) ui_focus_motion_tick(&focus, TAB_X+tab*(TAB_W+8), TAB_Y, TAB_W, TAB_H);
-		else ui_focus_motion_tick(&focus, ROW_X, ROW_Y+(cursor-focus_first)*ROW_STEP,
+		else ui_focus_motion_tick(&focus, ROW_X, ROW_Y+cursor*ROW_STEP-settings_scroll.position,
 		    tab==TAB_SUBTITLES?SUBTITLE_ROW_W:ROW_W, ROW_H);
 		draw_screen(tab, cursor, focus_tabs, &focus, &sidebar);
 		sceKernelDelayThread(vt_preferences_reduce_motion() ? 16000 : 1000);

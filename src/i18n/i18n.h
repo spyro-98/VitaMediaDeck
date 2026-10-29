@@ -8,6 +8,16 @@
  * concrete language here. */
 #define VT_LANG_EN 1
 #define VT_LANG_IT 2
+#define VT_LANG_ES 3
+#define VT_LANG_FR 4
+#define VT_LANG_DE 5
+#define VT_LANG_PT 6
+#define VT_LANG_RU 7
+#define VT_LANG_JA 8
+#define VT_LANG_KO 9
+#define VT_LANG_ZH_S 10
+#define VT_LANG_ZH_T 11
+#define VT_LANG_COUNT 12
 
 /* Call once at startup after vt_preferences_init(). If the stored preference
  * is VT_LANGUAGE_AUTO, read the system language with
@@ -22,6 +32,11 @@ void vt_i18n_init(void);
 
 /* Effective language currently in use (one of the VT_LANG_* constants). */
 int vt_i18n_current_language(void);
+const char *vt_i18n_language_code(void);
+int vt_i18n_system_language(void);
+const char *vt_i18n_language_name(int language);
+/* App-owned inline labels share the same offline catalog as string IDs. */
+const char *vt_i18n_text(const char *english,const char *italian);
 
 /* Changes the active language and persists it immediately through
  * preferences.c. `language` also accepts VT_LANGUAGE_AUTO; in that case the

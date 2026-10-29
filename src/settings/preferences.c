@@ -177,7 +177,7 @@ static int valid_frame_rate(int frame_rate) {
 }
 
 static int valid_language(int language) {
-	return language >= VT_LANGUAGE_AUTO && language <= VT_LANGUAGE_RU;
+	return language >= VT_LANGUAGE_AUTO && language < VT_LANGUAGE_COUNT;
 }
 
 static uint32_t crc32_bytes(const unsigned char *data, size_t len) {
@@ -1025,4 +1025,44 @@ int vt_preferences_set_subtitle_max_rows(int rows) {
 		next = with_subtitle_extra_field(next, VT_SUBTITLE_MIN_ROWS_SHIFT,
 		                                 (unsigned int)(rows - 1));
 	return persist_subtitle_flags(next);
+}
+
+/* Bit 4 of the V4 clock extension was unused; CPU choices occupy bits 0..3.
+ * No disk-size change or reinterpretation of the full playback/subtitle words. */
+int vt_preferences_iptv_split(void){
+ if(!g_loaded)vt_preferences_init();return (g_clock_flags&(1u<<4))!=0;
+}
+int vt_preferences_set_iptv_split(int enabled){
+ if(!g_loaded)vt_preferences_init();
+ uint32_t next=enabled?g_clock_flags|(1u<<4):g_clock_flags&~(1u<<4);
+ if(next==g_clock_flags)return 0;
+ int result=persist_record_clocks(g_default_quality,g_default_frame_rate,g_language,g_playback_flags,g_subtitle_flags,next);
+ if(!result)g_clock_flags=next;return result;
+}
+
+/* V4 extension bit 5; preserve the CPU pair and IPTV layout bits. */
+int vt_preferences_radio_rows(void){
+ if(!g_loaded)vt_preferences_init();return (g_clock_flags&(1u<<5))?2:1;
+}
+int vt_preferences_set_radio_rows(int rows){
+ if(rows!=1&&rows!=2)return -1;
+ if(!g_loaded)vt_preferences_init();
+ uint32_t next=rows==2?g_clock_flags|(1u<<5):g_clock_flags&~(1u<<5);
+ if(next==g_clock_flags)return 0;
+ int rc=persist_record_clocks(g_default_quality,g_default_frame_rate,g_language,g_playback_flags,g_subtitle_flags,next);
+ if(!rc)g_clock_flags=next;return rc;
+}
+
+/* V4 extension bit 6; independent of CPU, IPTV presentation and radio density. */
+int vt_preferences_iptv_name_sort(void){
+ if(!g_loaded)vt_preferences_init();
+ return (g_clock_flags&(1u<<6))!=0;
+}
+int vt_preferences_set_iptv_name_sort(int enabled){
+ if(!g_loaded)vt_preferences_init();
+ uint32_t next=enabled?g_clock_flags|(1u<<6):g_clock_flags&~(1u<<6);
+ if(next==g_clock_flags)return 0;
+ int result=persist_record_clocks(g_default_quality,g_default_frame_rate,g_language,g_playback_flags,g_subtitle_flags,next);
+ if(!result)g_clock_flags=next;
+ return result;
 }

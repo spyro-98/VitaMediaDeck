@@ -57,7 +57,7 @@ static char *fetch_limited(const char *url, volatile int *cancel, size_t *length
 	Response result = {.data = malloc(1), .capacity = 1, .limit = limit};
 	if (!result.data) return NULL;
 	result.data[0] = 0;
-	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.1",
+	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.2",
 	    .allow_http = 1, .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
 	VitaHttpsClient *client = vita_https_client_create(&options);
 	if (!client) { free(result.data); return NULL; }
@@ -481,6 +481,8 @@ int vt_online_load_saved(VtOnlineItem *out, int capacity) {
 	json_decref(array); return count;
 }
 
+static unsigned online_saved_revision_value;
+unsigned vt_online_saved_revision(void){return __atomic_load_n(&online_saved_revision_value,__ATOMIC_ACQUIRE);}
 static int write_saved(const VtOnlineItem *items, int count) {
 	json_t *array = json_array();
 	if (!array) { return -1; }
@@ -506,7 +508,8 @@ static int write_saved(const VtOnlineItem *items, int count) {
 		if (old) sceIoRename(SAVED_BACKUP, SAVED_PATH);
 		return -1;
 	}
-	sceIoRemove(SAVED_BACKUP); return 0;
+	sceIoRemove(SAVED_BACKUP);
+    __atomic_add_fetch(&online_saved_revision_value,1,__ATOMIC_RELEASE);return 0;
 }
 
 

@@ -14,3 +14,6 @@ logmirror/
 # Generated Python bytecode, not release sources.
 __pycache__/
 *.py[cod]
+
+# Social post drafts are not repository content.
+release/announcements/

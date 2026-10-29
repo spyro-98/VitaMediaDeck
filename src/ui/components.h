@@ -5,6 +5,17 @@
 #include "ui/sections_sidebar.h"
 #include "ui/touch.h"
 #include "ui/focus_glow.h"
+#include "ui/scroll_view.h"
+#include "ui/theme.h"
+#include "ui/menu_geometry.h"
+
+/* Menus inherit the active palette, including the light Signal/media override.
+ * Only theme 7 owns the blue PAF material. */
+#define UI_MENU_BG VT_THEME_BG_SOFT
+#define UI_MENU_TEXT VT_THEME_TEXT
+#define UI_MENU_MUTED VT_THEME_TEXT_MUTED
+#define UI_MENU_FAINT VT_THEME_TEXT_FAINT
+#define UI_MENU_ACCENT VT_THEME_SIGNAL_BRIGHT
 
 typedef struct {
 	int open, cursor, top, touch_start_cursor;
@@ -12,11 +23,19 @@ typedef struct {
 	uint64_t last_us;
 	UiNavRepeat repeat;
 	UiFocusMotion focus;
+    UiScrollView viewport;
+    unsigned group_starts;
 } UiContextMenu;
 typedef struct {
 	const char *label, *detail;
 	int action, enabled;
 } UiContextAction;
+enum { UI_MENU_GROUP_PLAYBACK=1, UI_MENU_GROUP_LIBRARY, UI_MENU_GROUP_VIEW,
+       UI_MENU_GROUP_CONNECTION, UI_MENU_GROUP_MAINTENANCE, UI_MENU_GROUP_INFO };
+/* Group metadata occupies high bits; bit zero alone controls availability. */
+void ui_context_menu_category(UiContextAction *items,int count,int action,int group);
+const char *ui_menu_group_label(int group);
+void ui_menu_category(float x,float y,float width,int group);
 /* R1 options share one input/animation contract. L1 is left unconsumed so the
  * caller can switch directly to Sections. Returns the chosen action or -1. */
 int ui_context_menu_input(UiContextMenu *menu, const UiContextAction *items, int count,
@@ -48,8 +67,12 @@ void ui_scene_identity(float x, float y, float width, const char *code,
 void ui_panel(float x, float y, float width, float height,
 	          unsigned int fill, unsigned int accent, int focused);
 
-/* Draws a physical-controller style action: a compact key cap plus its verb.
- * Foreground is always black or white, selected from the supplied fill. */
+/* Draws a controller action with a reserved icon/key slot and a fitted verb.
+ * Downloaded pad icons keep their colours; text contrasts with the fill. */
+void ui_menu_focus_draw(const UiFocusMotion *focus);
+void ui_menu_text(float x,float baseline,float width,const char *text,unsigned color,unsigned size);
+void ui_menu_surface(float x,float y,float width,float height,float opacity);
+void ui_menu_row(float x,float y,float width,float height,int focused,float opacity);
 void ui_action_button(float x, float y, float width, float height,
 	                  unsigned int fill, const char *key, const char *label,
 	                  int active);

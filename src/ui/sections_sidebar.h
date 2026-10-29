@@ -36,7 +36,8 @@ typedef struct {
 	UiFocusMotion fixed_focus;
 	float scroll, scroll_target, scroll_velocity;
 	int scroll_theme;
-	int touch_active, touch_dragged, touch_start_y;
+	int touch_active, touch_dragged, touch_start_y, touch_last_y,scroll_coasting;
+    uint64_t touch_last_us,analog_last_us;
 	float touch_start_scroll;
 	unsigned int repeat_button;
 	uint64_t repeat_next_us;

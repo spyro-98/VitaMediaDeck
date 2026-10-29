@@ -1,4 +1,5 @@
 #include "ui/home_tabs.h"
+#include "ui/scroll_view.h"
 #include <stdio.h>
 #include <math.h>
 #include "settings/preferences.h"
@@ -22,6 +23,8 @@ static int order_theme=-1;
 static int expanded_home;
 void ui_home_tabs_set_expanded(int expanded){expanded_home=!!expanded;}
 static float scroll;
+static UiScrollView rail;
+static int rail_free;
 static uint64_t scroll_tick_us;
 static int scroll_ready;
 static int podcast_offline;
@@ -59,7 +62,7 @@ static int order_read(const char *path,unsigned char value[HOME_TAB_COUNT]) {
 static void load(void){
  int theme=ui_theme_id();
  if(loaded&&order_theme==theme)return;
- order_theme=theme;loaded=1;scroll_ready=0;
+ order_theme=theme;loaded=1;scroll_ready=0;rail_free=0;ui_scroll_reset(&rail,0);
  for(int i=0;i<HOME_TAB_COUNT;i++)order[i]=(unsigned char)i;
  unsigned char value[HOME_TAB_COUNT];char path[128];order_path(theme,path,"");
  int result=order_read(path,value);
@@ -91,7 +94,7 @@ static float scroll_target(void) {
 static void reveal(void) {
  /* Preserve the visual position across screen changes; the next draw animates
   * towards the newly selected tab rather than snapping the whole rail. */
- if (!scroll_ready) { scroll = scroll_target(); scroll_ready = 1; }
+ if (!scroll_ready) { scroll = scroll_target(); scroll_ready = 1;ui_scroll_reset(&rail,scroll+(RAIL_W-TAB_W)*.5f); }
 }
 static void carousel_tick(void) {
  reveal();
@@ -100,6 +103,11 @@ static void carousel_tick(void) {
                ? (float)(now - scroll_tick_us) / 1000000.0f : 1.0f / 60.0f;
  scroll_tick_us = now;
  if (seconds > .05f) seconds = .05f;
+ if(rail_free){
+  ui_scroll_bounds(&rail,(HOME_TAB_COUNT-1)*TAB_STEP+RAIL_W,RAIL_W);
+  ui_scroll_tick(&rail,now,vt_preferences_reduce_motion());
+  scroll=rail.position-(RAIL_W-TAB_W)*.5f;return;
+ }
  float target = scroll_target();
  if (vt_preferences_reduce_motion()) scroll = target;
  else scroll += (target - scroll) * (1.0f - expf(-20.0f * seconds));
@@ -120,7 +128,7 @@ int ui_home_tabs_touch_hit(const UiTouchEvent *t) {
 }
 int ui_home_tab(void){load();return active;}
 const char *ui_home_tab_label(void){return label(ui_home_tab());}
-void ui_home_tab_set(int id){load();if(id>=0&&id<HOME_TAB_COUNT){active=id;podcast_offline=0;}reveal();}
+void ui_home_tab_set(int id){load();if(id>=0&&id<HOME_TAB_COUNT){active=id;podcast_offline=0;rail_free=0;}reveal();}
 void ui_home_podcast_set_offline(int offline){podcast_offline=!!offline;}
 int ui_home_tab_online(void){return active==HOME_RADIO||(active==HOME_PODCAST&&!podcast_offline);}
 int ui_home_tab_filter(void){static const int filters[]={0,1,2,0,4,3};return filters[ui_home_tab()];}
@@ -132,6 +140,7 @@ unsigned ui_home_tabs_navigation(unsigned pressed,unsigned held,unsigned char lx
 int ui_home_tabs_input(unsigned nav,unsigned flags,const UiTouchEvent *t,int focused){
  int before=active,before_offline=podcast_offline;load();reveal();
  if(focused&&(nav&(SCE_CTRL_LEFT|SCE_CTRL_RIGHT))){
+  rail_free=0;
   int p=position()+(nav&SCE_CTRL_LEFT?-1:1);
   if(p>=0&&p<HOME_TAB_COUNT){active=order[p];podcast_offline=0;reveal();}
  }
@@ -153,16 +162,25 @@ int ui_home_tabs_input(unsigned nav,unsigned flags,const UiTouchEvent *t,int foc
   float rail_x=t->x-UI_HOME_TABS_X+scroll;
   int p=(int)floorf(rail_x/TAB_STEP);
   if(p>=0 && p<HOME_TAB_COUNT && rail_x-p*TAB_STEP<TAB_W) {
-   active=order[p];podcast_offline=0;reveal();
-  }
- } else if((flags&UI_TOUCH_EVENT_UP) && !(flags&UI_TOUCH_EVENT_TAP) &&
-           ui_home_tabs_touch_hit(t)) {
-  int dx=t->x-t->down_x,dy=t->y-t->down_y;
-  if(abs(dx)>=32 && abs(dx)>abs(dy)) {
-   int p=position()+(dx<0?1:-1);
-   if(p>=0 && p<HOME_TAB_COUNT){active=order[p];podcast_offline=0;reveal();}
+   active=order[p];podcast_offline=0;rail_free=0;reveal();
   }
  }
+ if(t&&ui_home_tabs_touch_hit(t)){
+  uint64_t now=sceKernelGetProcessTimeWide();
+  float dt=rail.last&&now>rail.last?(now-rail.last)/1000000.f:1.f/60;
+  if(dt>.05f)dt=.05f;
+  if(flags&UI_TOUCH_EVENT_DOWN){
+   ui_scroll_reset(&rail,scroll+(RAIL_W-TAB_W)*.5f);rail.ready=1;rail.last=now;
+   ui_scroll_bounds(&rail,(HOME_TAB_COUNT-1)*TAB_STEP+RAIL_W,RAIL_W);
+   ui_scroll_drag_begin(&rail,t->x);rail_free=1;
+  }
+  if(rail.dragging&&(flags&(UI_TOUCH_EVENT_MOVE|UI_TOUCH_EVENT_HOLD|UI_TOUCH_EVENT_UP))){
+   ui_scroll_drag_move(&rail,t->down_x,t->x,dt);rail.last=now;
+   if(flags&UI_TOUCH_EVENT_UP)ui_scroll_drag_end(&rail,vt_preferences_reduce_motion());
+   scroll=rail.position-(RAIL_W-TAB_W)*.5f;
+  }
+ }
+
  return active!=before||podcast_offline!=before_offline;
 }
 void ui_home_tabs_draw(int focused){
@@ -187,14 +205,13 @@ void ui_home_tabs_draw_with_focus(int focused,UiFocusMotion *motion){
   float x=UI_HOME_TABS_X+i*TAB_STEP-scroll;
   if(x+TAB_W<=UI_HOME_TABS_X || x>=UI_HOME_TABS_RIGHT)continue;
   int selected=order[i]==active;
-  ui_panel(x,UI_HOME_TABS_Y,TAB_W,UI_HOME_TABS_H,
-           selected?VT_THEME_SURFACE_RAISED:VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+  ui_menu_row(x,UI_HOME_TABS_Y,TAB_W,UI_HOME_TABS_H,0,1);
   if(selected)vita2d_draw_rectangle(x+12,UI_HOME_TABS_BOTTOM-2,TAB_W-24,2,VT_THEME_SIGNAL_BRIGHT);
   if(f) {
    char text[128];
    int width=ui_font_fit_text(f,UI_FONT_SMALL,label(order[i]),text,sizeof(text),TAB_W-24);
-   ui_font_draw_text(f,x+(TAB_W-width)*.5f,UI_HOME_TABS_Y+25,
-                    selected?VT_THEME_TEXT:VT_THEME_TEXT_MUTED,UI_FONT_SMALL,text);
+   ui_menu_text(x+(TAB_W-width)*.5f,UI_HOME_TABS_Y+25,width,text,
+                    selected?VT_THEME_TEXT:VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
   }
  }
  if(focused) {
@@ -245,7 +262,7 @@ int ui_home_tabs_configure(void){
    ui_text_line(66,112,828,vt_i18n_str(VT_STR_HOME_REORDER_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
   }
   for(int i=0;i<HOME_TAB_COUNT;i++){
-   ui_panel(66,120+i*46,828,42,VT_THEME_SURFACE,VT_THEME_BORDER_DIM,0);
+   ui_menu_row(66,120+i*46,828,46,i==selected,1);
    if(f){char row[160],place[128];snprintf(row,sizeof(row),"%d   %s",i+1,label(order[i]));
     position_label(i,place,sizeof(place));
     ui_text_line(80,148+i*46,20,"<",VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
@@ -254,9 +271,9 @@ int ui_home_tabs_configure(void){
     ui_text_line(864,148+i*46,20,">",VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
    }
   }
-  ui_focus_motion_tick(&motion,66,120+selected*46,828,42);ui_focus_outline_draw(&motion);
-  ui_action_button(66,454,390,44,VT_THEME_SURFACE,"X",vt_i18n_str(VT_STR_ONLINE_SAVE),0);
-  ui_action_button(504,454,390,44,VT_THEME_SURFACE,"Circle",vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
+  ui_focus_motion_tick(&motion,66,120+selected*46,828,42);ui_menu_focus_draw(&motion);
+  ui_action_button(66,454,390,44,VT_THEME_SURFACE,UI_PAD_CROSS,vt_i18n_str(VT_STR_ONLINE_SAVE),0);
+  ui_action_button(504,454,390,44,VT_THEME_SURFACE,UI_PAD_CIRCLE,vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
   vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();sceKernelDelayThread(16000);
  }reveal();ui_touch_reset();return result;
 }
@@ -316,7 +333,7 @@ UiHomeControlResult ui_home_controls_update(const UiHomeControlSample *s){
   int columns=ui_theme_home_layout(theme,s->bottom).columns;
   int leave=theme==VT_UI_THEME_RELAY?((nav&SCE_CTRL_LEFT)&&s->selected%columns==0):
       theme==VT_UI_THEME_DECK_90?(nav&SCE_CTRL_LEFT):
-      theme==VT_UI_THEME_APERTURE?((nav&SCE_CTRL_DOWN)&&s->selected+columns>=s->count):
+      theme==VT_UI_THEME_APERTURE?((nav&SCE_CTRL_DOWN)&&(s->selected/columns+1)*columns>=s->count):
       ((nav&SCE_CTRL_UP)&&s->selected<columns);
   if (leave && !s->geometric_content) {
       out.focus_sections = 1;

@@ -8,7 +8,9 @@
     fprintf(stderr, "Contract failed: %s (%s:%d)\n", #x, __FILE__, __LINE__); exit(1); } } while (0)
 static int native_enabled, native_scope;
 static float native_last_text_width;
+static unsigned native_text_calls;
 static char native_last_text[512];
+static float native_brand_width;
 void ui_native_vita_cover(float x, float y, float w, float h, unsigned color) {
     (void)x; (void)y; (void)w; (void)h; (void)color;
 }
@@ -19,11 +21,13 @@ int ui_native_vita_scope(int scope) {
 }
 int ui_native_vita_text(float x, float y, float w, unsigned size, unsigned color, const char *text) {
     (void)x; (void)y; (void)size; (void)color;
+    native_text_calls++;
     native_last_text_width = w;
+    if(!strcmp(text,"VitaMediaDeck"))native_brand_width=w;
     snprintf(native_last_text, sizeof(native_last_text), "%s", text);
     return 0; /* Host text renderer supplies reference pixels, not Sony text. */
 }
-static unsigned native_panels, native_rows;
+static unsigned native_panels, native_rows, native_glows;
 static UiThemeRect native_last_panel;
 int ui_native_vita_active(void) {
     return native_enabled && ui_theme_id() == VT_UI_THEME_LEGACY_VITA;
@@ -42,6 +46,7 @@ int ui_native_vita_button_fade(float x, float y, float w, float h, const char *l
                                int selected, float alpha) {
     (void)selected;
     if (!ui_native_vita_active()) return 0;
+    if (ui_input_prompt_contains(label)) return 0;
     CHECK(isfinite(x) && isfinite(y) && w > 0 && h > 0 && label && label[0]);
     CHECK(alpha >= 0 && alpha <= 1);
     if (x < 0 || x + w > 960 || y < sidebar_view_top() || y + h > sidebar_view_bottom())
@@ -54,8 +59,9 @@ int ui_native_vita_button(float x, float y, float w, float h, const char *s, int
 }
 int ui_native_vita_decoration(int enabled) { (void)enabled;return 0; }
 int ui_native_vita_focus(float x, float y, float w, float h) {
-    (void)x; (void)y; (void)w; (void)h;
-    return 0;
+    CHECK(isfinite(x)&&isfinite(y)&&w>0&&h>0);
+    if(ui_native_vita_active())native_glows++;
+    return ui_native_vita_active();
 }
 int ui_native_vita_toggle(float x,float y,float w,float h,int checked) {
     (void)x;(void)y;(void)w;(void)h;(void)checked;return ui_native_vita_active();
@@ -68,6 +74,11 @@ void ui_native_vita_media_text(int active) { (void)active; }
 int main(int argc, char **argv) {
     CHECK(argc == 3); output = argv[2];
     CHECK(!FT_Init_FreeType(&ft)); CHECK(!FT_New_Face(ft, argv[1], 0, &face));
+    for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
+        ui_theme_apply(theme);native_brand_width=0;
+        ui_breadcrumb_draw(86,696,NULL,NULL,NULL,1);
+        CHECK(native_brand_width>=ui_font_text_width(ui_runtime_font(UI_FONT_SMALL),UI_FONT_SMALL,"VitaMediaDeck")+18);
+    }
     ui_theme_apply(VT_UI_THEME_LEGACY_VITA);
     native_enabled = 1;
     host_reduced_motion = 1;
@@ -75,11 +86,12 @@ int main(int argc, char **argv) {
     vita2d_clear_screen();
     unsigned background_batches = gpu_draw_calls, background_vertices = gpu_vertex_count;
     ui_chrome_background(VT_THEME_BG, VT_THEME_COLD);
-    CHECK(gpu_draw_calls == background_batches + 1 && gpu_vertex_count == background_vertices + 4050);
+    CHECK(gpu_draw_calls == background_batches + 1 && gpu_vertex_count == background_vertices + 7830);
     memcpy(first_pixels,pixels,sizeof(pixels));
     unsigned textured = 0, highlights = 0;
     unsigned long green_total=0,blue_total=0;
     for (int y=0;y<544;y++) for (int x=0;x<960;x++) {
+        if(pixels[y][x][0]>=70||pixels[y][x][1]>=190||pixels[y][x][2]>=210){fprintf(stderr,"Wave highlight exceeded dark-scene limit at %d,%d: %u,%u,%u\n",x,y,pixels[y][x][0],pixels[y][x][1],pixels[y][x][2]);}
         CHECK(pixels[y][x][0] < 70 && pixels[y][x][1] < 190 && pixels[y][x][2] < 210);
         green_total+=pixels[y][x][1];blue_total+=pixels[y][x][2];
         highlights+=pixels[y][x][1]>65 && pixels[y][x][2]>90;
@@ -114,7 +126,7 @@ int main(int argc, char **argv) {
                 unsigned panels = native_panels, rows = native_rows;
                 vita2d_clear_screen();
                 ui_sections_sidebar_draw(&side);
-                CHECK(native_panels > panels && native_rows > rows);
+                CHECK(native_panels == panels && native_rows == rows);
                 UiThemeRect target = sidebar_slot_rect(&side, slot);
                 CHECK(target.y >= sidebar_view_top() && target.y + target.h <= sidebar_view_bottom());
             }
@@ -134,13 +146,33 @@ int main(int argc, char **argv) {
     p = pixels[102][110];
     CHECK(p[0] == 23 && p[1] == 44 && p[2] == 66);
     CHECK(native_scope == UI_NATIVE_SCOPE_CONTENT);
-    for(int bottom=472;bottom<=544;bottom+=72) {
+    for(int bottom=472;bottom<=544;bottom+=72){
+        unsigned before_panels=native_panels;
         ui_theme_home_footer("Local files",bottom);
-        CHECK(native_last_panel.y<=bottom-26-UI_FONT_SMALL);
-        CHECK(native_last_panel.y+native_last_panel.h>=bottom-8+8);
-        CHECK(native_last_panel.y>=ui_theme_home_item_rect(VT_UI_THEME_LEGACY_VITA,
-            ui_theme_home_layout(VT_UI_THEME_LEGACY_VITA,bottom).rows-1,bottom).y+44);
+        CHECK(native_panels==before_panels); /* Clean footer: no empty native tile. */
     }
+    /* The real IPTV form must route both label and URL above the PAF panel.
+     * The old exact/immediate-only helper fails this contract. */
+    new_link();unsigned captions=native_text_calls;char shown[VT_IPTV_URL_MAX];
+    draw_link_field("");CHECK(native_text_calls==captions+3);
+    CHECK(!strcmp(native_last_text,TR(IPTV_LIST_URL_EMPTY))&&native_last_text_width==892);
+    CHECK(!accept_link("https://example.org/channels.m3u?auth=secret-token"));display_link(shown);
+    captions=native_text_calls;draw_link_field(shown);
+    CHECK(native_text_calls==captions+3&&!strcmp(native_last_text,"https://example.org/channels.m3u")&&native_last_text_width==892);
+    png("iptv-url-field-native-routing");
+    /* Prompt sprites stay immediate; captions use a bounded native text box. */
+    strcpy(native_last_text,"untouched");host_exact_width=0;
+    ui_action_button(18,110,302,46,VT_THEME_SURFACE,UI_PAD_CROSS,"Riproduci canale",0);
+    CHECK(!strcmp(native_last_text,"Riproduci canale")&&host_exact_width>0);
+    CHECK(native_last_text_width<260);
+    ui_menu_text(34,220,300,"Opzioni IPTV",UI_MENU_TEXT,UI_FONT_BODY);
+    CHECK(!strcmp(native_last_text,"Opzioni IPTV"));
+    CHECK(native_last_text_width==300);
+    unsigned glows=native_glows;
+    UiFocusMotion menu_focus={.x=20,.y=130.375f,.width=384,.height=42,.initialized=1};
+    unsigned before_primitives=draw_primitives,before_batches=gpu_draw_calls;
+    ui_menu_focus_draw(&menu_focus);CHECK(native_glows==glows+1);
+    CHECK(draw_primitives==before_primitives&&gpu_draw_calls==before_batches); /* Firmware glow only; no extra wash over glyphs. */
     ui_theme_apply(VT_UI_THEME_LEGACY);
     unsigned rows = native_rows, panels = native_panels;
     ui_panel(100, 100, 200, 40, fill, VT_THEME_FOCUS, 0);

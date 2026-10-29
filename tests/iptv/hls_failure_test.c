@@ -8,7 +8,6 @@ int main(int argc,char **argv) {
     const struct {const char *file;int expected;} cases[]={
         {"bad-video.m3u8",VT_IPTV_VIDEO_CODEC},
         {"bad-audio.m3u8",VT_IPTV_AUDIO_CODEC},
-        {"too-large.m3u8",VT_IPTV_VIDEO_SIZE},
         {"multichannel.m3u8",VT_IPTV_AUDIO_FORMAT},
         {"not-playlist.m3u8",VT_IPTV_MANIFEST}
     };
@@ -24,6 +23,10 @@ int main(int argc,char **argv) {
         unsigned before=requests;CHECK(vt_iptv_source_poll(s,1)==result);CHECK(requests==before);
         vt_iptv_source_destroy(s);
     }
-    printf("HLS failure classes: %u checks; actual MPEG-2, AC-3, 1080p, AAC 5.1 and HTML input rejected with distinct reasons.\n",checks);
+    VtIptvSourceConfig config={0};vt_hls_source_configure(&config);
+    VtIptvSource *s=vt_iptv_source_create("https://fixture.test/too-large.m3u8",&config);CHECK(s);
+    CHECK(!vt_iptv_source_poll(s,0));VtIptvSourceStatus status;vt_iptv_source_status(s,&status);
+    CHECK(status.buffered_segments>0&&!status.terminal);vt_iptv_source_destroy(s);
+    printf("HLS failure classes: %u checks; MPEG-2, AC-3, AAC 5.1 and HTML rejected with distinct reasons; actual 1080p video admitted.\n",checks);
     return 0;
 }

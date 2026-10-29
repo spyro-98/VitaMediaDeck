@@ -1,5 +1,6 @@
 #include <pthread.h>
 #include "history/playback_history.h"
+#include "common/crc32.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -40,17 +41,7 @@ static VtPlaybackHistoryDisk g_disk;
 static int g_count;
 static uint64_t g_next_order = 1;
 
-static uint32_t crc32_bytes(const unsigned char *data, size_t size) {
-	uint32_t crc = 0xffffffffU;
-	for (size_t i = 0; i < size; i++) {
-		crc ^= data[i];
-		for (int bit = 0; bit < 8; bit++) {
-			uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
-			crc = (crc >> 1) ^ (0xedb88320U & mask);
-		}
-	}
-	return ~crc;
-}
+static uint32_t crc32_bytes(const unsigned char *data,size_t size){return vt_crc32(data,size);}
 
 static uint32_t checksum(VtPlaybackHistoryDisk *disk) {
 	uint32_t saved = disk->checksum;

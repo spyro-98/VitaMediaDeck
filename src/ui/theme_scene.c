@@ -164,6 +164,16 @@ UiPageView ui_theme_page(UiThemeScene scene, const char *owner, const char *iden
         owner,identity,first,count,columns,slots,step);
     return scene_state[scene].view;
 }
+int ui_theme_page_input(UiThemeScene scene,const char *owner,int x,int y,int width,int height,
+ int count,int first_rows,int *first,int *selected,unsigned buttons,unsigned char lx,unsigned char ly,
+ unsigned *flags,const UiTouchEvent *touch){
+ if(scene<0||scene>=UI_SCENE_COUNT)return 0;
+ UiPageMotion *m=&scene_state[scene].page;
+ int result=ui_page_pixel_input(m,sceKernelGetProcessTimeWide(),vt_preferences_reduce_motion(),owner,
+  x,y,width,height,count,first_rows,first,selected,buttons,lx,ly,flags,touch);
+ if(m->ready&&m->columns>0)scene_state[scene].view=ui_page_current_view(m,first_rows?*first*m->columns:*first,count,m->columns,m->slots,m->step);
+ return result;
+}
 void ui_theme_page_rebase(UiThemeScene scene,int before,int after) {
     if(scene>=0&&scene<UI_SCENE_COUNT)ui_page_rebase(&scene_state[scene].page,before,after);
 }
@@ -172,7 +182,7 @@ UiThemeRect ui_theme_page_rect(UiThemeScene scene, UiThemeRect r) {
     /* A hidden screen must not leak its last offset into a new hit test. */
     UiPageMotion *m=&scene_state[scene].page;
     uint64_t now=sceKernelGetProcessTimeWide();
-    if(!m->ready||m->theme!=ui_theme_id()||vt_preferences_reduce_motion()||
+    if(!m->ready||m->theme!=ui_theme_id()||(vt_preferences_reduce_motion()&&!m->direct)||
        now<m->last||now-m->last>250000ULL)return r;
     r.x+=(int)roundf(scene_state[scene].view.dx);
     r.y+=(int)roundf(scene_state[scene].view.dy);

@@ -18,8 +18,7 @@ void vt_background_playback_toggle_pause(void){pause_calls++;}
 void vt_background_playback_checkpoint(void){}
 void vt_background_playback_seek_relative(int64_t n){(void)n;seek_calls++;}
 void vt_background_playback_seek_to(uint64_t n){(void)n;seek_calls++;}
-int vt_audio_volume_percent(void){return 100;}
-void vt_audio_volume_set_percent(int n){(void)n;}
+#include "../../src/media/audio_volume.c"
 void vt_display_keep_awake_tick(void){}
 vita2d_texture *vt_image_load_texture(const char *p,unsigned max,VtImageInfo *info,char *error,size_t capacity){(void)p;(void)max;(void)info;(void)error;(void)capacity;cover_loads++;return has_art?vt_artwork_thumbnail_get("fixture-square.png"):NULL;}
 void vita2d_free_texture(vita2d_texture *t){(void)t;cover_frees++;}
@@ -59,6 +58,18 @@ int main(int argc,char **argv){
   CHECK(ui_music_player_run("fixture","Night Transit","AAC",256)==UI_MUSIC_PLAYER_STOP);
   CHECK(ui_theme_colors==before&&ui_theme_id()==theme);
   memcpy(pixels,first_pixels,sizeof(pixels));char name[80];snprintf(name,sizeof(name),"theme-audio-%d",theme);png(name);
+ }
+ /* Triangle is mute in music, podcasts and radio; held input toggles once. */
+ for(int kind=0;kind<3;kind++){
+  audio.is_live=kind==2;audio.is_podcast=kind==1;
+  vt_audio_volume_set_percent(147);CHECK(!vt_audio_volume_muted());
+  unsigned mute_script[]={0,SCE_CTRL_TRIANGLE,SCE_CTRL_TRIANGLE,0,SCE_CTRL_CIRCLE};
+  memcpy(input_script,mute_script,sizeof(mute_script));script_count=5;frame=0;capture_frame=2;
+  int old_repeat=g_repeat_one;
+  CHECK(ui_music_player_run("fixture","Mute check","AAC",256)==UI_MUSIC_PLAYER_STOP);
+  CHECK(vt_audio_volume_muted()&&vt_audio_volume_percent()==0&&vt_audio_volume_level_percent()==147&&g_repeat_one==old_repeat);
+  frame=0;CHECK(ui_music_player_run("fixture","Mute check","AAC",256)==UI_MUSIC_PLAYER_STOP);
+  CHECK(!vt_audio_volume_muted()&&vt_audio_volume_percent()==147&&g_repeat_one==old_repeat);
  }
  ui_theme_apply(VT_UI_THEME_LEGACY);
  FT_Done_Face(face);FT_Done_FreeType(ft);printf("Crossfade native audio UI: %u checks passed\n",checks);

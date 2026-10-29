@@ -5,6 +5,7 @@
 #include "i18n/i18n.h"
 #include "ui/home_tabs.h"
 #include "ui/components.h"
+#include "ui/navigation.h"
 #include "ui/theme_scene.h"
 #include "ui/brand.h"
 #include "ui/mini_player.h"
@@ -22,7 +23,7 @@
 #include <string.h>
 #include <math.h>
 static const char *tr(const char *en, const char *it) {
-    return vt_i18n_current_language() == VT_LANG_IT ? it : en;
+    return vt_i18n_text(en,it);
 }
 static int view = 4;
 static char query[129];
@@ -132,7 +133,7 @@ static void search_detail(const VtLibrarySearchStatus *s, int count, int filter,
             return;
         }
     snprintf(out, size,
-             tr("%s · %d results · □: provider", "%s · %d risultati · □: provider"),
+             tr("%s · %d results · " UI_PAD_SQUARE ": provider", "%s · %d risultati · " UI_PAD_SQUARE ": provider"),
              group, count);
 }
 /* One compact eight-source rail: existing theme geometry, no textures, timers,
@@ -227,7 +228,7 @@ typedef struct {
     VtNetworkSource *sources;
     VtNetworkCredential *credentials;
     char keys[VT_NETWORK_MAX_SOURCES][16];
-    int count;
+    int count,valid;
 } LibraryArtworkSources;
 static LibraryArtworkSources artwork_sources(void) {
     LibraryArtworkSources a = {0};
@@ -235,6 +236,7 @@ static LibraryArtworkSources artwork_sources(void) {
     a.credentials = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*a.credentials));
     if (a.sources && a.credentials) {
         a.count = vt_network_sources_load(a.sources, VT_NETWORK_MAX_SOURCES);
+        a.valid=a.count>=0;
         if (a.count < 0)
             a.count = 0;
         if (vt_preferences_remember_network_passwords())
@@ -303,22 +305,11 @@ static int dashboard_item(const DashboardData *d, int role, int offset, VtLibrar
     return 1;
 }
 static void dashboard_refresh(DashboardData *d, VtLibrarySearchStatus *status, int keep_focus) {
-    VtLibraryResult prior;
-    int role = dash_selected;
-    int had_prior = keep_focus && role < 4 && dashboard_item(d, role, dash_offset[role], &prior);
     d->count[0] = vt_library_query("", VT_LIBRARY_CONTINUE, d->resume, DASH_CONTINUE_MAX);
     d->resuming = d->count[0] > 0;
     d->discovering = 0;
-    int recent = vt_library_query("", VT_LIBRARY_RECENT, d->recent, DASH_RECENT_MAX), used = 0;
-    for (int i = 0; i < recent; i++) {
-        int duplicate = 0;
-        for (int k = 0; k < d->count[0]; k++)
-            if (!strcmp(d->recent[i].item.id, d->resume[k].item.id))
-                duplicate = 1;
-        if (!duplicate)
-            d->recent[used++] = d->recent[i];
-    }
-    d->count[3] = used;
+    int recent = vt_library_query("", VT_LIBRARY_RECENT, d->recent, DASH_RECENT_MAX);
+    d->count[3]=recent;
     d->count[2] =
         vt_library_search_home_favourites(d->favourites, VT_LIBRARY_HOME_FAVOURITES, status);
     /* A new install or an empty resume queue must still show real media.
@@ -342,42 +333,13 @@ static void dashboard_refresh(DashboardData *d, VtLibrarySearchStatus *status, i
             if (!d->count[0] || strcmp(picks[i].item.id, d->resume[0].item.id))
                 d->recent[d->count[3]++] = picks[i];
     }
-    if (had_prior) {
-        int found = 0;
-        for (int i = 0; i < d->count[role]; i++) {
-            VtLibraryResult current;
-            dashboard_item(d, role, i, &current);
-            if (!strcmp(current.item.id, prior.item.id))
-                found = 1;
-        }
-        if (!found) {
-            int capacity = role == UI_DASH_CONTINUE     ? DASH_CONTINUE_MAX
-                           : role == UI_DASH_RECENT     ? DASH_RECENT_MAX
-                           : role == UI_DASH_FAVOURITES ? VT_LIBRARY_HOME_FAVOURITES
-                                                        : VT_NETWORK_MAX_SOURCES;
-            int at = d->count[role] < capacity ? d->count[role]++ : capacity - 1;
-            prior.cached = 1;
-            if (role == UI_DASH_CONTINUE)
-                d->resume[at] = prior;
-            else if (role == UI_DASH_RECENT)
-                d->recent[at] = prior;
-            else if (role == UI_DASH_FAVOURITES)
-                d->favourites[at] = prior.item;
-            else
-                d->connections[at] = prior.item;
-        }
-    }
     for (int role = 0; role < 4; role++) {
-        for (int i = 0; i < d->count[role]; i++) {
-            VtLibraryResult item;
-            dashboard_item(d, role, i, &item);
-            if (!strcmp(item.item.id, dash_anchor[role])) {
-                dash_offset[role] = i;
-                break;
-            }
+        int selected=0;
+        if(keep_focus&&dash_anchor[role][0])for(int i=0;i<d->count[role];i++){
+            VtLibraryResult item;dashboard_item(d,role,i,&item);
+            if(!strcmp(item.item.id,dash_anchor[role])){selected=i;break;}
         }
-        if (dash_offset[role] >= d->count[role])
-            dash_offset[role] = 0;
+        dash_offset[role]=selected;
         VtLibraryResult item;
         if (dashboard_item(d, role, dash_offset[role], &item))
             snprintf(dash_anchor[role], sizeof(dash_anchor[role]), "%s", item.item.id);
@@ -482,10 +444,10 @@ static void dashboard_card(UiThemeRect r, int role, const VtLibraryResult *v, in
                              : data->resuming ? tr("Continue", "Riprendi")
                                               : tr("Open", "Apri");
         int button_width = !available ? (r.w > 320 ? 224 : r.w - 24) : (r.w > 320 ? 160 : 130);
-        ui_action_button(r.x + 12, button_y, button_width, button_height, VT_THEME_SURFACE, "X", action, selected);
+        ui_action_button(r.x + 12, button_y, button_width, button_height, VT_THEME_SURFACE, UI_PAD_CROSS, action, selected);
         if (count > 1) {
             char more[64];
-            snprintf(more, sizeof(more), "□  %d/%d  R1", offset + 1, count);
+            snprintf(more, sizeof(more), UI_PAD_SQUARE "  %d/%d  " UI_PAD_R1, offset + 1, count);
             ui_text_line(r.x + r.w - 160, r.y + r.h - 20, 146, more,
                          RGBA8(232, 240, 246, 255), UI_FONT_SMALL);
         }
@@ -581,19 +543,29 @@ static int dashboard_search(void) {
     dashboard_folder = 0;
     return 1;
 }
+static void dashboard_connections(DashboardData *data,const LibraryArtworkSources *artwork){
+ data->count[UI_DASH_CONNECTIONS]=0;
+ for(int i=artwork->count-1;i>=0;i--){
+  VtNetworkEntry entry={.is_directory=1};
+  snprintf(entry.name,sizeof(entry.name),"%s",artwork->sources[i].name[0]?artwork->sources[i].name:artwork->sources[i].host);
+  snprintf(entry.path,sizeof(entry.path),"%s",artwork->sources[i].root_path[0]?artwork->sources[i].root_path:"/");
+  vt_library_remote(&artwork->sources[i],&entry,"",&data->connections[data->count[UI_DASH_CONNECTIONS]++]);
+ }
+}
+static void artwork_sources_free(LibraryArtworkSources *a){
+ if(a->credentials){memset(a->credentials,0,VT_NETWORK_MAX_SOURCES*sizeof(*a->credentials));free(a->credentials);}
+ free(a->sources);memset(a,0,sizeof(*a));
+}
 static int dashboard_screen(VtLibraryItem *chosen) {
     DashboardData *data = calloc(1, sizeof(*data));
     if (!data)
         return UI_LIBRARY_BACK;
+    unsigned sources_revision=vt_network_sources_revision();
     LibraryArtworkSources artwork = artwork_sources();
-    for (int i = 0; i < artwork.count; i++) {
-        VtNetworkEntry entry = {.is_directory = 1};
-        snprintf(entry.name, sizeof(entry.name), "%s",
-                 artwork.sources[i].name[0] ? artwork.sources[i].name : artwork.sources[i].host);
-        snprintf(entry.path, sizeof(entry.path), "%s",
-                 artwork.sources[i].root_path[0] ? artwork.sources[i].root_path : "/");
-        vt_library_remote(&artwork.sources[i], &entry, "", &data->connections[data->count[1]++]);
-    }
+    dashboard_connections(data,&artwork);
+    /* A new visit shows the latest leading items, not yesterday's carousel
+     * anchors. Navigation within this visit still preserves visible identities. */
+    memset(dash_offset,0,sizeof(dash_offset));memset(dash_anchor,0,sizeof(dash_anchor));
     UiSectionsSidebar sidebar;
     ui_sections_sidebar_init(&sidebar, UI_SECTION_LOCAL_MEDIA);
     UiFocusMotion tabs = {0}, focus_motion = {0};
@@ -606,7 +578,8 @@ static int dashboard_screen(VtLibraryItem *chosen) {
     sceCtrlPeekBufferPositive(0, &previous, 1);
     VtLibrarySearchStatus status = {0};
     unsigned revision = ~0U, search_revision = ~0U;
-    uint64_t refreshed = 0;
+    uint64_t refreshed = 0,sources_retry_after=0;
+    int first_refresh=1;
     int dirty = 1, focus_sections = 0, in_collection=0, result = UI_LIBRARY_BACK;
     for (;;) {
         uint64_t now = sceKernelGetProcessTimeWide();
@@ -616,14 +589,24 @@ static int dashboard_screen(VtLibraryItem *chosen) {
             vt_library_search_local_refresh();
             dirty = 1;
         }
-        if (dirty || (now - refreshed > 250000ULL &&
-                      (revision != vt_library_revision() ||
-                       search_revision != vt_library_search_revision() || status.pending))) {
-            dashboard_refresh(data, &status, !dirty && !focus_sections);
-            revision = vt_library_revision();
-            search_revision = status.revision;
-            refreshed = now;
-            dirty = 0;
+        int sources_changed=0;
+        unsigned live_sources_revision=vt_network_sources_revision();
+        if(live_sources_revision!=sources_revision&&now>=sources_retry_after){
+            LibraryArtworkSources next=artwork_sources();
+            if(next.valid){
+                artwork_sources_free(&artwork);artwork=next;dashboard_connections(data,&artwork);
+                sources_revision=live_sources_revision;sources_changed=1;sources_retry_after=0;
+            }else{artwork_sources_free(&next);sources_retry_after=now+5000000ULL;}
+        }
+        unsigned live_revision=vt_library_revision(),live_search_revision=vt_library_search_revision();
+        int changed=revision!=live_revision||search_revision!=live_search_revision||sources_changed;
+        if(dirty||changed||(status.pending&&now-refreshed>250000ULL)){
+            if(changed)for(int role=0;role<4;role++)if(first_refresh||!in_collection||focus_sections||role!=dash_selected){
+                dash_anchor[role][0]=0;dash_offset[role]=0;
+            }
+            dashboard_refresh(data,&status,!first_refresh);
+            revision=live_revision;search_revision=status.revision;refreshed=now;
+            dirty=0;first_refresh=0;
         }
         int bottom =
             ui_mini_player_top() < UI_CONTENT_BOTTOM ? ui_mini_player_top() : UI_CONTENT_BOTTOM;
@@ -859,7 +842,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         if (!focus_sections) {
             UiThemeRect r = layout.cards[dash_selected];
             if(in_collection && dash_selected!=UI_DASH_CONTINUE) {
-                ui_text_line(r.x+r.w-90,r.y+20,80,"×  ○",VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
+                ui_text_line(r.x+r.w-90,r.y+20,80,UI_PAD_CROSS "  " UI_PAD_CIRCLE,VT_THEME_SIGNAL_BRIGHT,UI_FONT_SMALL);
                 r.y+=26;r.h-=30;
                 if(dash_selected==UI_DASH_FAVOURITES)r.w=(r.w-20)/(data->count[dash_selected]<3?data->count[dash_selected]:3);
                 else if(r.h>44)r.h=44;
@@ -1040,7 +1023,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         int changed = 0;
         if (legacy) {
             if (!blocked) {
-                nav = ui_nav_repeat_update(&repeat, pressed, ctrl.buttons, ctrl.lx, ctrl.ly,
+                nav = ui_nav_repeat_update(&repeat, pressed, ctrl.buttons, ctrl.lx, focus?ctrl.ly:128,
                                            SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT |
                                                SCE_CTRL_RIGHT);
                 unsigned tabs = ui_home_tabs_navigation(pressed, focus ? ctrl.buttons : 0,
@@ -1060,7 +1043,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                 .held = ctrl.buttons,
                 .touch_flags = flags,
                 .lx = ctrl.lx,
-                .ly = ctrl.ly,
+                .ly = focus?ctrl.ly:128,
                 .rx = ctrl.rx,
                 .ry = ctrl.ry,
                 .selected = selected,
@@ -1140,14 +1123,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             break;
         }
         if (!focus) {
-            if ((nav & SCE_CTRL_UP) && selected >= layout.columns)
-                selected -= layout.columns;
-            if ((nav & SCE_CTRL_DOWN) && selected + layout.columns < n)
-                selected += layout.columns;
-            if ((nav & SCE_CTRL_LEFT) && selected > 0)
-                selected--;
-            if ((nav & SCE_CTRL_RIGHT) && selected + 1 < n)
-                selected++;
+            selected=ui_grid_navigation(selected,n,layout.columns,nav);
         }
         if (selected < top)
             top = selected / layout.columns * layout.columns;
@@ -1155,10 +1131,23 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             top = (selected / layout.columns - visible / layout.columns + 1) * layout.columns;
         if (top < 0)
             top = 0;
+        snprintf(identity,sizeof(identity),"library:%d:%.128s:%.15s",view,query,folder.id);
+        UiPageView hit_page=ui_theme_page(UI_SCENE_HOME,"unified-library",identity,top,n,
+            layout.columns,visible,layout.step);
+        if(!blocked&&(flags&UI_TOUCH_EVENT_DOWN)&&touch.down_x>=layout.x&&
+            touch.down_y>=layout.y+offset*layout.step&&touch.down_y<ui_theme_home_content_bottom(ui_theme_id(),bottom))focus=0;
+        if(!focus&&!blocked){
+            int scroll_y=layout.y+offset*layout.step;
+            ui_theme_page_input(UI_SCENE_HOME,"unified-library",layout.x,scroll_y,
+                legacy?924:ui_theme_id()==VT_UI_THEME_GHOST_MESH?layout.w:942-layout.x,
+                ui_theme_home_content_bottom(ui_theme_id(),bottom)-scroll_y,n,0,&top,&selected,ctrl.buttons,ctrl.lx,ctrl.ly,&flags,&touch);
+            hit_page=ui_theme_page(UI_SCENE_HOME,"unified-library",identity,top,n,
+                layout.columns,visible,layout.step);
+        }
         if (flags & UI_TOUCH_EVENT_TAP) {
-            for (int i = top; i < top + visible && i < n; i++) {
+            for (int i=hit_page.first;i<hit_page.end;i++) {
                 UiThemeRect r = library_row_rect(i-top+offset,bottom);
-                if (ui_touch_hit_rect(touch.x, touch.y, r.x, r.y, r.w, r.h)) {
+                if (touch.y>=layout.y+offset*layout.step&&touch.y<ui_theme_home_content_bottom(ui_theme_id(),bottom)&&ui_touch_hit_rect(touch.x, touch.y, r.x, r.y, r.w, r.h)) {
                     selected = i;
                     focus = 0;
                     pressed |= SCE_CTRL_CROSS;
@@ -1212,8 +1201,8 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         snprintf(identity, sizeof(identity), "library:%d:%.128s:%.15s", view, query, folder.id);
         snprintf(detail, sizeof(detail), "%s",
                  query[0] ? query
-                          : tr("R1: Home · △: search",
-                               "R1: Home · △: cerca"));
+                          : tr(UI_PAD_R1 ": Home · " UI_PAD_TRIANGLE ": search",
+                               UI_PAD_R1 ": Home · " UI_PAD_TRIANGLE ": cerca"));
         if (view == 3 || in_folder)
             search_detail(&status, n, in_folder ? -1 : filter, detail, sizeof(detail));
         ui_home_tabs_set_expanded(1);
@@ -1245,7 +1234,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                             : ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w
                                                                       : 942 - layout.x,
                             now);
-        vita2d_set_clip_rectangle(0, viewport - 3, 960, bottom - 38);
+        vita2d_set_clip_rectangle(0, viewport - 3, 960, ui_theme_home_content_bottom(ui_theme_id(),bottom));
         vita2d_enable_clipping();
         for (int i = page.first; i < page.end; i++) {
             VtLibraryResult *v = &items[i];
@@ -1295,13 +1284,13 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
                     : tr("No items in this view yet", "Ancora nessun contenuto in questa vista"),
                 VT_THEME_TEXT, UI_FONT_BODY);
             ui_text_line(layout.x, viewport + 62, empty_width,
-                         tr("R1: Home · △: search all sources",
-                            "R1: Home · △: cerca ovunque"),
+                         tr(UI_PAD_R1 ": Home · " UI_PAD_TRIANGLE ": search all sources",
+                            UI_PAD_R1 ": Home · " UI_PAD_TRIANGLE ": cerca ovunque"),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);
         }
         ui_theme_page_finish(UI_SCENE_HOME, layout.x, viewport, legacy ? 924 : 942 - layout.x,
                              bottom - 38);
-        const char *actions = tr("R1: Home · △: search", "R1: Home · △: cerca");
+        const char *actions = tr(UI_PAD_R1 ": Home · " UI_PAD_TRIANGLE ": search", UI_PAD_R1 ": Home · " UI_PAD_TRIANGLE ": cerca");
         int footer_x = layout.x,
             footer_w = ui_theme_id() == VT_UI_THEME_GHOST_MESH ? layout.w : 942 - layout.x;
         if(ui_theme_id()==VT_UI_THEME_LEGACY_VITA)
@@ -1314,8 +1303,8 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
             ui_text_line(footer_x, bottom - 26, footer_w, actions, VT_THEME_TEXT_MUTED,
                          UI_FONT_SMALL);
             ui_text_line(footer_x, bottom - 8, footer_w,
-                         view==3 ? tr("D-pad: select · X: open · □: provider",
-                                       "Frecce: seleziona · X: apri · □: sorgente")
+                         view==3 ? tr("D-pad: select · " UI_PAD_CROSS ": open · " UI_PAD_SQUARE ": provider",
+                                       "Frecce: seleziona · " UI_PAD_CROSS ": apri · " UI_PAD_SQUARE ": sorgente")
                          : filter >= 0 ? vt_library_provider_name(filter)
                                        : ui_theme_home_controls_hint(focus),
                          VT_THEME_TEXT_MUTED, UI_FONT_SMALL);

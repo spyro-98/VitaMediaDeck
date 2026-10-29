@@ -63,6 +63,7 @@ int main(int argc,char **argv){
    ui_focus_glow_draw(focus.x,focus.y,focus.width,focus.height,0,l.y,bottom);
    if((unsigned)(v.end-v.first)>max_items)max_items=(unsigned)(v.end-v.first);
    if(gpu_vertex_count>max_vertices)max_vertices=gpu_vertex_count;
+   CHECK(gpu_vertex_count<=(theme==VT_UI_THEME_LEGACY_VITA?7830u:2304u));
    if(draw_primitives>max_primitives)max_primitives=draw_primitives;
    if(tick%3==0){char name[80];snprintf(name,sizeof(name),"motion-%d-%03d",theme,tick);png(name);}
   }
@@ -108,7 +109,9 @@ int main(int argc,char **argv){
   }
   live_slots=0;download_slots=-1;
  }
- CHECK(max_items<=10&&max_vertices<=2304&&max_primitives<900);
+ /* VMD's existing full-screen wave mesh has 7,830 vertices; other themes
+  * retain their smaller scene budget. This is geometry, not a timing test. */
+ CHECK(max_items<=10&&max_vertices<=7830&&max_primitives<900);
  FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);
  printf("Continuous native drawing: %u checks, 8 themes, retained outgoing rows, uniform "
         "transforms, no overlaps, animated touch and cache append; max %u items, %u vertices, %u "

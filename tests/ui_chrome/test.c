@@ -54,7 +54,22 @@ int main(int argc,char **argv){
  char storage[512];snprintf(storage,sizeof(storage),"%s/storage.XXXXXX",output);CHECK(mkdtemp(storage));CHECK(!chdir(storage));
  CHECK(!mkdir("ux0:data",0700));CHECK(!mkdir("ux0:data/VitaMediaDeck",0700));
  CHECK(!FT_Init_FreeType(&ft));CHECK(!FT_New_Face(ft,argv[1],0,&face));
+ char mono_path[1024];snprintf(mono_path,sizeof(mono_path),"%.*sIBMPlexMono-Regular.ttf",(int)(strrchr(argv[1],'/')-argv[1]+1),argv[1]);
+ FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,mono_path,0,&mono));
+ /* Check every real clock value with each theme's actual face, including
+  * both loaders. Drawing uses the exact measured face even with native PAF. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  for(int twelve=0;twelve<2;twelve++)for(int hour=0;hour<24;hour++)for(int minute=0;minute<60;minute++){
+   header_status clock={.clock_valid=1,.clock_hour=hour,.clock_minute=minute,.time_format_12h=twelve};
+   int left=draw_clock(&clock,1);
+   CHECK(host_exact_x==left&&host_exact_x+host_exact_width<=BATT_X-22);
+   int activities_left=left-STATUS_GAP-WIFI_W-STATUS_GAP-8-30-9;
+   CHECK(activities_left>=SEARCH_BOX_X+SEARCH_BOX_W+12);
+  }
+ }
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mode=0;mode<3;mode++){
+  face=theme==VT_UI_THEME_DECK_90?mono:inter;
   ui_theme_apply(theme);frame=0;clock12=mode==1;charging=mode==1;battery=mode==2?-1:73;wifi=mode==2?-1:84;live_slots=mode==1;download_slots=mode==1;
   memset(&s_status,0,sizeof(s_status));int reads=status_reads;screen(theme,0);CHECK(status_reads==reads+1);
   ui_brand_draw_status_indicators();CHECK(status_reads==reads+1); /* 2-second hardware cache, not 60 Hz. */
@@ -82,11 +97,40 @@ int main(int argc,char **argv){
  unsigned press=0,flags=UI_TOUCH_EVENT_DOWN;UiTouchEvent drag={.x=600,.y=470,.down_x=600,.down_y=470};
  CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)<0);
  drag.y=10;flags=UI_TOUCH_EVENT_MOVE;CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)<0);
- CHECK(menu.cursor==8 && menu.top==1);
+ CHECK(menu.cursor==4 && menu.top==4 && menu.viewport.position==208);
  drag.x=600;drag.y=94+7*52+20;flags=UI_TOUCH_EVENT_TAP;
- CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)==108);
+ CHECK(ui_context_menu_input(&menu,actions,12,&press,0,128,&flags,&drag)==111);
  CHECK(!menu.open);
- FT_Done_Face(face);
+ /* Category headings are genuine gaps, never hit targets or selected rows. */
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++){
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  CHECK(UI_MENU_HEADING_HEIGHT==34);
+  host_record_text=1;host_text_count=0;ui_menu_category(20,80,300,UI_MENU_GROUP_VIEW);
+  CHECK(host_text_count==1&&host_text_rects[0].y==105);
+  CHECK(host_text_rects[0].y-16-80==9); /* +5 px above the heading versus the prior 4. */
+  CHECK(80+UI_MENU_HEADING_HEIGHT-host_text_rects[0].y==9); /* -3 px below versus 12. */
+  host_record_text=0;
+  UiContextAction grouped[]={
+   {"Fill screen","Off",1,(1|UI_MENU_GROUP_PLAYBACK<<8)},
+   {"Reconnect live",NULL,2,(1|UI_MENU_GROUP_PLAYBACK<<8)},
+   {"Video quality","Automatic",3,(1|UI_MENU_GROUP_VIEW<<8)},
+   {"Audio language","Source default",4,(1|UI_MENU_GROUP_VIEW<<8)},
+   {"Programme",NULL,5,(1|UI_MENU_GROUP_INFO<<8)}};
+  UiContextMenu groups={.open=1,.animation=1};unsigned p=0,t=0;UiTouchEvent tap={0};
+  CHECK(ui_context_menu_input(&groups,grouped,5,&p,0,128,&t,&tap)<0);
+  CHECK(groups.group_starts==((1u<<0)|(1u<<2)|(1u<<4)));
+  float before=ui_menu_group_y(1,94,52,groups.group_starts),after=ui_menu_group_y(2,94,52,groups.group_starts);
+  CHECK(after-before==52+UI_MENU_HEADING_HEIGHT);
+  CHECK(ui_menu_group_focus_y(1.5f,94,52,groups.group_starts)==(before+after)*.5f);
+  tap.x=600;tap.y=after-UI_MENU_HEADING_HEIGHT/2;t=UI_TOUCH_EVENT_TAP;
+  CHECK(ui_context_menu_input(&groups,grouped,5,&p,0,128,&t,&tap)<0&&groups.cursor==0&&groups.open);
+  tap.y=after+20;t=UI_TOUCH_EVENT_TAP;
+  CHECK(ui_context_menu_input(&groups,grouped,5,&p,0,128,&t,&tap)==3&&groups.cursor==2);
+  groups.open=1;groups.animation=1;groups.focus.initialized=0;ui_context_menu_tick(&groups);
+  vita2d_clear_screen();ui_context_menu_draw(&groups,"Playback",grouped,5);
+  char name[80];snprintf(name,sizeof(name),"r1-heading-slots-%d-%u",theme,language);png(name);
+ }
+ FT_Done_Face(mono);FT_Done_Face(inter);
  FT_Done_FreeType(ft);
  printf("Production theme chrome: %u checks, 8 themes, IT/EN, 12h/24h, live activities, unknown "
         "status and command decks passed.\n",

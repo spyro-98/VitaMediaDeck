@@ -16,11 +16,11 @@ int main(int argc,char **argv) {
   ui_theme_apply(theme);frame=0;
   for(int scene=0;scene<UI_SCENE_COUNT;scene++) {
    gpu_draw_calls=gpu_vertex_count=0;ui_theme_scene_model(scene,480,272,220,1,1);
-   CHECK(theme?gpu_vertex_count>0:!gpu_vertex_count);CHECK(gpu_vertex_count<=1152);
+   CHECK(vt_ui_theme_legacy_layout(theme)?!gpu_vertex_count:gpu_vertex_count>0);CHECK(gpu_vertex_count<=1152);
    vita2d_clear_screen();ui_theme_scene_model(scene,480,272,220,1,1);memcpy(first_pixels,pixels,sizeof(pixels));
    frame+=10;vita2d_clear_screen();ui_theme_scene_model(scene,480,272,220,1,1);CHECK(!memcmp(first_pixels,pixels,sizeof(pixels)));
   }
-  if(!theme)continue;
+  if(vt_ui_theme_legacy_layout(theme))continue;
   for(int mini=0;mini<2;mini++)for(int grid=0;grid<2;grid++) {
    int bottom=mini?436:536;UiThemeHomeLayout l=ui_theme_browser_layout(theme,bottom,grid);
    CHECK(l.columns>0&&l.rows>=l.columns&&l.rows%l.columns==0);
@@ -93,6 +93,7 @@ int main(int argc,char **argv) {
   }
  }
  for(int theme=1;theme<VT_UI_THEME_COUNT;theme++) {
+  if(vt_ui_theme_legacy_layout(theme))continue;
   ui_theme_apply(theme);host_reduced_motion=1;has_art=1;music_preference=VT_MUSIC_THEME_NONE;
   frame=0;capture_frame=0;script_count=2;input_script[0]=0;input_script[1]=SCE_CTRL_CIRCLE;
   CHECK(ui_music_player_run("fixture","Night Transit","FLAC",1411)==UI_MUSIC_PLAYER_STOP);

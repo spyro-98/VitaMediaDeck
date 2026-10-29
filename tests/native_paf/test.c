@@ -327,6 +327,10 @@ void *vmd_paf_widget_create(void *self, void *parent, const char *type, const Vt
         return NULL;
     CHECK(host_nodes_used < 1000);
     unsigned node = 2 + host_nodes_used++;
+    if(!strcmp(type,"plane")){
+        CHECK((style->name.count==9&&!memcmp(style->name.data,"vmd_panel",9))||
+              (style->name.count==13&&!memcmp(style->name.data,"vmd_menu_glow",13)));
+    }
     host_node_kinds[node] = !strcmp(type, "button") ? NATIVE_BUTTON
                               : !strcmp(type, "text") ? NATIVE_TEXT : !strcmp(type, "check_box") ? NATIVE_CHECK : NATIVE_PANEL;
     return host_nodes + node;
@@ -618,7 +622,7 @@ static void reset(void) {
     drawing_scene = host_idle_visit = 0;
     progress_since_us = last_update_us = 0;
     progress_generation = submitted_frames = 0;
-    progress_started = handshake_primed = 0;
+    progress_started = handshake_primed = 0;renderer_started_us=0;
     pending_count = owner_count = 0;
     memset(pending_commands, 0, sizeof(pending_commands));
     memset(owner_commands, 0, sizeof(owner_commands));
@@ -663,6 +667,17 @@ static void reset(void) {
     memset(scope_counts, 0, sizeof(scope_counts));
     media_text = rendered_once = decoration = 0;
 }
+static int host_await_prepare(void){
+ int ready=ui_native_vita_prepare();
+ while(state==2){sceKernelDelayThread(1000);host_clock_us+=1000;ready=ui_native_vita_prepare();}
+ return ready;
+}
+static void host_start_ready_frame(void){
+ if(!drawing_scene&&host_theme==VT_UI_THEME_LEGACY_VITA)host_await_prepare();
+ __wrap_vita2d_start_drawing();
+}
+#define ui_native_vita_prepare host_await_prepare
+#define __wrap_vita2d_start_drawing host_start_ready_frame
 static NativeSlot *text_slot(const char *label) {
     for (unsigned i = 0; i < UI_NATIVE_TEXT_LIMIT; i++)
         if (slots[NATIVE_TEXT][i].shown && !strcmp(slots[NATIVE_TEXT][i].prior.label, label))
@@ -729,7 +744,7 @@ int main(void) {
     ui_native_vita_media_text(0);
     CHECK(ui_native_vita_button_fade(20, 80, 200, 42, "Faded", 0, .4f) &&
           fabsf(commands[0].alpha - .4f) < .001f);
-    CHECK(!ui_native_vita_focus(20, 80, 200, 42) && !commands[0].selected);
+    CHECK(ui_native_vita_focus(20, 80, 200, 42) && !commands[0].selected && commands[1].kind==NATIVE_GLOW);
     __wrap_vita2d_end_drawing();
     /* Source labels are copied; later modal paint clips labels behind it. */
     __wrap_vita2d_start_drawing();
@@ -947,6 +962,24 @@ int main(void) {
         CHECK(ui_native_vita_error() == (failure == 0 ? -88 : failure == 1 ? -89 : -0x5049));
     }
     reset();
+    host_run_behavior=2;
+    #undef ui_native_vita_prepare
+    #undef __wrap_vita2d_start_drawing
+    int delays_before=atomic_load(&host_delays);
+    CHECK(!ui_native_vita_prepare()&&state==2);
+    for(int n=0;n<12;n++){
+        host_clock_us+=16667;
+        __wrap_vita2d_start_drawing();
+        CHECK(!ui_native_vita_active()&&!host_updates);
+        __wrap_vita2d_draw_rectangle(0,0,960,544,0xff000000);
+        __wrap_vita2d_end_drawing();
+    }
+    CHECK(state==2&&atomic_load(&host_delays)==delays_before&&!host_updates);
+    host_clock_us=renderer_started_us+5000000ULL;
+    CHECK(!ui_native_vita_prepare()&&state==-1);
+    #define ui_native_vita_prepare host_await_prepare
+    #define __wrap_vita2d_start_drawing host_start_ready_frame
+    reset();
     host_run_behavior = 3;
     CHECK(ui_native_vita_prepare() && atomic_load(&host_delays) >= 5);
     __wrap_vita2d_start_drawing();
@@ -1114,17 +1147,46 @@ int main(void) {
     CHECK(ui_native_vita_panel(40, 60, 240, 180, 0xff502010, 0));
     __wrap_vita2d_draw_texture_scale((const vita2d_texture *)host_nodes, 52, 72, 1, 1);
     CHECK(!commands[0].hidden && commands[0].clip[1] > commands[0].y);
-    CHECK(!ui_native_vita_focus(40, 60, 240, 180));
+    CHECK(ui_native_vita_focus(40, 60, 240, 180));
     __wrap_vita2d_end_drawing();
     CHECK(state == 1 && slots[NATIVE_PANEL][0].shown);
-    CHECK(host_node_kinds[(unsigned char *)slots[NATIVE_PANEL][0].widget - host_nodes] == NATIVE_BUTTON);
+    CHECK(host_node_kinds[(unsigned char *)slots[NATIVE_PANEL][0].widget - host_nodes] == NATIVE_PANEL);
+    /* A real transparent firmware glow plane follows fractional positions,
+     * reuses its widget and stays above/below native captions by draw order.
+     * Menu gradients never create empty Button nodes. */
+    reset();
+    for(int tick=0;tick<32;tick++){
+        __wrap_vita2d_start_drawing();
+        float y=130+tick*.375f;
+        CHECK(ui_native_vita_focus(20,y,384,54));
+        CHECK(commands[0].kind==NATIVE_GLOW&&commands[0].y==y);
+        CHECK(ui_native_vita_text(34,y+28,96,20,0xffffffff,"IPTV"));
+        __wrap_vita2d_draw_texture_scale((const vita2d_texture *)host_nodes,340,y+8,1,1);
+        CHECK(!commands[0].hidden&&!commands[1].hidden);
+        __wrap_vita2d_end_drawing();
+        CHECK(state==1&&host_creates==2&&host_strings==1&&!host_animator_calls);
+        CHECK(slots[NATIVE_GLOW][0].shown&&slots[NATIVE_GLOW][0].prior.y==y);
+        CHECK(host_node_kinds[(unsigned char *)slots[NATIVE_GLOW][0].widget-host_nodes]==NATIVE_PANEL); /* Plane factory, no Button animator. */
+    }
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_focus(20,120,384,54));
+    __wrap_vita2d_draw_rectangle(0,0,424,544,0xff000000);
+    CHECK(commands[0].hidden);
+    __wrap_vita2d_end_drawing();
+    reset();
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_text(30,150,300,20,0xffffffff,"Focus below text"));
+    CHECK(ui_native_vita_focus(20,120,384,54));
+    __wrap_vita2d_end_drawing();
+    CHECK(previous_order_count==2&&previous_order[0]==slots[NATIVE_GLOW][0].widget&&previous_order[1]==text_slot("Focus below text")->widget);
     /* Movement/fade must not resize or rebuild native text; checkbox updates
      * only when its stored value changes. Built-in Button captions travel in
      * the same widget, rather than a separately positioned Text. */
     reset();
     for(int n=0;n<60;n++) {
         __wrap_vita2d_start_drawing();
-        CHECK(ui_native_vita_text(30+n,80,200,20,0xffffffff,"Stable text"));
+        CHECK(ui_native_vita_text(30+n+.24f,80.31f,200.8f,20,0xffffffff,"Stable text"));
+        CHECK(commands[0].x==30+n&&commands[0].y==60&&commands[0].w==202);
         CHECK(ui_native_vita_button(240+n,100,200,44,"Stable button",0));
         CHECK(ui_native_vita_toggle(460,100,44,44,n>=30));
         ui_native_vita_cover(0,0,960,544,(unsigned)(n%32+10)<<24);
@@ -1147,7 +1209,7 @@ int main(void) {
     for(int tick=0;tick<40;tick++) {
         __wrap_vita2d_start_drawing();
         CHECK(ui_native_vita_button(20+tick*.125f,100,160,28,"X  Continue",tick%2));
-        CHECK(!ui_native_vita_focus(20+tick*.125f,100,160,28));
+        CHECK(ui_native_vita_focus(20+tick*.125f,100,160,28));
         __wrap_vita2d_end_drawing();
         NativeSlot *button=&slots[NATIVE_BUTTON][0];
         unsigned n=(unsigned)((unsigned char *)button->widget-host_nodes);
@@ -1196,8 +1258,21 @@ int main(void) {
     __wrap_vita2d_disable_clipping();
     __wrap_vita2d_end_drawing();
     reset();
+    __wrap_vita2d_start_drawing();
+    CHECK(ui_native_vita_text(32,140,900,20,0xffffffff,"Old unbounded first action"));
+    __wrap_vita2d_draw_rectangle(329,110,302,46,0xff291405);
+    CHECK(commands[0].hidden); /* Reproduces the reported missing caption. */
+    CHECK(ui_native_vita_text(32,140,270,20,0xffffffff,"Bounded action"));
+    __wrap_vita2d_draw_rectangle(329,110,302,46,0xff291405);
+    CHECK(!commands[1].hidden);
+    int separator_scope=ui_native_vita_decoration(1);
+    __wrap_vita2d_draw_rectangle(20,138,384,3,0xfffedcba);
+    ui_native_vita_decoration(separator_scope);CHECK(!commands[1].hidden);
+    __wrap_vita2d_end_drawing();reset();
     printf("Native PAF canvas: %u checks; lazy loading, fixed typed pools, text/style reuse, "
            "clipping, modal/media composition, scene/sync ownership, idle/theme switch, failures, "
            "UTF-16, single-owner PAF APIs, bounded asynchronous snapshots, timed progress, native setter failures, incidental visibility return registers and mutex ownership passed. Sony pixels remain unverified.\n",
            checks);
 }
+
+#include "../i18n/bilingual_stubs.h"

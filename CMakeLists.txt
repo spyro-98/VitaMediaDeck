@@ -19,7 +19,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(vitamediadeck VERSION 1.4.1 LANGUAGES C)
+project(vitamediadeck VERSION 1.4.2 LANGUAGES C)
 
 ## Complete public hardware-decoder backend from wiliwili's FFmpeg-vita
 ## patch.  This is deliberately a whole FFmpeg codec implementation, not the
@@ -228,9 +228,9 @@ set(VITA_APP_NAME "VitaMediaDeck")
 # TITLEID must contain exactly nine characters.
 set(VITA_TITLEID  "VMDK00001")
 
-# Vita package metadata uses the mandatory ##.## form. APP_VER 01.05 is the
-# monotonically increasing package code for the human-facing 1.4.1 release.
-set(VITA_VERSION  "01.05")
+# Vita package metadata uses the mandatory ##.## form. APP_VER 01.06 is the
+# monotonically increasing package code for the human-facing 1.4.2 release.
+set(VITA_VERSION  "01.06")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -274,12 +274,13 @@ add_library(vitamediadeck_iptv_source STATIC
   src/network/iptv_session.c)
 target_sources(vitamediadeck_iptv_source PRIVATE src/network/iptv_catalog.c
   src/network/dash_manifest.c src/network/dash_source.c
-  src/network/hls_manifest.c src/network/hls_source.c src/network/iptv_probe.c)
-target_include_directories(vitamediadeck_iptv_source PRIVATE "${VITAMEDIADECK_FFMPEG_ROOT}/include")
+  src/network/hls_manifest.c src/network/hls_source.c src/network/iptv_probe.c
+  src/network/iptv_options.c src/network/iptv_quality.c)
+target_include_directories(vitamediadeck_iptv_source PRIVATE "${VITAMEDIADECK_FFMPEG_ROOT}/include" "${VITAMEDIADECK_JANSSON_ROOT}/include")
 target_compile_options(vitamediadeck_iptv_source PRIVATE
   -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
   -ffunction-sections -fdata-sections $<$<CONFIG:Release>:-O3>)
-target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps xml2 pthread m
+target_link_libraries(vitamediadeck_iptv_source PUBLIC VitaHttps::VitaHttps vitamediadeck_jansson xml2 pthread m
   vitamediadeck_avformat vitamediadeck_avcodec vitamediadeck_avutil)
 
 add_executable(${PROJECT_NAME}
@@ -314,6 +315,8 @@ add_executable(${PROJECT_NAME}
   src/media/vita_decoder.c
   src/media/video_thumbnail.c
   src/media/hw_player_screen.c
+  src/media/iptv_program_async.c
+  src/ui/iptv_player_panel.c
   src/media/image_loader.c
   src/media/music_metadata.c
   src/media/podcast_metadata.c
@@ -330,6 +333,7 @@ add_executable(${PROJECT_NAME}
   src/system/display_awake.c
   src/system/performance.c
   src/ui/font.c
+  src/ui/input_prompts.c
   src/ui/format.c
   src/ui/components.c
   src/ui/runtime.c
@@ -521,7 +525,7 @@ else()
 endif()
 
 # Installable homebrew package containing the SELF and application resources.
-set(VITAMEDIADECK_VPK_NAME "VitaMediaDeck.vpk")
+set(VITAMEDIADECK_VPK_NAME "VitaMediaDeck-${PROJECT_VERSION}.vpk")
 file(GLOB VMD_COUNTRY_FLAGS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/flags/*.png")
 find_program(VMD_HOST_PYTHON NAMES python3 NO_CMAKE_FIND_ROOT_PATH)
 if(NOT VMD_HOST_PYTHON)
@@ -539,6 +543,13 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   NAME ${VITA_APP_NAME}
   FILE "${CMAKE_CURRENT_BINARY_DIR}/flags.pack" flags.pack
   FILE assets/flags/NOTICE.md licenses/Country-flags.txt
+  FILE assets/input-prompts/playstation_button_color_cross_outline.png input-prompts/playstation_button_color_cross_outline.png
+  FILE assets/input-prompts/playstation_button_color_circle_outline.png input-prompts/playstation_button_color_circle_outline.png
+  FILE assets/input-prompts/playstation_button_color_square_outline.png input-prompts/playstation_button_color_square_outline.png
+  FILE assets/input-prompts/playstation_button_color_triangle_outline.png input-prompts/playstation_button_color_triangle_outline.png
+  FILE assets/input-prompts/playstation_trigger_l1_alternative.png input-prompts/playstation_trigger_l1_alternative.png
+  FILE assets/input-prompts/playstation_trigger_r1_alternative.png input-prompts/playstation_trigger_r1_alternative.png
+  FILE assets/input-prompts/License.txt licenses/Kenney-Input-Prompts.txt
   FILE sce_sys/icon0.png sce_sys/icon0.png
   FILE assets/fonts/Inter-Medium.ttf fonts/Inter-Medium.ttf
   FILE assets/fonts/Inter-SemiBold.ttf fonts/Inter-SemiBold.ttf

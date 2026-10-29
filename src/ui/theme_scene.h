@@ -19,6 +19,9 @@ typedef enum {
 /* Viewport coordinates are shared by drawing, focus and touch hit testing. */
 UiPageView ui_theme_page(UiThemeScene scene, const char *owner, const char *identity,
     int first, int count, int columns, int slots, float step);
+int ui_theme_page_input(UiThemeScene scene,const char *owner,int x,int y,int width,int height,
+ int count,int first_rows,int *first,int *selected,unsigned buttons,unsigned char lx,unsigned char ly,
+ unsigned *flags,const UiTouchEvent *touch);
 void ui_theme_page_rebase(UiThemeScene scene,int before,int after);
 UiThemeRect ui_theme_page_rect(UiThemeScene scene, UiThemeRect rect);
 void ui_theme_page_finish(UiThemeScene scene, int x, int top, int width, int bottom);

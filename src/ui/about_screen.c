@@ -1,3 +1,4 @@
+#include "ui/list_scroll.h"
 #include "ui/about_screen.h"
 
 #include <stdio.h>
@@ -60,16 +61,14 @@ int ui_about_screen(int player_context) {
 	if (!ui_runtime_is_ready()) return UI_SECTION_NONE;
 	(void)player_context;
 	int scroll = 0;
-	float scroll_position = 0.0f;
+	UiScrollView viewport={0};
 	uint64_t scroll_tick_us = sceKernelGetProcessTimeWide();
 	int content_h = VIEW_H; /* recomputed every frame from the real layout */
 	SceCtrlData ctrl, previous;
 	memset(&ctrl, 0, sizeof(ctrl));
 	sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
 	sceCtrlPeekBufferPositive(0, &previous, 1);
-	int drag_active = 0;
-	int drag_start_y = 0;
-	int drag_start_scroll = 0;
+
 	int clock_source = vt_preferences_clock_source();
 	UiSectionsSidebar sidebar;
 	ui_sections_sidebar_init(&sidebar, UI_SECTION_INFO);
@@ -108,7 +107,7 @@ int ui_about_screen(int player_context) {
 			    &sidebar, touch_flags, touch.x, touch.y);
 			if (touched_section != UI_SECTION_NONE) section = touched_section;
 			touch_flags = UI_TOUCH_EVENT_NONE;
-			drag_active = 0;
+			viewport.dragging=viewport.coasting=0;
 		} else if (sidebar.animation <= 0.01f &&
 		           ui_mini_player_handle_touch(touch_flags, &touch))
 			touch_flags = UI_TOUCH_EVENT_NONE;
@@ -120,14 +119,14 @@ int ui_about_screen(int player_context) {
 		if (!sidebar.open && sidebar.animation > 0.01f) {
 			ui_touch_reset();
 			touch_flags = UI_TOUCH_EVENT_NONE;
-			drag_active = 0;
+			viewport.dragging=viewport.coasting=0;
 		}
 		int page_owns_input = !sidebar_owned_frame && !sidebar.open &&
 		                      sidebar.animation <= 0.01f;
 		if (!page_owns_input) {
 			pressed = 0;
 			touch_flags = UI_TOUCH_EVENT_NONE;
-			drag_active = 0;
+			viewport.dragging=viewport.coasting=0;
 		}
 		int open_logs = page_owns_input &&
 		    ((pressed & SCE_CTRL_RIGHT) || ctrl.lx > 191 ||
@@ -148,32 +147,14 @@ int ui_about_screen(int player_context) {
 		if (page_owns_input && (pressed & SCE_CTRL_CIRCLE)) break;
 
 		int max_scroll = content_h > VIEW_H ? content_h - VIEW_H : 0;
-		/* Express scrolling as pixels per second so a slow decode/UI frame does
-		 * not accelerate the page. Digital and analog are a single direction. */
-		if (page_owns_input) {
-			int scroll_direction = (ctrl.buttons & SCE_CTRL_DOWN) || ctrl.ly > 191
-			                     ? 1
-			                     : (ctrl.buttons & SCE_CTRL_UP) || ctrl.ly < 64
-			                         ? -1 : 0;
-			scroll_position += scroll_direction * SCROLL_SPEED_PX_PER_SECOND *
-			                   scroll_delta_seconds;
-			if (pressed & SCE_CTRL_RTRIGGER)
-				scroll_position += (float)SCROLL_PAGE_STEP;
-		}
-
-		/* Touch drag: natural direction (drag up = read further down). */
-		if (touch_flags & UI_TOUCH_EVENT_DOWN) {
-			drag_active = 1;
-			drag_start_y = touch.y;
-			drag_start_scroll = (int)(scroll_position + 0.5f);
-		}
-		if (drag_active && (touch_flags & (UI_TOUCH_EVENT_MOVE | UI_TOUCH_EVENT_HOLD)))
-			scroll_position = (float)(drag_start_scroll + (drag_start_y - touch.y));
-		if (touch_flags & UI_TOUCH_EVENT_UP) drag_active = 0;
-
-		if (scroll_position > (float)max_scroll) scroll_position = (float)max_scroll;
-		if (scroll_position < 0.0f) scroll_position = 0.0f;
-		scroll = (int)(scroll_position + 0.5f);
+        if(page_owns_input){
+            if(ctrl.buttons&SCE_CTRL_UP)viewport.target-=SCROLL_SPEED_PX_PER_SECOND*scroll_delta_seconds;
+            if(ctrl.buttons&SCE_CTRL_DOWN)viewport.target+=SCROLL_SPEED_PX_PER_SECOND*scroll_delta_seconds;
+            if(pressed&SCE_CTRL_RTRIGGER)viewport.target+=SCROLL_PAGE_STEP;
+            ui_list_scroll_input(&viewport,content_h,1,36,VIEW_TOP,888,VIEW_H,0,
+                ctrl.buttons,ctrl.ly,&touch_flags,&touch,NULL);
+        }
+        scroll=(int)viewport.position;
 
 		vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 		vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);

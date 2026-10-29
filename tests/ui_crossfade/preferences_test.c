@@ -35,6 +35,43 @@ int main(void){
  assert(vt_preferences_set_audio_layout(-1)<0&&vt_preferences_set_audio_layout(3)<0);
  fail_write=1;assert(vt_preferences_set_audio_layout(0)<0);assert(vt_preferences_audio_layout()==2);
  fail_write=0;g_loaded=0;vt_preferences_init();assert(vt_preferences_audio_layout()==2);
+ /* IPTV layout persists independently of CPU/theme/playback choices and rolls back failed writes. */
+ fail_write=0;uint32_t previous_clocks=g_clock_flags;
+ for(int split=0;split<2;split++){
+  assert(!vt_preferences_set_iptv_split(split));assert(vt_preferences_iptv_split()==split);
+  assert((g_clock_flags&~(1u<<4))==(previous_clocks&~(1u<<4)));
+  assert(g_playback_flags==playback);
+  g_loaded=0;vt_preferences_init();assert(vt_preferences_iptv_split()==split);
+ }
+ fail_write=1;assert(vt_preferences_set_iptv_split(0)<0&&vt_preferences_iptv_split()==1);
+ fail_write=0;assert(!vt_preferences_set_iptv_split(0));
+ uint32_t before_radio=g_clock_flags;
+ for(int rows=1;rows<=2;rows++){
+  assert(!vt_preferences_set_radio_rows(rows)&&vt_preferences_radio_rows()==rows);
+  assert((g_clock_flags&~(1u<<5))==(before_radio&~(1u<<5)));
+  g_loaded=0;vt_preferences_init();assert(vt_preferences_radio_rows()==rows);
+ }
+ fail_write=1;assert(vt_preferences_set_radio_rows(1)<0&&vt_preferences_radio_rows()==2);
+ fail_write=0;assert(vt_preferences_set_radio_rows(3)<0&&vt_preferences_radio_rows()==2);
+ assert(!vt_preferences_set_radio_rows(1));
+ /* Name sorting survives a fresh settings load and preserves every other bit. */
+ uint32_t before_sort=g_clock_flags;
+ for(int sort=0;sort<2;sort++){
+  assert(!vt_preferences_set_iptv_name_sort(sort)&&vt_preferences_iptv_name_sort()==sort);
+  assert((g_clock_flags&~(1u<<6))==(before_sort&~(1u<<6)));
+  assert(g_playback_flags==playback);
+  g_loaded=0;vt_preferences_init();assert(vt_preferences_iptv_name_sort()==sort);
+ }
+ fail_write=1;assert(vt_preferences_set_iptv_name_sort(0)<0&&vt_preferences_iptv_name_sort()==1);
+ fail_write=0;assert(!vt_preferences_set_iptv_name_sort(0));
+ printf("IPTV name order: persisted across fresh settings loads; CPU/layout/radio/theme bits retained and failed writes rolled back.\n");
+ /* Every restored language keeps its historic preference ID and survives reload. */
+ for(int language=0;language<VT_LANGUAGE_COUNT;language++){
+  assert(!vt_preferences_set_language(language));g_loaded=0;vt_preferences_init();
+  assert(vt_preferences_language()==language);
+ }
+ assert(vt_preferences_set_language(VT_LANGUAGE_COUNT)<0);
+ assert(!vt_preferences_set_language(VT_LANGUAGE_AUTO));
  /* Real V1/V2 readers migrate with centered artwork and unchanged flags. */
  VtPreferencesDiskV1 v1={.header={.version=1,.record_size=sizeof(v1)},.default_quality=720};
  memcpy(v1.header.magic,g_preferences_magic,8);v1.reserved[1]=playback;v1.header.checksum=disk_v1_checksum(&v1);

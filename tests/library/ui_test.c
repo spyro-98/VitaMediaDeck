@@ -9,6 +9,8 @@
     fprintf(stderr, "Contract failed: %s (%s:%d)\n", #x, __FILE__, __LINE__); exit(1); } } while (0)
 #include "../../src/ui/home_tabs.c"
 static int dashboard_empty, dashboard_sources, dashboard_drop_resume, dashboard_cold;
+static unsigned fixture_sources_revision;
+unsigned vt_network_sources_revision(void){return fixture_sources_revision;}
 static int fixture_library_query(const char *, int, VtLibraryResult *, int);
 #define vt_library_query fixture_library_query
 #include "../../src/ui/library_screen.c"
@@ -31,9 +33,9 @@ void ui_brand_set_loading(int loading) {
     loading_flag = loading;
 }
 static VtLibraryItem fixture[8];
-int vt_i18n_current_language(void) {
-    return language ? VT_LANG_IT : VT_LANG_EN;
-}
+static int home_favourites_override,home_favourites_count,home_source_extra;
+static unsigned home_publication_revision;
+static VtLibraryItem home_favourites_fixture[4];
 int ui_local_media_library_tick(void) {
     return 0;
 }
@@ -41,6 +43,8 @@ int vt_library_search_home_favourites(VtLibraryItem *out, int cap, VtLibrarySear
     memset(status, 0, sizeof(*status));
     if (dashboard_empty)
         return 0;
+    status->revision=vt_library_search_revision();
+    if(home_favourites_override){int n=home_favourites_count<cap?home_favourites_count:cap;memcpy(out,home_favourites_fixture,n*sizeof(*out));return n;}
     const int saved[] = {5, 6, 4};
     int count = cap < 3 ? cap : 3;
     for (int i = 0; i < count; i++)
@@ -54,7 +58,7 @@ int vt_library_search_home_media(VtLibraryResult *out, int cap) {
 }
 void vt_library_search_cancel(void) {}
 unsigned vt_library_search_revision(void) {
-    return publication_fixture && frame >= 16 ? 1 : 0;
+    return home_publication_revision+(publication_fixture && frame >= 16 ? 1u : 0u);
 }
 void vt_library_search_local_refresh(void) {}
 void vt_library_search_cover(const VtLibraryItem *v) {
@@ -119,6 +123,11 @@ int vt_network_sources_load(VtNetworkSource *s, int cap) {
     s[1].protocol = VT_NETWORK_JELLYFIN;
     strcpy(s[1].name, "Jellyfin / sample data");
     strcpy(s[1].host, "jellyfin.fixture");
+    if(home_source_extra){
+        memset(&s[2],0,sizeof(s[2]));s[2].protocol=VT_NETWORK_SFTP;
+        strcpy(s[2].name,"Newest connection");strcpy(s[2].host,"new.fixture");
+        return 3;
+    }
     return 2;
 }
 int vt_network_credentials_load(VtNetworkCredential *s, int cap) {
@@ -165,6 +174,8 @@ static void script_exit(void) {
     capture_frame = 18;
     frame = 0;
 }
+
+#ifndef VMD_LIBRARY_UI_NO_MAIN
 int main(int argc, char **argv) {
     CHECK(argc == 3);
     output = argv[2];
@@ -383,12 +394,12 @@ int main(int argc, char **argv) {
     view=LIBRARY_HOME;dash_selected=UI_DASH_CONNECTIONS;script_exit();
     input_script[2]=SCE_CTRL_CROSS;input_script[4]=SCE_CTRL_DOWN;input_script[6]=SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
-    CHECK(connection.provider==VT_LIBRARY_JELLYFIN);
+    CHECK(connection.provider==VT_LIBRARY_NETWORK);
     view=LIBRARY_HOME;dash_selected=UI_DASH_CONNECTIONS;memset(dash_offset,0,sizeof(dash_offset));memset(dash_anchor,0,sizeof(dash_anchor));script_exit();
     input_script[2]=SCE_CTRL_CROSS;input_script[4]=SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
-    CHECK(!strcmp(connection.title, "NAS / sample data") &&
-          connection.provider == VT_LIBRARY_NETWORK);
+    CHECK(!strcmp(connection.title, "Jellyfin / sample data") &&
+          connection.provider == VT_LIBRARY_JELLYFIN);
     view = LIBRARY_HOME;
     dash_selected = UI_DASH_CONTINUE;
     memset(dash_offset, 0, sizeof(dash_offset));
@@ -398,10 +409,10 @@ int main(int argc, char **argv) {
     input_script[18] = SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_PLAY);
     CHECK(view == LIBRARY_HOME && dash_offset[UI_DASH_CONTINUE] == 1);
-    /* A background expiry cannot replace an imminent Cross with another item. */
+    /* An authoritative refresh removes expired items instead of resurrecting them. */
     view = LIBRARY_HOME;
     dash_selected = UI_DASH_CONTINUE;
-    dashboard_drop_resume = 1;
+    dashboard_drop_resume = 1;publication_fixture=1;
     memset(dash_offset, 0, sizeof(dash_offset));
     memset(dash_anchor, 0, sizeof(dash_anchor));
     VtLibraryResult expected_resume[DASH_CONTINUE_MAX];
@@ -409,8 +420,8 @@ int main(int argc, char **argv) {
     script_exit();
     input_script[18] = SCE_CTRL_CROSS;
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_PLAY);
-    CHECK(!strcmp(connection.id, expected_resume[0].item.id));
-    dashboard_drop_resume = 0;
+    CHECK(strcmp(connection.id, expected_resume[0].item.id));
+    dashboard_drop_resume = 0;publication_fixture=0;
     /* A favourite preview is its own touch target, including non-primary covers. */
     view = LIBRARY_HOME;
     dash_selected = UI_DASH_FAVOURITES;
@@ -448,7 +459,7 @@ int main(int argc, char **argv) {
     tap_y = server_layout.cards[UI_DASH_CONNECTIONS].y + 28 + 48 + 12;
     script_exit();
     CHECK(ui_library_screen(&connection) == UI_LIBRARY_CONNECT);
-    CHECK(connection.provider == VT_LIBRARY_JELLYFIN);
+    CHECK(connection.provider == VT_LIBRARY_NETWORK);
     tap_frame = -1;
     dashboard_sources = 0;
     /* Actual UI retains focused identity when a sorted progressive result arrives. */
@@ -524,6 +535,7 @@ int main(int argc, char **argv) {
            checks);
     return 0;
 }
+#endif
 
 int ui_network_personal_resume_credential(const VtNetworkSource *s, VtNetworkCredential *c) {
     (void)s;

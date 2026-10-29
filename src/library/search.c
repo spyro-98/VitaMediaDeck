@@ -1,3 +1,4 @@
+#include "network/iptv_catalog_fetch.h"
 #include "library/search.h"
 #include "common/text_log.h"
 #include "library/catalog.h"
@@ -76,6 +77,9 @@ static VtLibraryItem live[VT_LIBRARY_RESULTS];
 static int live_count, scoped;
 static VtLibraryItem home_favourites[VT_LIBRARY_HOME_FAVOURITES];
 static int home_favourite_count;
+static unsigned saved_online_revision=~0U,saved_iptv_revision=~0U;
+static int saved_refresh_queued,home_tv_first;
+static uint64_t saved_retry_after;
 static char text[129];
 static VtLibraryItem scope;
 /* Workers assemble snapshots in reusable storage. The UI only copies the published
@@ -167,6 +171,7 @@ static int process(Job *j) {
         return ui_local_media_search(j->query, local_item, j, j->cancel);
     }
     if (j->type == 1) {
+        unsigned online_before=vt_online_saved_revision(),iptv_before=vt_iptv_saved_revision();
         VtOnlineItem *saved = calloc(VT_ONLINE_MAX, sizeof(*saved));
         VtIptvCatalog *tv = calloc(1, sizeof(*tv));
         VtLibraryItem *home = calloc(VT_LIBRARY_HOME_FAVOURITES, sizeof(*home));
@@ -178,7 +183,7 @@ static int process(Job *j) {
             return -1;
         }
         int n = vt_online_load_saved(saved, VT_ONLINE_MAX);
-        for (int i = 0; i < n && current(j->generation); i++) {
+        for (int i = n-1; i >= 0 && current(j->generation); i--) {
             if(vt_online_item_country(&saved[i]))continue;
             VtLibraryItem v;
             vt_library_online(&saved[i], NULL, &v);
@@ -194,7 +199,7 @@ static int process(Job *j) {
         }
         int ret = vt_iptv_saved_load(tv, 0);
         if (!ret)
-            for (unsigned i = 0; i < tv->count && current(j->generation); i++) {
+            for (int i = (int)tv->count-1; i >= 0 && current(j->generation); i--) {
                 VtLibraryItem v;
                 vt_library_iptv(&tv->items[i], &v);
                 VtLibraryResult cached;
@@ -216,6 +221,18 @@ static int process(Job *j) {
                         if (!strcmp(home[i].id, home_favourites[k].id))
                             snprintf(home[i].artwork, sizeof(home[i].artwork), "%s",
                                      home_favourites[k].artwork);
+            /* Prefer the provider changed while Home was away; retain that
+             * priority on subsequent re-entry refreshes in this session. */
+            if(saved_iptv_revision!=iptv_before&&saved_online_revision==online_before)home_tv_first=1;
+            else if(saved_online_revision!=online_before)home_tv_first=0;
+            if(home_tv_first){
+                for(int i=1;i<home_count;i++)if(home[i].provider==VT_LIBRARY_IPTV){
+                    VtLibraryItem v=home[i];int at=i;
+                    while(at&&home[at-1].provider!=VT_LIBRARY_IPTV){home[at]=home[at-1];at--;}
+                    home[at]=v;
+                }
+            }
+            saved_online_revision=online_before;saved_iptv_revision=iptv_before;
             memcpy(home_favourites, home, (size_t)home_count * sizeof(*home));
             home_favourite_count = home_count;
         }
@@ -223,7 +240,7 @@ static int process(Job *j) {
         free(home);
         free(saved);
         free(tv);
-        return ret;
+        return n<0||ret<0?-1:0;
     }
     if (j->type == 2) {
         VtOnlineQuery *q = calloc(1, sizeof(*q));
@@ -288,7 +305,7 @@ static int process(Job *j) {
         char effective[VT_IPTV_URL_MAX];
         VtIptvHttpOptions options = {0};
         snprintf(options.user_agent, sizeof(options.user_agent), "%s", j->folder.user_agent);
-        int ret = vt_iptv_http_fetch(&options, j->folder.locator, VT_IPTV_PLAYLIST_LIMIT, &data,
+        int ret = vt_iptv_catalog_fetch(vt_iptv_http_fetch, &options, j->folder.locator, &data,
                                      &size, effective, sizeof(effective), j->cancel);
         VtIptvCatalog *tv = ret ? NULL : calloc(1, sizeof(*tv));
         if (!ret && !tv)
@@ -342,6 +359,7 @@ static void *worker(void *arg) {
         if (j->generation == generation) {
             if (j->type == 6)
                 cache_refresh_queued = 0;
+            if(j->type==1){saved_refresh_queued=0;saved_retry_after=result<0?sceKernelGetProcessTimeWide()+5000000ULL:0;}
             if (j->type != 5 && status.pending > 0)
                 status.pending--;
             if (j->provider >= 0) {
@@ -390,11 +408,26 @@ static void add_job(int type, int provider, const VtNetworkSource *s, const VtNe
             status.state[provider] = VT_SEARCH_ERROR;
         return;
     }
+    if(type==1)saved_refresh_queued=1;
     status.pending++;
     if (provider >= 0) {
         status.updating[provider]++;
         status.state[provider] = VT_SEARCH_LOADING;
     }
+}
+/* Local changes wake a bounded metadata-only job. The UI keeps drawing the
+ * last publication; it never parses favourite files or waits for providers. */
+static void refresh_saved_locked(void){
+ if(stopping||scoped||!available_workers||saved_refresh_queued)return;
+ if(saved_online_revision==vt_online_saved_revision()&&saved_iptv_revision==vt_iptv_saved_revision())return;
+ if(saved_retry_after&&sceKernelGetProcessTimeWide()<saved_retry_after)return;
+ add_job(1,-1,NULL,NULL,NULL);
+ if(saved_refresh_queued){__atomic_add_fetch(&publication_revision,1,__ATOMIC_RELEASE);pthread_cond_broadcast(&search_changed);}
+}
+static void refresh_snapshot_locked(unsigned revision){
+ if(revision!=snapshot_library_revision&&!cache_refresh_queued&&available_workers&&!stopping&&(job_count<JOB_MAX||next_job)){
+  cache_refresh_queued=1;add_job(6,-1,NULL,NULL,NULL);pthread_cond_broadcast(&search_changed);
+ }
 }
 void vt_library_search_begin(const char *q, const VtLibraryItem *folder) {
     VtNetworkSource *sources = calloc(VT_NETWORK_MAX_SOURCES, sizeof(*sources));
@@ -426,6 +459,7 @@ void vt_library_search_begin(const char *q, const VtLibraryItem *folder) {
     status.generation = generation;
     memset(jobs, 0, sizeof(jobs));
     job_count = next_job = live_count = cover_count = 0;
+    saved_refresh_queued=0;saved_retry_after=0;
     memset(cover_ids, 0, sizeof(cover_ids));
     snprintf(text, sizeof(text), "%s", q ? q : "");
     scoped = folder != NULL;
@@ -445,8 +479,8 @@ void vt_library_search_begin(const char *q, const VtLibraryItem *folder) {
                     add_job(3, folder->provider, &sources[i], &credentials[i], folder);
             }
     } else {
-        add_job(0, VT_LIBRARY_LOCAL, NULL, NULL, NULL);
         add_job(1, -1, NULL, NULL, NULL);
+        add_job(0, VT_LIBRARY_LOCAL, NULL, NULL, NULL);
         if (text[0]) {
             add_job(2, VT_LIBRARY_RADIO, NULL, NULL, NULL);
             add_job(2, VT_LIBRARY_PODCAST, NULL, NULL, NULL);
@@ -548,12 +582,8 @@ int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySear
         return 0;
     unsigned revision = vt_library_revision();
     pthread_mutex_lock(&search_mutex);
-    if (revision != snapshot_library_revision && !cache_refresh_queued && available_workers &&
-        !stopping && (job_count < JOB_MAX || next_job)) {
-        cache_refresh_queued = 1;
-        add_job(6, -1, NULL, NULL, NULL);
-        pthread_cond_broadcast(&search_changed);
-    }
+    refresh_snapshot_locked(revision);
+    refresh_saved_locked();
     *s = status;
     s->revision = __atomic_load_n(&publication_revision, __ATOMIC_ACQUIRE);
     int n = snapshot_count < capacity ? snapshot_count : capacity;
@@ -563,7 +593,10 @@ int vt_library_search_snapshot(VtLibraryResult *out, int capacity, VtLibrarySear
     return n;
 }
 unsigned vt_library_search_revision(void) {
-    return __atomic_load_n(&publication_revision, __ATOMIC_ACQUIRE);
+    unsigned revision=vt_library_revision();
+    pthread_mutex_lock(&search_mutex);refresh_saved_locked();refresh_snapshot_locked(revision);
+    unsigned result=__atomic_load_n(&publication_revision,__ATOMIC_ACQUIRE);
+    pthread_mutex_unlock(&search_mutex);return result;
 }
 int vt_library_search_home_favourites(VtLibraryItem *out, int capacity, VtLibrarySearchStatus *s) {
     if (!out || capacity <= 0 || !s)
@@ -647,6 +680,7 @@ void vt_library_search_cancel(void) {
     for (int i = 0; i < WORKERS; i++)
         __atomic_store_n(&cancellations[i], 1, __ATOMIC_RELEASE);
     job_count = next_job = 0;
+    saved_refresh_queued=0;
     memset(jobs, 0, sizeof(jobs));
     pthread_mutex_unlock(&search_mutex);
 }

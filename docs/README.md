@@ -1,4 +1,28 @@
-# VitaMediaDeck documentation — 1.4.1
+# VitaMediaDeck documentation — 1.4.2
+
+Current channel identity correction: [automatic channel names/icons, single-channel labels, saved metadata and cached artwork](iptv-channel-identity-1.4.2-2026-10-29.md).
+
+Current import/playback correction: [local files, content-aware single channels and nested lists, player R1 saved action and current-console diagnosis](iptv-local-import-playback-1.4.2-2026-10-29.md).
+
+Current 29 October correction: [IPTV Remove actions, validated quality persistence/recovery, 20 MiB catalogues, brand spacing and retained session logs](iptv-errors-recovery-1.4.2-2026-10-29.md).
+
+Current guide/language correction: [nonblocking programme preload, 27 TwentySeven matching and all restored offline interface languages](background-guide-languages-1.4.2-2026-10-28.md).
+
+Current Home correction: [live playback/favourites/connections refresh, authoritative collections and stale-anchor removal](home-refresh-1.4.2-2026-10-28.md).
+
+Current programme-guide correction: [XMLTV discovery, public Italian fallback, guide cache, end times and upcoming schedule](iptv-programme-guide-1.4.2-2026-10-28.md).
+
+Current IPTV update: [manual-only smoothness checks and separate/side-by-side playlist and channel lists, switchable from R1](iptv-browser-manual-quality-1.4.2-2026-10-28.md).
+
+Current 1.4.2 correction: [native blue gradients and PAF glow in VMD, independent theme palettes, bounded captions and pixel focus](menus-1.4.2-2026-10-28.md).
+
+Current scrolling and IPTV update: [pixel dragging/inertia in all eight themes, measured quality and favourite resolution](scroll-quality-menus-2026-10-28.md). Native 1080p buffer allocation and touch feel still require physical-console acceptance.
+
+Current IPTV player update: [selectable formats, audio languages and programme information](iptv-formats-programme-2026-10-28.md).
+
+Current interaction update: [guided M3U import and spatial D-pad navigation](iptv-playlist-flow-2026-10-28.md).
+
+Current UI update: [coloured PlayStation buttons and spacing in all eight themes](controller-icons-spacing-2026-10-28.md).
 
 Current IPTV correction: [Mediaset decode timestamps and duplicate footer](iptv-mediaset-timestamps-2026-10-27.md).
 

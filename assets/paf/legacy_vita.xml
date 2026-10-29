@@ -6,12 +6,15 @@
     <!-- Native Button owns its caption, transform and padding. Runtime-only
          common texture references; no extracted Sony artwork is packaged. -->
     <style_button id="vmd_button" top_margin="0" bottom_margin="0" left_margin="8" right_margin="8" bg_obj="vmd_button_bg" label_obj="vmd_button_label" glow_obj="vmd_button_glow">
-      <planeobj id="vmd_button_bg" color="0.045, 0.29, 0.55, 1" texture0="_common_texture_option_menu_button_single" />
+      <planeobj id="vmd_button_bg" color="0.045, 0.29, 0.55, 1" texture0="_common_texture_list_70px" />
       <textobj id="vmd_button_label" font_size="18" align_x="1" align_y="1" color="0.93, 0.98, 1, 1" word_wrap="0" ellipsis="0" />
-      <planeobj id="vmd_button_glow" texture0="_common_texture_option_menu_button_single_glow" blend="2" />
+      <planeobj id="vmd_button_glow" texture0="_common_texture_list_glow_70px" blend="2" />
     </style_button>
     <style_plane color="0, 0, 0, 0" planeobj="transparent_plane" id="vmd_transparent"><planeobj id="transparent_plane" /></style_plane>
-    <style_plane color="0.025, 0.15, 0.29, 0.98" planeobj="panel_plane" id="vmd_panel"><planeobj id="panel_plane" /></style_plane>
+    <!-- A transparent additive Plane, not an empty button layered over labels.
+         The firmware provides this common glow texture at runtime. -->
+    <style_plane color="1, 1, 1, 1" planeobj="menu_glow_plane" id="vmd_menu_glow"><planeobj id="menu_glow_plane" texture0="_common_texture_list_glow_70px" blend="2" /></style_plane>
+    <style_plane color="1, 1, 1, 1" planeobj="panel_plane" id="vmd_panel"><planeobj id="panel_plane" /></style_plane>
     <style_plane color="1, 1, 1, 1" planeobj="white_plane" id="vmd_white"><planeobj id="white_plane" /></style_plane>
   </styletable>
   <stringtable /><texturetable /><filetable />

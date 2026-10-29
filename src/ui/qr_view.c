@@ -80,6 +80,6 @@ void ui_qr_view_draw(vita2d_texture *preview,const UiQrStatus *status) {
   ui_text_line(488,426,454,progress,VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
  }
  ui_action_button(UI_QR_CANCEL_X,UI_QR_CANCEL_Y,UI_QR_CANCEL_W,UI_QR_CANCEL_H,
-  VT_THEME_SURFACE_RAISED,"O",
+  VT_THEME_SURFACE_RAISED,UI_PAD_CIRCLE,
   vt_i18n_str(VT_STR_NETWORK_CANCEL),0);
 }

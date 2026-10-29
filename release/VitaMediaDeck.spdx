@@ -1,7 +1,7 @@
 SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
-DocumentName: VitaMediaDeck-1.4.1-standard
+DocumentName: VitaMediaDeck-1.4.2-standard
 DocumentNamespace: urn:uuid:5100d2c5-42fb-43ff-b84e-04ba22973c07
 Creator: Tool: VitaMediaDeck release hardening manifest
 Created: 2026-10-23T17:10:20Z
@@ -11,7 +11,7 @@ DocumentComment: Versions and immutable checksums are recorded in release/DEPEND
 
 PackageName: VitaMediaDeck
 SPDXID: SPDXRef-Package-VitaMediaDeck
-PackageVersion: 1.4.1
+PackageVersion: 1.4.2
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -19,11 +19,24 @@ PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-VitaMediaDeck
 
+##### Package: Kenney Input Prompts
+
+PackageName: Kenney Input Prompts
+SPDXID: SPDXRef-Package-KenneyInputPrompts
+PackageVersion: 1.5A
+PackageDownloadLocation: https://kenney.nl/assets/input-prompts
+FilesAnalyzed: false
+PackageLicenseConcluded: CC0-1.0
+PackageLicenseDeclared: CC0-1.0
+PackageCopyrightText: Kenney (www.kenney.nl)
+PackageChecksum: SHA256: ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-KenneyInputPrompts
+
 ##### Package: vita-hw-decoder
 
 PackageName: vita-hw-decoder
 SPDXID: SPDXRef-Package-VitaHwDecoder
-PackageVersion: f418b6ae0baa01fa66b37a155fac79f6aa6e5d5c
+PackageVersion: 4b1a7709fcd1b4a6ccdedd82fee95d6fbf837880
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -35,7 +48,7 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwDec
 
 PackageName: vita-sw-decoder
 SPDXID: SPDXRef-Package-VitaSwDecoder
-PackageVersion: 54e811b135b1a07270317f20b0b170e6e0f4b3c2
+PackageVersion: d2f4b757c706d8a170e52afc4faa2811f4fe8bcb
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -47,7 +60,7 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwDec
 
 PackageName: vita-https
 SPDXID: SPDXRef-Package-VitaHttps
-PackageVersion: a67dc3154ae38158283a53e54d9baea56c61948d
+PackageVersion: b83016982b1fcf3ffd24c285f45f21f9bec29413
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only

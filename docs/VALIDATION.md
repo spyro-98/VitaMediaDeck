@@ -1,4 +1,105 @@
-# Validation guide — VitaMediaDeck 1.4.1
+# Validation guide — VitaMediaDeck 1.4.2
+
+Latest 29 October follow-up: [channel names/icons, single-channel classification,
+legacy saved-entry repair and cached artwork](iptv-channel-identity-1.4.2-2026-10-29.md).
+The native build, PAF/LTO/license audits and relevant ASan/UBSan/TSan suites pass;
+USB read-back verifies the delivered VPK. Installation and physical playback of
+this newest binary remain unverified. Dependency revisions are pinned in
+`release/DEPENDENCIES.lock` and the packaged SPDX file.
+
+Current 29 October correction: [IPTV Remove actions, validated quality persistence/recovery, 20 MiB catalogues, brand spacing and retained session logs](iptv-errors-recovery-1.4.2-2026-10-29.md).
+
+Current guide/language correction: [nonblocking programme preload, 27 TwentySeven matching and all restored offline interface languages](background-guide-languages-1.4.2-2026-10-28.md).
+
+Current Home follow-up: saved-data commits publish revisions; the Home consumes
+registry/search changes on its next loop, refreshes source metadata and resets
+stale entry anchors. Removed/completed items are never reinserted to retain
+focus, and recent playback includes resumable media. Same-session changes and
+re-entry are covered across all themes by `home_refresh_test.c`; worker/store
+ASan/UBSan/TSan regressions cover invalidation and failed-write rollback.
+See `home-refresh-1.4.2-2026-10-28.md` for the evidence boundary.
+
+Current sorting follow-up: R1 Channel order toggles Playlist order / Name (A–Z),
+persists across settings reloads, preserves selection and sorts only channel
+indices after filtering. Natural numbers, case/accents, equal-name stability,
+failed-write rollback, both presentations and all themes are covered by
+`channel_sort_test.c` plus the production preference-store regression.
+
+Current programme-guide follow-up: live IPTV can discover declared XMLTV guides,
+recover unique ID/name aliases, retain tvg-name/time-shift, cache validated guides
+and show current description/end/remaining time plus six upcoming listings.
+Country-qualified Italian channels without a guide can use the verified public
+Open-EPG source; R1 supports a persistent custom XMLTV source and reset. Plain/
+gzip parsing streams up to 64 MiB expanded rather than allocating it wholesale.
+Actual public data plus the previously fetched reported playlist match its first
+eight national channels. See `iptv-programme-guide-1.4.2-2026-10-28.md` for
+source policy, bounds, regressions and the physical-console verification boundary.
+
+Current playback-preference follow-up: confirmed quality/language are committed
+after three seconds of advancing presented video in the interactive player loop,
+without waiting for player exit. Preferences remain in
+`ux0:data/VitaMediaDeck/iptv-playback.json`, outside the VPK and benchmark cache.
+Writes synchronize their temporary file and device storage, retain a valid
+backup, preserve unavailable preferences during fallback/migration and report
+save failures visibly. `tests/iptv/run-playback-restart-tests.sh` confirms the
+real UI/store path across SIGKILL and fresh processes with changed channel,
+variant and audio IDs, including a temporarily missing quality.
+
+Current navigation follow-up: IPTV uses one Add/Search/Options rail; play/save/
+collection/filter actions no longer create a second row. All remaining controls
+and cards are reachable by arrows and touch. Category headings add 5 px above
+and remove 3 px below, via shared 34 px slots. See the current menu report;
+navigation, chrome and full theme suites cover the new geometry.
+
+Current artwork follow-up: source artwork has a persistent indexed cache,
+render-side lookups never wait for network/filesystem work, and stale images
+remain visible during worker refresh. Cached IPTV/radio/show/feed/episode paths
+are restored for the whole viewport before waiting for one pending fetch.
+Artwork has independent RAM/decoded-disk slots, survives player round trips,
+and does not wait behind video-frame extraction. The online cache, cold restart,
+thumbnail lifecycle and visible scheduler tests cover these contracts; physical
+scrolling feel remains unverified on the new package.
+
+Current playlist-entry follow-up: manual/QR input stays readable above the
+native panel; “Add and open” saves a validated list with an automatic name and
+opens its channels without a second keyboard. Failed storage keeps the URL in
+the form for retry; naming remains an explicit Rename action. The production
+flow suite covers QR/manual input, both presentations, all themes, cancellation,
+invalid inputs and failed writes. See [guided playlist import](iptv-playlist-flow-2026-10-28.md).
+
+Current photo/type follow-up: Home chrome and contextual local paths, plain
+selection actions, explicit saved-link/favourite semantics, 2/3-column IPTV
+channel grids, dedicated non-selectable R1 headings, exact-size font atlases,
+pixel-aligned native text and a separate 20 MiB channel-catalogue body limit are
+covered in [the current menu report](menus-1.4.2-2026-10-28.md).
+Host regressions do not establish Sony text sharpness. The reported “Peppenamir”
+import failure was reproduced from the console URL: a QR HTML landing page
+exceeded 256 KiB. The general shared resolver follows declared HTML redirects
+or an unambiguous M3U link; the actual 64138-byte list parses to 380 entries.
+Physical playback of the new package remains a separate check.
+
+Current IPTV update: [manual-only smoothness checks and separate/side-by-side playlist and channel lists, switchable from R1](iptv-browser-manual-quality-1.4.2-2026-10-28.md).
+
+Current 1.4.2 startup/control follow-up: the menu report below also covers
+nonblocking PAF initialization, staged/cached fonts, animated service loading,
+wave curvature and smooth thickness, per-channel IPTV resolution/language,
+Triangle mute, persistent radio density and categorized R1 drawers.
+`bash tests/startup/run-host-tests.sh` covers resource ownership and wave
+continuity; physical-console startup speed remains unmeasured.
+
+Current 1.4.2 correction: [native blue gradients and PAF glow in VMD, independent theme palettes, bounded captions and pixel focus](menus-1.4.2-2026-10-28.md).
+
+Current scrolling and IPTV update: [pixel dragging/inertia in all eight themes, measured quality and favourite resolution](scroll-quality-menus-2026-10-28.md). Native 1080p buffer allocation and touch feel still require physical-console acceptance.
+
+Current IPTV player update: [selectable formats, audio languages and programme information](iptv-formats-programme-2026-10-28.md).
+
+Current interaction update: [guided M3U import and spatial D-pad navigation](iptv-playlist-flow-2026-10-28.md).
+
+Current UI update: [coloured controller icons and spacing in all eight themes](controller-icons-spacing-2026-10-28.md).
+Run `bash tests/input_prompts/run-host-tests.sh` and
+`bash tests/input_prompts/run-spacing-tests.sh` for mixed text/sprite metrics
+and shared control margins. The chrome suite checks every clock value in both
+formats against battery/search clearances, using Inter and IBM Plex Mono.
 
 Current IPTV correction: [Mediaset decode timestamps and duplicate footer](iptv-mediaset-timestamps-2026-10-27.md).
 

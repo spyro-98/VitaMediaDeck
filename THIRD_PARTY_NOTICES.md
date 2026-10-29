@@ -3,6 +3,15 @@
 VitaMediaDeck is distributed under GPL-3.0-only. See `LICENSE`. The following
 components remain governed by their own licenses and copyright notices.
 
+## Controller input icons
+
+The coloured PlayStation face buttons and L1/R1 caps are from **Kenney Input
+Prompts 1.5A**, by Kenney, distributed under **CC0-1.0**:
+https://kenney.nl/assets/input-prompts. The six PNGs and their SVG sources are
+preserved unchanged in `assets/input-prompts`, with the upstream `License.txt`
+and download/file hashes in `provenance.json`. The VPK includes the six PNGs
+and the notice at `licenses/Kenney-Input-Prompts.txt`.
+
 ## FFmpeg and h264_vita
 
 The reproducible hardware backend is built from FFmpeg commit

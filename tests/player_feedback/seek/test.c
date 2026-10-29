@@ -3,9 +3,11 @@
 #include "../../../src/media/hw_player_screen.c"
 static unsigned checks, shown=1, frees, captures, draws, fences,prepared;
 static int no_memory,no_frame,seek_result;
+static unsigned preference_ready;static int preference_error;
 static uint32_t framebuffer[544][1024];
 static uint16_t texture[272][512];
 #define CHECK(x) do{checks++;assert(x);}while(0)
+static int record_ready(void *ctx,uint32_t w,uint32_t h){(void)w;(void)h;CHECK(ctx==&preference_ready);preference_ready++;return preference_error;}
 void vt_decoder_get_status(VtDecoderPlayer *p,VtDecoderPlayerStatus *s){(void)p;memset(s,0,sizeof(*s));s->frames_shown=shown;}
 int sceDisplayGetFrameBuf(SceDisplayFrameBuf *f,int sync){(void)sync;captures++;*f=(SceDisplayFrameBuf){.size=sizeof(*f),.base=framebuffer,.pitch=1024,.width=960,.height=544};return no_frame?-1:0;}
 void vita2d_wait_rendering_done(void){fences++;}
@@ -41,6 +43,8 @@ static int mock_open(const VtDecoderPlayerConfig *cfg) {
 }
 int vt_decoder_open(VtDecoderPlayer *p,const VtDecoderPlayerConfig *cfg){(void)p;return mock_open(cfg);}
 int vt_decoder_open_live(VtDecoderPlayer *p,const VtDecoderPlayerConfig *cfg){(void)p;CHECK(!cfg->start_position_ms);return mock_open(cfg);}
+const char *vt_i18n_str(VtStringId id){(void)id;return "Programme";}
+int ui_loading_run(const char *title,UiLoadingTaskFn task,void *ctx,volatile int *cancel,const volatile long *cur,const volatile long *total){(void)title;(void)cancel;(void)cur;(void)total;return task(ctx);}
 int main(void) {
  /* Source and texture have padding: check sampling, channel order and bounds. */
  framebuffer[0][0]=0xff0000ff;framebuffer[0][2]=0xff00ff00;framebuffer[0][4]=0xffff0000;
@@ -56,6 +60,29 @@ int main(void) {
  no_frame=0;shown=0;unsigned before=captures;
  CHECK(run_seek(NULL,&info,&cancel,10000)==0);CHECK(captures==before);
  shown=1;seek_result=-7;CHECK(run_seek(NULL,&info,&cancel,10000)==-7);CHECK(frees==2);
+ VtHwPlayerScreenSource remembering={.iptv_started=record_ready,.iptv_started_ctx=&preference_ready};
+ CHECK(!notify_iptv_started(&remembering,NULL)&&preference_ready==1);
+ preference_error=-1;CHECK(notify_iptv_started(&remembering,NULL)<0&&preference_ready==2);
+ VtIptvQualityTrial trial={0};remembering.quality_trial=&trial;
+ CHECK(!notify_iptv_started(&remembering,NULL)&&preference_ready==2); /* Trials never persist. */
+ remembering.quality_trial=NULL;preference_error=0;preference_ready=0;
+ IptvPlaybackConfirmation confirmation={0};VtDecoderPlayerStatus status={.opened=1};
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,1000000)&&!preference_ready);
+ status.frames_shown=3;
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,2000000)&&!preference_ready);
+ for(unsigned tick=1;tick<=3;tick++){
+  status.frames_shown+=25;status.position_ms=tick*1000;
+  CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,2000000+tick*1000000));
+  CHECK(preference_ready==(tick==3));
+ }
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,6000000)&&preference_ready==1);
+ confirmation=(IptvPlaybackConfirmation){0};status.error=1;
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,7000000)&&!confirmation.observing);
+ status.error=0;status.paused=1;
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,8000000)&&!confirmation.observing);
+ status.paused=0;
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,9000000));
+ CHECK(!confirm_iptv_playback(&confirmation,&remembering,NULL,&status,12000000)&&!confirmation.observing&&preference_ready==1);
  /* Run the actual reopening/rollback helper: IPTV must not inherit a seek,
   * and both successful and restored backends notify the CPU policy. */
  VtPerformanceClockGuard guard={0};

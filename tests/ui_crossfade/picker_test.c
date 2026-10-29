@@ -1,3 +1,4 @@
+#define VMD_REAL_PLAYLIST_PICKER
 /* Production picker: a stable list must not rescan storage on every frame. */
 #define VMD_ONLINE_UI
 #define main original_iptv_main
@@ -8,7 +9,7 @@ void ui_home_tab_set(int tab){(void)tab;}
 void ui_online_audio_set_home(int home){(void)home;}
 void ui_brand_draw_path(const char *title,const char *path){ui_brand_draw_breadcrumbs(NULL,title,path);}
 static int directory_position,enumerations,made;
-SceUID sceIoDopen(const char *path){CHECK(path&&strstr(path,"ux0:"));directory_position=0;return 1;}
+SceUID sceIoDopen(const char *path){CHECK(path&&(strstr(path,"ux0:")||strstr(path,"uma0:")));directory_position=0;return 1;}
 int sceIoDclose(SceUID id){CHECK(id==1);return 0;}
 int sceIoDread(SceUID id,SceIoDirent *entry){
  CHECK(id==1);if(!directory_position)enumerations++;
@@ -33,6 +34,28 @@ int main(int argc,char **argv){
  CHECK(ui_folder_picker("ux0:Music",result,sizeof(result))==1&&made&&enumerations==2);
  reset_picker();input_script[1]=SCE_CTRL_CIRCLE;strcpy(result,"unchanged");
  CHECK(!ui_folder_picker("ux0:",result,sizeof(result))&&!strcmp(result,"unchanged")&&enumerations==1);
- FT_Done_Face(face);FT_Done_FreeType(ft);
+ FT_Face inter=face,mono;CHECK(!FT_New_Face(ft,"assets/fonts/IBMPlexMono-Regular.ttf",0,&mono));
+ for(int theme=0;theme<VT_UI_THEME_COUNT;theme++){
+  ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;
+  reset_picker();
+  unsigned down_to_actions[]={0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_CROSS};
+  memcpy(input_script,down_to_actions,sizeof(down_to_actions));script_count=10;
+  CHECK(ui_folder_picker("ux0:Music",result,sizeof(result))==1&&!strcmp(result,"ux0:Music"));
+  CHECK(enumerations==1); /* Cross on the footer must not enter a folder. */
+  reset_picker();
+  unsigned right_back[]={0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_DOWN,0,SCE_CTRL_RIGHT,0,SCE_CTRL_LEFT,0,SCE_CTRL_CROSS};
+  memcpy(input_script,right_back,sizeof(right_back));script_count=14;
+  CHECK(ui_folder_picker("ux0:Music",result,sizeof(result))==1&&!strcmp(result,"ux0:Music"));
+  CHECK(enumerations==1);
+  reset_picker();input_script[1]=SCE_CTRL_DOWN;input_script[3]=SCE_CTRL_CROSS;
+  CHECK(ui_playlist_file_picker("ux0:downloads",result,sizeof(result))==1&&!strcmp(result,"ux0:downloads/song.mp3"));
+  CHECK(enumerations==1&&!made);
+  reset_picker();input_script[1]=SCE_CTRL_TRIANGLE;input_script[3]=SCE_CTRL_DOWN;input_script[5]=SCE_CTRL_START;
+  CHECK(ui_playlist_file_picker("ux0:",result,sizeof(result))==1&&!strcmp(result,"uma0:song.mp3"));
+  CHECK(enumerations==2&&!made);
+  reset_picker();input_script[1]=SCE_CTRL_CIRCLE;strcpy(result,"unchanged");
+  CHECK(!ui_playlist_file_picker("ux0:",result,sizeof(result))&&!strcmp(result,"unchanged")&&!made);
+ }
+ FT_Done_Face(inter);FT_Done_Face(mono);FT_Done_FreeType(ft);
  printf("Destination picker: %u checks; idle enumeration cached, child/parent and mkdir invalidate, cancel preserves output.\n",checks);
 }

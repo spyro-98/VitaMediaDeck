@@ -13,6 +13,7 @@
 #define DESTINATION_Y 126
 #define DESTINATION_STEP 58
 #include "ui/components.h"
+#include "ui/navigation.h"
 #include "ui/focus_glow.h"
 #include "ui/loading_screen.h"
 #include "ui/mini_player.h"
@@ -22,7 +23,9 @@
 #include "ui/theme.h"
 #include "ui/theme_scene.h"
 #include "ui/touch.h"
-#define DESTINATION_MAX_FOLDERS 96
+#define DESTINATION_MAX_FOLDERS 512
+static int destination_files;
+static unsigned char destination_is_folder[DESTINATION_MAX_FOLDERS];
 
 static int destination_join(const char *directory, const char *name,
 	                        char *out, size_t out_size) {
@@ -51,7 +54,11 @@ static int destination_read_folders(const char *path,
 		memset(&entry, 0, sizeof(entry));
 		int result = sceIoDread(directory, &entry);
 		if (result <= 0) break;
-		if (entry.d_name[0] == '.' || !SCE_S_ISDIR(entry.d_stat.st_mode)) continue;
+		if(entry.d_name[0]=='.')continue;
+        int is_folder=SCE_S_ISDIR(entry.d_stat.st_mode);
+        if(!is_folder&&!destination_files)continue;
+        if(strlen(entry.d_name)>=128)continue;
+        destination_is_folder[count]=(unsigned char)is_folder;
 		snprintf(names[count++], 128, "%s", entry.d_name);
 	}
 	sceIoDclose(directory);
@@ -66,11 +73,11 @@ static UiThemeRect destination_item_rect(int index,int top) {
   DESTINATION_Y+(index-top)*DESTINATION_STEP,UI_CONTENT_W,54});
 }
 static void draw_destination_picker(const char *path, char names[][128],
-	                                int count, int selected, int top, UiFocusMotion *motion) {
+	                                int count, int selected, int top, int action_cursor, UiFocusMotion *motion) {
 	vita2d_start_drawing();
 	vita2d_clear_screen();
 	ui_chrome_background(VT_THEME_BG, VT_THEME_BLUE_LIGHT);
-	ui_brand_draw_path(vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE), path);
+	ui_brand_draw_path(destination_files?vt_i18n_str(VT_STR_IPTV_IMPORT_FILE):vt_i18n_str(VT_STR_NETWORK_DESTINATION_TITLE), path);
 	vita2d_font *body = ui_runtime_font(UI_FONT_BODY);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	/* This page deliberately avoids a second scene heading and explanatory copy:
@@ -79,7 +86,7 @@ static void draw_destination_picker(const char *path, char names[][128],
 	ui_panel(UI_CONTENT_X, 62, UI_CONTENT_W, 56, VT_THEME_SURFACE_RAISED, VT_THEME_BLUE_LIGHT, 0);
 	if (small) {
 		char fitted_path[512];
-		const char *label = vt_i18n_str(VT_STR_NETWORK_CURRENT_DESTINATION);
+		const char *label = destination_files?vt_i18n_text("Folder","Cartella"):vt_i18n_str(VT_STR_NETWORK_CURRENT_DESTINATION);
 		ui_font_draw_text(small, 32, 84, VT_THEME_SIGNAL_LIGHT,
 		                  UI_FONT_SMALL, label);
 		ui_font_fit_text(small, UI_FONT_SMALL, path, fitted_path,
@@ -96,26 +103,28 @@ static void draw_destination_picker(const char *path, char names[][128],
         vita2d_set_clip_rectangle(0,DESTINATION_Y-4,960,484);vita2d_enable_clipping();
         for (int i=page.first;i<page.end;i++) {
             UiThemeRect rect=destination_item_rect(i,top);int y=rect.y;
-			int focused = i == selected;
+			int focused = action_cursor<0&&i == selected;
 			ui_panel(rect.x, y, UI_CONTENT_W, 54,
 			         VT_THEME_SURFACE, VT_THEME_BORDER_DIM, 0);
 			if (focused)ui_focus_motion_tick(motion,rect.x,y,UI_CONTENT_W,54);
 			if (body) {
 				char fitted[128];
-				ui_font_fit_text(body, UI_FONT_BODY, names[i], fitted, sizeof(fitted), UI_CONTENT_W - 32);
+				char label[160];snprintf(label,sizeof(label),"%s%s",names[i],destination_files&&destination_is_folder[i]?" /":"");
+                ui_font_fit_text(body, UI_FONT_BODY, label, fitted, sizeof(fitted), UI_CONTENT_W - 32);
 				ui_font_draw_text(body, rect.x+16, y + 35, VT_THEME_TEXT, UI_FONT_BODY, fitted);
 			}
 		}
         vita2d_disable_clipping();
-        ui_focus_glow_draw(motion->x,motion->y,motion->width,motion->height,0,DESTINATION_Y,484);
+        if(action_cursor<0)ui_focus_glow_draw(motion->x,motion->y,motion->width,motion->height,0,DESTINATION_Y,484);
         ui_theme_page_finish(UI_SCENE_PICKER,UI_CONTENT_X,DESTINATION_Y,UI_CONTENT_W,484);
 	}
 	ui_action_button(18, 490, 302, 46, VT_THEME_BLUE_BRIGHT, "Start",
-	                 vt_i18n_str(VT_STR_NETWORK_USE_THIS_FOLDER), 0);
-	ui_action_button(329, 490, 302, 46, VT_THEME_SURFACE_RAISED, "Triangle",
-	                 vt_i18n_str(VT_STR_NETWORK_NEW_FOLDER), 0);
-	ui_action_button(640, 490, 302, 46, VT_THEME_SURFACE, "Circle",
-	                 strchr(path, ':') && !strchr(path, ':')[1] ? vt_i18n_str(VT_STR_NETWORK_CANCEL) : "Up", 0);
+	                 destination_files?vt_i18n_text("Open","Apri"):vt_i18n_str(VT_STR_NETWORK_USE_THIS_FOLDER), 0);
+	ui_action_button(329, 490, 302, 46, VT_THEME_SURFACE_RAISED, UI_PAD_TRIANGLE,
+	                 destination_files?vt_i18n_text("Switch storage","Cambia memoria"):vt_i18n_str(VT_STR_NETWORK_NEW_FOLDER), 0);
+	ui_action_button(640, 490, 302, 46, VT_THEME_SURFACE, UI_PAD_CIRCLE,
+	                 strchr(path, ':') && !strchr(path, ':')[1] ? vt_i18n_str(VT_STR_NETWORK_CANCEL) : vt_i18n_str(VT_STR_NETWORK_BACK), 0);
+    if(action_cursor>=0){ui_focus_motion_tick(motion,18+action_cursor*311,490,302,46);ui_focus_outline_draw(motion);}
 	vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
@@ -126,12 +135,13 @@ static int destination_name_valid(const char *name) {
 	       strcmp(name, ".") && strcmp(name, "..");
 }
 
-int ui_folder_picker(const char *initial, char *out, size_t out_size) {
+static int destination_picker(const char *initial,char *out,size_t out_size,int files) {
+    destination_files=files;
 	char path[512];
 	char names[DESTINATION_MAX_FOLDERS][128];
 	SceCtrlData previous;
 	UiNavRepeat nav_repeat;
-	int selected = 0, top = 0, count=-1, folders_dirty=1;
+	int selected = 0, top = 0, count=-1, folders_dirty=1,action_cursor=-1;
 	UiFocusMotion motion={0};
 	/* Opening the picker is read-only. Prefer the system downloads directory
 	 * when it exists, but never create it (or any other folder) implicitly. */
@@ -161,27 +171,41 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 			return 0;
 		}
 		if (selected >= count) selected = count > 0 ? count - 1 : 0;
+        if(!count&&action_cursor<0)action_cursor=0;
 		if (top > selected) top = selected;
 		if (selected >= top + DESTINATION_ROWS) top = selected - DESTINATION_ROWS + 1;
 		ui_mini_player_pump();
-		draw_destination_picker(path, names, count, selected, top, &motion);
+		draw_destination_picker(path, names, count, selected, top, action_cursor, &motion);
 		SceCtrlData controls;
 		sceCtrlPeekBufferPositive(0, &controls, 1);
 		unsigned pressed = controls.buttons & ~previous.buttons;
 		previous = controls;
 		unsigned nav = ui_nav_repeat_update(&nav_repeat, pressed, controls.buttons,
-		                                    controls.lx, controls.ly,
-		                                    SCE_CTRL_UP | SCE_CTRL_DOWN);
-		if ((nav & SCE_CTRL_UP) && selected > 0) selected--;
-		if ((nav & SCE_CTRL_DOWN) && selected + 1 < count) selected++;
+		                                    controls.lx, action_cursor>=0?controls.ly:128,
+		                                    SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
+        if(action_cursor>=0){
+            if((nav&SCE_CTRL_UP)&&count)action_cursor=-1;
+            else action_cursor=ui_grid_navigation(action_cursor,3,3,nav&(SCE_CTRL_LEFT|SCE_CTRL_RIGHT));
+            if((pressed&SCE_CTRL_CROSS)&&action_cursor>=0){
+                pressed&=~SCE_CTRL_CROSS;
+                pressed|=action_cursor==0?SCE_CTRL_START:action_cursor==1?SCE_CTRL_TRIANGLE:SCE_CTRL_CIRCLE;
+            }
+        }else{
+            if((nav&SCE_CTRL_UP)&&selected>0)selected--;
+            if(nav&SCE_CTRL_DOWN){if(selected+1<count)selected++;else action_cursor=0;}
+        }
 		UiTouchEvent touch;
 		unsigned flags = ui_touch_poll(&touch);
+        if(action_cursor<0)
+            ui_theme_page_input(UI_SCENE_PICKER,"destination",18,DESTINATION_Y,924,484-DESTINATION_Y,
+                count,0,&top,&selected,controls.buttons,controls.lx,controls.ly,&flags,&touch);
 		if (flags & UI_TOUCH_EVENT_TAP) {
             UiPageView page=destination_page(path,top,count);
             for(int i=page.first;i<page.end;i++) {
                 UiThemeRect rect=destination_item_rect(i,top);
                 if(touch.y>=DESTINATION_Y&&touch.y<484&&ui_touch_hit_rect(touch.x,touch.y,rect.x,rect.y,rect.w,rect.h)) {
 					selected = i;
+                    action_cursor=-1;
 					pressed |= SCE_CTRL_CROSS;
 				}
             }
@@ -189,6 +213,7 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 			if (ui_touch_hit_rect(touch.x, touch.y, 329, 490, 302, 46)) pressed |= SCE_CTRL_TRIANGLE;
 			if (ui_touch_hit_rect(touch.x, touch.y, 640, 490, 302, 46)) pressed |= SCE_CTRL_CIRCLE;
 		}
+		if(destination_files&&(pressed&SCE_CTRL_START)){pressed&=~SCE_CTRL_START;if(count){action_cursor=-1;pressed|=SCE_CTRL_CROSS;}}
 		if (pressed & SCE_CTRL_START) {
 			if (strlen(path) >= out_size) return 0;
 			ui_touch_reset();
@@ -198,10 +223,18 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 		if ((pressed & SCE_CTRL_CROSS) && count > 0) {
 			char next[512];
 			if (destination_join(path, names[selected], next, sizeof(next)) == 0) {
-				snprintf(path, sizeof(path), "%s", next);
-				selected = top = 0;folders_dirty=1;
+				if(destination_files&&!destination_is_folder[selected]){
+                    if(strlen(next)>=out_size)return 0;snprintf(out,out_size,"%s",next);ui_touch_reset();return 1;
+                }
+                snprintf(path, sizeof(path), "%s", next);
+				selected = top = 0;action_cursor=-1;folders_dirty=1;
 			}
 		}
+		if(destination_files&&(pressed&SCE_CTRL_TRIANGLE)){
+            const char *other=!strncmp(path,"ux0:",4)?"uma0:":"ux0:";SceUID dir=sceIoDopen(other);
+            if(dir>=0){sceIoDclose(dir);snprintf(path,sizeof(path),"%s",other);selected=top=0;folders_dirty=1;}
+            pressed&=~SCE_CTRL_TRIANGLE;
+        }
 		if (pressed & SCE_CTRL_TRIANGLE) {
 			char name[128] = "";
 			if (ui_text_input(vt_i18n_str(VT_STR_NETWORK_FOLDER_NAME_PROMPT), "",
@@ -228,3 +261,6 @@ int ui_folder_picker(const char *initial, char *out, size_t out_size) {
 		sceKernelDelayThread(16 * 1000);
 	}
 }
+
+int ui_folder_picker(const char *initial,char *out,size_t size){return destination_picker(initial,out,size,0);}
+int ui_playlist_file_picker(const char *initial,char *out,size_t size){return destination_picker(initial?initial:"ux0:",out,size,1);}

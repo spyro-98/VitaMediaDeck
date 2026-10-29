@@ -70,7 +70,7 @@ void vt_library_iptv(const VtIptvChannel *v, VtLibraryItem *o) {
     memset(o, 0, sizeof(*o));
     o->provider = VT_LIBRARY_IPTV;
     o->kind = v->mode == VT_IPTV_FILE   ? VT_LIBRARY_VIDEO
-              : v->mode == VT_IPTV_LIST ? VT_LIBRARY_FOLDER
+              : vt_iptv_channel_collection(v) ? VT_LIBRARY_FOLDER
                                         : VT_LIBRARY_LIVE;
     o->mode = v->mode;
     snprintf(o->locator, sizeof(o->locator), "%s", v->url);
