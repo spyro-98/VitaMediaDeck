@@ -1,17 +1,17 @@
 SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
-DocumentName: VitaMediaDeck-1.4.3-standard
-DocumentNamespace: urn:uuid:c5d7e5e8-fc7b-4520-b476-bd284de13d3e
+DocumentName: VitaMediaDeck-1.4.4-beta
+DocumentNamespace: urn:uuid:f106de43-cde6-461f-9b6c-3ca581990d86
 Creator: Tool: VitaMediaDeck release hardening manifest
-Created: 2026-10-29T22:51:52Z
+Created: 2026-10-30T09:52:43Z
 DocumentComment: Versions and immutable checksums are recorded in release/DEPENDENCIES.lock. The selected publication location is intentionally unspecified.
 
 ##### Package: VitaMediaDeck
 
 PackageName: VitaMediaDeck
 SPDXID: SPDXRef-Package-VitaMediaDeck
-PackageVersion: 1.4.3
+PackageVersion: 1.4.4-beta
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -36,7 +36,7 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-KenneyInp
 
 PackageName: vita-hw-decoder
 SPDXID: SPDXRef-Package-VitaHwDecoder
-PackageVersion: 4b1a7709fcd1b4a6ccdedd82fee95d6fbf837880
+PackageVersion: 998dcd9e66ba2d3a0cb713c0a47125d510458ac5
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
@@ -48,7 +48,7 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwDec
 
 PackageName: vita-sw-decoder
 SPDXID: SPDXRef-Package-VitaSwDecoder
-PackageVersion: d2f4b757c706d8a170e52afc4faa2811f4fe8bcb
+PackageVersion: ba293b1cb0335aab2f4685ed1c96dab16cc6cb5b
 PackageDownloadLocation: NOASSERTION
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only

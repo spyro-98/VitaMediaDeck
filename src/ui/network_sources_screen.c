@@ -509,7 +509,7 @@ static void draw_sources(const VtNetworkSource *sources, int count,
 	}
 	if (sidebar && sidebar->animation > .01f)
 		ui_sections_sidebar_draw(sidebar);
-	vita2d_end_drawing();
+	vt_video_thumbnail_view_end();vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
 }
@@ -781,7 +781,7 @@ static int show_jellyfin_metadata(const VtNetworkSource *source,
 			             58, 434, 254, 18, 1, VT_THEME_TEXT_MUTED);
 		}
 		ui_mini_player_draw();
-		vita2d_end_drawing();
+		vt_video_thumbnail_view_end();vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();
 
@@ -1051,7 +1051,7 @@ static void draw_browser(const VtNetworkSource *source, const char *path,
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
-	vita2d_end_drawing();
+	vt_video_thumbnail_view_end();vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
 }
@@ -1111,7 +1111,7 @@ static int confirm_trust_value(const char *title, const char *value) {
 		ui_action_button(618, 420, 288, 46, VT_THEME_BLUE_BRIGHT,
 		                 "", vt_i18n_str(VT_STR_NETWORK_TRUST_ACCEPT), accept);
 		ui_mini_player_draw();
-		vita2d_end_drawing();
+		vt_video_thumbnail_view_end();vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();
 
@@ -1493,7 +1493,7 @@ static int source_editor_impl(VtNetworkSource *source,
 			                 0);
 		if(!ui_mini_player_input_locked())ui_focus_outline_draw(&focus_motion);
 		ui_mini_player_draw();
-		vita2d_end_drawing();
+		vt_video_thumbnail_view_end();vita2d_end_drawing();
 		vita2d_wait_rendering_done();
 		vita2d_swap_buffers();
 		sceCtrlPeekBufferPositive(0, &controls, 1);

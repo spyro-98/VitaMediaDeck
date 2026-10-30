@@ -18,7 +18,9 @@
 #include <vita_sw_decoder_live.h>
 
 #include "common/text_log.h"
+#include "common/playback_checkpoint.h"
 #include "media/media_tracks.h"
+#include "media/audio_gain.h"
 
 _Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaHwDecoderPlayerStatus),
 	           "hardware status ABI changed");
@@ -452,13 +454,15 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		};
 		VitaHwDecoderPlayer *hardware_candidate = vita_hw_decoder_create();
 		publish_hardware_candidate(player, hardware_candidate);
-		stage_started = sceKernelGetProcessTimeWide();
 		VitaHwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
 		if (live && config->live_audio_sample_rate && config->live_audio_channels) {
 			live_options.version = 2;
 			live_options.audio.sample_rate = config->live_audio_sample_rate;
 			live_options.audio.channels = config->live_audio_channels;
 		}
+		vt_playback_checkpoint("decoder.hw.open.begin",NULL,VT_DECODER_BACKEND_HARDWARE,
+		                       config->expected_width,config->expected_height,0);
+		stage_started = sceKernelGetProcessTimeWide();
 		result = !hardware_candidate ? -1 : live
 		       ? vita_hw_decoder_open_live(hardware_candidate, &hardware, &live_options)
 		       : vita_hw_decoder_open(hardware_candidate, &hardware);
@@ -466,6 +470,8 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		           (unsigned long long)(sceKernelGetProcessTimeWide() -
 		                                stage_started),
 		           result);
+		vt_playback_checkpoint("decoder.hw.open.complete",NULL,VT_DECODER_BACKEND_HARDWARE,
+		                       config->expected_width,config->expected_height,result);
 		if (result >= 0) {
 			player->backend = VT_DECODER_BACKEND_HARDWARE;
 			snapshot_hardware_tracks(player, config->audio_track,
@@ -480,7 +486,11 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		 * software fallback must still be attempted. */
 		int cancelled = config->cancel_flag && *config->cancel_flag;
 		hardware_candidate = detach_hardware_candidate(player);
-		if (hardware_candidate) vita_hw_decoder_destroy(hardware_candidate);
+		if (hardware_candidate) {
+            vt_playback_checkpoint("decoder.hw.failed_close.begin",NULL,VT_DECODER_BACKEND_HARDWARE,0,0,result);
+            vita_hw_decoder_destroy(hardware_candidate);
+            vt_playback_checkpoint("decoder.hw.failed_close.end",NULL,VT_DECODER_BACKEND_HARDWARE,0,0,result);
+        }
 		/* A user-cancelled hardware open is terminal. Falling through to software
 		 * would clear the flag inside the second backend and make Circle appear to
 		 * have been ignored. */
@@ -508,13 +518,15 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	};
 	VitaSwDecoderPlayer *software_candidate = vita_sw_decoder_create();
 	publish_software_candidate(player, software_candidate);
-	stage_started = sceKernelGetProcessTimeWide();
 	VitaSwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
 	if (live && config->live_audio_sample_rate && config->live_audio_channels) {
 		live_options.version = 2;
 		live_options.audio.sample_rate = config->live_audio_sample_rate;
 		live_options.audio.channels = config->live_audio_channels;
 	}
+	vt_playback_checkpoint("decoder.sw.open.begin",NULL,VT_DECODER_BACKEND_SOFTWARE,
+	                       config->expected_width,config->expected_height,0);
+	stage_started = sceKernelGetProcessTimeWide();
 	result = !software_candidate ? -1 : live
 	       ? vita_sw_decoder_open_live(software_candidate, &software, &live_options)
 	       : vita_sw_decoder_open(software_candidate, &software);
@@ -522,6 +534,8 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	           (unsigned long long)(sceKernelGetProcessTimeWide() -
 	                                stage_started),
 	           result);
+	vt_playback_checkpoint("decoder.sw.open.complete",NULL,VT_DECODER_BACKEND_SOFTWARE,
+	                       config->expected_width,config->expected_height,result);
 	if (result >= 0) {
 		player->backend = VT_DECODER_BACKEND_SOFTWARE;
 		snapshot_software_tracks(player, config->audio_track,
@@ -591,11 +605,13 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 
 void vt_decoder_destroy(VtDecoderPlayer *player) {
 	if (!player) return;
+	vt_playback_checkpoint("decoder.close.begin",NULL,player->backend,0,0,0);
 	vt_subtitle_reader_destroy(player->subtitles);
 	VitaHwDecoderPlayer *hardware = detach_hardware_candidate(player);
 	VitaSwDecoderPlayer *software = detach_software_candidate(player);
 	if (hardware) vita_hw_decoder_destroy(hardware);
 	if (software) vita_sw_decoder_destroy(software);
+	vt_playback_checkpoint("decoder.close.complete",NULL,player->backend,0,0,0);
 	free(player);
 }
 
@@ -634,6 +650,7 @@ void vt_decoder_set_paused(VtDecoderPlayer *player, int paused) {
 
 void vt_decoder_set_volume(VtDecoderPlayer *player, int percent) {
 	if (!player) return;
+	percent = vita_audio_volume_clamp(percent);
 	player->config.volume_percent = percent;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE)
 		vita_hw_decoder_set_volume(player->hardware, percent);

@@ -12,6 +12,7 @@
 #include <psp2/kernel/threadmgr.h>
 #include <vita2d.h>
 #include "common/text_log.h"
+#include "common/playback_checkpoint.h"
 #include "app_paths.h"
 #include "i18n/i18n.h"
 #include "media/background_playback.h"
@@ -82,6 +83,12 @@ static SceUID artwork_thread = -1;
 static volatile int artwork_cancel, artwork_done;
 static int artwork_index, catalog_visible=6;
 static VtOnlineItem artwork_item;
+static VtIptvChannel artwork_channel;
+static unsigned char artwork_refresh[VT_IPTV_CHANNEL_MAX];
+static int artwork_force;
+static char artwork_parent[VT_IPTV_URL_MAX];
+static void refresh_channel_artwork(VtIptvChannel *channel,const char *parent,volatile int *cancel);
+static int channel_saved(const VtIptvChannel *channel);
 static struct {uint64_t key,after;} artwork_retry[VT_IPTV_CHANNEL_MAX];
 #define TR(id) vt_i18n_str(VT_STR_##id)
 static const char *failure_detail(int event);
@@ -169,6 +176,7 @@ static void search_catalog(void) {
 }
 
 static void iptv_cover_stop(void) {
+    memset(artwork_refresh,0,sizeof(artwork_refresh));
     artwork_generation++;
     if(artwork_thread>=0)artwork_cancel=1;
 }
@@ -199,7 +207,12 @@ static char *iptv_local_logo(const char *url,volatile int *cancel,size_t *size){
 }
 static int iptv_cover_worker(SceSize args, void *ctx) {
     (void)args; (void)ctx;
-    if(vt_iptv_local_path(artwork_item.artwork_url))vt_artwork_cache_get(artwork_item.artwork_url,artwork_item.artwork_path,sizeof(artwork_item.artwork_path),&artwork_cancel,iptv_local_logo);
+    if(artwork_force){
+        refresh_channel_artwork(&artwork_channel,artwork_parent,&artwork_cancel);
+        snprintf(artwork_item.artwork_url,sizeof(artwork_item.artwork_url),"%s",artwork_channel.logo);
+    }
+    if(vt_iptv_local_path(artwork_item.artwork_url))(artwork_force?vt_artwork_cache_refresh:vt_artwork_cache_get)(artwork_item.artwork_url,artwork_item.artwork_path,sizeof(artwork_item.artwork_path),&artwork_cancel,iptv_local_logo);
+    else if(artwork_force)vt_online_refresh_cover(&artwork_item,NULL,&artwork_cancel);
     else vt_online_fetch_cover(&artwork_item, &artwork_cancel);
     __sync_synchronize(); artwork_done = 1; return sceKernelExitThread(0);
 }
@@ -213,24 +226,53 @@ static void iptv_cover_tick(void) {
 
     if (artwork_thread >= 0 && artwork_done) {
         sceKernelWaitThreadEnd(artwork_thread,NULL,NULL);sceKernelDeleteThread(artwork_thread);artwork_thread=-1;
-        if(!artwork_cancel && artwork_worker_generation==artwork_generation && artwork_index<(int)catalog.count && artwork_item.artwork_path[0])
-            ui_artwork_path_update(catalog.items[artwork_index].artwork_path,sizeof(catalog.items[0].artwork_path),artwork_item.artwork_path);
+        if(!artwork_cancel && artwork_worker_generation==artwork_generation && artwork_index<(int)catalog.count){
+            VtIptvChannel *target=&catalog.items[artwork_index];
+            if(artwork_item.artwork_path[0])ui_artwork_path_update(target->artwork_path,sizeof(target->artwork_path),artwork_item.artwork_path);
+            if(artwork_force&&!strcmp(target->url,artwork_channel.url)){
+                vt_iptv_channel_merge(target,&artwork_channel);
+                if(artwork_channel.logo[0])snprintf(target->logo,sizeof(target->logo),"%s",artwork_channel.logo);
+                if(channel_saved(target))vt_iptv_saved_set(target);
+                VtLibraryItem cached;vt_library_iptv(target,&cached);vt_library_cache(&cached);
+            }
+        }
     }
-    if (artwork_thread >= 0) return;
-    for (int i = catalog_top; i < catalog_top+catalog_visible && i < (int)result_count; i++) {
-        VtIptvChannel *item = &catalog.items[results[i]];
-        if (!item->logo[0] || !vt_artwork_cache_due(item->logo)) continue;
+    if (artwork_thread >= 0) {
+        int visible=0;
+        for(int i=catalog_top;i<catalog_top+catalog_visible&&i<(int)result_count;i++)
+            if(results[i]==(unsigned)artwork_index)visible=1;
+        int visible_pending=0;
+        for(int r=-1;r<catalog_visible;r++){
+            int i=r<0?catalog_focus:catalog_top+r;if(i<0||i>=(int)result_count)continue;
+            VtIptvChannel *v=&catalog.items[results[i]];
+            if((unsigned)artwork_index!=results[i]&&(artwork_refresh[results[i]]||
+               (v->logo[0]&&vt_artwork_cache_due(v->logo)&&sceKernelGetProcessTimeWide()>=artwork_retry[results[i]].after)))visible_pending=1;
+        }
+        if(!visible&&(!artwork_force||visible_pending)&&!artwork_cancel){
+            artwork_cancel=1;
+            if(artwork_index>=0&&artwork_index<VT_IPTV_CHANNEL_MAX){artwork_retry[artwork_index].after=0;if(artwork_force)artwork_refresh[artwork_index]=1;}
+        }
+        return;
+    }
+    for (int r = -1; r < catalog_visible+(int)catalog.count; r++) {
+        int i=r<0?catalog_focus:catalog_top+r;
+        unsigned index;
+        if(r>=catalog_visible){index=(unsigned)(r-catalog_visible);if(!artwork_refresh[index])continue;}
+        else {if(i<0||i>=(int)result_count)continue;index=results[i];}
+        VtIptvChannel *item = &catalog.items[index];
+        if (!artwork_refresh[index]&&(!item->logo[0] || !vt_artwork_cache_due(item->logo))) continue;
         uint64_t now=sceKernelGetProcessTimeWide(),key=ui_page_key(item->url,item->logo);
-        unsigned index=results[i];
-        if(artwork_retry[index].key==key&&now<artwork_retry[index].after)continue;
+        if(!artwork_refresh[index]&&artwork_retry[index].key==key&&now<artwork_retry[index].after)continue;
         artwork_retry[index].key=key;artwork_retry[index].after=now+30000000ULL;
         memset(&artwork_item, 0, sizeof(artwork_item));
         snprintf(artwork_item.artwork_url, sizeof(artwork_item.artwork_url), "%s", item->logo);
         snprintf(artwork_item.artwork_path,sizeof(artwork_item.artwork_path),"%s",item->artwork_path[0]=='-'?"":item->artwork_path);
-        artwork_index = results[i]; artwork_cancel = artwork_done = 0;artwork_worker_generation=artwork_generation;
+        artwork_channel=*item;artwork_force=artwork_refresh[index];artwork_refresh[index]=0;
+        snprintf(artwork_parent,sizeof(artwork_parent),"%s",saved_view?"":current_list.url);
+        artwork_index = index; artwork_cancel = artwork_done = 0;artwork_worker_generation=artwork_generation;
         artwork_thread = sceKernelCreateThread("VmdIptvCover", iptv_cover_worker, 0x10000100, 0x40000, 0, 0, NULL);
         if (artwork_thread >= 0 && sceKernelStartThread(artwork_thread, 0, NULL) < 0) {
-            sceKernelDeleteThread(artwork_thread); artwork_thread = -1;
+            sceKernelDeleteThread(artwork_thread); artwork_thread = -1;artwork_refresh[index]=artwork_force;
         }
 
         break;
@@ -561,7 +603,7 @@ static int confirm_channel_action(const VtIptvChannel *item,int retry,const char
         ui_action_button(485,350,275,50,VT_THEME_SURFACE_RAISED,"",retry?TR(IPTV_RETRY_AUTOMATIC):TR(IPTV_DELETE),0);
         text_line(200,430,560,TR(UI_SELECTION_HINT),VT_THEME_TEXT_MUTED,UI_FONT_SMALL);
         ui_focus_motion_tick(&motion,200+selected*285,350,275,50);ui_focus_outline_draw(&motion);
-        vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();sceKernelDelayThread(1000);
+        vt_video_thumbnail_view_end();vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();sceKernelDelayThread(1000);
     }
 }
 static int confirm_remove(const VtIptvChannel *item){return confirm_channel_action(item,0,NULL);}
@@ -667,6 +709,33 @@ static int load_player_program(void *ctx,VtIptvProgram *out,volatile int *cancel
  return vt_iptv_program_load_channel(&query,&config,
   program->language,out,cancel);
 }
+static void refresh_channel_artwork(VtIptvChannel *channel,const char *parent,volatile int *cancel){
+ ProgramContext context={.channel=*channel};
+ snprintf(context.playlist,sizeof(context.playlist),"%s",parent?parent:"");
+ snprintf(context.language,sizeof(context.language),"%s",vt_i18n_language_code());
+ VtIptvProgram *program=calloc(1,sizeof(*program));
+ if(program){
+  if(!load_player_program(&context,program,cancel,1)){
+   VtIptvChannel identity={.name_source=VT_IPTV_NAME_METADATA};
+   snprintf(identity.title,sizeof(identity.title),"%s",program->channel_name);
+   snprintf(identity.logo,sizeof(identity.logo),"%s",program->channel_logo);
+   snprintf(identity.channel_id,sizeof(identity.channel_id),"%s",program->channel_id);
+   vt_iptv_channel_merge(&context.channel,&identity);
+   if(identity.logo[0])snprintf(context.channel.logo,sizeof(context.channel.logo),"%s",identity.logo);
+  }
+  free(program);
+ }
+ *channel=context.channel;
+ if(!channel->logo[0]&&!(cancel&&*cancel)){
+  unsigned char *data=NULL;size_t size=0;char effective[VT_IPTV_URL_MAX];
+  VtIptvHttpOptions http={.allow_local=vt_iptv_local_path(channel->url)};
+  snprintf(http.user_agent,sizeof(http.user_agent),"%s",channel->user_agent);
+  if(!vt_iptv_catalog_fetch(vt_iptv_http_fetch,&http,channel->url,&data,&size,effective,sizeof(effective),cancel))
+   vt_iptv_catalog_metadata(data,size,effective,channel);
+  free(data);
+ }
+}
+
 typedef struct {
     VtIptvChannel *channel;const VtIptvOptions *options;const VtIptvSelection *selection;
     VtIptvPreference *remembered;int *have_remembered;
@@ -692,6 +761,17 @@ static int commit_playback_started(void *opaque,uint32_t width,uint32_t height){
     log_printf("IPTV preference committed after presented playback: width=%u height=%u language=%d\n",actual.width,actual.height,!!actual.audio_language[0]);
     return 0;
 }
+/* Use the current filtered/sorted list, never an unrelated global channel. */
+static int adjacent_channel(const char *url,int direction){
+ int current=-1;
+ for(unsigned i=0;i<result_count;i++)if(!strcmp(catalog.items[results[i]].url,url)){current=(int)i;break;}
+ if(current<0||result_count<2)return -1;
+ for(unsigned step=1;step<result_count;step++){
+  int i=(current+direction*(int)step+(int)result_count)%(int)result_count;
+  if(!vt_iptv_channel_collection(&catalog.items[results[i]]))return i;
+ }
+ return -1;
+}
 static int play_segmented_session(VtIptvChannel *playing,VtIptvOptions *available,VtIptvSelection *selection,
  VtDecoderBackend *backend,VtIptvQualityTrial *trial,const char *history,int *event,VtIptvSourceStatus *status,PlaybackCommit *commit){
  VtIptvSourceConfig config={.buffer_limit=24u*1024u*1024u,.segment_limit=16u*1024u*1024u,
@@ -704,6 +784,7 @@ static int play_segmented_session(VtIptvChannel *playing,VtIptvOptions *availabl
  source.favorite=trial?NULL:player_favorite_with_quality;source.favorite_ctx=trial?NULL:&favorite;
  source.saved=trial?NULL:player_saved_channel;source.saved_ctx=&favorite;
  source.iptv_options=available;source.iptv_selection=selection;source.iptv_backend=backend;source.quality_trial=trial;
+ if(!trial){source.channel_navigation=(adjacent_channel(playing->url,-1)>=0?1u:0u)|(adjacent_channel(playing->url,1)>=0?2u:0u);}
  ProgramContext program={.channel=*playing};
  if(!saved_view||library_parent_active)snprintf(program.playlist,sizeof(program.playlist),"%s",current_list.url);
  snprintf(program.language,sizeof(program.language),"%s",vt_i18n_language_code());
@@ -764,7 +845,8 @@ static int push_list_parent(const char *child,const char **message){
  for(unsigned i=0;i<list_parent_count;i++)if(!strcmp(list_parents[i].url,child)){*message=TR(IPTV_NESTED_LIMIT);return 0;}
  list_parents[list_parent_count++]=current_list;return 1;
 }
-static int play_link(const char **message) {
+static int play_link(const char **message);
+static int play_link_once(const char **message) {
     char checked[VT_IPTV_URL_MAX];
     if (vt_iptv_resource_resolve(link, link, checked, sizeof(checked))) {
         *message = TR(IPTV_INVALID); return UI_SECTION_NONE;
@@ -792,6 +874,7 @@ static int play_link(const char **message) {
     VtLibraryItem library_item;
     vt_library_iptv(&playing, &library_item);
     vt_library_cache(&library_item);
+    vt_playback_checkpoint("iptv.handoff",library_item.id,0,0,0,0);
     vt_video_thumbnail_prepare_playback();
     vt_background_playback_set_fullscreen_resume(NULL, NULL);
     /* Release the previous audio port and fence mini-player video before
@@ -801,15 +884,18 @@ static int play_link(const char **message) {
         VtHwPlayerScreenSource source = {0};
         PlayerFavoriteContext membership={.channel=&playing};source.saved=player_saved_channel;source.saved_ctx=&membership;
         source.favorite=player_favorite;source.favorite_ctx=&playing;
+        source.channel_navigation=(adjacent_channel(playing.url,-1)>=0?1u:0u)|(adjacent_channel(playing.url,1)>=0?2u:0u);
         source.history_id = library_item.history_id;
         source.start_position_ms = vt_library_resume(&library_item);
         if(vt_iptv_local_path(link))vt_decoder_file_stream_factory(link,&source.stream);else vt_http_audio_stream_factory(link, &source.stream);
         source.title = playing.title;
         source.location = TR(IPTV_MODE_FILE); source.authenticated_remote = 1;
         int result = vt_hw_player_screen_run(&source, NULL, NULL, NULL, NULL, NULL);
+        vt_playback_checkpoint("iptv.file.complete",library_item.id,0,0,0,result);
         *message = result < 0 ? TR(IPTV_DECODE_ERROR) : TR(IPTV_EXIT_NOTE);
         if (result < 0) ui_message_show(TR(IPTV_FAILED),*message,12000);
         if (result < 0) { log_printf("IPTV VOD file: result=%d\n", result); log_save(VITAMEDIADECK_SESSION_LOG_PATH); }
+        if(result==VT_HW_PLAYER_ACTION_PREVIOUS_CHANNEL||result==VT_HW_PLAYER_ACTION_NEXT_CHANNEL)return result;
         return result >= VT_HW_PLAYER_ACTION_SECTION_BASE && result < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT
             ? result - VT_HW_PLAYER_ACTION_SECTION_BASE : UI_SECTION_NONE;
     }
@@ -817,6 +903,7 @@ static int play_link(const char **message) {
     VtIptvSelection selection={0},previous_selection={0};int changing=0;
     VtIptvHttpOptions discovery_http={.allow_local=vt_iptv_local_path(link)};snprintf(discovery_http.user_agent,sizeof(discovery_http.user_agent),"%s",channel_agent);
     VtIptvSourceConfig discovery_config={.fetch_ctx=&discovery_http};volatile int discovery_cancel=0;
+    vt_playback_checkpoint("iptv.options.begin",library_item.id,0,0,0,0);
     if(available){OptionsTask task={link,mode==VT_IPTV_DASH,&discovery_config,available,&discovery_cancel};
         int discovered=ui_loading_run(TR(IPTV_LOADING_OPTIONS),load_playback_options,&task,&discovery_cancel,NULL,NULL);
         if(discovered==VT_IPTV_OPTIONS_DIRECTORY){
@@ -851,12 +938,15 @@ static int play_link(const char **message) {
         VtIptvSelection before=selection;VtDecoderBackend backend_before=backend;
         VtIptvPreference last_good=remembered,last_favourite=playing.preferred;int had_good=have_remembered;
         int event=0;VtIptvSourceStatus status;
+        vt_playback_checkpoint("iptv.session.begin",library_item.id,backend,
+                               available?available->active_width:0,available?available->active_height:0,0);
         PlaybackCommit commit={.channel=&playing,.options=available,.selection=&selection,.remembered=&remembered,.have_remembered=&have_remembered,.replace=!have_remembered||changing||default_recovery,.migrate=migrate};
         snprintf(commit.identity,sizeof(commit.identity),"%s",playback_identity);
         int result=play_segmented_session(&playing,available,&selection,&backend,NULL,library_item.history_id,&event,&status,&commit);
         if(commit.committed)migrate=0;
         log_printf("IPTV playback: result=%d source=%d generation=%llu segments=%u bytes=%u\n",
             result,event,(unsigned long long)status.generation,status.buffered_segments,(unsigned)status.buffered_bytes);
+        vt_playback_checkpoint("iptv.session.complete",library_item.id,backend,0,0,result);
         int cause=event&&event!=VT_IPTV_CANCELLED?event:status.last_error&&status.last_error!=VT_IPTV_CANCELLED?status.last_error:!status.buffered_segments?VT_IPTV_IO:0;
         if(result<0&&commit.committed){
             int undo=had_good?vt_iptv_playback_save_channel(playing.url,playback_identity,&last_good):vt_iptv_playback_remove_channel(playing.url,playback_identity);
@@ -907,11 +997,27 @@ static int play_link(const char **message) {
         }
         if (result == VT_HW_PLAYER_ACTION_GO_LIVE) continue;
         free(available);
+        if(result==VT_HW_PLAYER_ACTION_PREVIOUS_CHANNEL||result==VT_HW_PLAYER_ACTION_NEXT_CHANNEL)return result;
         if (result >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
             result < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT)
             return result - VT_HW_PLAYER_ACTION_SECTION_BASE;
         return UI_SECTION_NONE;
     }
+}
+/* Iterative handoff: the old decoder, cursors and producer are all destroyed
+ * by play_link_once before another channel may allocate hardware resources. */
+static int play_link(const char **message){
+ for(;;){
+  int result=play_link_once(message);
+  if(result!=VT_HW_PLAYER_ACTION_PREVIOUS_CHANNEL&&result!=VT_HW_PLAYER_ACTION_NEXT_CHANNEL)return result;
+  int index=adjacent_channel(link,result==VT_HW_PLAYER_ACTION_PREVIOUS_CHANNEL?-1:1);
+  if(index<0)return UI_SECTION_NONE;
+  catalog_focus=index;
+  VtIptvChannel *channel=&catalog.items[results[index]];
+  snprintf(link,sizeof(link),"%s",channel->url);
+  snprintf(channel_title,sizeof(channel_title),"%s",channel->title);
+  snprintf(channel_agent,sizeof(channel_agent),"%s",channel->user_agent);mode=channel->mode;
+ }
 }
 static int import_local_file(const char **message){
  static char last_directory[512]="ux0:";char selected[512];
@@ -968,12 +1074,18 @@ static int edit_guide(int reset,const char **message){
    snprintf(link,sizeof(link),"%s",current_list.url);
    snprintf(channel_agent,sizeof(channel_agent),"%s",current_list.user_agent);
    open_list(message);
+   /* Source-provided guide data belongs to the children. A reset must not
+    * silently turn it back into a saved explicit playlist override. */
+   current_list.guide_url[0]=0;
+   if(save_link(&current_list)){*message=TR(IPTV_SAVE_FAILED);return -1;}
   }
   else for(unsigned i=0;i<catalog.count;i++)snprintf(catalog.items[i].guide_url,sizeof(catalog.items[i].guide_url),"%s",changed.guide_url);
  }
  refresh_playlists();*message=TR(IPTV_SAVED);return 1;
 }
-static int options_for_page(UiContextAction items[16]) {
+#include "ui/iptv_grid.inc"
+
+static int options_for_page(UiContextAction items[24]) {
     int n=0,listing=catalog.count || saved_view;
     if(listing) {
         VtIptvChannel *item=selected_channel();
@@ -991,6 +1103,7 @@ static int options_for_page(UiContextAction items[16]) {
             items[n++]=(UiContextAction){current_list.starred?TR(IPTV_UNSTAR_LIST):TR(IPTV_STAR_LIST),NULL,12,current_list.url[0]!=0};
             items[n++]=(UiContextAction){TR(IPTV_SAVE_LIST),NULL,16,current_list.url[0]!=0};
         }
+        if((!saved_view||saved_channels)&&result_count)items[n++]=(UiContextAction){TR(IPTV_GRID_TITLE),NULL,28,1};
         if(!saved_view||saved_channels)items[n++]=(UiContextAction){TR(IPTV_CHANNEL_ORDER),vt_preferences_iptv_name_sort()?TR(IPTV_ORDER_NAME):TR(IPTV_ORDER_SOURCE),26,1};
         VtIptvChannel *guide=guide_target();
         if(guide){
@@ -1024,6 +1137,7 @@ static int options_for_page(UiContextAction items[16]) {
     ui_context_menu_category(items,n,7,UI_MENU_GROUP_PLAYBACK);
     ui_context_menu_category(items,n,22,UI_MENU_GROUP_VIEW);
     ui_context_menu_category(items,n,26,UI_MENU_GROUP_VIEW);
+    ui_context_menu_category(items,n,28,UI_MENU_GROUP_VIEW);
     ui_context_menu_category(items,n,17,UI_MENU_GROUP_VIEW);
     ui_context_menu_category(items,n,5,UI_MENU_GROUP_LIBRARY);
     for(int i=1;i<n;i++){
@@ -1078,7 +1192,7 @@ int ui_iptv_screen(void) {
             pressed|=SCE_CTRL_RTRIGGER; touches=0;
         }
         if(pressed&SCE_CTRL_RTRIGGER)sidebar.open=0;
-        UiContextAction option_items[16];int option_count=options_for_page(option_items);
+        UiContextAction option_items[24];int option_count=options_for_page(option_items);
         int virtual_channels_action=0;
         int option_action=ui_context_menu_input(&options,option_items,option_count,&pressed,controls.buttons,controls.ly,&touches,&touch);
         ui_context_menu_tick(&options);
@@ -1192,6 +1306,18 @@ int ui_iptv_screen(void) {
             }else root_action=option_action;
             catalog.count=0;saved_view=0;action_focus=-1;
         }
+        if(option_action==28){
+            iptv_cover_stop();int chosen=show_guide_grid();
+            if(chosen>=0){
+                for(unsigned i=0;i<result_count;i++)if(results[i]==(unsigned)chosen)catalog_focus=(int)i;
+                VtIptvChannel *v=&catalog.items[chosen];
+                snprintf(link,sizeof(link),"%s",v->url);snprintf(channel_title,sizeof(channel_title),"%s",v->title);
+                snprintf(channel_agent,sizeof(channel_agent),"%s",v->user_agent);mode=v->mode;
+                int section=play_link(&message);if(section!=UI_SECTION_NONE&&section!=UI_SECTION_IPTV)return section;
+            }
+            sceCtrlPeekBufferPositive(0,&previous,1);ui_touch_reset();ui_nav_repeat_reset(&repeat);
+            pressed=touches=0;option_action=-1;page_input=0;
+        }
         if(option_action==27){
             section=import_local_file(&message);if(section!=UI_SECTION_NONE&&section!=UI_SECTION_IPTV)return section;
             picker_focus=0;action_focus=-1;focus=2;pressed=touches=0;option_action=-1;page_input=0;
@@ -1232,6 +1358,8 @@ int ui_iptv_screen(void) {
                 open_list(&message);
                 snprintf(search,sizeof(search),"%s",previous_search);filter_dirty=1;
             }
+            memset(artwork_retry,0,sizeof(artwork_retry));
+            memset(artwork_refresh,1,sizeof(artwork_refresh));
         }
         if(option_action==14 && selected_channel() && (saved_view||channel_saved(selected_channel()))) {
             iptv_cover_stop();
@@ -1335,7 +1463,9 @@ int ui_iptv_screen(void) {
                 snprintf(channel_agent,sizeof(channel_agent),"%s",item->user_agent);
                 mode=item->mode;
                 if(mode==VT_IPTV_LIST){
-                    VtIptvChannel opening=*item;if(!push_list_parent(opening.url,&message))continue;
+                    VtIptvChannel opening=*item;
+                    if(picker_focus)list_parent_count=0;
+                    else if(!push_list_parent(opening.url,&message))continue;
                     if(saved_view){saved_parent_focus=catalog_focus;saved_parent_top=catalog_top;snprintf(saved_parent_url,sizeof(saved_parent_url),"%s",item->url);}
                     list_from_form=0;current_list=opening;action_focus=-1;
                     if(open_list(&message)){
@@ -1539,7 +1669,7 @@ int ui_iptv_screen(void) {
         option_count=options_for_page(option_items);
         ui_context_menu_draw(&options,TR(UI_OPTIONS),option_items,option_count);
         if (sidebar.animation > 0.01f) ui_sections_sidebar_draw(&sidebar);
-        vita2d_end_drawing(); vita2d_wait_rendering_done(); vita2d_swap_buffers();
+        vt_video_thumbnail_view_end();vita2d_end_drawing(); vita2d_wait_rendering_done(); vita2d_swap_buffers();
         ui_frame_pace(frame_time);
     }
 }

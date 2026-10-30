@@ -33,7 +33,7 @@ int vt_jellyfin_authenticate(const VtNetworkSource *, VtNetworkCredential *,
 int vt_jellyfin_list(const VtNetworkSource *, const VtNetworkCredential *,
 	                 const char *, VtNetworkEntry *, int, char *, size_t);
 int vt_jellyfin_open_stream(const VtNetworkSource *, const VtNetworkCredential *,
-	                        const char *, VtDecoderStreamHandle *, volatile int *,
+	                        const char *, const char *, VtDecoderStreamHandle *, volatile int *,
 	                        VtNetworkBufferTelemetry *, volatile uintptr_t *);
 int vt_jellyfin_open_subtitle_stream(
 	const VtNetworkSource *, const VtNetworkCredential *, const char *,

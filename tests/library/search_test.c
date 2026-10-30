@@ -334,6 +334,16 @@ int main(void) {
     VtLibraryItem cover_item = out[0].item;
     strcpy(cover_item.artwork_url, "https://fixture.example/cover.jpg");
     cover_item.artwork[0] = 0;
+    for(int view=0;view<100;view++){
+        vt_library_search_cover_view_begin();
+        VtLibraryItem visible=cover_item;snprintf(visible.id,sizeof(visible.id),"visible-%d",view);
+        vt_library_search_cover(&visible);
+        pthread_mutex_lock(&search_mutex);
+        CHECK(job_count-next_job<=2);
+        pthread_mutex_unlock(&search_mutex);
+        vt_library_search_cover_view_end();
+    }
+    vt_library_search_cover_view_begin();vt_library_search_cover(&cover_item);vt_library_search_cover_view_end();
     unsigned prior_publication = vt_library_search_revision();
     vt_library_search_cover(&cover_item);
     int got_cover = 0;

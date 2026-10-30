@@ -5,10 +5,10 @@
 static const char *fixture="#EXTM3U\n#EXTINF:-1,First channel\nhttps://example.org/first.m3u8\n#EXTINF:-1,Second channel\nhttps://example.org/second.m3u8\n#EXTINF:-1,Third channel\nhttps://example.org/third.m3u8\n";
 static unsigned captures,saw_saved_channels;
 static void observe(unsigned tick){
- if(saved_view&&saved_channels){UiContextAction options[16];int n=options_for_page(options),found=0;for(int i=0;i<n;i++)if(options[i].action==20)found++;CHECK(found==1);saw_saved_channels++;for(unsigned i=0;i<result_count;i++)CHECK(catalog.items[results[i]].mode!=VT_IPTV_LIST);}
+ if(saved_view&&saved_channels){UiContextAction options[24];int n=options_for_page(options),found=0;for(int i=0;i<n;i++)if(options[i].action==20)found++;CHECK(found==1);saw_saved_channels++;for(unsigned i=0;i<result_count;i++)CHECK(catalog.items[results[i]].mode!=VT_IPTV_LIST);}
  if(tick==0){
   CHECK(saved_view&&!saved_channels&&playlist_count==2);
-  UiContextAction options[16];int n=options_for_page(options),found=0;for(int i=0;i<n;i++)if(options[i].action==20)found++;CHECK(found==1);
+  UiContextAction options[24];int n=options_for_page(options),found=0;for(int i=0;i<n;i++)if(options[i].action==20)found++;CHECK(found==1);
   CHECK(result_count==(split_view?0u:2u));
   for(unsigned i=0;i<result_count;i++)CHECK(catalog.items[results[i]].mode==VT_IPTV_LIST);
  }
@@ -31,7 +31,7 @@ static void prepare(int split,const unsigned *keys,unsigned count){
 static void switch_action(int split,int action){
  prepare(split,NULL,0);split_view=split;saved_view=1;saved_channels=0;
  CHECK(!reload_saved());picker_focus=split;picker_cursor=1;filter_catalog();
- UiContextAction actions[16];int n=options_for_page(actions),index=-1;
+ UiContextAction actions[24];int n=options_for_page(actions),index=-1;
  for(int i=0;i<n;i++)if(actions[i].action==action)index=i;
  CHECK(index>=0);
  unsigned at=1;input_script[at++]=SCE_CTRL_RTRIGGER;at++;

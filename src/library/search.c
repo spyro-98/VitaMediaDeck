@@ -69,7 +69,8 @@ static Job jobs[JOB_MAX];
 static int job_count, next_job, stopping, available_workers;
 static unsigned generation, publication_revision;
 static char cover_ids[24][16];
-static int cover_count;
+static int cover_count, cover_view_open;
+static char worker_cover[WORKERS][16];
 static volatile int cancellations[WORKERS];
 static int worker_indices[WORKERS];
 static VtLibrarySearchStatus status;
@@ -334,7 +335,8 @@ static void *worker(void *arg) {
     int index = *(int *)arg;
     for (;;) {
         pthread_mutex_lock(&search_mutex);
-        while (!stopping && next_job >= job_count)
+        while (!stopping && (next_job >= job_count ||
+               (cover_view_open && jobs[next_job].type == 5)))
             pthread_cond_wait(&search_changed, &search_mutex);
         int done = stopping;
         Job *j = NULL;
@@ -342,6 +344,7 @@ static void *worker(void *arg) {
             j = malloc(sizeof(*j));
             if (j) {
                 *j = jobs[next_job++];
+                snprintf(worker_cover[index],16,"%s",j->type==5?j->folder.id:"");
                 __atomic_store_n(&cancellations[index], 0, __ATOMIC_RELEASE);
                 j->cancel = &cancellations[index];
             }
@@ -356,6 +359,7 @@ static void *worker(void *arg) {
         int result = process(j);
         rebuild_snapshot(j->generation);
         pthread_mutex_lock(&search_mutex);
+        worker_cover[index][0]=0;
         if (j->generation == generation) {
             if (j->type == 6)
                 cache_refresh_queued = 0;
@@ -632,15 +636,40 @@ int vt_library_search_home_media(VtLibraryResult *out, int capacity) {
     pthread_mutex_unlock(&search_mutex);
     return written;
 }
+void vt_library_search_cover_view_begin(void) {
+    pthread_mutex_lock(&search_mutex);
+    cover_count=0;cover_view_open=1;
+    pthread_mutex_unlock(&search_mutex);
+}
+static int cover_visible(const char *id) {
+    for(int i=0;i<cover_count;i++)if(!strcmp(cover_ids[i],id))return 1;
+    return 0;
+}
+void vt_library_search_cover_view_end(void) {
+    pthread_mutex_lock(&search_mutex);
+    if(cover_view_open){
+        int written=next_job;
+        for(int i=next_job;i<job_count;i++)
+            if(jobs[i].type!=5||cover_visible(jobs[i].folder.id))jobs[written++]=jobs[i];
+        memset(jobs+written,0,(job_count-written)*sizeof(*jobs));job_count=written;
+        for(int i=0;i<WORKERS;i++)
+            if(worker_cover[i][0]&&!cover_visible(worker_cover[i]))
+                __atomic_store_n(&cancellations[i],1,__ATOMIC_RELEASE);
+        cover_view_open=0;
+    }
+    pthread_cond_broadcast(&search_changed);
+    pthread_mutex_unlock(&search_mutex);
+}
 void vt_library_search_cover(const VtLibraryItem *v) {
     if (!v || !v->artwork_url[0] || v->artwork[0])
         return;
     pthread_mutex_lock(&search_mutex);
-    int requested = 0;
-    for (int i = 0; i < cover_count; i++)
-        if (!strcmp(cover_ids[i], v->id))
-            requested = 1;
-    if (!requested && cover_count < 24 && available_workers && !stopping) {
+    int visible=cover_visible(v->id);
+    if(!visible&&cover_count<24)snprintf(cover_ids[cover_count++],16,"%s",v->id);
+    int requested=0;
+    for(int i=next_job;i<job_count;i++)if(jobs[i].type==5&&!strcmp(jobs[i].folder.id,v->id))requested=1;
+    for(int i=0;i<WORKERS;i++)if(!strcmp(worker_cover[i],v->id))requested=1;
+    if (!requested && (visible||cover_visible(v->id)) && available_workers && !stopping) {
         if (job_count == JOB_MAX && next_job) {
             int pending = job_count - next_job;
             memmove(jobs, jobs + next_job, (size_t)pending * sizeof(*jobs));
@@ -649,13 +678,19 @@ void vt_library_search_cover(const VtLibraryItem *v) {
             next_job = 0;
         }
         if (job_count < JOB_MAX) {
-            Job *j = &jobs[job_count++];
+            /* Current artwork precedes provider prefetch. Priorities do not
+             * accumulate: the next viewport replaces this small set. */
+            int insertion=next_job;
+            while(insertion<job_count&&jobs[insertion].type==5)insertion++;
+            memmove(jobs+insertion+1,jobs+insertion,(job_count-insertion)*sizeof(*jobs));
+            job_count++;
+            Job *j = &jobs[insertion];
             memset(j, 0, sizeof(*j));
             j->generation = generation;
             j->type = 5;
             j->provider = -1;
             j->folder = *v;
-            snprintf(cover_ids[cover_count++], 16, "%s", v->id);
+
         }
     }
     pthread_cond_broadcast(&search_changed);
@@ -676,6 +711,7 @@ void vt_library_search_local_refresh(void) {
 }
 void vt_library_search_cancel(void) {
     pthread_mutex_lock(&search_mutex);
+    cover_view_open=0;cover_count=0;
     generation++;
     for (int i = 0; i < WORKERS; i++)
         __atomic_store_n(&cancellations[i], 1, __ATOMIC_RELEASE);

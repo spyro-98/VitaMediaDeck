@@ -17,7 +17,11 @@ void vt_video_thumbnail_suspend(void);
  * decoder claims CDRAM, and briefly waits for the CPU worker to acknowledge
  * cancellation. Safe to call repeatedly. */
 void vt_video_thumbnail_prepare_playback(void);
+/* Begins the current viewport request set and uploads one completed image.
+ * End after drawing: requests absent from this frame are discarded/cancelled.
+ * Cached textures and files survive viewport changes. UI thread only. */
 void vt_video_thumbnail_pump(void);
+void vt_video_thumbnail_view_end(void);
 
 /* Non-blocking. Returns a cached GPU texture or queues the path and returns
  * NULL. Sidecar artwork remains the caller's first choice. */

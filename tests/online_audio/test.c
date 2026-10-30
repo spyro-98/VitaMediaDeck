@@ -60,7 +60,7 @@ int vita_https_perform(VitaHttpsClient *c,const VitaHttpsRequest *r,VitaHttpsRes
     snprintf(last_url,sizeof(last_url),"%s",r->url);
     if(*r->cancel_flag)return -1;
     if(feed_cover_test) {
-        const char *body=strstr(r->url,"feed.xml")?"<rss><channel><image><url>podcast.png</url></image></channel></rss>":"\x89PNG\r\n\x1a\n";
+        const char *body=strstr(r->url,"feed.xml")?"<rss><channel><image><url>podcast.png</url></image><item><title>Episode</title><enclosure url='episode.mp3'/></item></channel></rss>":"\x89PNG\r\n\x1a\n";
         return r->write(body,strlen(body),r->write_opaque)==strlen(body)?0:-1;
     }
     if(recover_test) {
@@ -202,7 +202,15 @@ static void saved_test(void) {
     fixture="\x89PNG\r\n\x1a\n";CHECK(!vt_online_fetch_cover(&item,&cancelled));CHECK(strstr(item.artwork_path,".png"));
     unsigned requests=calls;CHECK(!vt_online_fetch_cover(&item,&cancelled)&&requests==calls);fixture=NULL;
     VtOnlineItem feed={.kind=VT_ONLINE_FEED,.url="https://example.org/feed.xml"};
-    feed_cover_test=1;CHECK(!vt_online_fetch_cover(&feed,&cancelled));feed_cover_test=0;
+    feed_cover_test=1;CHECK(!vt_online_fetch_cover(&feed,&cancelled));
+    unsigned refreshed=calls;CHECK(!vt_online_refresh_cover(&feed,NULL,&cancelled)&&calls==refreshed+2);
+    VtOnlineItem legacy_episode={.kind=VT_ONLINE_EPISODE,.url="https://example.org/episode.mp3"};
+    CHECK(!vt_online_refresh_cover(&legacy_episode,"https://example.org/feed.xml",&cancelled));
+    CHECK(!strcmp(legacy_episode.artwork_url,"https://example.org/podcast.png")&&legacy_episode.artwork_path[0]);
+    VtOnlineItem old_episode={.kind=VT_ONLINE_EPISODE,.url="https://example.org/old-episode.mp3"};
+    CHECK(!vt_online_refresh_cover(&old_episode,"https://example.org/feed.xml",&cancelled));
+    CHECK(!strcmp(old_episode.artwork_url,"https://example.org/podcast.png")&&old_episode.artwork_path[0]);
+    feed_cover_test=0;
     CHECK(!strcmp(feed.artwork_url,"https://example.org/podcast.png")&&feed.artwork_path[0]);
     /* The same URL may be a radio and a feed: remove only the requested kind. */
     feed.kind=VT_ONLINE_FEED;strcpy(feed.url,item.url);strcpy(feed.title,"Other provider");
@@ -279,7 +287,10 @@ static void browser_test(void) {
     VtOnlineItem radio={.kind=VT_ONLINE_RADIO,.url="https://example.org/radio",.id="986c5985-41d7-11ea-a95e-52543be04c81"};
     fixture=NULL;recover_test=1;CHECK(!vt_online_fetch_cover(&radio,&q->cancel));recover_test=0;
     CHECK(!strcmp(radio.artwork_url,"https://example.org/recovered.png")&&radio.artwork_path[0]);
-    CHECK(!strcmp(radio.description,"news talk"));free(q);
+    CHECK(!strcmp(radio.description,"news talk"));
+    strcpy(radio.artwork_url,"https://example.org/obsolete.png");recover_test=1;unsigned refreshed=calls;
+    CHECK(!vt_online_refresh_cover(&radio,NULL,&q->cancel)&&calls==refreshed+2);recover_test=0;
+    CHECK(!strcmp(radio.artwork_url,"https://example.org/recovered.png")&&radio.artwork_path[0]);free(q);
 }
 int main(int argc,char **argv) {
     CHECK(argc>=2); FILE *f=fopen(argv[1],"rb");CHECK(f);fseek(f,0,SEEK_END);mp3_size=ftell(f);rewind(f);mp3=malloc(mp3_size);CHECK(fread(mp3,1,mp3_size,f)==mp3_size);fclose(f);

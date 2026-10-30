@@ -61,6 +61,8 @@ unsigned vt_library_search_revision(void) {
     return home_publication_revision+(publication_fixture && frame >= 16 ? 1u : 0u);
 }
 void vt_library_search_local_refresh(void) {}
+void vt_library_search_cover_view_begin(void) {}
+void vt_library_search_cover_view_end(void) {}
 void vt_library_search_cover(const VtLibraryItem *v) {
     (void)v;
 }

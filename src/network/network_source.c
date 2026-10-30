@@ -420,7 +420,7 @@ static int network_factory_open_cancelable(void *opaque,
 				    factory->jellyfin_media_source_id,
 				    factory->jellyfin_subtitle_index, out, cancel_flag);
 			return vt_jellyfin_open_stream(&factory->source,
-			                               &factory->credential, factory->path, out,
+			                               &factory->credential, factory->path, factory->jellyfin_media_source_id, out,
 			                               cancel_flag, &factory->buffer,
 			                               &factory->buffer_owner);
 		default: return -1;

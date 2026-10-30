@@ -10,26 +10,13 @@
 #endif
 #include <psp2/kernel/processmgr.h>
 #define IPTV_TR(s) vt_i18n_str(VT_STR_##s)
-static void program_local_time(time_t value,struct tm *out){
-#ifdef __vita__
- /* Vita's configured zone belongs to SceRtc, independently of libc's TZ. */
- SceDateTime date;SceRtcTick utc,local;
- if(value>=0&&sceRtcSetTime64_t(&date,(SceUInt64)value)>=0&&sceRtcGetTick(&date,&utc)>=0&&
-    sceRtcConvertUtcToLocalTime(&utc,&local)>=0&&sceRtcSetTick(&date,&local)>=0){
-  memset(out,0,sizeof(*out));out->tm_year=date.year-1900;out->tm_mon=date.month-1;out->tm_mday=date.day;
-  out->tm_hour=date.hour;out->tm_min=date.minute;out->tm_sec=date.second;return;
- }
- gmtime_r(&value,out);
-#else
- localtime_r(&value,out);
-#endif
-}
+#include "ui/program_time.h"
 static void time_range(int64_t start,int64_t end,char out[96]){
  out[0]=0;if(start<=0)return;
  time_t a=start,b=end,now=time(NULL);struct tm ta,tb,tn;
- program_local_time(a,&ta);program_local_time(now,&tn);
+ ui_program_local_time(a,&ta);ui_program_local_time(now,&tn);
  char prefix[32]="";if(ta.tm_year!=tn.tm_year||ta.tm_mon!=tn.tm_mon||ta.tm_mday!=tn.tm_mday)snprintf(prefix,sizeof(prefix),"%02d/%02d · ",ta.tm_mday,ta.tm_mon+1);
- if(end>start){program_local_time(b,&tb);snprintf(out,96,"%s%02d:%02d – %02d:%02d",prefix,ta.tm_hour,ta.tm_min,tb.tm_hour,tb.tm_min);}
+ if(end>start){ui_program_local_time(b,&tb);snprintf(out,96,"%s%02d:%02d – %02d:%02d",prefix,ta.tm_hour,ta.tm_min,tb.tm_hour,tb.tm_min);}
  else snprintf(out,96,"%s%02d:%02d",prefix,ta.tm_hour,ta.tm_min);
 }
 static void program_append(char body[12288],const char *value){
@@ -44,7 +31,7 @@ static void program_draw(UiIptvPlayerPanel *p,float x,const VtIptvOptions *o){
   time_range(g->start,g->end,range);program_append(body,range);
   int64_t now=time(NULL);
   if(g->end>now&&g->end-now<86400){
-   time_t end=g->end;struct tm tm;program_local_time(end,&tm);char clock[16],remaining[160];
+   time_t end=g->end;struct tm tm;ui_program_local_time(end,&tm);char clock[16],remaining[160];
    snprintf(clock,sizeof(clock),"%02d:%02d",tm.tm_hour,tm.tm_min);
    snprintf(remaining,sizeof(remaining),IPTV_TR(IPTV_ENDS_AT),clock,(int)((g->end-now+59)/60));program_append(body,remaining);
   }

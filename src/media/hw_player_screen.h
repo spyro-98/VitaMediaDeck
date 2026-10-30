@@ -31,6 +31,12 @@ typedef struct {
 	void *favorite_ctx;
     int (*saved)(void *ctx,int toggle); /* Independent saved-channel membership. */
     void *saved_ctx;
+    /* Server VOD is forward-only. Seeking returns to its owner for a fresh,
+     * negotiated session; displayed/history time remains the original movie. */
+    uint64_t timeline_offset_ms,total_duration_ms;
+    uint64_t *requested_seek_ms;
+    VtDecoderBackend *session_backend;
+    unsigned channel_navigation; /* bit 0 previous, bit 1 next; owner closes first. */
     VtIptvQualityTrial *quality_trial;
     VtDecoderBackend *iptv_backend;
     const VtIptvOptions *iptv_options;
@@ -48,12 +54,16 @@ typedef struct {
 /* A player can hand navigation back to the application's shared sections
  * through its L1 sidebar without conflating that with decoder errors. */
 #define VT_HW_PLAYER_ACTION_SECTION_BASE 100
+#define VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE 300
 #define VT_HW_PLAYER_ACTION_MINIMIZE 1
 #define VT_HW_PLAYER_ACTION_GO_LIVE 2
 #define VT_HW_PLAYER_ACTION_STREAM_CHANGE 3
 #define VT_HW_PLAYER_ACTION_TRIAL_DONE 4
 #define VT_HW_PLAYER_ACTION_TRIAL_SKIP 5
 #define VT_HW_PLAYER_ACTION_RECALIBRATE 6
+#define VT_HW_PLAYER_ACTION_PREVIOUS_CHANNEL 200
+#define VT_HW_PLAYER_ACTION_NEXT_CHANNEL 201
+#define VT_HW_PLAYER_ACTION_SERVER_SEEK 202
 
 struct VtIptvSession;
 /* Live-specific entry point. Resume returns GO_LIVE so the owner closes both
@@ -61,6 +71,8 @@ struct VtIptvSession;
 int vt_hw_player_screen_run_live(const VtHwPlayerScreenSource *source,
                                  struct VtIptvSession *session);
 
+int vt_hw_player_screen_run_server(const VtHwPlayerScreenSource *,struct VtIptvSession *,
+                                   uint64_t *position,uint64_t *duration,int *paused);
 int vt_hw_player_screen_run(const VtHwPlayerScreenSource *source,
 	                        uint64_t *last_position_ms,
 	                        uint64_t *last_duration_ms,

@@ -1,4 +1,4 @@
-# VitaMediaDeck 1.4.3
+# VitaMediaDeck 1.4.4 Beta
 
 <p align="center">
   <a href="assets/branding/vitamediadeck-icon.png"><img src="sce_sys/icon0.png" width="128" height="128" alt="VitaMediaDeck app icon"></a>
@@ -14,9 +14,11 @@
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 VitaMediaDeck is a **public-beta media app for PS Vita**, combining local files,
-personal media servers, internet radio, podcasts and IPTV. Version **1.4.3**
-opens Home from saved local data while network setup and artwork discovery
-continue independently in the background.
+personal media servers, internet radio, podcasts and IPTV.
+
+**[Download 1.4.4 Beta](https://github.com/spyro-98/VitaMediaDeck/releases/tag/1.4.4)** ·
+Branch: `beta`, based on `dev`. The bubble is named **VitaMediaDeck Beta 1.4.4**.
+This is a testing release; the published 1.4.3 remains available.
 
 <p align="center">
   <a href="screenshots/1.4.1/vmd-home.png"><img src="screenshots/1.4.1/vmd-home.png" width="960" alt="VitaMediaDeck 1.4.1 Home: continue playback, saved connections, favourites and recently played media"></a>
@@ -40,6 +42,22 @@ continue independently in the background.
 - **A connected library:** one Home for unfinished media, saved connections,
   favourites and recently played items, plus background search across indexed
   titles, filenames, artists, albums and available provider metadata.
+
+## What's new in 1.4.4 Beta
+
+- **Images where you are:** visible artwork loads first. Navigation replaces stale requests;
+  Refresh also recovers missing IPTV, radio and podcast logos and keeps them cached.
+- **IPTV zapping and TV guide:** Up/Down changes channels during playback. The guide
+  aligns channel columns on one vertical timeline, with a red current-time line,
+  automatic following, manual scrolling and a Now action.
+- **Jellyfin server playback:** automatic direct-play/transcode negotiation, plus
+  server-assisted seeking with the original movie timeline.
+- **Playback memory and volume:** a smaller/adaptive Full HD output pool and
+  a consistent 0–100% normal range, with optional boost up to 150%.
+
+Native builds and host regressions pass. Vita playback and a real Jellyfin server
+still need beta testing; the reported system-reset cause is not established.
+Transcoded Jellyfin playback currently stays full-screen without external subtitle selection.
 
 ## What's new in 1.4.3
 
@@ -150,7 +168,7 @@ New captures are from **1.4.2**; earlier screenshots remain where no replacement
 ## Compatibility
 
 - Video requires compatible **H.264/AVC and mono/stereo AAC**. Jellyfin uses
-  direct play; server transcoding is not integrated. PGS/VobSub bitmap subtitles
+  direct play or H.264/AAC server transcoding up to 720p/4 Mbps. PGS/VobSub bitmap subtitles
   are not rendered.
 - IPTV supports compatible, non-DRM HLS/DASH streams. Automatic rendition
   selection prefers lighter variants when available, with user-selectable quality

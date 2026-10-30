@@ -46,7 +46,7 @@
 #define MUSIC_STICK_REPEAT_FIRST_US (320 * 1000ULL)
 #define MUSIC_STICK_REPEAT_US (220 * 1000ULL)
 #define MUSIC_VOLUME_STEP 5
-#define MUSIC_VOLUME_MAX 300
+#define MUSIC_VOLUME_MAX VT_AUDIO_VOLUME_MAX_PERCENT
 #define MUSIC_RIGHT_PANEL_W 430.0f
 #define MUSIC_RIGHT_ROW_Y 82.0f
 #define MUSIC_RIGHT_ROW_STEP 52.0f
@@ -601,6 +601,12 @@ static void draw_music_volume(int percent, float opacity,
 	if (fraction > 1.0f) fraction = 1.0f;
 	vita2d_draw_rectangle(x, y + h * (1.0f - fraction), 9, h * fraction,
 	                      with_alpha(foreground, alpha));
+	float normal_y = y + h * (1.0f - 100.0f / MUSIC_VOLUME_MAX);
+	if (percent > 100)
+		vita2d_draw_rectangle(x, y + h * (1.0f - fraction), 9,
+		                      normal_y - y - h * (1.0f - fraction),
+		                      with_alpha(VT_THEME_WARNING, alpha));
+	vita2d_draw_rectangle(x - 3, normal_y, 15, 1, with_alpha(foreground, alpha));
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
 	if (small)
 		ui_font_draw_textf(small, x - 13, y - 9, with_alpha(foreground, alpha),

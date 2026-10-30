@@ -67,7 +67,17 @@ int main(void){
  VtIptvQualityTrial trial={0};source.quality_trial=&trial;
  player_program_start(&state,&source,&panel,1,0);CHECK(!state.job&&!panel.program_loading);source.quality_trial=NULL;
  source.iptv_program_ctx_size=0;player_program_start(&state,&source,&panel,1,0);CHECK(panel.program_error&&!state.job);
- vt_iptv_program_release(state.job);vt_iptv_program_shutdown();
+ vt_iptv_program_release(state.job);
+ Context batch[6];for(unsigned i=0;i<6;i++){batch[i]=(Context){.magic=0x123456789abcdef0ULL};snprintf(batch[i].channel,sizeof(batch[i].channel),"Grid %u",i);}
+ VtIptvProgramJob *grid=vt_iptv_program_request_batch(fetch_program,batch,sizeof(batch[0]),6,0);CHECK(grid);
+ memset(batch,0,sizeof(batch));VtIptvProgram row;
+ for(unsigned i=0;i<6;i++){
+  int ready=0;for(int tick=0;tick<5000&&!ready;tick++){ready=vt_iptv_program_poll_row(grid,i,&row);if(!ready)usleep(1000);}
+  char title[64];snprintf(title,sizeof(title),"Programme Grid %u",i);CHECK(ready==1&&!strcmp(row.title,title));
+ }
+ CHECK(vt_iptv_program_poll_row(grid,6,&row)==VT_IPTV_INVALID);vt_iptv_program_release(grid);
+ CHECK(!vt_iptv_program_request_batch(fetch_program,&ctx,sizeof(ctx),7,0));
+ vt_iptv_program_shutdown();
  CHECK(!active);alarm(0);
  printf("Background programme loading: %u checks; starts before R1, 120 UI ticks during blocked fetch, deep context lifetime, cancelled channel switch/latest-only queue, no stale publication, refresh error retention, VOD/trial exclusion and clean shutdown passed.\n",checks);
 }

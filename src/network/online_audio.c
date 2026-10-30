@@ -57,7 +57,7 @@ static char *fetch_limited(const char *url, volatile int *cancel, size_t *length
 	Response result = {.data = malloc(1), .capacity = 1, .limit = limit};
 	if (!result.data) return NULL;
 	result.data[0] = 0;
-	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.3",
+	VitaHttpsClientConfig options = {.user_agent = "VitaMediaDeck/1.4.4",
 	    .allow_http = 1, .connect_timeout_ms = 10000, .request_timeout_ms = 20000};
 	VitaHttpsClient *client = vita_https_client_create(&options);
 	if (!client) { free(result.data); return NULL; }
@@ -377,7 +377,7 @@ static int fetch_query_raw(void *opaque) {
 				    json_text(entry, "stationuuid"), VT_ONLINE_RADIO);
 				if (q->count > before) {
 					VtOnlineItem *item=&q->items[before];
-					snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",json_text(entry,"favicon"));
+					if(vt_online_url_valid(json_text(entry,"favicon")))snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",json_text(entry,"favicon"));
 					snprintf(item->description,sizeof(item->description),"%s",json_text(entry,"tags"));
 					snprintf(q->items[before].detail, sizeof(q->items[before].detail), "%s / %s / MP3",
 					    json_text(entry, "countrycode"), json_text(entry, "state"));
@@ -558,17 +558,18 @@ int vt_online_resolve_show(VtOnlineItem *item,volatile int *cancel) {
 	if(vt_online_url_valid(feed)){snprintf(item->url,sizeof(item->url),"%s",feed);item->kind=VT_ONLINE_FEED;result=0;}
 	json_decref(root);return result;
 }
-int vt_online_fetch_cover(VtOnlineItem *item, volatile int *cancel) {
+static int online_cover(VtOnlineItem *item, volatile int *cancel,int refresh) {
 	/* Favorites created before artwork support still have the catalogue UUID. */
-	if(item && item->kind==VT_ONLINE_RADIO && !item->artwork_url[0] && strlen(item->id)==36 &&
+	if(item && item->kind==VT_ONLINE_RADIO && (refresh||!item->artwork_url[0]) && strlen(item->id)==36 &&
 	   strspn(item->id,"0123456789abcdefABCDEF-")==36) {
 		char url[192];snprintf(url,sizeof(url),"https://de1.api.radio-browser.info/json/stations/byuuid/%s",item->id);
 		size_t size=0;char *data=fetch(url,cancel,&size);json_t *root=data?json_loadb(data,size,0,NULL):NULL;free(data);
 		json_t *entry=json_array_get(root,0);
 		snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",json_text(entry,"favicon"));
-		snprintf(item->description,sizeof(item->description),"%s",json_text(entry,"tags"));json_decref(root);
+		if(*json_text(entry,"tags")){snprintf(item->description,sizeof(item->description),"%s",json_text(entry,"tags"));}
+        json_decref(root);
 	}
-    if(item && item->kind==VT_ONLINE_FEED && !item->artwork_url[0] && vt_online_url_valid(item->url)) {
+    if(item && item->kind==VT_ONLINE_FEED && (refresh||!item->artwork_url[0]) && vt_online_url_valid(item->url)) {
         size_t size=0;char *data=fetch_limited(item->url,cancel,&size,VT_ONLINE_FEED_LIMIT);
         xmlTextReaderPtr reader=data?xmlReaderForMemory(data,(int)size,item->url,NULL,XML_PARSE_NONET|XML_PARSE_NOERROR|XML_PARSE_NOWARNING):NULL;
         if(reader) {
@@ -588,8 +589,51 @@ int vt_online_fetch_cover(VtOnlineItem *item, volatile int *cancel) {
         free(data);
     }
 	if(!item || !vt_online_url_valid(item->artwork_url))return -1;
-	return vt_artwork_cache_get(item->artwork_url, item->artwork_path,
+	return (refresh?vt_artwork_cache_refresh:vt_artwork_cache_get)(item->artwork_url, item->artwork_path,
 	    sizeof(item->artwork_path), cancel, fetch);
+}
+
+int vt_online_fetch_cover(VtOnlineItem *item,volatile int *cancel){return online_cover(item,cancel,0);}
+static int refresh_cover(VtOnlineItem *item,const char *feed_url,volatile int *cancel){
+ if(!item||vt_online_item_country(item))return -1;
+ if(item->kind==VT_ONLINE_SHOW){
+  VtOnlineItem resolved=*item;
+  if(!vt_online_resolve_show(&resolved,cancel)){
+   int r=online_cover(&resolved,cancel,1);
+   snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",resolved.artwork_url);
+   snprintf(item->artwork_path,sizeof(item->artwork_path),"%s",resolved.artwork_path);return r;
+  }
+ }
+ if(item->kind==VT_ONLINE_EPISODE&&vt_online_url_valid(feed_url)){
+  size_t size=0;char *data=fetch_limited(feed_url,cancel,&size,VT_ONLINE_FEED_LIMIT);
+  VtOnlineQuery *q=data?calloc(1,sizeof(*q)):NULL;
+  if(q&&!vt_online_parse_feed(data,size,feed_url,q))
+   for(int i=0;i<q->count;i++)if(!strcmp(q->items[i].url,item->url)&&q->items[i].artwork_url[0]){
+    snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",q->items[i].artwork_url);break;
+   }
+  free(q);free(data);
+  /* Old saved episodes can be outside the bounded first feed page. Use the
+   * show's own artwork rather than another episode's image in that case. */
+  if(!item->artwork_url[0]&&!(cancel&&*cancel)){
+   VtOnlineItem show={.kind=VT_ONLINE_FEED};snprintf(show.url,sizeof(show.url),"%s",feed_url);
+   int result=online_cover(&show,cancel,1);
+   if(!result){snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",show.artwork_url);snprintf(item->artwork_path,sizeof(item->artwork_path),"%s",show.artwork_path);}
+   return result;
+  }
+ }
+ return online_cover(item,cancel,1);
+}
+
+int vt_online_refresh_cover(VtOnlineItem *item,const char *feed,volatile int *cancel){
+ if(!item)return -1;
+ char old_url[sizeof(item->artwork_url)],old_path[sizeof(item->artwork_path)];
+ snprintf(old_url,sizeof(old_url),"%s",item->artwork_url);snprintf(old_path,sizeof(old_path),"%s",item->artwork_path);
+ int result=refresh_cover(item,feed,cancel);
+ if(result<0||(cancel&&__atomic_load_n(cancel,__ATOMIC_ACQUIRE))){
+  snprintf(item->artwork_url,sizeof(item->artwork_url),"%s",old_url);
+  snprintf(item->artwork_path,sizeof(item->artwork_path),"%s",old_path);
+ }
+ return result;
 }
 
 /* Public catalogue snapshots: offline reads precede a background refresh.

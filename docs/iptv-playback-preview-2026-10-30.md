@@ -1,0 +1,16 @@
+# VitaMediaDeck 1.4.4 Beta
+
+Branch `beta` starts from `dev`; tag `1.4.4` identifies this prerelease. The 1.4.3 stable release is unchanged.
+
+Beta builds default to `-DVITAMEDIADECK_BETA=ON`, showing `VitaMediaDeck Beta 1.4.4` in the bubble. Use `OFF` only when preparing a stable package. The title ID remains `VMDK00001`, preserving the existing on-device data directory.
+
+- **Visible resources first:** each rendered viewport replaces its thumbnail request set. Old work is cancelled, priorities can decrease, and caches survive navigation. Home cover requests precede provider discovery; IPTV/radio/podcast workers favour the selected and visible entries, then finish explicitly requested refreshes in the background.
+- **Refresh artwork:** IPTV saved/favourite channels can recover channel identity and guide logos. Radio and podcast refresh re-resolves provider/feed artwork, including episode artwork, and updates the persistent image cache. Failed downloads retain the previous valid image; custom names, stars and quality preferences remain intact.
+- **Zapping:** Up/Down or the previous/next touch controls change channels in the current filtered/sorted list. Nested playlists are skipped. The old decoder and producer close before another opens; held input does not create a switch queue.
+- **TV guide:** channel columns share one vertical time scale. A red horizontal line marks the current time. Following mode scrolls the schedule with the clock; manual scrolling suspends it, and Triangle, the Now touch action or R1 restores it. Guide rows load asynchronously, with one running and one replaceable request. Missing schedules stay explicitly unavailable. All eight themes use their own palette.
+- **Jellyfin:** PlaybackInfo negotiates direct play or HLS server conversion to H.264/AAC stereo, up to 720p/4 Mbps. Failed direct playback may retry once through the server. Seeking creates a fresh server session while preserving the original movie timeline and local history. Authenticated media requests stay on the configured server, byte ranges are verified, and encoder cleanup follows decoder/producer teardown. Transcoded playback currently stays full-screen; external subtitle selection for this path is not implemented.
+- **Decoder memory:** the 1080p direct-output pool uses 24 MiB instead of 36 MiB. Under allocation pressure, a smaller output queue is accepted when at least six surfaces exist. Codec/GPU references still own each surface until release. This does not establish the cause of the reported console reset.
+
+Host checks cover queue replacement, retained caches, forced artwork refresh, 80 sequential channel switches, aligned guide rendering and clock movement, manual/Now navigation in eight themes, real decoder pool allocation/failure/cleanup, and Jellyfin negotiation/session ownership. Address/undefined/thread sanitizers run where applicable. Native compilation and package/PAF/LTO audits are separate from runtime acceptance.
+
+Physical Vita playback, the reported reset, native touch feel and a real Jellyfin server still require device/server validation. Console logs and dumps are kept privately outside repositories and are never part of the package or Git.

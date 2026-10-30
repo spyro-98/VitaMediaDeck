@@ -425,7 +425,7 @@ static int download_url(VtDownloadJob *job) {
 	/* Plain HTTP is an explicit direct-download choice. vita-https still keeps
 	 * HTTPS verification enabled and forbids HTTPS-to-HTTP redirect downgrades. */
 	config.allow_http = 1;
-	config.user_agent = "VitaMediaDeck/1.4.3";
+	config.user_agent = "VitaMediaDeck/1.4.4";
 	/* Downloads are bounded by cancellation and the low-speed watchdog, not the
 	 * generic request API's 20-second wall-clock timeout. LONG_MAX is roughly
 	 * 24 days on Vita and leaves genuinely stalled transfers detectable. */

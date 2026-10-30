@@ -33,7 +33,7 @@ copy_tree() {
 copy_tree "$repo_root/build/release-sources" general
 copy_tree "$repo_root/build/release-licenses" general-licenses
 copy_tree "$repo_root/build/deps/ffmpeg-vita-hw/share/sources" ffmpeg-hardware
-copy_tree "${VITAMEDIADECK_SW_DECODER_PACKAGE:-$repo_root/../vita-sw-decoder}/build/deps/ffmpeg-vita-sw/share/sources" ffmpeg-software
+copy_tree "$repo_root/build/deps/ffmpeg-vita-hw/share/sources" ffmpeg-software
 copy_tree "$repo_root/build/deps/libssh2-vita/share/sources" libssh2
 copy_tree "${VITAMEDIADECK_HTTPS_PACKAGE:-$repo_root/../vita-https}/build/deps/curl-mbedtls/share/sources" https
 
@@ -41,6 +41,20 @@ cp "$repo_root/release/DEPENDENCIES.lock" "$stage/DEPENDENCIES.lock"
 cp "$repo_root/release/VitaMediaDeck.spdx" "$stage/VitaMediaDeck.spdx"
 cp "$repo_root/LICENSE" "$stage/VitaMediaDeck-GPL-3.0.txt"
 cp "$repo_root/THIRD_PARTY_NOTICES.md" "$stage/THIRD_PARTY_NOTICES.md"
-tar -C "$stage" -czf "$output" .
+# Publish source without local account names, extended attributes or Finder data.
+COPYFILE_DISABLE=1 python3 - "$stage" "$output" <<'PY_SOURCE_ARCHIVE'
+import sys, tarfile
+
+def public_metadata(info):
+    if info.name.rsplit('/', 1)[-1].startswith('._'):
+        return None
+    info.uid = info.gid = 0
+    info.uname = info.gname = ''
+    info.pax_headers = {}
+    return info
+
+with tarfile.open(sys.argv[2], 'w:gz') as archive:
+    archive.add(sys.argv[1], arcname='.', filter=public_metadata)
+PY_SOURCE_ARCHIVE
 tar -tzf "$output" >/dev/null
 echo "$output"

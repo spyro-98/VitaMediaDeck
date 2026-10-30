@@ -57,5 +57,7 @@ int vt_online_remove(int kind, const char *url);
 int vt_online_resolve_show(VtOnlineItem *item, volatile int *cancel);
 /* Bounded raster cover cache; call on a worker, not during drawing. */
 int vt_online_fetch_cover(VtOnlineItem *item, volatile int *cancel);
+/* Re-resolve station/feed/episode artwork and refresh the persistent image. */
+int vt_online_refresh_cover(VtOnlineItem *item, const char *feed_url, volatile int *cancel);
 void vt_online_search_normalize(const char *in, char *spaced, char *compact, size_t capacity);
 #endif

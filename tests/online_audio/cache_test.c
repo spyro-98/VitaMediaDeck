@@ -60,6 +60,11 @@ int main(int argc,char **argv) {
     assert(!vt_artwork_cache_get(refresh_url,path,sizeof(path),&cancel,fetch));strcpy(saved_path,path);
     before=requests;char immediate[192]="";assert(!vt_artwork_cache_peek(refresh_url,immediate,sizeof(immediate))&&!strcmp(immediate,path));
     assert(!vt_artwork_cache_due(refresh_url)&&requests==before);
+    assert(!vt_artwork_cache_refresh(refresh_url,path,sizeof(path),&cancel,fetch)&&requests==before+1);
+    strcpy(saved_path,path);before=requests;
+    bad=1;assert(!vt_artwork_cache_refresh(refresh_url,path,sizeof(path),&cancel,fetch)&&requests==before+1&&!strcmp(path,saved_path));
+    bad=0;before=requests;assert(!vt_artwork_cache_refresh(refresh_url,path,sizeof(path),&cancel,fetch)&&requests==before+1);
+    strcpy(saved_path,path);
     clock_seconds+=24*60*60+1;assert(vt_artwork_cache_due(refresh_url));
     bad=1;assert(!vt_artwork_cache_get(refresh_url,path,sizeof(path),&cancel,fetch)&&!strcmp(path,saved_path));
     assert(!vt_artwork_cache_peek(refresh_url,immediate,sizeof(immediate))&&!strcmp(immediate,saved_path));
