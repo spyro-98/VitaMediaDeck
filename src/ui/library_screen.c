@@ -585,6 +585,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         uint64_t now = sceKernelGetProcessTimeWide();
         ui_mini_player_pump();
         vt_video_thumbnail_pump();
+        vt_library_search_cover_view_begin();
         if (ui_local_media_library_tick()) {
             vt_library_search_local_refresh();
             dirty = 1;
@@ -852,7 +853,7 @@ static int dashboard_screen(VtLibraryItem *chosen) {
         }
         ui_mini_player_draw();
         ui_sections_sidebar_draw(&sidebar);
-        vita2d_end_drawing();
+        vt_library_search_cover_view_end();vt_video_thumbnail_view_end();vita2d_end_drawing();
         vita2d_wait_rendering_done();
         vita2d_swap_buffers();
     }
@@ -922,6 +923,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         uint64_t now = sceKernelGetProcessTimeWide();
         ui_mini_player_pump();
         vt_video_thumbnail_pump();
+        vt_library_search_cover_view_begin();
         if (ui_local_media_library_tick() && !in_folder) {
             vt_library_search_local_refresh();
             dirty = 1;
@@ -1311,7 +1313,7 @@ static int library_browser_screen(VtLibraryItem *selected_out) {
         }
         ui_mini_player_draw();
         ui_sections_sidebar_draw(&sidebar);
-        vita2d_end_drawing();
+        vt_library_search_cover_view_end();vt_video_thumbnail_view_end();vita2d_end_drawing();
         vita2d_wait_rendering_done();
         vita2d_swap_buffers();
     }

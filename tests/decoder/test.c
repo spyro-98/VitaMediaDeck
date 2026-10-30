@@ -143,12 +143,17 @@ static void allocation_test(void){
   SoftwareVideoState pool;state_init(&pool);
   pool.texture_width=pool.pitch=high?1920:1280;pool.texture_height=high?1088:720;
   pool.frame_bytes=pool.pitch*pool.texture_height*3/2;
-  CHECK(!allocate_zero_copy_pool(&pool));CHECK(pool.zero_surface_capacity==(high?12:20));
-  CHECK(live_bytes==(uint64_t)pool.zero_surfaces[0].allocation_size*(high?12:20));
-  if(high)CHECK(live_bytes==36ULL*1024*1024);
+  CHECK(!allocate_zero_copy_pool(&pool));CHECK(pool.zero_surface_capacity==(high?8:20));
+  CHECK(live_bytes==(uint64_t)pool.zero_surfaces[0].allocation_size*(high?8:20));
+  if(high)CHECK(live_bytes==24ULL*1024*1024);
   release_frame_buffers(&pool);CHECK(!live_bytes);
  }
 
+ /* Optional queue capacity adapts without retaining a failed block. */
+ SoftwareVideoState tight;state_init(&tight);tight.texture_width=tight.pitch=1920;
+ tight.texture_height=1088;tight.frame_bytes=1920*1088*3/2;
+ failure_nth=attempts+7;CHECK(!allocate_zero_copy_pool(&tight));CHECK(tight.zero_surface_capacity==6);
+ CHECK(live_bytes==18u*1024u*1024u);release_frame_buffers(&tight);failure_nth=0;CHECK(!live_bytes);
  AVFormatContext *demux=avformat_alloc_context();AVStream *stream=avformat_new_stream(demux,NULL);CHECK(stream);stream->time_base=(AVRational){1,1000};stream->codecpar->codec_type=AVMEDIA_TYPE_VIDEO;stream->codecpar->codec_id=AV_CODEC_ID_H264;stream->codecpar->width=64;stream->codecpar->height=64;stream->codecpar->format=AV_PIX_FMT_YUV420P;
  SoftwareVideoState s;state_init(&s);s.demux=demux;s.texture_width=s.pitch=64;s.texture_height=64;s.frame_bytes=6144;s.content_width=s.content_height=64;
  s.hardware_direct_available=1;unsigned before=allocations;
@@ -162,7 +167,7 @@ static void allocation_test(void){
   * Real worker opens libavcodec, and reads a real MP4, not a fake decoder. */
  avformat_free_context(demux);demux=NULL;
  CHECK(avformat_open_input(&demux,fixture,NULL,NULL)==0);CHECK(avformat_find_stream_info(demux,NULL)>=0);
- volatile int cancel=0,gate=0;failure_nth=attempts+7;
+ volatile int cancel=0,gate=0;failure_nth=attempts+5;
  CHECK(api_start(&s,demux,0,64,64,30,0,&cancel,&gate,0)==0);
  CHECK(!s.hardware_direct_available&&!s.zero_copy);CHECK(live_bytes==SOFTWARE_VIDEO_COPY_FRAME_SLOTS*CDRAM_ALIGNMENT);
  for(int i=0;i<SOFTWARE_VIDEO_ZERO_COPY_SURFACES;i++)CHECK(!s.zero_surfaces[i].pixels);

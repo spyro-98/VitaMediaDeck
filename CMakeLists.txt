@@ -19,7 +19,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(vitamediadeck VERSION 1.4.3 LANGUAGES C)
+project(vitamediadeck VERSION 1.4.4 LANGUAGES C)
 
 ## Complete public hardware-decoder backend from wiliwili's FFmpeg-vita
 ## patch.  This is deliberately a whole FFmpeg codec implementation, not the
@@ -224,13 +224,15 @@ include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 # Name displayed below the LiveArea bubble.
 set(VITA_APP_NAME "VitaMediaDeck")
+# The beta branch defaults to beta branding. Stable packaging explicitly opts out.
+option(VITAMEDIADECK_BETA "Show Beta and the version in the LiveArea bubble" ON)
 
 # TITLEID must contain exactly nine characters.
 set(VITA_TITLEID  "VMDK00001")
 
-# Vita package metadata uses the mandatory ##.## form. APP_VER 01.07 is the
-# monotonically increasing package code for the human-facing 1.4.3 release.
-set(VITA_VERSION  "01.07")
+# Vita package metadata uses the mandatory ##.## form. APP_VER 01.08 is the
+# monotonically increasing package code for the human-facing 1.4.4 release.
+set(VITA_VERSION  "01.08")
 
 ## --- Compiler and linker flags --------------------------------------------
 
@@ -397,6 +399,12 @@ endif()
 if(NOT VMD_EFFECTIVE_TEST_ID STREQUAL "standard")
   set(VITA_APP_NAME "VMD ${VMD_EFFECTIVE_TEST_ID}")
 endif()
+if(VITAMEDIADECK_BETA)
+  set(VITA_APP_NAME "VitaMediaDeck Beta ${PROJECT_VERSION}")
+  if(NOT VMD_EFFECTIVE_TEST_ID STREQUAL "standard")
+    set(VITA_APP_NAME "VMD Beta ${PROJECT_VERSION} ${VMD_EFFECTIVE_TEST_ID}")
+  endif()
+endif()
 set(VMD_SW_UPLOAD "NV12_P2")
 if(VITA_SW_DECODER_PLANAR_UPLOAD)
   set(VMD_SW_UPLOAD "YUV420_P3")
@@ -527,6 +535,9 @@ endif()
 
 # Installable homebrew package containing the SELF and application resources.
 set(VITAMEDIADECK_VPK_NAME "VitaMediaDeck-${PROJECT_VERSION}.vpk")
+if(VITAMEDIADECK_BETA)
+  set(VITAMEDIADECK_VPK_NAME "VitaMediaDeck-${PROJECT_VERSION}-beta.vpk")
+endif()
 file(GLOB VMD_COUNTRY_FLAGS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/flags/*.png")
 find_program(VMD_HOST_PYTHON NAMES python3 NO_CMAKE_FIND_ROOT_PATH)
 if(NOT VMD_HOST_PYTHON)

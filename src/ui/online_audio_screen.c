@@ -171,13 +171,19 @@ static int g_lazy_failed_offset=-1;
 static VtOnlineItem g_cover_item;
 static struct {uint64_t key,after;} g_cover_retry[VT_ONLINE_CACHE_MAX];
 static SceUID g_cover_thread=-1;
+static unsigned char g_cover_refresh[VT_ONLINE_CACHE_MAX];
+static int g_cover_force;
+static char g_cover_parent[512];
 static volatile int g_cover_cancel,g_cover_done;
 static volatile int g_action_cancel;
 static int cover_worker(SceSize args,void *ctx) {
-	(void)args;(void)ctx;vt_online_fetch_cover(&g_cover_item,&g_cover_cancel);
+	(void)args;(void)ctx;
+    if(g_cover_force)vt_online_refresh_cover(&g_cover_item,g_cover_parent,&g_cover_cancel);
+    else vt_online_fetch_cover(&g_cover_item,&g_cover_cancel);
 	__sync_synchronize();g_cover_done=1;return sceKernelExitThread(0);
 }
 static void cover_stop(void) {
+    memset(g_cover_refresh,0,sizeof(g_cover_refresh));
     /* The worker owns g_cover_item until done; navigation never joins I/O. */
     if(g_cover_thread>=0)g_cover_cancel=1;
 }
@@ -192,31 +198,51 @@ static void cover_tick(int rows) {
 		sceKernelWaitThreadEnd(g_cover_thread,NULL,NULL);sceKernelDeleteThread(g_cover_thread);g_cover_thread=-1;
 		for(int i=0;i<g_query.count;i++)if(!g_cover_cancel && g_cover_generation==g_context_generation && !strcmp(g_query.items[i].url,g_cover_item.url)) {
 			int recovered=!g_query.items[i].artwork_url[0]&&g_cover_item.artwork_url[0];
-			if(!g_query.items[i].artwork_url[0])snprintf(g_query.items[i].artwork_url,sizeof(g_query.items[i].artwork_url),"%s",g_cover_item.artwork_url);
+			if(g_cover_item.artwork_url[0])snprintf(g_query.items[i].artwork_url,sizeof(g_query.items[i].artwork_url),"%s",g_cover_item.artwork_url);
 			if(g_cover_item.artwork_path[0])ui_artwork_path_update(g_query.items[i].artwork_path,sizeof(g_query.items[i].artwork_path),g_cover_item.artwork_path);
 			VtLibraryItem library_item;
 			vt_library_online(&g_query.items[i],
 				              g_query.kind == VT_ONLINE_EPISODE ? g_query.query : NULL,
 				              &library_item);
 			vt_library_cache(&library_item);
-			if (recovered && saved_list() && favorite_index(&g_query.items[i]) >= 0)
+			if ((recovered||g_cover_force) && favorite_index(&g_query.items[i]) >= 0)
 				vt_online_save(&g_query.items[i]);
 			}
 	}
-	if (g_cover_thread >= 0)
-		return;
-	for (int r = -1; r < rows; r++) {
-		int i = r < 0 ? g_selected : g_top + r;
+	if (g_cover_thread >= 0) {
+        int visible=0;
+        for(int r=-1;r<rows;r++){
+            int i=r<0?g_selected:g_top+r;
+            if(i>=0&&i<g_query.count&&!strcmp(g_query.items[i].url,g_cover_item.url))visible=1;
+        }
+        int visible_pending=0;
+        for(int r=-1;r<rows;r++){
+            int i=r<0?g_selected:g_top+r;if(i<0||i>=g_query.count)continue;
+            VtOnlineItem *v=&g_query.items[i];
+            if(strcmp(v->url,g_cover_item.url)&&(g_cover_refresh[i]||
+               (v->artwork_url[0]&&vt_artwork_cache_due(v->artwork_url)&&sceKernelGetProcessTimeWide()>=g_cover_retry[i].after)))visible_pending=1;
+        }
+        if(!visible&&(!g_cover_force||visible_pending)&&!g_cover_cancel){
+            g_cover_cancel=1;
+            for(int i=0;i<g_query.count;i++)if(!strcmp(g_query.items[i].url,g_cover_item.url)){g_cover_retry[i].after=0;if(g_cover_force)g_cover_refresh[i]=1;}
+        }
+        return;
+    }
+	for (int r = -1; r < rows+g_query.count; r++) {
+		int i = r < 0 ? g_selected : r<rows?g_top+r:r-rows;
+        if(r>=rows&&!g_cover_refresh[i])continue;
 		if (i < 0 || i >= g_query.count || vt_online_item_country(&g_query.items[i]))
 			continue;
 		if (!g_query.items[i].artwork_url[0] &&
 		    !(g_query.items[i].kind == VT_ONLINE_RADIO && g_query.items[i].id[0]) &&
-		    g_query.items[i].kind != VT_ONLINE_FEED)
+		    g_query.items[i].kind != VT_ONLINE_FEED && !g_cover_refresh[i])
 			continue;
-        if(g_query.items[i].artwork_url[0]&&!vt_artwork_cache_due(g_query.items[i].artwork_url))continue;
+        if(!g_cover_refresh[i]&&g_query.items[i].artwork_url[0]&&!vt_artwork_cache_due(g_query.items[i].artwork_url))continue;
         uint64_t now=sceKernelGetProcessTimeWide(),key=ui_page_key(g_query.items[i].url,g_query.items[i].artwork_url);
-        if(g_cover_retry[i].key==key&&now<g_cover_retry[i].after)continue;
+        if(!g_cover_refresh[i]&&g_cover_retry[i].key==key&&now<g_cover_retry[i].after)continue;
         g_cover_retry[i].key=key;g_cover_retry[i].after=now+30000000ULL;
+        g_cover_force=g_cover_refresh[i];g_cover_refresh[i]=0;
+        snprintf(g_cover_parent,sizeof(g_cover_parent),"%s",g_episodes?g_query.query:"");
 		g_cover_item = g_query.items[i];
         if(g_cover_item.artwork_path[0]=='-')g_cover_item.artwork_path[0]=0;
 		g_cover_cancel = g_cover_done = 0;
@@ -639,7 +665,7 @@ static void draw_themed_online(int focus_sections,UiFocusMotion *focus,UiSection
  ui_mini_player_draw();UiContextAction items[12];int n=online_options(items,0);
  ui_context_menu_draw(options,TR(UI_OPTIONS),items,n);
  if(sidebar->animation>.01f)ui_sections_sidebar_draw(sidebar);
- vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();ui_frame_pace(frame_started_us);
+ vt_video_thumbnail_view_end();vita2d_end_drawing();vita2d_wait_rendering_done();vita2d_swap_buffers();ui_frame_pace(frame_started_us);
 }
 
 int ui_online_audio_screen(void) {
@@ -717,6 +743,8 @@ int ui_online_audio_screen(void) {
 			if(option_action==ONLINE_ACTION_SAVED) {load_saved();focus_tabs=0;reset_input(&previous,&repeat);continue;}
 			if(option_action==ONLINE_ACTION_REFRESH) {
 				if(g_catalog||g_episodes)fetch_page(g_query.kind,g_query.query,0,0);else load_saved();
+                memset(g_cover_retry,0,sizeof(g_cover_retry));
+                memset(g_cover_refresh,1,sizeof(g_cover_refresh));
 				reset_input(&previous,&repeat);continue;
 			}
 			if(option_action>=0) {pressed|=(unsigned)option_action;focus_tabs=offline_focus=0;}
@@ -1026,7 +1054,7 @@ int ui_online_audio_screen(void) {
 		option_count=online_options(option_items,offline_focus);
 		ui_context_menu_draw(&options,TR(UI_OPTIONS),option_items,option_count);
 		if (sidebar.animation > 0.01f) ui_sections_sidebar_draw(&sidebar);
-		vita2d_end_drawing(); vita2d_wait_rendering_done(); vita2d_swap_buffers();
+		vt_video_thumbnail_view_end();vita2d_end_drawing(); vita2d_wait_rendering_done(); vita2d_swap_buffers();
 		ui_frame_pace(frame_started_us);
 	}
 }

@@ -86,6 +86,24 @@ int main(void) {
  CHECK(vt_artwork_thumbnail_get(changed)==retained); /* Old image while new revision loads. */
  vt_video_thumbnail_prepare_playback();vt_video_thumbnail_resume();CHECK(vt_artwork_thumbnail_get(first)==retained);
  char a[96],b[96],temp[96];cache_paths(1,1,a,temp);cache_paths(129,1,b,temp);CHECK(strcmp(a,b));
+ /* Replace the entire viewport, including priorities of matching requests. */
+ vt_video_thumbnail_suspend();vt_video_thumbnail_resume();
+ vt_video_thumbnail_pump();
+ vt_video_thumbnail_get_priority("ux0:A.mp4",10,100);
+ vt_video_thumbnail_get_priority("ux0:B.mp4",10,10);
+ vt_video_thumbnail_view_end();CHECK(g_thumbnail.request_count==2);
+ g_thumbnail.active=g_thumbnail.requests[0];g_thumbnail.active_valid=1;
+ g_thumbnail.active_cancel=0;
+ for(int n=0;n<1000;n++){
+  vt_video_thumbnail_pump();
+  vt_video_thumbnail_get_priority("ux0:B.mp4",10,100);
+  vt_video_thumbnail_view_end();CHECK(g_thumbnail.request_count==1);
+  CHECK(!strcmp(g_thumbnail.requests[0].path,"ux0:B.mp4"));
+ }
+ CHECK(g_thumbnail.active_cancel);
+ g_thumbnail.active_valid=0;g_thumbnail.active_cancel=0;
+ vt_video_thumbnail_pump();vt_video_thumbnail_get_priority("ux0:B.mp4",10,3);
+ vt_video_thumbnail_view_end();CHECK(g_thumbnail.requests[0].priority==3);
  /* Close retained graphics resources in the host process. */
  g_thumbnail.active_valid=1;g_thumbnail.active=(ThumbnailRequest){.priority=100};g_thumbnail.active_cancel=0;
  vt_artwork_thumbnail_get("ux0:data/VitaMediaDeck/artwork/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1.png");CHECK(g_thumbnail.active_cancel);

@@ -496,7 +496,7 @@ static int play_local_video(const VtLocalMediaItem *item) {
 	return UI_SECTION_LOCAL_MEDIA;
 }
 
-static int run_remote_video_fullscreen(
+static int run_remote_video_direct(
 	const UiNetworkSelection *selection,
 	uint64_t start_position_ms,
 	int start_audio_track,
@@ -514,6 +514,9 @@ static int run_remote_video_fullscreen(
 	                                         &selection->credential,
 	                                         selection->path);
 	if (ret < 0) return ret;
+    if(selection->source.protocol==VT_NETWORK_JELLYFIN&&selection->has_jellyfin_metadata){
+        snprintf(remote.jellyfin_media_source_id,sizeof(remote.jellyfin_media_source_id),"%s",selection->jellyfin_metadata.media_source_id);
+    }
 	char id[16];
 	remote_media_id(selection, id);
 	VtNetworkEntry entry = {.is_video = 1};
@@ -565,6 +568,8 @@ static int run_remote_video_fullscreen(
 		memset(&subtitle_factories[i].credential, 0, sizeof(subtitle_factories[i].credential));
 	return ret;
 }
+
+#include "media/jellyfin_player.inc"
 
 static int minimize_remote_video(const UiNetworkSelection *selection,
 	                             uint64_t position_ms,
@@ -624,6 +629,11 @@ static int resume_minimized_remote_video(uint64_t position_ms, void *ctx) {
 	char id[16];
 	remote_media_id(&selection, id);
 	vt_playback_history_update(id, last_position, last_duration);
+    if(ret>=VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE&&ret<VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE+UI_SECTION_ACTION_COUNT){
+        vt_background_playback_set_fullscreen_resume(NULL,NULL);clear_minimized_remote_video();
+        memset(&selection.credential,0,sizeof(selection.credential));
+        return ret-VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE;
+    }
 	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE ||
 	    (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
 	     ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT)) {
@@ -671,6 +681,10 @@ static int play_remote_selection(UiNetworkSelection selection) {
 		                            &last_audio_track, &last_subtitle_track, &paused);
 	log_save(VITAMEDIADECK_SESSION_LOG_PATH);
 	vt_playback_history_update(id, last_position, last_duration);
+    if(ret>=VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE&&ret<VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE+UI_SECTION_ACTION_COUNT){
+        memset(&selection.credential,0,sizeof(selection.credential));
+        return ret-VT_HW_PLAYER_ACTION_SECTION_NO_MINIMIZE_BASE;
+    }
 	if (ret == VT_HW_PLAYER_ACTION_MINIMIZE ||
 	    (ret >= VT_HW_PLAYER_ACTION_SECTION_BASE &&
 	     ret < VT_HW_PLAYER_ACTION_SECTION_BASE + UI_SECTION_ACTION_COUNT)) {

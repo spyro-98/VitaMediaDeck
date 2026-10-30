@@ -175,10 +175,10 @@ static int path_is_mp3(const char *path) { return path_suffix_ci(path, ".mp3"); 
 static int path_is_flac(const char *path) { return path_suffix_ci(path, ".flac"); }
 
 static void set_port_volume(int port, int percent, int *applied) {
+	percent = vita_audio_volume_clamp(percent);
 	if (port < 0 || !applied || *applied == percent) return;
 	*applied = percent;
-	int hardware_percent = percent > 100 ? 100 : percent;
-	if (hardware_percent < 0) hardware_percent = 0;
+	int hardware_percent = vita_audio_hardware_percent(percent);
 	int value = hardware_percent * SCE_AUDIO_VOLUME_0DB / 100;
 	int volume[2] = { value, value };
 	sceAudioOutSetVolume(port,
@@ -188,13 +188,7 @@ static void set_port_volume(int port, int percent, int *applied) {
 
 static void amplify_pcm16(const int16_t *source, int16_t *destination,
 	                      uint32_t bytes, int percent) {
-	uint32_t samples = bytes / sizeof(int16_t);
-	for (uint32_t i = 0; i < samples; i++) {
-		int32_t value = (int32_t)source[i] * percent / 100;
-		if (value > INT16_MAX) value = INT16_MAX;
-		else if (value < INT16_MIN) value = INT16_MIN;
-		destination[i] = (int16_t)value;
-	}
+	vita_audio_boost_pcm16(source, destination, bytes / sizeof(int16_t), percent);
 }
 
 static mpg123_ssize_t vita_mpg123_read(int fd, void *buffer, size_t size) {

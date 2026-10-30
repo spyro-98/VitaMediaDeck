@@ -11,6 +11,9 @@ int vt_artwork_cache_peek(const char *url,char *path,size_t capacity);
 int vt_artwork_cache_current(const char *old_path,char *path,size_t capacity);
 int vt_artwork_cache_due(const char *url);
 typedef char *(*VtArtworkFetch)(const char *, volatile int *, size_t *);
+/* Explicit refresh bypasses age/backoff, preserving the last valid image. */
+int vt_artwork_cache_refresh(const char *url, char *path, size_t capacity,
+                            volatile int *cancel, VtArtworkFetch fetch);
 int vt_artwork_cache_get(const char *url, char *path, size_t capacity,
                         volatile int *cancel, VtArtworkFetch fetch);
 #endif

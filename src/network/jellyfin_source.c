@@ -22,7 +22,7 @@
 #define JELLYFIN_PREFETCH_THREAD_CREATE_PRIORITY  0x10000100
 #define JELLYFIN_PREFETCH_THREAD_RUNTIME_PRIORITY 0xB0
 #define JELLYFIN_PREFETCH_THREAD_STACK            0x20000
-#define JELLYFIN_CLIENT_VERSION "1.4.3"
+#define JELLYFIN_CLIENT_VERSION "1.4.4"
 #define JELLYFIN_DEVICE_ID "VMDK00001"
 
 typedef struct {
@@ -239,7 +239,7 @@ static int authorization_header(const char *token, char *out, size_t out_size) {
 static void jellyfin_client_config(const VtNetworkSource *source,
 	                               VitaHttpsClientConfig *config) {
 	memset(config, 0, sizeof(*config));
-	config->user_agent = "VitaMediaDeck/1.4.3";
+	config->user_agent = "VitaMediaDeck/1.4.4";
 	config->connect_timeout_ms = 5000;
 	config->request_timeout_ms = 12000;
 	config->low_speed_bytes_per_second = 1024;
@@ -259,10 +259,10 @@ static int transport_result(int result) {
 	return VT_NETWORK_ERROR;
 }
 
-static int request_json(const VtNetworkSource *source, const char *url,
+static int request_json_impl(const VtNetworkSource *source, const char *url,
 	                    const char *method, const char *authorization,
 	                    const char *body, JellyfinBuffer *response,
-	                    long *status, volatile int *cancel) {
+	                    long *status, volatile int *cancel,int follow) {
 	VitaHttpsClientConfig config;
 	jellyfin_client_config(source, &config);
 	VitaHttpsClient *client = vita_https_client_create(&config);
@@ -284,13 +284,18 @@ static int request_json(const VtNetworkSource *source, const char *url,
 		.cancel_flag = cancel
 	};
 	VitaHttpsResponse transport = { 0 };
-	int result = vita_https_perform(client, &request, &transport);
+	int result = follow?vita_https_perform(client, &request, &transport):vita_https_perform_no_redirects(client,&request,&transport);
 	vita_https_client_destroy(client);
 	if (status) *status = transport.status_code;
 	if (transport.status_code == 401 || transport.status_code == 403)
 		return VT_NETWORK_AUTH_FAILED;
 	if (result < 0) return transport_result(result);
 	return 0;
+}
+
+static int request_json(const VtNetworkSource *source,const char *url,const char *method,
+ const char *authorization,const char *body,JellyfinBuffer *response,long *status,volatile int *cancel){
+ return request_json_impl(source,url,method,authorization,body,response,status,cancel,1);
 }
 
 int vt_jellyfin_authenticate_cancel(const VtNetworkSource *source, VtNetworkCredential *credential,
@@ -1250,13 +1255,21 @@ int vt_authenticated_range_stream(const VtNetworkSource *source, const char *url
  return range_stream_open(source, url, NULL, out, cancel, telemetry, owner);
 }
 int vt_jellyfin_open_stream(const VtNetworkSource *source,
- const VtNetworkCredential *credential, const char *path,
+ const VtNetworkCredential *credential, const char *path, const char *media_source_id,
  VtDecoderStreamHandle *out, volatile int *cancel,
  VtNetworkBufferTelemetry *telemetry, volatile uintptr_t *owner) {
  if (!source || !credential || !path || !out || !credential->access_token[0]) return VT_NETWORK_AUTH_FAILED;
  char id[VT_NETWORK_USER_ID_MAX], endpoint[128], url[2048];
  if(item_id_from_path(path,id)<0 || !id[0])return -1;
  snprintf(endpoint,sizeof(endpoint),"Videos/%s/stream",id);
- if(jellyfin_url(source,endpoint,"static=true",url,sizeof(url))<0)return -1;
+ char query[192]="static=true";
+ if(media_source_id&&*media_source_id){
+  size_t n=strlen(media_source_id);
+  if(n>=64||strspn(media_source_id,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")!=n)return -1;
+  snprintf(query,sizeof(query),"static=true&MediaSourceId=%s",media_source_id);
+ }
+ if(jellyfin_url(source,endpoint,query,url,sizeof(url))<0)return -1;
  return range_stream_open(source,url,credential->access_token,out,cancel,telemetry,owner);
 }
+
+#include "network/jellyfin_playback.inc"

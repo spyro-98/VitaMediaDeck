@@ -22,6 +22,8 @@ int vt_library_search_home_favourites(VtLibraryItem *out, int capacity,
 /* Small, fair provider sample from the already published worker snapshot.
  * Metadata copies only; no provider requests or disk I/O. */
 int vt_library_search_home_media(VtLibraryResult *out, int capacity);
+void vt_library_search_cover_view_begin(void);
+void vt_library_search_cover_view_end(void);
 void vt_library_search_cover(const VtLibraryItem *);
 void vt_library_search_local_refresh(void);
 void vt_library_search_cancel(void);

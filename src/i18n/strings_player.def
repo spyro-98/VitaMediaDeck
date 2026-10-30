@@ -79,3 +79,11 @@ VT_STR(IPTV_GUIDE_STALE, "Aggiornamento non riuscito. Sono mostrate le ultime in
 VT_STR(IPTV_GUIDE_PUBLIC, "Guida: Open-EPG · Italia", "Guide: Open-EPG · Italy")
 
 VT_STR(IPTV_PROGRAM_LOADING, "Aggiornamento guida TV…", "Updating programme guide…")
+
+VT_STR(IPTV_GRID_TITLE, "Guida TV", "TV guide")
+VT_STR(IPTV_GRID_NOW, "Ora", "Now")
+VT_STR(IPTV_GRID_WATCH, "Guarda il canale", "Watch channel")
+VT_STR(IPTV_GRID_HINT, "←/→: canale · ↑/↓: orario\n\uE000: guarda · \uE002: aggiorna · \uE003: ora · \uE001: indietro", "←/→: channel · ↑/↓: time\n\uE000: watch · \uE002: refresh · \uE003: now · \uE001: back")
+VT_STR(IPTV_GRID_UNAVAILABLE, "Guida non disponibile", "Guide unavailable")
+VT_STR(IPTV_GRID_FOLLOW, "Segue l'orario attuale", "Following current time")
+VT_STR(IPTV_GRID_MANUAL, "Scorrimento manuale", "Manual scrolling")

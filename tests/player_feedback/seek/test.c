@@ -50,6 +50,13 @@ int main(void) {
  framebuffer[0][0]=0xff0000ff;framebuffer[0][2]=0xff00ff00;framebuffer[0][4]=0xffff0000;
  framebuffer[542][958]=0xffffffff;
  UiPlayerLoadingInfo info={.title="test"};volatile int cancel=1;
+ uint64_t target=0;VtHwPlayerScreenSource server={.requested_seek_ms=&target,.timeline_offset_ms=60000,.total_duration_ms=120000};
+ unsigned untouched=captures;
+ CHECK(player_seek(&server,NULL,&info,&cancel,90000)==PLAYER_SERVER_SEEK_REQUEST&&target==90000&&captures==untouched);
+ VtDecoderPlayerStatus server_status={.position_ms=2000};player_status_timeline(&server,&server_status);
+ CHECK(server_status.position_ms==62000&&server_status.duration_ms==120000);
+ server_status.position_ms=90000;player_status_timeline(&server,&server_status);CHECK(server_status.position_ms==120000);
+
  CHECK(run_seek(NULL,&info,&cancel,10000)==0);CHECK(cancel==0);
  CHECK(texture[0][0]==0xf800&&texture[0][1]==0x07e0&&texture[0][2]==0x001f);
  CHECK(texture[271][479]==0xffff);CHECK(frees==1&&draws==1&&prepared==1);

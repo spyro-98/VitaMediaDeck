@@ -727,7 +727,7 @@ static void draw_files(const LocalFileEntry *entries, int count,
 	}
 	if (sidebar && sidebar->animation > 0.01f)
 		ui_sections_sidebar_draw(sidebar);
-	vita2d_end_drawing();
+	vt_video_thumbnail_view_end();vita2d_end_drawing();
 	vita2d_wait_rendering_done();
 	vita2d_swap_buffers();
 }

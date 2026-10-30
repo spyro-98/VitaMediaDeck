@@ -71,17 +71,14 @@ static size_t decode_write(const void *data, size_t size, void *opaque) {
 		if (c->pending == sizeof(c->pcm)) {
 			if (c->port < 0 || c->rate <= 0) return 0;
 			int paused = __atomic_load_n(c->config->paused, __ATOMIC_ACQUIRE);
-			int volume = paused ? 0 : vt_audio_volume_percent();
-			int hardware = volume > 100 ? 100 : volume;
+			int volume = paused ? 0 : vita_audio_volume_clamp(vt_audio_volume_percent());
+			int hardware = vita_audio_hardware_percent(volume);
 			int levels[2] = {hardware * SCE_AUDIO_VOLUME_0DB / 100,
 			                 hardware * SCE_AUDIO_VOLUME_0DB / 100};
 			sceAudioOutSetVolume(c->port, SCE_AUDIO_VOLUME_FLAG_L_CH |
 			    SCE_AUDIO_VOLUME_FLAG_R_CH, levels);
 			if (volume > 100)
-				for (unsigned i = 0; i < LIVE_GRAIN * 2; i++) {
-					int value = (int)c->pcm[i] * volume / 100;
-					c->pcm[i] = value > 32767 ? 32767 : value < -32768 ? -32768 : value;
-				}
+				vita_audio_boost_pcm16(c->pcm, c->pcm, LIVE_GRAIN * 2, volume);
 			if (sceAudioOutOutput(c->port, c->pcm) < 0) return 0;
 			if (!paused) c->position_us += LIVE_GRAIN * 1000000ULL / (uint64_t)c->rate;
 			c->config->update(c->config->ctx, (unsigned)c->rate, c->bitrate,
@@ -165,7 +162,7 @@ int vt_live_audio_run(const VtLiveAudioConfig *config) {
 		if (config->buffering) config->buffering(config->ctx);
 		LiveContext c = { .config = config, .port = -1, .position_us = position_us };
 		c.decoder = mpg123_new(NULL, NULL);
-		VitaHttpsClientConfig options = { .user_agent = "VitaMediaDeck/1.4.3",
+		VitaHttpsClientConfig options = { .user_agent = "VitaMediaDeck/1.4.4",
 		    .allow_http = 1, .connect_timeout_ms = 10000,
 		    .request_timeout_ms = LONG_MAX, .low_speed_bytes_per_second = 128,
 		    .low_speed_seconds = 15 };

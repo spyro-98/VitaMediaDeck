@@ -284,6 +284,7 @@ int ui_qr_scan_https_url(char *out,size_t capacity){qr_calls++;if(qr_result>0)sn
 const char *ui_qr_scan_last_error(void){return "Camera unavailable";}
 void vt_video_thumbnail_resume(void){}
 void vt_video_thumbnail_pump(void){}
+void vt_video_thumbnail_view_end(void){}
 static struct {unsigned w,h;unsigned char rgba[64*128*4];} icon;
 static const char *host_pending_art;static int host_pending_ready;
 vita2d_texture *vt_artwork_thumbnail_get(const char *path) {
@@ -379,7 +380,8 @@ int vt_iptv_options_load(const char *url,int dash,const VtIptvSourceConfig *cfg,
 int vt_iptv_program_load(const char *url,const char *channel,const VtIptvSourceConfig *cfg,const char *lang,VtIptvProgram *out,volatile int *cancel){(void)url;(void)channel;(void)cfg;(void)lang;(void)cancel;memset(out,0,sizeof(*out));return 0;}
 
 static VtIptvGuideQuery last_guide_query;
-int vt_iptv_program_load_channel(const VtIptvGuideQuery *q,const VtIptvSourceConfig *cfg,const char *lang,VtIptvProgram *out,volatile int *cancel){last_guide_query=*q;(void)cfg;(void)lang;(void)cancel;memset(out,0,sizeof(*out));return 0;}
+static VtIptvProgram host_guide_program;
+int vt_iptv_program_load_channel(const VtIptvGuideQuery *q,const VtIptvSourceConfig *cfg,const char *lang,VtIptvProgram *out,volatile int *cancel){last_guide_query=*q;(void)cfg;(void)lang;(void)cancel;*out=host_guide_program;return 0;}
 
 int vt_iptv_http_fetch_range(void*a,const char*b,uint64_t c,size_t d,unsigned char**e,size_t*f,char*g,size_t h,volatile int*i){(void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;(void)i;return -1;}
 void vt_video_thumbnail_prepare_playback(void) {}
@@ -518,7 +520,7 @@ int main(int argc,char **argv) {
         CHECK(ui_iptv_screen()==UI_SECTION_SETTINGS && catalog_visible==6);
         memcpy(pixels,first_pixels,sizeof(pixels));png(language?"iptv-channels-it-mini":"iptv-channels-en-mini");
         mini_top=544;
-        UiContextMenu menu={.open=1,.animation=1};UiContextAction items[16];
+        UiContextMenu menu={.open=1,.animation=1};UiContextAction items[24];
         int count=options_for_page(items);CHECK(count<=16);
         ui_context_menu_draw(&menu,TR(UI_OPTIONS),items,count);png(language?"iptv-options-it":"iptv-options-en");
         online_case=0;catalog.count=0;
@@ -547,7 +549,7 @@ int main(int argc,char **argv) {
     const char *message=NULL;
     strcpy(link,"file:///private/secret");CHECK(play_link(&message)==UI_SECTION_NONE&&!created&&!stops);
     strcpy(link,"https://example.org/live.m3u8");next_result=-1;next_event=VT_IPTV_DISCONTINUITY;
-    CHECK(play_link(&message)==UI_SECTION_NONE&&created==1&&destroyed==1&&saved==1);
+    CHECK(play_link(&message)==UI_SECTION_NONE&&created==1&&destroyed==1&&saved==5);
     CHECK(message==TR(IPTV_CHANGED));
     CHECK(playback_notices==1 && playback_notice==TR(IPTV_CHANGED));
     plays=created=destroyed=0;next_result=0;next_event=0;reconnect=1;
@@ -585,7 +587,7 @@ int main(int argc,char **argv) {
     CHECK(!strcmp(item.title,"La mia TV 日本語")&&!strcmp(stored_channel.title,item.title));
     write_failure=0;rename_input=NULL;
     catalog.count=1;catalog.items[0]=item;catalog_focus=0;saved_view=1;
-    UiContextAction actions[16];int count=options_for_page(actions),renames=0,deletes=0;
+    UiContextAction actions[24];int count=options_for_page(actions),renames=0,deletes=0;
     for(int i=0;i<count;i++){CHECK(actions[i].action!=2&&actions[i].action!=7);if(actions[i].action==14)renames++;if(actions[i].action==15)deletes++;}
     CHECK(renames==1&&deletes==1&&count<=16);
     write_failure=1;int old_star=item.starred;CHECK(toggle_star(&item)<0&&item.starred==old_star);write_failure=0;
@@ -638,7 +640,7 @@ int main(int argc,char **argv) {
     current_list=item;saved_view=0;catalog.count=1;catalog.items[0]=item;catalog_focus=0;
     count=options_for_page(actions);int saves=0;deletes=0;
     for(int i=0;i<count;i++){saves+=actions[i].action==16;deletes+=actions[i].action==15;}
-    CHECK(saves==1&&!deletes&&count<=12);saved_view=1;
+    CHECK(saves==1&&!deletes&&count<=24);saved_view=1;
     CHECK(failure_detail(VT_IPTV_DNS)==TR(IPTV_DNS_ERROR));
     CHECK(failure_detail(VT_IPTV_ACCESS)==TR(IPTV_ACCESS_ERROR));
     CHECK(failure_detail(VT_IPTV_NOT_FOUND)==TR(IPTV_NOT_FOUND_ERROR));
@@ -713,7 +715,7 @@ int main(int argc,char **argv) {
         CHECK(ui_iptv_screen()==UI_SECTION_LOCAL_MEDIA);
         CHECK(!list_from_form&&form_link_saved&&!strcmp(link,"https://example.org/list.m3u"));
         CHECK(!strcmp(stored_channel.url,link)); /* Back preserves the newly entered list. */
-        UiContextAction visible[16];saved_view=0;int visible_count=options_for_page(visible);
+        UiContextAction visible[24];saved_view=0;int visible_count=options_for_page(visible);
         CHECK(visible_count>0&&visible_count<=16);
         for(int i=0;i<visible_count;i++)for(int j=i+1;j<visible_count;j++)CHECK(visible[i].action!=visible[j].action);
         memcpy(pixels,first_pixels,sizeof(pixels));snprintf(name,sizeof(name),"iptv-list-theme-%d-%d",theme,language);png(name);
@@ -761,3 +763,14 @@ int ui_playlist_file_picker(const char *initial,char *out,size_t size){(void)ini
 static VtLibraryResult host_identity_library;
 int vt_library_get(const char *id,VtLibraryResult *out){(void)id;if(!host_identity_library.item.locator[0])return 0;*out=host_identity_library;return 1;}
 #endif
+
+int vt_artwork_cache_refresh(const char *u,char *p,size_t n,volatile int *c,VtArtworkFetch f){return vt_artwork_cache_get(u,p,n,c,f);}
+int vt_online_refresh_cover(VtOnlineItem *v,const char *parent,volatile int *cancel){(void)parent;return vt_online_fetch_cover(v,cancel);}
+
+#ifndef VMD_REAL_GUIDE_ASYNC
+VtIptvProgramJob *vt_iptv_program_request_batch(VtIptvProgramFetch f,const void *c,size_t n,unsigned count,int r){(void)f;(void)c;(void)n;(void)count;(void)r;return NULL;}
+int vt_iptv_program_poll_row(VtIptvProgramJob *j,unsigned r,VtIptvProgram *p){(void)j;(void)r;(void)p;return 0;}
+void vt_iptv_program_release(VtIptvProgramJob *j){(void)j;}
+#endif
+
+int vt_artwork_cache_get(const char *u,char *p,size_t n,volatile int *c,VtArtworkFetch f){(void)u;(void)c;(void)f;snprintf(p,n,"ux0:data/VitaMediaDeck/artwork/cached.png");return 0;}

@@ -1,4 +1,6 @@
-# VitaMediaDeck documentation — 1.4.3
+# VitaMediaDeck documentation — 1.4.4 Beta
+
+1.4.4 Beta: [dynamic artwork priority/refresh, zapping, vertical TV guide and Jellyfin transcoding](iptv-playback-preview-2026-10-30.md). Published as a prerelease on branch `beta`, tag `1.4.4`.
 
 1.4.3: [cache-first startup, independent background work and Wi-Fi status](startup-cache-first-2026-10-29.md).
 

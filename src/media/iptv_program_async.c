@@ -11,7 +11,9 @@ struct VtIptvProgramJob {
  unsigned refs;
  volatile int cancel;
  int done,result,refresh;
- VtIptvProgram program;
+ unsigned count;size_t stride;
+ int ready[VT_IPTV_GUIDE_BATCH_MAX],results[VT_IPTV_GUIDE_BATCH_MAX];
+ VtIptvProgram program[VT_IPTV_GUIDE_BATCH_MAX];
  unsigned char context[];
 };
 static pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
@@ -31,18 +33,25 @@ static void *worker(void *unused){
   if(stopping){pthread_mutex_unlock(&mutex);break;}
   VtIptvProgramJob *job=pending;pending=NULL;running=job;
   pthread_mutex_unlock(&mutex);
-  int result=__atomic_load_n(&job->cancel,__ATOMIC_ACQUIRE)?VT_IPTV_CANCELLED:
-   job->fetch(job->context,&job->program,&job->cancel,job->refresh);
-  job->result=result;__atomic_store_n(&job->done,1,__ATOMIC_RELEASE);
+  for(unsigned i=0;i<job->count;i++){
+   int result=__atomic_load_n(&job->cancel,__ATOMIC_ACQUIRE)?VT_IPTV_CANCELLED:
+    job->fetch(job->context+i*job->stride,&job->program[i],&job->cancel,job->refresh);
+   job->results[i]=result;__atomic_store_n(&job->ready[i],1,__ATOMIC_RELEASE);
+   if(i==0)job->result=result;
+   if(result==VT_IPTV_CANCELLED)break;
+  }
+  __atomic_store_n(&job->done,1,__ATOMIC_RELEASE);
   pthread_mutex_lock(&mutex);running=NULL;pthread_mutex_unlock(&mutex);
   drop(job);
  }
  return NULL;
 }
-VtIptvProgramJob *vt_iptv_program_request(VtIptvProgramFetch fetch,const void *context,size_t size,int refresh){
- if(!fetch||size>16384||(size&&!context)||(context&&!size))return NULL;
+VtIptvProgramJob *vt_iptv_program_request_batch(VtIptvProgramFetch fetch,const void *context,size_t stride,unsigned count,int refresh){
+ if(!fetch||stride>16384||!count||count>VT_IPTV_GUIDE_BATCH_MAX||
+    (stride&&!context)||(context&&!stride))return NULL;
+ size_t size=stride*count;
  VtIptvProgramJob *job=calloc(1,sizeof(*job)+size);if(!job)return NULL;
- job->refs=2;job->fetch=fetch;job->refresh=!!refresh;
+ job->refs=2;job->fetch=fetch;job->refresh=!!refresh;job->count=count;job->stride=stride;
  if(size)memcpy(job->context,context,size);
  pthread_mutex_lock(&mutex);
  if(!started){
@@ -57,12 +66,22 @@ VtIptvProgramJob *vt_iptv_program_request(VtIptvProgramFetch fetch,const void *c
  pending=job;pthread_cond_signal(&changed);pthread_mutex_unlock(&mutex);
  return job;
 }
+VtIptvProgramJob *vt_iptv_program_request(VtIptvProgramFetch fetch,const void *ctx,size_t size,int refresh){
+ return vt_iptv_program_request_batch(fetch,ctx,size,1,refresh);
+}
+int vt_iptv_program_poll_row(VtIptvProgramJob *job,unsigned row,VtIptvProgram *out){
+ if(!job||!out||row>=job->count)return VT_IPTV_INVALID;
+ if(__atomic_load_n(&job->cancel,__ATOMIC_ACQUIRE))return VT_IPTV_CANCELLED;
+ if(!__atomic_load_n(&job->ready[row],__ATOMIC_ACQUIRE))return 0;
+ if(job->results[row]<0)return job->results[row];
+ *out=job->program[row];return 1;
+}
 int vt_iptv_program_poll(VtIptvProgramJob *job,VtIptvProgram *out){
  if(!job||!out)return VT_IPTV_INVALID;
  if(__atomic_load_n(&job->cancel,__ATOMIC_ACQUIRE))return VT_IPTV_CANCELLED;
  if(!__atomic_load_n(&job->done,__ATOMIC_ACQUIRE))return 0;
  if(job->result<0)return job->result;
- *out=job->program;return 1;
+ *out=job->program[0];return 1;
 }
 void vt_iptv_program_release(VtIptvProgramJob *job){
  if(!job)return;

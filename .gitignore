@@ -17,3 +17,10 @@ __pycache__/
 
 # Social post drafts are not repository content.
 release/announcements/
+
+# Private console diagnostics never belong in source or release assets.
+**/session_standard.txt*
+**/session_log.txt*
+**/ime_diag_log.txt*
+*.psp2dmp.tmp
+console-logs/

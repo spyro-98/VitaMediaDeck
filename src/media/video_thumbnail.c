@@ -71,6 +71,7 @@ typedef struct ThumbnailRequest {
 	uint64_t source_size;
 	uint64_t sequence;
 	unsigned int generation;
+	uint64_t viewport;
 	int priority;
 	int remote;
 	int still_image;
@@ -138,6 +139,8 @@ typedef struct ThumbnailState {
 	volatile int active_cancel;
 	volatile unsigned int generation;
 	uint64_t request_sequence;
+	uint64_t viewport;
+	int viewport_open;
 	ThumbnailRequest requests[THUMB_REQUEST_CAPACITY];
 	int request_count;
 	ThumbnailRequest active;
@@ -1238,18 +1241,17 @@ static int thumbnail_worker(SceSize args, void *argp) {
 		ThumbnailRequest request;
 		int have_request = 0;
 		thumbnail_lock();
-		if (!state->stop && state->enabled && !state->result.pixels &&
+		if (!state->stop && state->enabled && !state->viewport_open && !state->result.pixels &&
 		    state->request_count > 0) {
-			/* The selected cell has a higher priority than its neighbours. Within
-			 * the same class, prefer the newest viewport so rapid scrolling cannot
-			 * strand the user behind stale off-screen five-second jobs. */
+			/* View-end already removed obsolete requests. Honour the selected
+             * cell, then preserve order within the current visible set. */
 			int request_index = 0;
 			for (int i = 1; i < state->request_count; i++) {
 				if (state->requests[i].priority >
 				        state->requests[request_index].priority ||
 				    (state->requests[i].priority ==
 				         state->requests[request_index].priority &&
-				     state->requests[i].sequence >
+				     state->requests[i].sequence <
 				         state->requests[request_index].sequence))
 					request_index = i;
 			}
@@ -1462,6 +1464,7 @@ void vt_video_thumbnail_suspend(void) {
 		g_thumbnail.active_abort(g_thumbnail.active_abort_opaque);
 	g_thumbnail.generation++;
 	g_thumbnail.request_count = 0;
+	g_thumbnail.viewport_open = 0;
 	memset(g_thumbnail.requests, 0, sizeof(g_thumbnail.requests));
 	/* The worker owns its private request copy. Drop the shared active copy so a
 	 * suspended browser never keeps a remote password resident unnecessarily. */
@@ -1503,8 +1506,40 @@ void vt_video_thumbnail_prepare_playback(void) {
 	           released, g_thumbnail.worker_busy ? "still cancelling" : "idle");
 }
 
+/* A viewport is a replacement set, never an additive priority tier. The UI
+ * renews only requests it actually draws, then atomically publishes the set. */
+void vt_video_thumbnail_view_end(void) {
+	if (!g_thumbnail.initialized) return;
+	thumbnail_lock();
+	if (g_thumbnail.viewport_open) {
+		int count = 0;
+		for (int i = 0; i < g_thumbnail.request_count; i++) {
+			ThumbnailRequest *r = &g_thumbnail.requests[i];
+			if (r->viewport == g_thumbnail.viewport)
+				g_thumbnail.requests[count++] = *r;
+		}
+		memset(g_thumbnail.requests + count, 0,
+		       (THUMB_REQUEST_CAPACITY - count) * sizeof(g_thumbnail.requests[0]));
+		g_thumbnail.request_count = count;
+		if (g_thumbnail.active_valid &&
+		    g_thumbnail.active.viewport != g_thumbnail.viewport) {
+			g_thumbnail.active_cancel = 1;
+			if (g_thumbnail.active_abort && g_thumbnail.active_abort_opaque)
+				g_thumbnail.active_abort(g_thumbnail.active_abort_opaque);
+		}
+		g_thumbnail.viewport_open = 0;
+	}
+	thumbnail_unlock();
+}
+
 void vt_video_thumbnail_pump(void) {
 	if (!g_thumbnail.initialized || !g_thumbnail.enabled) return;
+	/* Also close an interrupted frame (navigation may have returned early). */
+	vt_video_thumbnail_view_end();
+	thumbnail_lock();
+	g_thumbnail.viewport++;
+	g_thumbnail.viewport_open = 1;
+	thumbnail_unlock();
 	ThumbnailResult result;
 	memset(&result, 0, sizeof(result));
 	uint64_t now = sceKernelGetProcessTimeWide();
@@ -1622,8 +1657,8 @@ static vita2d_texture *thumbnail_get(
 	}
 	if (g_thumbnail.active_valid &&
 	    same_request(key, source_size, generation, path, &g_thumbnail.active)) {
-		if (priority > g_thumbnail.active.priority)
-			g_thumbnail.active.priority = priority;
+		g_thumbnail.active.priority = priority;
+		g_thumbnail.active.viewport = g_thumbnail.viewport;
 		thumbnail_unlock();
 		return NULL;
 	}
@@ -1653,8 +1688,8 @@ static vita2d_texture *thumbnail_get(
 	for (int i = 0; i < g_thumbnail.request_count; i++) {
 		if (same_request(key, source_size, generation, path,
 		                 &g_thumbnail.requests[i])) {
-			if (priority > g_thumbnail.requests[i].priority)
-				g_thumbnail.requests[i].priority = priority;
+			g_thumbnail.requests[i].priority = priority;
+			g_thumbnail.requests[i].viewport = g_thumbnail.viewport;
 			g_thumbnail.requests[i].sequence = ++g_thumbnail.request_sequence;
 			thumbnail_unlock();
 			return NULL;
@@ -1672,6 +1707,10 @@ static vita2d_texture *thumbnail_get(
 			         g_thumbnail.requests[weakest].sequence))
 				weakest = i;
 		}
+		if (priority < g_thumbnail.requests[weakest].priority) {
+			thumbnail_unlock();
+			return NULL;
+		}
 		request = &g_thumbnail.requests[weakest];
 		memset(&request->credential, 0, sizeof(request->credential));
 	} else {
@@ -1683,6 +1722,7 @@ static vita2d_texture *thumbnail_get(
 	request->sequence = ++g_thumbnail.request_sequence;
 	request->generation = generation;
 	request->priority = priority;
+	request->viewport = g_thumbnail.viewport;
 	request->remote = source != NULL;
 	request->still_image = still_image;
 	if (source) request->source = *source;

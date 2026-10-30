@@ -142,7 +142,7 @@ static int make_room(size_t incoming,const char *keep){
   memset(victim,0,sizeof(*victim));
  }
 }
-int vt_artwork_cache_get(const char *url,char *path,size_t capacity,volatile int *cancel,VtArtworkFetch fetch){
+static int artwork_get(const char *url,char *path,size_t capacity,volatile int *cancel,VtArtworkFetch fetch,int refresh){
  if(!path||capacity<160||!fetch)return -1;
  path[0]=0;
  if(cancel&&*cancel)return -1;
@@ -153,7 +153,7 @@ int vt_artwork_cache_get(const char *url,char *path,size_t capacity,volatile int
  Entry *e=find(key);time_t now=time(NULL);int hit=e&&e->path[0];
  if(hit&&!valid_file(e->path)){remove(e->path);e->path[0]=0;e->bytes=0;e->retry=0;hit=0;}
  if(hit)snprintf(path,capacity,"%s",e->path);
- int due=!e||(!hit?now>=e->retry:now>=e->retry&&now-e->fetched>=REFRESH_SECONDS);
+ int due=refresh||!e||(!hit?now>=e->retry:now>=e->retry&&now-e->fetched>=REFRESH_SECONDS);
  if(e)e->used=now;
  pthread_mutex_unlock(&mutex);
  if(!due)return hit?0:-1;
@@ -181,3 +181,6 @@ int vt_artwork_cache_get(const char *url,char *path,size_t capacity,volatile int
  e=find(key);if(e)e->retry=now+RETRY_SECONDS;
  pthread_mutex_unlock(&mutex);free(data);return result;
 }
+
+int vt_artwork_cache_get(const char *url,char *path,size_t n,volatile int *cancel,VtArtworkFetch fetch){return artwork_get(url,path,n,cancel,fetch,0);}
+int vt_artwork_cache_refresh(const char *url,char *path,size_t n,volatile int *cancel,VtArtworkFetch fetch){return artwork_get(url,path,n,cancel,fetch,1);}
