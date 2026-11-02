@@ -100,7 +100,7 @@ Other improvements include:
 
 The latest IPTV fixes address HLS timestamps and hardware-decoder initialization/resource cleanup. **IPTV hardware playback is now working very well in my physical Vita tests.**
 
-**Updates to vita-hw-decoder and vita-sw-decoder**
+**Updates to vita-hw-video-decoder and vita-sw-video-decoder**
 
 Both decoding paths have received performance and reliability work:
 
@@ -138,8 +138,8 @@ Vita-targeted files prepared with it can play smoothly with the software decoder
 **Repositories**
 
 - [VitaMediaDeck](https://github.com/spyro-98/VitaMediaDeck)
-- [vita-hw-decoder](https://github.com/spyro-98/vita-hw-decoder)
-- [vita-sw-decoder](https://github.com/spyro-98/vita-sw-decoder)
+- [vita-hw-video-decoder](https://github.com/spyro-98/vita-hw-decoder)
+- [vita-sw-video-decoder](https://github.com/spyro-98/vita-sw-decoder)
 - [VitaMediaDeck Transcoder](https://github.com/spyro-98/VitaMediaDeck-Transcoder)
 
 Thanks for your patience and for all the testing and feedback. VitaMediaDeck is still a public beta, and reports from different Vita models, media libraries, and servers are very welcome!

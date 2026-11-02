@@ -27,7 +27,7 @@ This is a testing release; the published 1.4.3 remains available.
 
 ## Features
 
-- **Video playback:** H.264/AVC in MP4, M4V, MOV and MKV, mono/stereo AAC,
+- **Video playback:** H.264/AVC in MP4, M4V, MOV and MKV, AAC/MP3 and AC-3 audio (including stereo downmix),
   multiple audio tracks, text subtitles, seeking and saved playback positions.
 - **Music:** MP3, AAC, M4A, WAV and FLAC, with artwork, metadata, shuffle,
   repeat, a full-screen player and a persistent mini-player.
@@ -53,7 +53,7 @@ This is a testing release; the published 1.4.3 remains available.
 - **Jellyfin server playback:** automatic direct-play/transcode negotiation, plus
   server-assisted seeking with the original movie timeline.
 - **Playback memory and volume:** a smaller/adaptive Full HD output pool and
-  a consistent 0–100% normal range, with optional boost up to 150%.
+  a consistent 0–100% normal range, with optional linear PCM boost up to 300% (3×).
 
 Native builds and host regressions pass. Vita playback and a real Jellyfin server
 still need beta testing; the reported system-reset cause is not established.
@@ -167,7 +167,9 @@ New captures are from **1.4.2**; earlier screenshots remain where no replacement
 
 ## Compatibility
 
-- Video requires compatible **H.264/AVC and mono/stereo AAC**. Jellyfin uses
+- Local/seekable video supports **H.264/AVC with AAC, MP3 or AC-3 audio**.
+  AAC/MP3 prefer system decoding; AC-3 uses software audio with stereo downmix,
+  independently of the hardware/software video backend. Jellyfin uses
   direct play or H.264/AAC server transcoding up to 720p/4 Mbps. PGS/VobSub bitmap subtitles
   are not rendered.
 - IPTV supports compatible, non-DRM HLS/DASH streams. Automatic rendition
@@ -185,8 +187,10 @@ conversions can also play smoothly through SW decoding; HW is still recommended.
 
 | Project | Purpose |
 | --- | --- |
-| [vita-hw-decoder](https://github.com/spyro-98/vita-hw-decoder) | Hardware H.264/AAC decoding and direct NV12 presentation |
-| [vita-sw-decoder](https://github.com/spyro-98/vita-sw-decoder) | Compatible software H.264 decoding fallback |
+| [vita-hw-video-decoder](https://github.com/spyro-98/vita-hw-decoder) | Hardware H.264 video and direct NV12 presentation |
+| [vita-sw-video-decoder](https://github.com/spyro-98/vita-sw-decoder) | Compatible software H.264 decoding fallback |
+| `vita-hw-audio-decoder` | System AAC/MP3 audio decoding |
+| `vita-sw-audio-decoder` | AAC/MP3/AC-3 decoding and stereo PCM output |
 | [vita-https](https://github.com/spyro-98/vita-https) | Verified HTTPS and seekable network transport |
 | [VitaMediaDeck Transcoder](https://github.com/spyro-98/VitaMediaDeck-Transcoder) | Optional desktop media preparation tool |
 

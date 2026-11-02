@@ -23,7 +23,7 @@ int vt_decoder_seek(VtDecoderPlayer *p,uint64_t pos){(void)p;CHECK(pos==10000);r
 int ui_player_loading_run(const UiPlayerLoadingInfo *info,UiLoadingTaskFn fn,void *ctx,volatile int *cancel,const volatile long *cur,const volatile long *tot){(void)cancel;(void)cur;(void)tot;CHECK(prepared);if(info->draw_backdrop)info->draw_backdrop(info->backdrop_ctx);return fn(ctx);}
 static int opens, fail_first, backend_calls, backend_hardware, source_stops;
 static uint64_t expected_position;
-static VtDecoderBackend opened_backend[3];
+static VtDecoderBackend opened_backend[3],opened_audio[3];
 uint64_t sceKernelGetProcessTimeWide(void){return 1000000;}
 int sceKernelDelayThread(unsigned us){(void)us;return 0;}
 void log_printf(const char *f,...){(void)f;}
@@ -38,7 +38,7 @@ static int mock_open(const VtDecoderPlayerConfig *cfg) {
  CHECK(cfg->start_position_ms==expected_position&&cfg->audio_track==0&&cfg->subtitle_track==0);
  CHECK(cfg->backend_start&&cfg->backend_start_ctx);
  cfg->backend_start(cfg->backend_start_ctx,cfg->preferred_backend);
- opened_backend[opens++]=cfg->preferred_backend;
+ opened_audio[opens]=cfg->preferred_audio_backend;opened_backend[opens++]=cfg->preferred_backend;
  return fail_first&&opens==1?-7:0;
 }
 int vt_decoder_open(VtDecoderPlayer *p,const VtDecoderPlayerConfig *cfg){(void)p;return mock_open(cfg);}
@@ -109,5 +109,21 @@ int main(void) {
  task.live_session=NULL;task.live=0;opens=0;fail_first=0;expected_position=43000;
  CHECK(!run_backend_change(&player,&task,&info,&cancel,VT_DECODER_BACKEND_HARDWARE,43000,0,0));
  CHECK(opens==1&&task.config.start_position_ms==43000);
+ /* Audio mode replacement must retain the video preference and restore both
+  * the previous audio mode and timeline after a rejected open. */
+ task.config.preferred_backend=VT_DECODER_BACKEND_HARDWARE;task.config.preferred_audio_backend=VT_DECODER_BACKEND_NONE;opens=0;
+ CHECK(!run_audio_backend_change(&player,&task,&info,&cancel,VT_DECODER_BACKEND_SOFTWARE,43000,0,0));
+ CHECK(opens==1&&opened_backend[0]==VT_DECODER_BACKEND_HARDWARE&&opened_audio[0]==VT_DECODER_BACKEND_SOFTWARE);
+ opens=0;fail_first=1;
+ CHECK(run_audio_backend_change(&player,&task,&info,&cancel,VT_DECODER_BACKEND_HARDWARE,43000,0,0)==1);
+ CHECK(opens==2&&opened_audio[0]==VT_DECODER_BACKEND_HARDWARE&&opened_audio[1]==VT_DECODER_BACKEND_SOFTWARE);
+ CHECK(task.config.preferred_audio_backend==VT_DECODER_BACKEND_SOFTWARE&&task.config.preferred_backend==VT_DECODER_BACKEND_HARDWARE);
+ for(int live=0;live<2;live++)for(int resume=0;resume<2;resume++)for(int video=0;video<2;video++)for(int saved=0;saved<2;saved++){
+  VtHwPlayerScreenSource source={.saved=saved?(void*)1:NULL};
+  int saved_index=player_saved_row(&source,live,resume,video);
+  int count=5+live+video+(!live&&resume)+saved;unsigned groups=player_right_groups(saved_index);
+  CHECK(count<=8);CHECK(ui_menu_group_y(count-1,RIGHT_PANEL_ROW_Y,RIGHT_PANEL_ROW_STEP,groups)+RIGHT_PANEL_ROW_HEIGHT<490);
+  if(saved)CHECK(saved_index==count-1);
+ }
  printf("PASS: %u seek preview and actual live/file decoder reopen/clock/rollback checks\n",checks);
 }

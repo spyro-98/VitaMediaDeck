@@ -39,6 +39,10 @@
 #define VT_VIDEO_DECODER_HW_H264    1
 #define VT_VIDEO_DECODER_SW_FFMPEG  2
 
+#define VT_AUDIO_DECODER_AUTO 0
+#define VT_AUDIO_DECODER_HW   1
+#define VT_AUDIO_DECODER_SW   2
+
 /* Ambient animation used by the full-screen music player. Artwork is the
  * upgrade-safe zero value; the player transparently falls back to the app
  * palette when the current track has no cover. */
@@ -180,12 +184,17 @@ int vt_preferences_set_iptv_split(int enabled);
 /* Channel ordering: source order (0) or name A-Z (1), shared by IPTV views. */
 int vt_preferences_iptv_name_sort(void);
 int vt_preferences_set_iptv_name_sort(int enabled);
+/* bit 0: saved channels (otherwise playlists), bit 1: favourites filter. */
+int vt_preferences_iptv_last_view(void);
+int vt_preferences_set_iptv_last_view(int view);
 int vt_preferences_audio_layout(void);
 int vt_preferences_set_audio_layout(int layout);
 
 /* Decoder used for newly opened video sessions. */
 int vt_preferences_video_decoder(void);
 int vt_preferences_set_video_decoder(int decoder);
+int vt_preferences_audio_decoder(void);
+int vt_preferences_set_audio_decoder(int decoder);
 
 /* Loop and fill-screen defaults persist across playback sessions instead of
  * requiring the user to enable them again from the player sidebar. */

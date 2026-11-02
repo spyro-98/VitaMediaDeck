@@ -32,29 +32,57 @@ PackageCopyrightText: Kenney (www.kenney.nl)
 PackageChecksum: SHA256: ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1
 Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-KenneyInputPrompts
 
-##### Package: vita-hw-decoder
+##### Package: vita-hw-video-decoder
 
-PackageName: vita-hw-decoder
-SPDXID: SPDXRef-Package-VitaHwDecoder
-PackageVersion: 998dcd9e66ba2d3a0cb713c0a47125d510458ac5
-PackageDownloadLocation: NOASSERTION
+PackageName: vita-hw-video-decoder
+SPDXID: SPDXRef-Package-VitaHwVideoDecoder
+PackageVersion: 3.0.0
+PackageComment: Development source commit e2309a0e1e7f2ea3b55893481597a5261a441107; physical runtime acceptance remains separate.
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-hw-decoder.git@e2309a0e1e7f2ea3b55893481597a5261a441107
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwDecoder
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwVideoDecoder
 
-##### Package: vita-sw-decoder
+##### Package: vita-sw-video-decoder
 
-PackageName: vita-sw-decoder
-SPDXID: SPDXRef-Package-VitaSwDecoder
-PackageVersion: ba293b1cb0335aab2f4685ed1c96dab16cc6cb5b
-PackageDownloadLocation: NOASSERTION
+PackageName: vita-sw-video-decoder
+SPDXID: SPDXRef-Package-VitaSwVideoDecoder
+PackageVersion: 3.0.0
+PackageComment: Development source commit d8219f455989ab788ca5980cc0dd3012eec65a4e; physical runtime acceptance remains separate.
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-sw-decoder.git@d8219f455989ab788ca5980cc0dd3012eec65a4e
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwDecoder
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwVideoDecoder
+
+##### Package: vita-hw-audio-decoder
+
+PackageName: vita-hw-audio-decoder
+SPDXID: SPDXRef-Package-VitaHwAudioDecoder
+PackageVersion: 1.0.0
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-hw-audio-decoder.git@2fb49d5e4349e15f5a917ac4a6a7d48a2f702677
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+PackageComment: Development source commit 2fb49d5e4349e15f5a917ac4a6a7d48a2f702677; physical runtime acceptance remains separate.
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwAudioDecoder
+
+##### Package: vita-sw-audio-decoder
+
+PackageName: vita-sw-audio-decoder
+SPDXID: SPDXRef-Package-VitaSwAudioDecoder
+PackageVersion: 1.0.0
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-sw-audio-decoder.git@1f14e325df157de83865ebf091913c6d82fef085
+FilesAnalyzed: false
+PackageLicenseConcluded: GPL-3.0-only
+PackageLicenseDeclared: GPL-3.0-only
+PackageCopyrightText: NOASSERTION
+PackageComment: Development source commit 1f14e325df157de83865ebf091913c6d82fef085; physical runtime acceptance remains separate.
+Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwAudioDecoder
 
 ##### Package: vita-https
 
@@ -78,7 +106,7 @@ FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: LGPL-2.1-or-later AND GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaHwDecoder DEPENDS_ON SPDXRef-Package-FFmpegHw
+Relationship: SPDXRef-Package-VitaHwVideoDecoder DEPENDS_ON SPDXRef-Package-FFmpegHw
 
 ##### Package: FFmpeg software build
 
@@ -91,7 +119,7 @@ FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: LGPL-2.1-or-later AND GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-Package-VitaSwDecoder DEPENDS_ON SPDXRef-Package-FFmpegSw
+Relationship: SPDXRef-Package-VitaSwVideoDecoder DEPENDS_ON SPDXRef-Package-FFmpegSw
 
 ##### Package: curl
 
@@ -236,3 +264,5 @@ PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
 PackageSourceInfo: Build-time compiler for original app XML; not linked or packaged as a runtime binary. Complete pinned source is included in Corresponding Source.
 Relationship: SPDXRef-Package-Psp2CxmlTool BUILD_TOOL_OF SPDXRef-Package-VitaMediaDeck
+
+Relationship: SPDXRef-Package-VitaSwAudioDecoder DEPENDS_ON SPDXRef-Package-FFmpegHw

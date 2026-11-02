@@ -938,6 +938,7 @@ static int play_decoder_source(BackgroundPlaybackJob *job) {
 		.stream = factory,
 		.preferred_backend = preference == VT_VIDEO_DECODER_HW_H264 ? VT_DECODER_BACKEND_HARDWARE
             : preference == VT_VIDEO_DECODER_SW_FFMPEG ? VT_DECODER_BACKEND_SOFTWARE : VT_DECODER_BACKEND_NONE,
+        .preferred_audio_backend = (VtDecoderBackend)vt_preferences_audio_decoder(),
         .backend_start = background_decoder_clock_start,
         .backend_start_ctx = &clock_guard,
 		.audio_track = job->audio_track,

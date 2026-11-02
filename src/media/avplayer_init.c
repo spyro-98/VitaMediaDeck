@@ -45,7 +45,7 @@
 
 #include "common/text_log.h"
 #include "media/avplayer_init.h"
-#include <vita_hw_decoder.h>
+#include <vita_hw_video_decoder.h>
 
 /* Minimum alignment required by SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW
  * memblocks. Same value (0x40000) used by lpp-vita (FRAMEBUFFER_ALIGNMENT),
@@ -202,7 +202,7 @@ int media_init_with_autostart(
 	}
 	*out_handle = AVPLAYER_INVALID_HANDLE;
 
-	int prepare_ret = vita_hw_decoder_prepare_runtime();
+	int prepare_ret = vita_hw_video_decoder_prepare_runtime();
 	if (prepare_ret < 0) return prepare_ret;
 
 	/* 0x48 bytes (VITASDK_BUILD_ASSERT_EQ in psp2/avplayer.h): a trivial

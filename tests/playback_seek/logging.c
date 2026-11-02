@@ -11,9 +11,18 @@
 int psvDebugScreenPuts(const char *text){(void)text;return 0;}
 int sceKernelDelayThread(unsigned us){usleep(us);return 0;}
 static int disk_enabled=1,fail_rotation;
+static pthread_mutex_t io_gate=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t io_changed=PTHREAD_COND_INITIALIZER;
+static int hold_write,write_entered,release_write;
+static void *slow_save(void *unused){(void)unused;assert(!log_save("slow.txt"));return NULL;}
+
 int vt_preferences_disk_logs_enabled(void){return disk_enabled;}
 int sceIoOpen(const char *p,int f,int m){return open(p,f,m);}
-int sceIoWrite(int f,const void *p,unsigned n){return (int)write(f,p,n);}
+int sceIoWrite(int f,const void *p,unsigned n){
+ pthread_mutex_lock(&io_gate);
+ if(hold_write){write_entered=1;pthread_cond_broadcast(&io_changed);while(!release_write)pthread_cond_wait(&io_changed,&io_gate);}
+ pthread_mutex_unlock(&io_gate);return (int)write(f,p,n);
+}
 int sceIoClose(int f){return close(f);}
 int sceIoRemove(const char *p){return remove(p);}
 int sceIoRename(const char *a,const char *b){return fail_rotation&&!strcmp(a,"session.txt")?-1:rename(a,b);}
@@ -50,6 +59,15 @@ int main(void){
  }
  contents("session.txt.16",body);assert(strstr(body,"end of session 3"));assert(access("session.txt.17",F_OK));
  disk_enabled=0;log_init();log_printf("disabled");assert(!log_save("session.txt"));contents("session.txt",body);assert(strstr(body,"session 19"));
- disk_enabled=1;fail_rotation=1;assert(log_save("session.txt")<0);contents("session.txt",body);assert(strstr(body,"session 19"));
- puts("Production logs: record boundaries/truncation, 4 concurrent producers, newest-error retention beyond 256 KiB, UTC session header, 16 bounded previous sessions, same-session saves, disabled logging and failed-rotation preservation passed.");
+ disk_enabled=1;
+ alarm(10);pthread_t storage;hold_write=1;assert(!pthread_create(&storage,NULL,slow_save,NULL));
+ pthread_mutex_lock(&io_gate);while(!write_entered)pthread_cond_wait(&io_changed,&io_gate);pthread_mutex_unlock(&io_gate);
+ log_printf("UI remains responsive during blocked storage");
+ assert(strstr(g_log_buf,"UI remains responsive"));
+ pthread_mutex_lock(&io_gate);release_write=1;pthread_cond_broadcast(&io_changed);pthread_mutex_unlock(&io_gate);
+ assert(!pthread_join(storage,NULL));alarm(0);hold_write=0;
+ contents("slow.txt",body);assert(strstr(body,"disabled")&&!strstr(body,"UI remains responsive"));
+ assert(!log_save("slow.txt"));contents("slow.txt",body);assert(strstr(body,"UI remains responsive"));
+ fail_rotation=1;assert(log_save("session.txt")<0);contents("session.txt",body);assert(strstr(body,"session 19"));
+ puts("Production logs: record boundaries/truncation, 4 concurrent producers, newest-error retention beyond 256 KiB, UTC session header, 16 bounded previous sessions, same-session saves, disabled logging and failed-rotation preservation and UI logging during blocked storage passed.");
 }

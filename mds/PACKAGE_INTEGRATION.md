@@ -1,13 +1,15 @@
 # Standalone package integration
 
-VitaMediaDeck consumes three independent repositories. The default layout keeps
+VitaMediaDeck consumes five independent repositories. The default layout keeps
 them side by side:
 
 ```text
 personale/
 ├── VitaMediaDeck/
-├── vita-hw-decoder/
-├── vita-sw-decoder/
+├── vita-hw-video-decoder/
+├── vita-sw-video-decoder/
+├── vita-hw-audio-decoder/
+├── vita-sw-audio-decoder/
 └── vita-https/
 ```
 
@@ -15,35 +17,42 @@ The paths can instead be supplied during configuration:
 
 ```sh
 cmake -S . -B build \
-  -DVITAMEDIADECK_HW_DECODER_PACKAGE=/absolute/path/vita-hw-decoder \
-  -DVITAMEDIADECK_SW_DECODER_PACKAGE=/absolute/path/vita-sw-decoder \
+  -DVITAMEDIADECK_HW_DECODER_PACKAGE=/absolute/path/vita-hw-video-decoder \
+  -DVITAMEDIADECK_SW_DECODER_PACKAGE=/absolute/path/vita-sw-video-decoder \
+  -DVITAMEDIADECK_HW_AUDIO_PACKAGE=/absolute/path/vita-hw-audio-decoder \
+  -DVITAMEDIADECK_SW_AUDIO_PACKAGE=/absolute/path/vita-sw-audio-decoder \
   -DVITAMEDIADECK_HTTPS_PACKAGE=/absolute/path/vita-https
 ```
 
 ## What VitaMediaDeck links
 
 ```cmake
+add_subdirectory("${VITAMEDIADECK_HW_AUDIO_PACKAGE}" ...)
+add_subdirectory("${VITAMEDIADECK_SW_AUDIO_PACKAGE}" ...)
 add_subdirectory("${VITAMEDIADECK_HW_DECODER_PACKAGE}" ...)
 add_subdirectory("${VITAMEDIADECK_SW_DECODER_PACKAGE}" ...)
 add_subdirectory("${VITAMEDIADECK_HTTPS_PACKAGE}" ...)
 
 target_link_libraries(vitamediadeck PRIVATE
-  VitaHwDecoder::VitaHwDecoder
-  VitaSwDecoder::VitaSwDecoder
+  VitaHwAudioDecoder::VitaHwAudioDecoder
+  VitaSwAudioDecoder::VitaSwAudioDecoder
+  VitaHwVideoDecoder::VitaHwVideoDecoder
+  VitaSwVideoDecoder::VitaSwVideoDecoder
   VitaHttps::VitaHttps)
 ```
 
-The two decoder libraries intentionally expose parallel lifecycles but distinct
-symbols. This allows both static libraries to coexist in one Vita ELF. Their
-internal decode, audio and presentation symbols are also namespaced so the
-static linker cannot accidentally satisfy one backend with the other.
+The four decoder libraries have distinct public targets and symbols. Video modules contain video/presentation/session control only; they consume the header-only audio driver contract. Native AAC/MP3 lives in the HW audio archive, FFmpeg AAC/AC-3/MP3 in the SW audio archive. One app-owned `src/media/audio_playback.c` engine supplies workers, PCM queue, volume, AudioOut and the clock to both video backends.
+
+The app sets `audio_driver` in all HW/SW open configs. Track replacement and seek remain transactions in the video session owner, including readiness gates and rollback. Subtitle extraction and retained audio/subtitle language choices remain in the app adapter. A standalone video module with `audio_driver=NULL` opens video only.
+
+This is video API 3.0.0 and audio API 1.0.0; rebuild consumers. Existing video remotes keep their old GitHub addresses until renamed by the owner. The new audio repositories are `spyro-98/vita-hw-audio-decoder` and `spyro-98/vita-sw-audio-decoder`. Development uses the `dev` branches; `release/DEPENDENCIES.lock` pins exact component commits. Push all four component branches before running CI for the app revision. Historical local test packages retain their original source-hash manifests.
 
 ## Runtime selection
 
 `src/media/vita_decoder.c` owns selection, not either package:
 
-1. create fresh audio/video cursors and open `vita-hw-decoder`;
-2. if hardware open fails, destroy it and open `vita-sw-decoder`;
+1. create fresh audio/video cursors and open `vita-hw-video-decoder`;
+2. if hardware open fails, destroy it and open `vita-sw-video-decoder`;
 3. if `h264_vita` fails later while receiving the first access units, close
    the hardware session and reopen software near the last media timestamp;
 4. expose one neutral status to the existing playback screen, including the
@@ -94,10 +103,30 @@ inherited by either decoder package's standalone builder. See the
 [correction and user-confirmed console result](../docs/iptv-hw-startup-2026-10-27.md).
 
 Standard options: empty `VITAMEDIADECK_TEST_ID`, performance clock profile,
-`VITA_SW_DECODER_PLANAR_UPLOAD=OFF`, both CPU-thread cache options at 3. The HW
+`VITA_SW_VIDEO_DECODER_PLANAR_UPLOAD=OFF`, both CPU-thread cache options at 3. The HW
 backend remains hardware-only; the thread option is not three hardware decode
 engines. Forward-only SW input always selects one worker.
 
 App-owned subtitle state, media resume, UI themes/QR and network provider setup
 are not moved into decoder packages. The new continuous UI motion and utility
 coverage do not alter decoder APIs, libraries or default clock policy.
+
+The current development integration extracts codec implementations into the
+separate HW/SW audio libraries and keeps the shared playback engine in the app.
+Video backend selection is independent: software AC-3 audio does not force
+software H.264 video.
+
+## Audio and video selection
+
+Settings → Playback stores independent AUTO/HW/SW defaults. Each decoder row
+shows the current supported codec set. HW audio is AAC/MP3 mono/stereo; SW audio
+is AAC/MP3/AC-3 with stereo output. AUTO tries native audio first and may use SW
+without changing the selected video policy. Explicit HW/SW audio never silently
+changes the audio backend. Preferences use previously unused V4 extension bits,
+leaving existing settings and migrations intact.
+
+The video player's R1 audio selector lists all three modes and their formats.
+The app reopens at the current position with the selected tracks and pause/volume
+state; a rejected mode rolls back before changing the saved default. The same
+default is passed to background video/mini-player playback. Pure music/radio
+format routing remains in the existing dedicated audio player.

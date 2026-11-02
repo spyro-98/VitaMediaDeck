@@ -24,7 +24,7 @@ media indexes, logs, and private research worktrees must not be committed.
 
 ## Independent decoder packages
 
-`vita-hw-decoder` and `vita-sw-decoder` are independent GPL-3.0-only repositories
+`vita-hw-video-decoder` and `vita-sw-video-decoder` are independent GPL-3.0-only repositories
 with 2.0.0 ABI, CMake targets, install rules, examples, dependency locks and
 source-packaging/audit tools. The app pins exact commits in its dependency lock.
 Their runtime/performance guides distinguish source contracts, host fixtures,

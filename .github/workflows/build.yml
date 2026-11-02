@@ -53,9 +53,12 @@ jobs:
         id: components
         working-directory: VitaMediaDeck
         run: |
-          for name in vita-hw-decoder vita-sw-decoder vita-https; do
+          for name in vita-hw-video-decoder vita-sw-video-decoder vita-hw-audio-decoder vita-sw-audio-decoder vita-https; do
             revision="$(sed -n "s/^${name}\.commit=//p" release/DEPENDENCIES.lock)"
-            [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+            if ! [[ "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Missing published commit pin for ${name}; finalize the local four-module split before running release CI."
+              exit 1
+            fi
             echo "${name}=$revision" >> "$GITHUB_OUTPUT"
           done
 
@@ -63,15 +66,29 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: ${{ vars.VITAMEDIADECK_HW_REPOSITORY || format('{0}/vita-hw-decoder', github.repository_owner) }}
-          ref: ${{ steps.components.outputs['vita-hw-decoder'] }}
-          path: vita-hw-decoder
+          ref: ${{ steps.components.outputs['vita-hw-video-decoder'] }}
+          path: vita-hw-video-decoder
 
       - name: Check out software decoder
         uses: actions/checkout@v5
         with:
           repository: ${{ vars.VITAMEDIADECK_SW_REPOSITORY || format('{0}/vita-sw-decoder', github.repository_owner) }}
-          ref: ${{ steps.components.outputs['vita-sw-decoder'] }}
-          path: vita-sw-decoder
+          ref: ${{ steps.components.outputs['vita-sw-video-decoder'] }}
+          path: vita-sw-video-decoder
+
+      - name: Check out hardware audio decoder
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.VITAMEDIADECK_HW_AUDIO_REPOSITORY || format('{0}/vita-hw-audio-decoder', github.repository_owner) }}
+          ref: ${{ steps.components.outputs['vita-hw-audio-decoder'] }}
+          path: vita-hw-audio-decoder
+
+      - name: Check out software audio decoder
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.VITAMEDIADECK_SW_AUDIO_REPOSITORY || format('{0}/vita-sw-audio-decoder', github.repository_owner) }}
+          ref: ${{ steps.components.outputs['vita-sw-audio-decoder'] }}
+          path: vita-sw-audio-decoder
 
       - name: Check out HTTPS transport
         uses: actions/checkout@v5

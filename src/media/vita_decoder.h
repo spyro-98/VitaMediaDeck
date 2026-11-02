@@ -85,7 +85,9 @@ typedef struct VtDecoderPlayerConfig {
 	int external_subtitles_replace_embedded;
 	/* NONE means automatic hardware-first selection with software fallback. */
 	VtDecoderBackend preferred_backend;
-	/* Audio uses a zero-based playable AAC ordinal. Subtitle zero means off;
+ /* Independent audio preference: NONE=AUTO, HARDWARE or SOFTWARE. */
+ VtDecoderBackend preferred_audio_backend;
+	/* Audio uses a zero-based playable audio ordinal. Subtitle zero means off;
 	 * positive values select a one-based playable text-subtitle ordinal. */
 	int audio_track;
 	int subtitle_track;

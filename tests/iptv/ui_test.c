@@ -31,6 +31,9 @@ int vt_preferences_clock_source(void){return 1;}
 int vt_preferences_video_decoder(void){return 0;}
 int vt_preferences_decoder_cpu_mhz(int hw){return hw?333:444;}
 #endif
+static int host_last_iptv_view,host_iptv_view_writes;
+int vt_preferences_iptv_last_view(void){return host_last_iptv_view;}
+int vt_preferences_set_iptv_last_view(int view){assert(view>=0&&view<4);host_last_iptv_view=view;host_iptv_view_writes++;return 0;}
 static int host_playback_present,host_playback_error,host_playback_writes;
 static VtIptvPreference host_playback_preference;
 #ifndef VMD_REAL_PLAYBACK_STORAGE
@@ -280,6 +283,12 @@ SceUID sceKernelCreateThread(const char *n,int(*f)(SceSize,void*),int p,size_t s
 #endif
 int sceKernelExitThread(int result){return result;}
 int ui_loading_run(const char *m,UiLoadingTaskFn task,void *ctx,volatile int *cancel,const volatile long *a,const volatile long *b){(void)m;(void)cancel;(void)a;(void)b;return task(ctx);}
+#ifndef VMD_REAL_LOADING_TEST
+static char host_loading_title[256];
+int ui_player_loading_run(const UiPlayerLoadingInfo *info,UiLoadingTaskFn task,void *ctx,volatile int *cancel,const volatile long *a,const volatile long *b){
+ (void)cancel;(void)a;(void)b;snprintf(host_loading_title,sizeof(host_loading_title),"%s",info&&info->title?info->title:"");return task(ctx);
+}
+#endif
 int ui_qr_scan_https_url(char *out,size_t capacity){qr_calls++;if(qr_result>0)snprintf(out,capacity,"%s",qr_value);return qr_result;}
 const char *ui_qr_scan_last_error(void){return "Camera unavailable";}
 void vt_video_thumbnail_resume(void){}

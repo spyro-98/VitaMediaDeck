@@ -4,7 +4,7 @@ vmd_repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$vmd_repo"
 vmd_ffmpeg="${VMD_HOST_FFMPEG:?Set the configured host FFmpeg source or include directory}"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-player-feedback.XXXXXX")"
-vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc)
+vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-hw-audio-decoder/include)
 read -r -a vmd_codec_flags <<<"$(pkg-config --cflags libpng libjpeg libwebp)"
 clang "${vmd_flags[@]}" -Itests/player_feedback/thumbnail/include \
     -Itests/podcast_metadata/include -Itests/online_audio/include "-I$vmd_ffmpeg" \

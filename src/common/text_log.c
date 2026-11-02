@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
+#include <pthread.h>
 
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
@@ -25,6 +27,7 @@ static size_t g_log_len;
 static size_t g_log_header_len;
 static int g_log_total_lines; /* numero di '\n' presenti nel buffer */
 static volatile int g_log_lock;
+static pthread_mutex_t g_save_mutex=PTHREAD_MUTEX_INITIALIZER;
 static char g_saved_paths[4][256];
 static unsigned g_saved_path_count;
 
@@ -195,7 +198,7 @@ void log_view(void) {
 	}
 }
 
-int log_save(const char *path) {
+static int log_write_snapshot(const char *path,const char *snapshot,size_t length) {
 	if (!path) return -1;
 	if (!vt_preferences_disk_logs_enabled()) return 0;
 	/* Write to a temporary file + rename, not a direct O_TRUNC on the final
@@ -206,17 +209,15 @@ int log_save(const char *path) {
 	char tmp_path[256];
 	int n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
 	if (n <= 0 || (size_t)n >= sizeof(tmp_path)) return -1;
-	log_lock();
 	SceUID fd = sceIoOpen(tmp_path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
-	if (fd < 0) { log_unlock(); return (int)fd; }
+	if (fd < 0) { return (int)fd; }
 
 	size_t written_total = 0;
-	while (written_total < g_log_len) {
-		int written = sceIoWrite(fd, g_log_buf + written_total,
-		                         g_log_len - written_total);
+	while (written_total < length) {
+		int written = sceIoWrite(fd, snapshot + written_total,
+		                         length - written_total);
 		if (written <= 0) {
 			sceIoClose(fd);
-			log_unlock();
 			return written < 0 ? written : -1;
 		}
 		written_total += (size_t)written;
@@ -234,12 +235,23 @@ int log_save(const char *path) {
             }
             snprintf(newer,sizeof(newer),"%s.1",path);
             int archived=sceIoRename(path,newer);
-            if(archived<0){log_unlock();return archived;}
+            if(archived<0){return archived;}
         }
         if(g_saved_path_count<4)snprintf(g_saved_paths[g_saved_path_count++],256,"%s",path);
     }
 	sceIoRemove(path);
 	int rename_ret = sceIoRename(tmp_path, path);
-	log_unlock();
 	return rename_ret < 0 ? rename_ret : 0;
+}
+
+int log_save(const char *path){
+ if(!path)return -1;
+ if(!vt_preferences_disk_logs_enabled())return 0;
+ char *snapshot=malloc(LOG_BUF_SIZE);if(!snapshot)return -1;
+ /* Only saves serialize; rendering can append records throughout slow flash
+  * I/O. Take the snapshot after acquiring save order to avoid older overwrite. */
+ pthread_mutex_lock(&g_save_mutex);
+ log_lock();size_t length=g_log_len;memcpy(snapshot,g_log_buf,length);log_unlock();
+ int result=log_write_snapshot(path,snapshot,length);
+ pthread_mutex_unlock(&g_save_mutex);free(snapshot);return result;
 }

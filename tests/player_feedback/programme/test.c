@@ -10,7 +10,7 @@
 #include "../../../src/media/hw_player_screen.c"
 static unsigned checks;
 #define CHECK(x) do{checks++;assert(x);}while(0)
-typedef struct {uint64_t magic;char channel[64];int error;} Context;
+typedef struct {uint64_t magic;char channel[64];int error,missing;} Context;
 static pthread_mutex_t gate=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t gate_changed=PTHREAD_COND_INITIALIZER;
 static int allow_first,entered,fetches,refreshes,skipped,active,max_active;
@@ -32,7 +32,7 @@ static int fetch_program(void *opaque,VtIptvProgram *out,volatile int *cancel,in
   assert(!strcmp(ctx->channel,"A")&&__atomic_load_n(cancel,__ATOMIC_ACQUIRE));
  }
  int error=ctx->error;active--;pthread_mutex_unlock(&gate);
- out->available=1;out->start=time(NULL)-60;out->end=time(NULL)+3600;
+ out->available=!ctx->missing;out->guide_status=ctx->missing?VT_IPTV_GUIDE_NO_CHANNEL:VT_IPTV_GUIDE_OK;out->start=time(NULL)-60;out->end=time(NULL)+3600;
  snprintf(out->channel_name,sizeof(out->channel_name),"Channel %s",ctx->channel);
  snprintf(out->title,sizeof(out->title),"Programme %s",ctx->channel);return error?-7:0;
 }
@@ -77,7 +77,32 @@ int main(void){
  }
  CHECK(vt_iptv_program_poll_row(grid,6,&row)==VT_IPTV_INVALID);vt_iptv_program_release(grid);
  CHECK(!vt_iptv_program_request_batch(fetch_program,&ctx,sizeof(ctx),7,0));
+ /* Re-entry gets completed rows immediately, including rows whose view was
+  * released before UI polling. Positive, absent and failed results all dedupe. */
+ Context cached={.magic=0x123456789abcdef0ULL,.channel="Grid 4"};
+ pthread_mutex_lock(&gate);int before=fetches;pthread_mutex_unlock(&gate);
+ grid=vt_iptv_program_request(fetch_program,&cached,sizeof(cached),0);
+ CHECK(vt_iptv_program_poll(grid,&row)==1&&row.cached&&!strcmp(row.title,"Programme Grid 4"));vt_iptv_program_release(grid);
+ cached.missing=1;strcpy(cached.channel,"Missing guide");
+ grid=vt_iptv_program_request(fetch_program,&cached,sizeof(cached),0);
+ for(int tick=0;tick<5000&&!vt_iptv_program_poll(grid,&row);tick++)usleep(1000);
+ CHECK(!row.available&&row.guide_status==VT_IPTV_GUIDE_NO_CHANNEL);vt_iptv_program_release(grid);
+ for(int visit=0;visit<100;visit++){
+  grid=vt_iptv_program_request(fetch_program,&cached,sizeof(cached),0);
+  CHECK(vt_iptv_program_poll(grid,&row)==1&&row.cached&&!row.available);vt_iptv_program_release(grid);
+ }
+ pthread_mutex_lock(&gate);CHECK(fetches==before+1);pthread_mutex_unlock(&gate);
+ cached.error=1;strcpy(cached.channel,"Unavailable provider");
+ grid=vt_iptv_program_request(fetch_program,&cached,sizeof(cached),0);int ready=0;
+ for(int tick=0;tick<5000&&!ready;tick++){ready=vt_iptv_program_poll(grid,&row);if(!ready)usleep(1000);}CHECK(ready==-7);vt_iptv_program_release(grid);
+ grid=vt_iptv_program_request(fetch_program,&cached,sizeof(cached),0);CHECK(vt_iptv_program_poll(grid,&row)==-7);vt_iptv_program_release(grid);
+ pthread_mutex_lock(&gate);CHECK(fetches==before+2);pthread_mutex_unlock(&gate);
+ /* Manual refresh bypasses absence/error caches. */
+ cached.error=cached.missing=0;
+ grid=vt_iptv_program_request(fetch_program,&cached,sizeof(cached),1);ready=0;
+ for(int tick=0;tick<5000&&!ready;tick++){ready=vt_iptv_program_poll(grid,&row);if(!ready)usleep(1000);}CHECK(ready==1&&row.available);vt_iptv_program_release(grid);
+ pthread_mutex_lock(&gate);CHECK(fetches==before+3);pthread_mutex_unlock(&gate);
  vt_iptv_program_shutdown();
  CHECK(!active);alarm(0);
- printf("Background programme loading: %u checks; starts before R1, 120 UI ticks during blocked fetch, deep context lifetime, cancelled channel switch/latest-only queue, no stale publication, refresh error retention, VOD/trial exclusion and clean shutdown passed.\n",checks);
+ printf("Background programme loading: %u checks; starts before R1, 120 UI ticks during blocked fetch, deep context lifetime, cancelled channel switch/latest-only queue, no stale publication, refresh error retention, VOD/trial exclusion positive/negative/error re-entry deduplication, manual refresh and clean shutdown passed.\n",checks);
 }

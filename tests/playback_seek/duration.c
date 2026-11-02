@@ -4,9 +4,9 @@
 #include <string.h>
 #include <libavutil/error.h>
 #ifdef TEST_SW
-#include "../../../vita-sw-decoder/src/internal/input_timing.h"
+#include "../../../vita-sw-video-decoder/src/internal/input_timing.h"
 #else
-#include "../../../vita-hw-decoder/src/internal/input_timing.h"
+#include "../../../vita-hw-video-decoder/src/internal/input_timing.h"
 #endif
 static unsigned checks;
 #define CHECK(x) do { checks++;assert(x); } while(0)

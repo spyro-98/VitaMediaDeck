@@ -450,3 +450,26 @@ and all eight themes in IT/EN. The options/programme suite checks XMLTV canonica
 names and logos; the FFmpeg selection suite checks SDT names from the already
 fetched TS prefix. Background programme tests require metadata publication on
 the UI thread and exclude cancelled/stale/failed jobs.
+
+## Guide cache and navigation
+
+`run-options-tests.sh` counts XML-reader creation: 100 revisits of a found or
+missing channel perform no repeated parsing. A fresh process reuses the device
+cache. Programme boundaries, language/shift changes, raw-guide replacement,
+corruption, cancellation, provider-wide retry backoff and explicit refresh are
+separate cases. Results expire at the next programme boundary or within 15
+minutes; absent guide/channel matches retry after six hours, failures after five
+minutes. Manual refresh bypasses result caches. Raw guides retain their existing
+refresh policy and last-good fallback.
+
+`@SD`/`@HD` rendition suffixes are canonicalised without merging countries,
+regional channels or `+1` variants. Recognisable Italian brands can use the public
+Italian fallback when the playlist lacks a guide, or its configured guide has no
+current match. Channel matching remains unique. The streaming parser follows
+[XMLTV channel/programme ordering](https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd)
+and validates the entire document in one decompression pass.
+
+The real asynchronous worker suite in `tests/player_feedback/programme` checks
+shared player/grid results, cached absence/errors and manual refresh. Startup
+artwork tests also cover a full 4096-entry cache with constant-cost visible hits.
+These checks do not establish frame-time behaviour on physical Vita hardware.

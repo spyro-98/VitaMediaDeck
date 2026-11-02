@@ -10,10 +10,8 @@ def function(text,name):
   elif text[pos]=='}':depth-=1
   pos+=1
  return text[start:pos]+'\n'
-for kind in ('hw','sw'):
- base=root.parent/f'vita-{kind}-decoder';text=(base/'src/internal/elementary_audio.c').read_text()
- header=(base/'src/internal/elementary_audio.h').read_text()
- definitions='\n'.join(line for line in (text+'\n'+header).splitlines() if line.startswith('#define ELEMENTARY_AUDIO_'))
- (out/f'{kind}-output.inc').write_text(definitions+'\n'+function(text,f'vita_{kind}_elementary_audio_output_thread')+function(text,f'vita_{kind}_elementary_audio_set_volume'))
+text=(root/'src/media/audio_playback.c').read_text()
+definitions='\n'.join(line for line in text.splitlines() if line.startswith('#define ELEMENTARY_AUDIO_'))
+(out/'output.inc').write_text(definitions+'\n'+function(text,'audio_output_thread')+function(text,'playback_set_volume'))
 text=(root/'src/media/background_playback.c').read_text()
 (out/'background-gain.inc').write_text(function(text,'set_port_volume')+function(text,'amplify_pcm16'))

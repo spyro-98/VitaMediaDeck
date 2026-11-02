@@ -86,3 +86,10 @@ VT_STR(SETTINGS_CONTROLS_REFERENCE_IT,
 
 VT_STR(SETTINGS_THEME_VMD_RECOVERY, "Legacy (recupero VMD)", "Legacy (VMD recovery)")
 VT_STR(SETTINGS_THEME_VMD_RESTART_HINT, "VMD non disponibile: riavvia l'app prima di riprovarlo. Dettagli nel log.", "VMD unavailable: restart the app before trying VMD again. Details in the log.")
+VT_STR(SETTINGS_AUDIO_DECODER, "Decoder audio", "Audio decoder")
+VT_STR(SETTINGS_AUDIO_FORMATS_HW, "AAC, MP3 · mono/stereo", "AAC, MP3 · mono/stereo")
+VT_STR(SETTINGS_AUDIO_FORMATS_SW, "AAC, MP3, AC-3 · uscita stereo", "AAC, MP3, AC-3 · stereo output")
+VT_STR(SETTINGS_VIDEO_FORMATS_AUTO, "H.264/AVC · hardware con ripiego software", "H.264/AVC · hardware with software fallback")
+VT_STR(SETTINGS_VIDEO_FORMATS_HW, "H.264/AVC · solo hardware", "H.264/AVC · hardware only")
+VT_STR(SETTINGS_VIDEO_FORMATS_SW, "H.264/AVC · solo software", "H.264/AVC · software only")
+VT_STR(SETTINGS_AUDIO_FORMATS_AUTO, "AAC, MP3, AC-3 · HW → SW", "AAC, MP3, AC-3 · HW → SW")

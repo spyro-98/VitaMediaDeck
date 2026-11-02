@@ -3,6 +3,7 @@
 #include "ui/native_vita.h"
 #endif
 #include "ui/settings_screen.h"
+#include "ui/decoder_options.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -70,6 +71,7 @@ enum {
  ROW_CPU,
 	ROW_MAPPING,
 	ROW_DECODER,
+ ROW_AUDIO_DECODER,
 	ROW_SUBTITLE_FONT,
 	ROW_SUBTITLE_FOREGROUND,
 	ROW_SUBTITLE_BORDER,
@@ -207,25 +209,16 @@ static void draw_value(vita2d_font *small, int y, int row_width,
 static int language_count(void) { return VT_LANG_COUNT; }
 static const char *language_label(int language) {return vt_i18n_language_name(language);}
 
-static const char *decoder_label(int decoder) {
-	static const VtStringId labels[] = {
-		VT_STR_SETTINGS_DECODER_AUTO,
-		VT_STR_SETTINGS_DECODER_HW_H264,
-		VT_STR_SETTINGS_DECODER_SW_FFMPEG
-	};
-	return vt_i18n_str(decoder >= VT_VIDEO_DECODER_AUTO &&
-	                   decoder <= VT_VIDEO_DECODER_SW_FFMPEG
-	                   ? labels[decoder] : labels[VT_VIDEO_DECODER_AUTO]);
-}
-
 static int rows_for_tab(int tab, SettingRow rows[9]) {
 	if (tab == TAB_PLAYBACK) {
-		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_VIDEO_DECODER), vt_preferences_video_decoder(), ROW_DECODER };
-		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_FILL_SCREEN), vt_preferences_fill_screen(), ROW_TOGGLE };
-		rows[2] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_LOOP_PLAYBACK), vt_preferences_loop_enabled(), ROW_TOGGLE };
-		rows[3] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_KEEP_MUSIC_AWAKE), vt_preferences_music_keep_display_awake(), ROW_TOGGLE };
-		return 4;
-	}
+  rows[0]=(SettingRow){vt_i18n_str(VT_STR_SETTINGS_VIDEO_DECODER),vt_preferences_video_decoder(),ROW_DECODER};
+  rows[1]=(SettingRow){vt_i18n_str(VT_STR_SETTINGS_AUDIO_DECODER),vt_preferences_audio_decoder(),ROW_AUDIO_DECODER};
+  rows[2]=(SettingRow){vt_i18n_str(VT_STR_SETTINGS_FILL_SCREEN),vt_preferences_fill_screen(),ROW_TOGGLE};
+  rows[3]=(SettingRow){vt_i18n_str(VT_STR_SETTINGS_LOOP_PLAYBACK),vt_preferences_loop_enabled(),ROW_TOGGLE};
+  rows[4]=(SettingRow){vt_i18n_str(VT_STR_SETTINGS_KEEP_MUSIC_AWAKE),vt_preferences_music_keep_display_awake(),ROW_TOGGLE};
+  return 5;
+ }
+
 	if (tab == TAB_SUBTITLES) {
 		rows[0] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_FONT), vt_preferences_subtitle_font(), ROW_SUBTITLE_FONT };
 		rows[1] = (SettingRow){ vt_i18n_str(VT_STR_SETTINGS_SUBTITLE_FOREGROUND), vt_preferences_subtitle_text_color(), ROW_SUBTITLE_FOREGROUND };
@@ -272,9 +265,10 @@ static int apply_row(int tab, int row, int direction) {
 					decoder = VT_VIDEO_DECODER_AUTO;
 				return vt_preferences_set_video_decoder(decoder);
 			}
-			case 1: return vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
-			case 2: return vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
-			case 3: return vt_preferences_set_music_keep_display_awake(!vt_preferences_music_keep_display_awake());
+			case 1: return vt_preferences_set_audio_decoder((vt_preferences_audio_decoder()+(direction<0?2:1))%3);
+			case 2: return vt_preferences_set_fill_screen(!vt_preferences_fill_screen());
+			case 3: return vt_preferences_set_loop_enabled(!vt_preferences_loop_enabled());
+			case 4: return vt_preferences_set_music_keep_display_awake(!vt_preferences_music_keep_display_awake());
 		}
 	} else if (tab == TAB_SUBTITLES) {
 		switch (row) {
@@ -464,7 +458,7 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 		int y=ROW_Y+i*ROW_STEP-settings_scroll.position;
         ui_menu_row(ROW_X,y,row_width,ROW_STEP,page_has_focus&&!focus_tabs&&i==cursor,1);
 		if (body) ui_menu_text(ROW_X + 16,
-		    y + (tab == TAB_SUBTITLES ? 22 : 35),
+		    y + (tab == TAB_SUBTITLES || rows[i].kind==ROW_DECODER || rows[i].kind==ROW_AUDIO_DECODER ? 22 : 35),
 		    tab == TAB_SUBTITLES ? row_width-32 : row_width/2-32,
 		    rows[i].label, UI_MENU_TEXT, UI_FONT_BODY);
 		if (rows[i].kind == ROW_TOGGLE)
@@ -492,8 +486,10 @@ static void draw_screen(int tab, int cursor, int focus_tabs, const UiFocusMotion
 			draw_value(small, y, row_width, vt_i18n_str(rows[i].value
 			    ? VT_STR_SETTINGS_CONTROL_DPAD_PANELS
 			    : VT_STR_SETTINGS_CONTROL_SHOULDERS_PANELS));
-		else if (rows[i].kind == ROW_DECODER)
-			draw_value(small, y, row_width, decoder_label(rows[i].value));
+		else if (rows[i].kind == ROW_DECODER || rows[i].kind == ROW_AUDIO_DECODER) {
+   draw_value(small,y-13,row_width,ui_decoder_mode_label(rows[i].value));
+   ui_menu_text(ROW_X+16,y+48,row_width-32,ui_decoder_formats(rows[i].kind==ROW_AUDIO_DECODER,rows[i].value),UI_MENU_MUTED,UI_FONT_SMALL);
+  }
 		else if (rows[i].kind == ROW_SUBTITLE_FONT)
 			draw_value(small, y, row_width, subtitle_font_label(rows[i].value));
 		else if (rows[i].kind == ROW_SUBTITLE_FOREGROUND)

@@ -4,7 +4,7 @@ vmd_repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$vmd_repo"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-iptv-check.XXXXXX")"
 vmd_sdk="$(xcrun --show-sdk-path)"
-vmd_flags=(-O1 -g -Wall -Wextra -Isrc -I../vita-https/include "-I$vmd_sdk/usr/include/libxml2")
+vmd_flags=(-O1 -g -Wall -Wextra -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include "-I$vmd_sdk/usr/include/libxml2")
 vmd_sources=(src/network/iptv_manifest.c src/network/iptv_source.c)
 if [[ -n "${VMD_JANSSON_HOST_ROOT:-}" ]]; then
     clang "${vmd_flags[@]}" -fsanitize=address,undefined "-I$VMD_JANSSON_HOST_ROOT/include" \

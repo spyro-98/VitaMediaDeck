@@ -206,6 +206,9 @@ static char *iptv_local_logo(const char *url,volatile int *cancel,size_t *size){
  if(read!=(size_t)n||(cancel&&*cancel)){free(data);return NULL;}*size=read;return data;
 }
 static int iptv_cover_worker(SceSize args, void *ctx) {
+#ifdef __vita__
+    sceKernelChangeThreadPriority(sceKernelGetThreadId(),191);
+#endif
     (void)args; (void)ctx;
     if(artwork_force){
         refresh_channel_artwork(&artwork_channel,artwork_parent,&artwork_cancel);
@@ -905,7 +908,8 @@ static int play_link_once(const char **message) {
     VtIptvSourceConfig discovery_config={.fetch_ctx=&discovery_http};volatile int discovery_cancel=0;
     vt_playback_checkpoint("iptv.options.begin",library_item.id,0,0,0,0);
     if(available){OptionsTask task={link,mode==VT_IPTV_DASH,&discovery_config,available,&discovery_cancel};
-        int discovered=ui_loading_run(TR(IPTV_LOADING_OPTIONS),load_playback_options,&task,&discovery_cancel,NULL,NULL);
+        UiPlayerLoadingInfo discovery_loading={.title=playing.title,.channel=TR(IPTV_TITLE),.status=TR(IPTV_LOADING_OPTIONS),.cancellable=1};
+        int discovered=ui_player_loading_run(&discovery_loading,load_playback_options,&task,&discovery_cancel,NULL,NULL);
         if(discovered==VT_IPTV_OPTIONS_DIRECTORY){
             if(!push_list_parent(playing.url,message)){free(available);return UI_SECTION_NONE;}
             current_list=playing;current_list.mode=VT_IPTV_LIST;mode=VT_IPTV_LIST;list_from_form=0;
@@ -1153,12 +1157,13 @@ int ui_iptv_screen(void) {
     const char *message = "";
     int focus = 0, action_focus=-1;
     split_view=vt_preferences_iptv_split();refresh_playlists();
-    picker_focus=split_view&&((saved_view&&!saved_channels)||!catalog.count);picker_cursor=playlist_count?1:0;
+    int last_view_attempted=vt_preferences_iptv_last_view();
     UiContextMenu options={0};
     UiFocusMotion focus_motion={0},grid_focus={0};
     UiScrollView scroll={0};uint64_t scroll_context=0,last_frame=0;
-    if(!catalog.count) { saved_view=1; starred_view=0; catalog_focus=catalog_top=0;
+    if(!catalog.count) { saved_view=1;saved_channels=last_view_attempted&1;starred_view=(last_view_attempted>>1)&1;catalog_focus=catalog_top=0;
         if(reload_saved())message=TR(IPTV_SAVE_FAILED); }
+    picker_focus=split_view&&!saved_channels;picker_cursor=saved_channels?0:playlist_count?1:0;
     if(!catalog.count&&!split_view)action_focus=4;
     filter_dirty=1;filter_catalog();
     UiSectionsSidebar sidebar;
@@ -1583,6 +1588,10 @@ int ui_iptv_screen(void) {
         catalog_top=(int)floorf(scroll.position/catalog_step)*columns;
         if(grid_focus.initialized)grid_focus.y+=old_scroll-scroll.position;
         filter_catalog();
+        /* Persist on the view change, so force-closing the app keeps it too.
+         * Attempt a failed write once per change instead of retrying every frame. */
+        if(saved_view){int view=!!saved_channels|(!!starred_view<<1);
+            if(view!=last_view_attempted){last_view_attempted=view;if(vt_preferences_set_iptv_last_view(view)<0)message=TR(IPTV_SAVE_FAILED);}}
         char shown[VT_IPTV_URL_MAX]; display_link(shown);
         vita2d_start_drawing(); vita2d_clear_screen();
         ui_chrome_background(VT_THEME_BG, VT_THEME_SIGNAL_BRIGHT);

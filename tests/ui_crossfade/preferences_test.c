@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <pthread.h>
 int sceIoSync(const char *,int);
 #include "../../src/settings/preferences.c"
 static int fail_write, write_calls;
@@ -16,6 +17,12 @@ int sceIoRemove(const char *p){return unlink(p);}
 int sceIoRename(const char *a,const char *b){return rename(a,b);}
 int sceIoMkdir(const char *p,int m){return mkdir(p,m);}
 int sceIoGetstat(const char *p,SceIoStat *s){struct stat st;int r=stat(p,&st);if(!r)s->st_size=st.st_size;return r;}
+static _Atomic int reader_running;
+static void *read_navigation_preferences(void *unused){
+ (void)unused;
+ while(reader_running){assert(vt_preferences_audio_decoder()==2);int view=vt_preferences_iptv_last_view();assert(view>=0&&view<4);}
+ return NULL;
+}
 int main(void){
  char dir[]="/tmp/vmd-crossfade-preferences.XXXXXX";assert(mkdtemp(dir)&&!chdir(dir));
  assert(!mkdir("ux0:data",0700));vt_preferences_init();assert(vt_preferences_audio_layout()==0);
@@ -181,6 +188,33 @@ int main(void){
  assert(!vt_preferences_set_decoder_cpu_mhz(1,222));assert(!vt_preferences_set_default_quality(720));
  assert(!rename(VT_PREFERENCES_PATH,VT_PREFERENCES_BACKUP));g_loaded=0;
  assert(!vt_preferences_init()&&vt_preferences_decoder_cpu_mhz(1)==222&&vt_preferences_decoder_cpu_mhz(0)==444);
+ assert(vt_preferences_audio_decoder()==VT_AUDIO_DECODER_AUTO);
+ uint32_t other_clock=g_clock_flags&~(3u<<7),other_playback=g_playback_flags,other_subtitle=g_subtitle_flags;
+ for(int mode=0;mode<3;mode++){
+  assert(!vt_preferences_set_audio_decoder(mode));g_loaded=0;assert(!vt_preferences_init());
+  assert(vt_preferences_audio_decoder()==mode&&(g_clock_flags&~(3u<<7))==other_clock);
+  assert(g_playback_flags==other_playback&&g_subtitle_flags==other_subtitle);
+ }
+ fail_write=1;assert(vt_preferences_set_audio_decoder(1)<0&&vt_preferences_audio_decoder()==2);
+ fail_write=0;g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_audio_decoder()==2);
+ assert(vt_preferences_set_audio_decoder(-1)<0&&vt_preferences_set_audio_decoder(3)<0);
+ assert(!vt_preferences_set_decoder_cpu_mhz(1,333));assert(vt_preferences_audio_decoder()==2);
+ puts("Audio decoder preference: AUTO upgrade default, all modes survive reload, unrelated settings preserved, failed-write rollback and invalid values passed.");
+ uint32_t keep_clock=g_clock_flags&~(3u<<9),keep_playback=g_playback_flags,keep_subtitle=g_subtitle_flags;
+ for(int view=0;view<4;view++){
+  assert(!vt_preferences_set_iptv_last_view(view));g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_iptv_last_view()==view);
+  assert((g_clock_flags&~(3u<<9))==keep_clock&&g_playback_flags==keep_playback&&g_subtitle_flags==keep_subtitle);
+ }
+ fail_write=1;assert(vt_preferences_set_iptv_last_view(1)<0&&vt_preferences_iptv_last_view()==3);
+ fail_write=0;g_loaded=0;assert(!vt_preferences_init()&&vt_preferences_iptv_last_view()==3);
+ assert(vt_preferences_set_iptv_last_view(-1)<0&&vt_preferences_set_iptv_last_view(4)<0);
+ assert(!vt_preferences_set_audio_decoder(1)&&vt_preferences_iptv_last_view()==3);
+ puts("IPTV last root view: playlists/channels and favourites survive reload; decoder/CPU/theme state retained, invalid values rejected, failed writes rolled back.");
+ assert(!vt_preferences_set_audio_decoder(2));reader_running=1;pthread_t reader;
+ assert(!pthread_create(&reader,NULL,read_navigation_preferences,NULL));
+ for(int view=0;view<16;view++)assert(!vt_preferences_set_iptv_last_view(view%4));
+ reader_running=0;assert(!pthread_join(reader,NULL));
+ puts("Concurrent preference reads: background audio mode stays intact while UI changes/saves the IPTV root view.");
  puts("CPU pair V4: HW333/SW444 defaults, V1/V2/V3 migration, independent pairs, persistence, invalid values, failed-write rollback and V4 backup passed");
  puts("Per-theme browser defaults and independent saved grid/list choices passed");
  puts("Interface themes: default VMD, one-time Legacy upgrade, later choices/recovery and failed migration preserved, all choices persisted, unrelated bits and failed-write rollback passed");

@@ -49,7 +49,7 @@ The audio-layout subpage retains its existing independent controls.
 
 The application's existing Release -O3, Cortex-A9/NEON/hard-float/Thumb toolchain,
 section garbage collection and FFmpeg C LTO remain. LTO is now applied to the app,
-vita_hw_decoder, vita_sw_decoder, vita_https and vitamediadeck_iptv_source, with
+vita_hw_video_decoder, vita_sw_video_decoder, vita_https and vitamediadeck_iptv_source, with
 compiler-matched gcc-ar/gcc-ranlib. Standalone package defaults, public decoder ABI
 2.0.0, dependency revisions, clocks and copied NV12/P2 remain unchanged.
 Disabling the app LTO option still disables the added app-owned compile flags;

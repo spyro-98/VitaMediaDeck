@@ -1,3 +1,7 @@
+#include "common/iptv_time.h"
+#ifdef __vita__
+#include "common/text_log.h"
+#endif
 #include "network/iptv_options.h"
 #include "network/iptv_catalog.h"
 #include "network/hls_source.h"
@@ -9,6 +13,11 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <ctype.h>
+#include <stddef.h>
+#include <pthread.h>
+#ifdef __vita__
+#include <psp2/kernel/threadmgr.h>
+#endif
 #include <zlib.h>
 #include <libxml/xmlreader.h>
 #include <libavutil/parseutils.h>
@@ -41,7 +50,7 @@ int vt_iptv_options_load(const char *url,int dash,const VtIptvSourceConfig *cfg,
   if(size>VT_IPTV_PLAYLIST_LIMIT){free(data);return VT_IPTV_LIMIT;}
   VtIptvSourceConfig config=cfg?*cfg:(VtIptvSourceConfig){0};config.inspect=out;
   config.bandwidth_limit=config.width_limit=config.height_limit=0;
-  if(dash){VtDashManifest *m=NULL;r=vt_dash_manifest_parse(data,size,effective,(int64_t)time(NULL)*1000000,&config,&m);vt_dash_manifest_free(m);}
+  if(dash){VtDashManifest *m=NULL;r=vt_dash_manifest_parse(data,size,effective,(int64_t)vt_iptv_time_now()*1000000,&config,&m);vt_dash_manifest_free(m);}
   else {unsigned char *prepared=NULL;size_t length=0;r=vt_hls_prepare_manifest(data,size,effective,&config,&prepared,&length);free(prepared);}
  }
  free(data);if(!r)out->discovered=1;return r;
@@ -82,6 +91,11 @@ static int guide_read(void *opaque,char *buffer,int capacity){
   size_t n=in->size-in->position;if(n>(size_t)capacity)n=capacity;
   memcpy(buffer,in->bytes+in->position,n);in->position+=n;count=(int)n;
  }
+ #ifdef __vita__
+ /* A country guide can contain tens of megabytes. Yield in bounded chunks so
+  * cache rebuilding never monopolises the UI core during navigation. */
+ if((in->expanded>>16)!=((in->expanded+count)>>16))sceKernelDelayThread(1000);
+#endif
  in->expanded+=count;
  if(in->expanded>VT_IPTV_GUIDE_EXPANDED_LIMIT)in->error=VT_IPTV_LIMIT;
  for(int i=0;i<count&&!in->error;i++){
@@ -111,6 +125,10 @@ static int64_t guide_time(const char *value){
  size_t digits=strspn(value,"0123456789");if(digits!=8&&digits!=10&&digits!=12&&digits!=14)return -1;
  char stamp[15]="00000101000000";memcpy(stamp,value,digits);
  const char *zone=value+digits;while(isspace((unsigned char)*zone))zone++;
+ char zone_buffer[8];
+ if((*zone=='+'||*zone=='-')&&strlen(zone)==6&&zone[3]==':'){
+  snprintf(zone_buffer,sizeof(zone_buffer),"%.3s%.2s",zone,zone+4);zone=zone_buffer;
+ }
  if(!*zone||!strcmp(zone,"Z")||!strcmp(zone,"UTC")||!strcmp(zone,"GMT"))zone="Z";
  else{
   if((*zone!='+'&&*zone!='-')||strlen(zone)!=5)return -1;
@@ -120,7 +138,15 @@ static int64_t guide_time(const char *value){
  char iso[64];snprintf(iso,sizeof(iso),"%.4s-%.2s-%.2sT%.2s:%.2s:%.2s%s",stamp,stamp+4,stamp+6,stamp+8,stamp+10,stamp+12,zone);
  int64_t us;if(av_parse_time(&us,iso,0)<0)return -1;return us/1000000;
 }
+/* Common M3U exporters append a rendition tag to the XMLTV ID. Strip only
+ * recognised picture-quality tags; +1, regional and arbitrary suffixes remain
+ * part of the identity. Country checks use this same canonical form. */
+static void guide_base_id(const char *value,char out[256]){
+ snprintf(out,256,"%s",value?value:"");char *at=strrchr(out,'@');
+ if(at&&(!strcasecmp(at,"@SD")||!strcasecmp(at,"@HD")||!strcasecmp(at,"@FHD")||!strcasecmp(at,"@UHD")||!strcasecmp(at,"@4K")))*at=0;
+}
 static void guide_key(const char *value,int display,char out[256]){
+ char base[256];guide_base_id(value,base);value=base;
  size_t n=strlen(value),used=0;
  /* Country suffix is retained for ID comparisons, removed only for names.
   * '+' and region words are preserved: a +1/regional channel is not its parent. */
@@ -169,8 +195,9 @@ static int guide_rank(const VtIptvGuideQuery *q,const char *id,xmlNode *node){
  const char *wanted=q->channel?q->channel:"";
  if(*wanted&&!strcmp(wanted,id))return 100;
  if(guide_id_equal(wanted,id))return 90;
- size_t a=strlen(wanted),b=strlen(id);
- if(a>3&&b>3&&wanted[a-3]=='.'&&id[b-3]=='.'&&strcasecmp(wanted+a-2,id+b-2))return 0;
+ char wanted_base[256],id_base[256];guide_base_id(wanted,wanted_base);guide_base_id(id,id_base);
+ size_t a=strlen(wanted_base),b=strlen(id_base);
+ if(a>3&&b>3&&wanted_base[a-3]=='.'&&id_base[b-3]=='.'&&strcasecmp(wanted_base+a-2,id_base+b-2))return 0;
  int rank=guide_display_rank(q,id);
  for(xmlNode *n=node?node->children:NULL;n;n=n->next)if(n->type==XML_ELEMENT_NODE&&!xmlStrcmp(n->name,BAD_CAST "display-name")){
   xmlChar *v=xmlNodeGetContent(n);if(v){
@@ -181,51 +208,49 @@ static int guide_rank(const VtIptvGuideQuery *q,const char *id,xmlNode *node){
  }
  return rank;
 }
-static int guide_channel(const void *data,size_t size,const VtIptvGuideQuery *q,char id[128],const char *language,VtIptvProgram *identity,volatile int *cancel){
- GuideInput in;xmlTextReaderPtr reader=guide_reader(&in,data,size,cancel);if(!reader)return VT_IPTV_INVALID;
- int r,root=0,best=0,ambiguous=0,result=0;unsigned nodes=0;id[0]=0;
- while((r=xmlTextReaderRead(reader))==1){
-  if((result=guide_node(reader,&nodes)))break;
-  if(xmlTextReaderNodeType(reader)!=XML_READER_TYPE_ELEMENT)continue;
-  const xmlChar *name=xmlTextReaderConstLocalName(reader);
-  if(xmlTextReaderDepth(reader)==0){root=!xmlStrcmp(name,BAD_CAST "tv");if(!root){result=VT_IPTV_INVALID;break;}}
-  if(xmlTextReaderDepth(reader)!=1||xmlStrcmp(name,BAD_CAST "channel"))continue;
-  xmlNode *node=xmlTextReaderExpand(reader);if(!node){result=VT_IPTV_INVALID;break;}
-  char candidate[128];property(node,"id",candidate,sizeof(candidate));int rank=guide_rank(q,candidate,node);
-  if(rank>best){
-   best=rank;ambiguous=0;snprintf(id,128,"%s",candidate);
-   snprintf(identity->channel_id,sizeof(identity->channel_id),"%s",candidate);
-   text(node,"display-name",language,identity->channel_name,sizeof(identity->channel_name));identity->channel_logo[0]=0;
-   for(xmlNode *icon=node->children;icon;icon=icon->next)if(icon->type==XML_ELEMENT_NODE&&!xmlStrcmp(icon->name,BAD_CAST "icon")){
-    char value[512],resolved[512];property(icon,"src",value,sizeof(value));
-    const char *origin=q->url&&*q->url?q->url:value;
-    if(!vt_iptv_resolve_url(origin,value,resolved,sizeof(resolved))){snprintf(identity->channel_logo,sizeof(identity->channel_logo),"%s",resolved);break;}
-   }
-  }
-  else if(rank&&rank==best&&strcmp(id,candidate))ambiguous=1;
- }
- int close=guide_close(reader,&in,r,root);if(result||close)return result?result:close;
- if(ambiguous){id[0]=0;identity->channel_name[0]=identity->channel_logo[0]=identity->channel_id[0]=0;return 0;}
- if(!best&&q->channel)snprintf(id,128,"%s",q->channel);
- return 0;
-}
 int vt_iptv_program_parse_channel(const void *data,size_t size,const VtIptvGuideQuery *q,int64_t now,
                                   const char *language,VtIptvProgram *out,volatile int *cancel){
  if(!out)return VT_IPTV_INVALID;
  memset(out,0,sizeof(*out));out->guide_status=VT_IPTV_GUIDE_NO_CHANNEL;
  if(!data||!size||size>VT_IPTV_GUIDE_TRANSFER_LIMIT||!q||q->shift_seconds< -50400||q->shift_seconds>50400)return VT_IPTV_INVALID;
- char id[128];int result=guide_channel(data,size,q,id,language,out,cancel);if(result)return result;
- if(!id[0])return 0;
+ char id[128]="";int result=0,best=0,ambiguous=0,programmes=0;
  GuideInput in;xmlTextReaderPtr reader=guide_reader(&in,data,size,cancel);if(!reader)return VT_IPTV_INVALID;
  int r,root=0,found=0;unsigned nodes=0;int64_t current=-1;
  while((r=xmlTextReaderRead(reader))==1){
   if((result=guide_node(reader,&nodes)))break;
   if(xmlTextReaderNodeType(reader)!=XML_READER_TYPE_ELEMENT)continue;
   const xmlChar *name=xmlTextReaderConstLocalName(reader);
-  if(xmlTextReaderDepth(reader)==0)root=!xmlStrcmp(name,BAD_CAST "tv");
-  if(xmlTextReaderDepth(reader)!=1||xmlStrcmp(name,BAD_CAST "programme"))continue;
+  if(xmlTextReaderDepth(reader)==0){root=!xmlStrcmp(name,BAD_CAST "tv");if(!root){result=VT_IPTV_INVALID;break;}}
+  if(xmlTextReaderDepth(reader)!=1)continue;
+  if(!xmlStrcmp(name,BAD_CAST "channel")){
+   /* XMLTV defines channels before programmes. Resolve once, then consume the
+    * schedule in this same streaming/decompression pass. */
+   if(programmes){result=VT_IPTV_INVALID;break;}
+   xmlNode *node=xmlTextReaderExpand(reader);if(!node){result=VT_IPTV_INVALID;break;}
+   char candidate[128];property(node,"id",candidate,sizeof(candidate));int rank=guide_rank(q,candidate,node);
+   if(rank>best){
+    best=rank;ambiguous=0;snprintf(id,sizeof(id),"%s",candidate);
+    snprintf(out->channel_id,sizeof(out->channel_id),"%s",candidate);
+    text(node,"display-name",language,out->channel_name,sizeof(out->channel_name));out->channel_logo[0]=0;
+    for(xmlNode *icon=node->children;icon;icon=icon->next)if(icon->type==XML_ELEMENT_NODE&&!xmlStrcmp(icon->name,BAD_CAST "icon")){
+     char value[512],resolved[512];property(icon,"src",value,sizeof(value));
+     const char *origin=q->url&&*q->url?q->url:value;
+     if(!vt_iptv_resolve_url(origin,value,resolved,sizeof(resolved))){snprintf(out->channel_logo,sizeof(out->channel_logo),"%s",resolved);break;}
+    }
+   }else if(rank&&rank==best&&strcmp(id,candidate))ambiguous=1;
+   continue;
+  }
+  if(xmlStrcmp(name,BAD_CAST "programme"))continue;
+  if(!programmes){
+   programmes=1;
+   if(ambiguous){id[0]=0;out->channel_id[0]=out->channel_name[0]=out->channel_logo[0]=0;}
+   else if(!best&&q->channel)snprintf(id,sizeof(id),"%s",q->channel);
+  }
+  if(!id[0])continue;
   xmlChar *cid=xmlTextReaderGetAttribute(reader,BAD_CAST "channel");
-  int match=cid&&guide_id_equal((char*)cid,id);xmlFree(cid);if(!match)continue;
+  /* Once a declared channel is chosen, programme references are exact
+   * XMLTV IDs. Do not merge two separately declared HD/SD schedules. */
+  int match=cid&&(best?!strcmp((char*)cid,id):guide_id_equal((char*)cid,id));xmlFree(cid);if(!match)continue;
   xmlNode *node=xmlTextReaderExpand(reader);if(!node){result=VT_IPTV_INVALID;break;}found=1;
   char start[64],stop[64];property(node,"start",start,sizeof(start));property(node,"stop",stop,sizeof(stop));
   int64_t begin=guide_time(start),end=stop[0]?guide_time(stop):0;
@@ -248,6 +273,7 @@ int vt_iptv_program_parse_channel(const void *data,size_t size,const VtIptvGuide
   }
  }
  int close=guide_close(reader,&in,r,root);if(result||close){memset(out,0,sizeof(*out));return result?result:close;}
+ if(ambiguous){out->channel_id[0]=out->channel_name[0]=out->channel_logo[0]=0;}
  if(out->upcoming_count){
   for(unsigned i=0;i+1<out->upcoming_count;i++)if(!out->upcoming[i].end)out->upcoming[i].end=out->upcoming[i+1].start;
   VtIptvUpcoming *next=&out->upcoming[0];out->next_start=next->start;out->next_end=next->end;
@@ -306,7 +332,8 @@ static void guide_cache(const char *url,const void *data,size_t size,int64_t now
  }
  remove(tmp);
 }
-static int program_load_one(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
+#include "network/iptv_program_cache.inc"
+static int program_load_uncached(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
  if(!out||!q)return VT_IPTV_INVALID;
  memset(out,0,sizeof(*out));out->guide_status=VT_IPTV_GUIDE_MISSING;
  VtIptvGuideQuery query=*q;const char *id=q->channel?q->channel:"";size_t n=strlen(id);
@@ -319,7 +346,11 @@ static int program_load_one(const VtIptvGuideQuery *q,const VtIptvSourceConfig *
  }
  if(!strcmp(query.url,VT_IPTV_PUBLIC_ITALY_GUIDE))public_source=1;
  char checked[VT_IPTV_RESOURCE_URL_MAX];if(vt_iptv_resolve_url(query.url,query.url,checked,sizeof(checked)))return VT_IPTV_INVALID;
- int64_t now=time(NULL),fetched=0;size_t cached_size=0;
+ int64_t now=vt_iptv_time_now(),fetched=0;size_t cached_size=0;
+#ifdef __vita__
+ /* Numeric clock evidence only: never log guide/provider URLs or channel IDs. */
+ log_printf("IPTV guide clock: utc=%lld libc_delta=%lld source_shift=%d\n",(long long)now,(long long)((int64_t)time(NULL)-now),query.shift_seconds);
+#endif
  unsigned char *cached=guide_cached(query.url,&cached_size,&fetched);
  int64_t age=now-fetched,ttl=public_source?86400:21600;
  if(cached&&age>=0&&age<(query.refresh?300:ttl)){
@@ -329,8 +360,10 @@ static int program_load_one(const VtIptvGuideQuery *q,const VtIptvSourceConfig *
   cached=NULL;
  }
  unsigned char *data=NULL;size_t size=0;char effective[VT_IPTV_RESOURCE_URL_MAX];
- int r=fetch_body(query.url,VT_IPTV_GUIDE_TRANSFER_LIMIT,config,&data,&size,effective,cancel);
+ int r=guide_retry(query.url,query.refresh);
+ if(!r)r=fetch_body(query.url,VT_IPTV_GUIDE_TRANSFER_LIMIT,config,&data,&size,effective,cancel);
  if(!r)r=vt_iptv_program_parse_channel(data,size,&query,now,language,out,cancel);
+ guide_retry_store(query.url,r);
  if(!r){guide_cache(query.url,data,size,now);out->public_source=public_source;}
  free(data);
  if(r&&r!=VT_IPTV_CANCELLED&&cached){
@@ -339,7 +372,30 @@ static int program_load_one(const VtIptvGuideQuery *q,const VtIptvSourceConfig *
  }
  free(cached);return r;
 }
-int vt_iptv_program_load_channel(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
+/* Country inference is limited to unambiguous national channel brands. A
+ * foreign country-qualified ID always wins over an Italian-looking title. */
+static const char *italian_channel(const VtIptvGuideQuery *q){
+ char id[256];guide_base_id(q->channel,id);size_t n=strlen(id);
+ if(n>3&&id[n-3]=='.'&&isalpha((unsigned char)id[n-2])&&isalpha((unsigned char)id[n-1]))return NULL;
+ static const char *brands[]={"Rai1","Rai2","Rai3","Rai4","Rai5","RaiMovie","RaiPremium","RaiNews24","RaiStoria","RaiScuola","RaiSport","RaiGulp","RaiYoyo","Canale5","Italia1","Rete4","La7","La7d","Iris","La5","Cine34","TopCrime","Italia2","MediasetExtra","TGCom24","TV2000","TwentySeven"};
+ static const char *ids[]={"Rai1.it","Rai2.it","Rai3.it","Rai4.it","Rai5.it","RaiMovie.it","RaiPremium.it","RaiNews24.it","RaiStoria.it","RaiScuola.it","RaiSport.it","RaiGulp.it","RaiYoyo.it","Canale5.it","Italia1.it","Rete4.it","La7.it","La7d.it","Iris.it","La5.it","Cine34.it","TopCrime.it","Italia2.it","MediasetExtra.it","TGCom24.it","TV2000.it","TwentySeven.it"};
+ for(unsigned i=0;i<sizeof(brands)/sizeof(*brands);i++)if(guide_alias_equal(q->name?q->name:"",brands[i])||guide_alias_equal(q->title?q->title:"",brands[i]))return ids[i];
+ return NULL;
+}
+static int program_load_one(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
+ if(!q||!out)return VT_IPTV_INVALID;
+ if(cancel&&__atomic_load_n(cancel,__ATOMIC_ACQUIRE))return VT_IPTV_CANCELLED;
+ VtIptvGuideQuery query=*q;char id[256];guide_base_id(query.channel,id);
+ if(!query.url||!*query.url){
+  size_t n=strlen(id);
+  if(n>3&&!strcasecmp(id+n-3,".it")){query.url=VT_IPTV_PUBLIC_ITALY_GUIDE;query.channel=id;}
+  else {const char *inferred=italian_channel(&query);if(inferred){query.channel=inferred;query.url=VT_IPTV_PUBLIC_ITALY_GUIDE;}}
+ }
+ int result;if(program_cached(&query,language,out,&result))return result;
+ result=program_load_uncached(&query,config,language,out,cancel);
+ program_store(&query,language,out,result);return result;
+}
+static int program_load_sources(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
  if(!q||!out)return VT_IPTV_INVALID;
  if(!q->url||!strchr(q->url,','))return program_load_one(q,config,language,out,cancel);
  const char *p=q->url;int result=0;unsigned count=0;
@@ -355,6 +411,25 @@ int vt_iptv_program_load_channel(const VtIptvGuideQuery *q,const VtIptvSourceCon
  }
  if(best.upcoming_count||best.guide_status==VT_IPTV_GUIDE_NO_PROGRAM){*out=best;return 0;}
  return result;
+}
+static int program_load_channel(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
+ int result=program_load_sources(q,config,language,out,cancel);
+ if(!q||!out||result==VT_IPTV_CANCELLED||(!result&&out->available)||!q->url||!*q->url||strstr(q->url,VT_IPTV_PUBLIC_ITALY_GUIDE))return result;
+ char id[256];guide_base_id(q->channel,id);size_t n=strlen(id);
+ const char *inferred=italian_channel(q);
+ if(!(n>3&&!strcasecmp(id+n-3,".it"))&&!inferred)return result;
+ VtIptvGuideQuery fallback=*q;fallback.url=VT_IPTV_PUBLIC_ITALY_GUIDE;
+ fallback.channel=inferred?inferred:id;VtIptvProgram alternative={0};
+ int r=program_load_one(&fallback,config,language,&alternative,cancel);
+ if(r==VT_IPTV_CANCELLED)return r;
+ if(!r&&(alternative.available||(!out->upcoming_count&&alternative.upcoming_count))){*out=alternative;return 0;}
+ return result;
+}
+int vt_iptv_program_load_channel(const VtIptvGuideQuery *q,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
+ static pthread_mutex_t guide_mutex=PTHREAD_MUTEX_INITIALIZER;
+ pthread_mutex_lock(&guide_mutex);
+ int result=cancel&&__atomic_load_n(cancel,__ATOMIC_ACQUIRE)?VT_IPTV_CANCELLED:program_load_channel(q,config,language,out,cancel);
+ pthread_mutex_unlock(&guide_mutex);return result;
 }
 int vt_iptv_program_load(const char *url,const char *channel,const VtIptvSourceConfig *config,const char *language,VtIptvProgram *out,volatile int *cancel){
  VtIptvGuideQuery q={.url=url,.channel=channel};return vt_iptv_program_load_channel(&q,config,language,out,cancel);
