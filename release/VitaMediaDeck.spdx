@@ -38,7 +38,7 @@ PackageName: vita-hw-video-decoder
 SPDXID: SPDXRef-Package-VitaHwVideoDecoder
 PackageVersion: 3.0.0
 PackageComment: Development source commit e2309a0e1e7f2ea3b55893481597a5261a441107; physical runtime acceptance remains separate.
-PackageDownloadLocation: git+https://github.com/spyro-98/vita-hw-decoder.git@e2309a0e1e7f2ea3b55893481597a5261a441107
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-hw-video-decoder.git@e2309a0e1e7f2ea3b55893481597a5261a441107
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
@@ -51,7 +51,7 @@ PackageName: vita-sw-video-decoder
 SPDXID: SPDXRef-Package-VitaSwVideoDecoder
 PackageVersion: 3.0.0
 PackageComment: Development source commit d8219f455989ab788ca5980cc0dd3012eec65a4e; physical runtime acceptance remains separate.
-PackageDownloadLocation: git+https://github.com/spyro-98/vita-sw-decoder.git@d8219f455989ab788ca5980cc0dd3012eec65a4e
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-sw-video-decoder.git@d8219f455989ab788ca5980cc0dd3012eec65a4e
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
@@ -63,12 +63,12 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwVid
 PackageName: vita-hw-audio-decoder
 SPDXID: SPDXRef-Package-VitaHwAudioDecoder
 PackageVersion: 1.0.0
-PackageDownloadLocation: git+https://github.com/spyro-98/vita-hw-audio-decoder.git@a1a3cc37b802025a612ed8c88383b29cbad08eb0
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-hw-audio-decoder.git@b1adb62eba6b9bb9bdad78a2b1deba132b1e8f73
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-PackageComment: Development source commit a1a3cc37b802025a612ed8c88383b29cbad08eb0; physical runtime acceptance remains separate.
+PackageComment: Development source commit b1adb62eba6b9bb9bdad78a2b1deba132b1e8f73; physical runtime acceptance remains separate.
 Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwAudioDecoder
 
 ##### Package: vita-sw-audio-decoder
@@ -76,12 +76,12 @@ Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaHwAud
 PackageName: vita-sw-audio-decoder
 SPDXID: SPDXRef-Package-VitaSwAudioDecoder
 PackageVersion: 1.0.0
-PackageDownloadLocation: git+https://github.com/spyro-98/vita-sw-audio-decoder.git@0573b937a412b0ece9c8607a626c56e059c86f24
+PackageDownloadLocation: git+https://github.com/spyro-98/vita-sw-audio-decoder.git@44053276cdd1ce9682fda2dcc7ed583ae7be86a2
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-3.0-only
 PackageLicenseDeclared: GPL-3.0-only
 PackageCopyrightText: NOASSERTION
-PackageComment: Development source commit 0573b937a412b0ece9c8607a626c56e059c86f24; physical runtime acceptance remains separate.
+PackageComment: Development source commit 44053276cdd1ce9682fda2dcc7ed583ae7be86a2; physical runtime acceptance remains separate.
 Relationship: SPDXRef-Package-VitaMediaDeck DEPENDS_ON SPDXRef-Package-VitaSwAudioDecoder
 
 ##### Package: vita-https

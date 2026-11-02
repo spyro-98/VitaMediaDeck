@@ -138,8 +138,8 @@ Vita-targeted files prepared with it can play smoothly with the software decoder
 **Repositories**
 
 - [VitaMediaDeck](https://github.com/spyro-98/VitaMediaDeck)
-- [vita-hw-video-decoder](https://github.com/spyro-98/vita-hw-decoder)
-- [vita-sw-video-decoder](https://github.com/spyro-98/vita-sw-decoder)
+- [vita-hw-video-decoder](https://github.com/spyro-98/vita-hw-video-decoder)
+- [vita-sw-video-decoder](https://github.com/spyro-98/vita-sw-video-decoder)
 - [VitaMediaDeck Transcoder](https://github.com/spyro-98/VitaMediaDeck-Transcoder)
 
 Thanks for your patience and for all the testing and feedback. VitaMediaDeck is still a public beta, and reports from different Vita models, media libraries, and servers are very welcome!

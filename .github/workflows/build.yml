@@ -3,7 +3,6 @@ name: Build VPK
 on:
   push:
     branches:
-      - main
       - master
       - dev
       - beta
@@ -66,14 +65,14 @@ jobs:
       - name: Check out hardware decoder
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.VITAMEDIADECK_HW_REPOSITORY || format('{0}/vita-hw-decoder', github.repository_owner) }}
+          repository: ${{ vars.VITAMEDIADECK_HW_REPOSITORY || format('{0}/vita-hw-video-decoder', github.repository_owner) }}
           ref: ${{ steps.components.outputs['vita-hw-video-decoder'] }}
           path: vita-hw-video-decoder
 
       - name: Check out software decoder
         uses: actions/checkout@v5
         with:
-          repository: ${{ vars.VITAMEDIADECK_SW_REPOSITORY || format('{0}/vita-sw-decoder', github.repository_owner) }}
+          repository: ${{ vars.VITAMEDIADECK_SW_REPOSITORY || format('{0}/vita-sw-video-decoder', github.repository_owner) }}
           ref: ${{ steps.components.outputs['vita-sw-video-decoder'] }}
           path: vita-sw-video-decoder
 

@@ -187,8 +187,8 @@ conversions can also play smoothly through SW decoding; HW is still recommended.
 
 | Project | Purpose |
 | --- | --- |
-| [vita-hw-video-decoder](https://github.com/spyro-98/vita-hw-decoder) | Hardware H.264 video and direct NV12 presentation |
-| [vita-sw-video-decoder](https://github.com/spyro-98/vita-sw-decoder) | Compatible software H.264 decoding fallback |
+| [vita-hw-video-decoder](https://github.com/spyro-98/vita-hw-video-decoder) | Hardware H.264 video and direct NV12 presentation |
+| [vita-sw-video-decoder](https://github.com/spyro-98/vita-sw-video-decoder) | Compatible software H.264 decoding fallback |
 | `vita-hw-audio-decoder` | System AAC/MP3 audio decoding |
 | `vita-sw-audio-decoder` | AAC/MP3/AC-3 decoding and stereo PCM output |
 | [vita-https](https://github.com/spyro-98/vita-https) | Verified HTTPS and seekable network transport |

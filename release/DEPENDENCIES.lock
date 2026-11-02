@@ -68,8 +68,8 @@ paf-resource.xml.sha256=f2e7630b85aa7fcbcd087bc0d90933c3e718efc30624a8ac26451f9e
 paf-resource.embedded.sha256=9e0842640042211011881c9f9bb8746f47e70f4ef3a5c5d0ca9dcec11a64f8da
 paf-imports.sha256=3580b9c1bdf6db9077d858a55b564ea95e7d42a2406e6c52bb647fe2bedf750f
 
-# Four-module development sources. Push all component main branches before CI checkout.
+# Four-module development sources. Push all component master branches before CI checkout.
 vita-hw-video-decoder.commit=e2309a0e1e7f2ea3b55893481597a5261a441107
 vita-sw-video-decoder.commit=d8219f455989ab788ca5980cc0dd3012eec65a4e
-vita-hw-audio-decoder.commit=a1a3cc37b802025a612ed8c88383b29cbad08eb0
-vita-sw-audio-decoder.commit=0573b937a412b0ece9c8607a626c56e059c86f24
+vita-hw-audio-decoder.commit=b1adb62eba6b9bb9bdad78a2b1deba132b1e8f73
+vita-sw-audio-decoder.commit=44053276cdd1ce9682fda2dcc7ed583ae7be86a2
