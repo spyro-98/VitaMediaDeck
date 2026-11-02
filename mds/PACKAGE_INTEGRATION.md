@@ -45,7 +45,7 @@ The four decoder libraries have distinct public targets and symbols. Video modul
 
 The app sets `audio_driver` in all HW/SW open configs. Track replacement and seek remain transactions in the video session owner, including readiness gates and rollback. Subtitle extraction and retained audio/subtitle language choices remain in the app adapter. A standalone video module with `audio_driver=NULL` opens video only.
 
-This is video API 3.0.0 and audio API 1.0.0; rebuild consumers. Existing video remotes keep their old GitHub addresses until renamed by the owner. The new audio repositories are `spyro-98/vita-hw-audio-decoder` and `spyro-98/vita-sw-audio-decoder`. Development uses the `dev` branches; `release/DEPENDENCIES.lock` pins exact component commits. Push all four component branches before running CI for the app revision. Historical local test packages retain their original source-hash manifests.
+This is video API 3.0.0 and audio API 1.0.0; rebuild consumers. Existing video remotes keep their old GitHub addresses until renamed by the owner. The new audio repositories are `spyro-98/vita-hw-audio-decoder` and `spyro-98/vita-sw-audio-decoder`. Development uses the `main` branches; `release/DEPENDENCIES.lock` pins exact component commits. Push all four component branches before running CI for the app revision. Historical local test packages retain their original source-hash manifests.
 
 ## Runtime selection
 

@@ -3,6 +3,7 @@ name: Build VPK
 on:
   push:
     branches:
+      - main
       - master
       - dev
       - beta
