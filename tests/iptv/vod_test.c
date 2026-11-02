@@ -1,5 +1,5 @@
 #include "network/iptv_source.h"
-#include "../../../vita-hw-decoder/src/internal/video_timeline.h"
+#include "../../../vita-hw-video-decoder/src/internal/video_timeline.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

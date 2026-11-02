@@ -13,7 +13,7 @@
 #include "ui/program_time.h"
 static void time_range(int64_t start,int64_t end,char out[96]){
  out[0]=0;if(start<=0)return;
- time_t a=start,b=end,now=time(NULL);struct tm ta,tb,tn;
+ time_t a=start,b=end,now=vt_iptv_time_now();struct tm ta,tb,tn;
  ui_program_local_time(a,&ta);ui_program_local_time(now,&tn);
  char prefix[32]="";if(ta.tm_year!=tn.tm_year||ta.tm_mon!=tn.tm_mon||ta.tm_mday!=tn.tm_mday)snprintf(prefix,sizeof(prefix),"%02d/%02d · ",ta.tm_mday,ta.tm_mon+1);
  if(end>start){ui_program_local_time(b,&tb);snprintf(out,96,"%s%02d:%02d – %02d:%02d",prefix,ta.tm_hour,ta.tm_min,tb.tm_hour,tb.tm_min);}
@@ -26,10 +26,10 @@ static void program_append(char body[12288],const char *value){
 static void program_draw(UiIptvPlayerPanel *p,float x,const VtIptvOptions *o){
  char body[12288]="",range[96];VtIptvProgram *g=&p->program;
  if(p->program_loading)program_append(body,IPTV_TR(IPTV_PROGRAM_LOADING));
- if(g->available&&g->end>time(NULL)){
+ if(g->available&&g->end>vt_iptv_time_now()){
   program_append(body,IPTV_TR(IPTV_ON_AIR));program_append(body,g->title);
   time_range(g->start,g->end,range);program_append(body,range);
-  int64_t now=time(NULL);
+  int64_t now=vt_iptv_time_now();
   if(g->end>now&&g->end-now<86400){
    time_t end=g->end;struct tm tm;ui_program_local_time(end,&tm);char clock[16],remaining[160];
    snprintf(clock,sizeof(clock),"%02d:%02d",tm.tm_hour,tm.tm_min);

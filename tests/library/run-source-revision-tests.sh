@@ -10,7 +10,7 @@ Path(sys.argv[1]).write_text(s[:s.index('static void escape_password(')])
 PY
 for vmd_sanitizer in address,undefined thread;do
  clang -O1 -g -Wall -Wextra -Werror -fsanitize="$vmd_sanitizer" -ffunction-sections -fdata-sections \
-  -Isrc -I../vita-https/include -Itests/podcast_metadata/include -I"$vmd_out" $(pkg-config --cflags libssh2) \
+  -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include -Itests/podcast_metadata/include -I"$vmd_out" $(pkg-config --cflags libssh2) \
   tests/library/source_revision_test.c -Wl,-dead_strip -o "$vmd_out/test"
  "$vmd_out/test"
 done

@@ -3,7 +3,7 @@ set -euo pipefail
 vmd_repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$vmd_repo"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-theme-flow.XXXXXX")"
-vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-https/include)
+vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include)
 read -r -a vmd_cflags <<<"$(pkg-config --cflags freetype2 libpng)"
 read -r -a vmd_libs <<<"$(pkg-config --libs freetype2 libpng)"
 for vmd_case in catalog_ui_test theme_flow_test cache_transition_test; do

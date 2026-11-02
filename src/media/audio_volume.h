@@ -3,7 +3,7 @@
 #include "media/audio_gain.h"
 #define VT_AUDIO_VOLUME_MAX_PERCENT VITA_AUDIO_VOLUME_MAX_PERCENT
 
-/* Shared 0..150% volume: 100% is unity, above it PCM boost may clip peaks.
+/* Shared 0..300% volume: 100% is unity, above it PCM boost may clip peaks.
  * The console's physical system-volume setting remains in effect. */
 int vt_audio_volume_percent(void);
 void vt_audio_volume_set_percent(int percent);

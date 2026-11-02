@@ -99,8 +99,8 @@ cmake -S . -B build \
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DVITAMEDIADECK_TEST_ID=standard \
   -DVITAMEDIADECK_VIDEO_CLOCK_PROFILE=performance \
-  -DVITA_SW_DECODER_PLANAR_UPLOAD=OFF \
-  -DVITA_HW_DECODER_CPU_THREADS=3 -DVITA_SW_DECODER_CPU_THREADS=3
+  -DVITA_SW_VIDEO_DECODER_PLANAR_UPLOAD=OFF \
+  -DVITA_HW_VIDEO_DECODER_CPU_THREADS=3 -DVITA_SW_VIDEO_DECODER_CPU_THREADS=3
 cmake --build build --parallel
 unzip -t build/VitaMediaDeck.vpk
 shasum -a 256 build/VitaMediaDeck.vpk

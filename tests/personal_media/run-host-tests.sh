@@ -5,7 +5,7 @@ cd "$vmd_repo"
 vmd_jansson="${VMD_HOST_JANSSON:?Set the host Jansson prefix}"
 vmd_crypto="${VMD_HOST_CRYPTO:?Set the MbedTLS include directory}"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-personal-media.XXXXXX")"
-vmd_flags=(-O1 -g -Wall -Wextra -Wno-deprecated-declarations -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-https/include -I../vita-https/src -Itests/personal_media/include "-I$vmd_jansson/include" "-I$vmd_crypto")
+vmd_flags=(-O1 -g -Wall -Wextra -Wno-deprecated-declarations -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include -I../vita-https/src -Itests/personal_media/include "-I$vmd_jansson/include" "-I$vmd_crypto")
 read -r -a vmd_cflags <<<"$(pkg-config --cflags openssl libcurl)"
 read -r -a vmd_libs <<<"$(pkg-config --libs openssl libcurl)"
 vmd_link=("$vmd_jansson/lib/libjansson.a" "${vmd_libs[@]}" -Wl,-dead_strip)
@@ -18,6 +18,6 @@ done
 python3 tests/personal_media/http-server-test.py "$vmd_output"
 read -r -a vmd_font_flags <<<"$(pkg-config --cflags freetype2 libpng)"
 read -r -a vmd_font_libs <<<"$(pkg-config --libs freetype2 libpng)"
-clang -O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-https/include -Itests/iptv/include -Itests/online_navigation/include -Itests/online_audio/include -Itests/personal_media/include "-I$(xcrun --show-sdk-path)/usr/include/libxml2" "${vmd_font_flags[@]}" tests/personal_media/ui_test.c src/network/iptv_manifest.c src/network/iptv_catalog.c "${vmd_font_libs[@]}" -lxml2 -Wl,-dead_strip -o "$vmd_output/ui-test"
+clang -O1 -g -Wall -Wextra -fsanitize=address,undefined -ffunction-sections -fdata-sections -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include -Itests/iptv/include -Itests/online_navigation/include -Itests/online_audio/include -Itests/personal_media/include "-I$(xcrun --show-sdk-path)/usr/include/libxml2" "${vmd_font_flags[@]}" tests/personal_media/ui_test.c src/network/iptv_manifest.c src/network/iptv_catalog.c "${vmd_font_libs[@]}" -lxml2 -Wl,-dead_strip -o "$vmd_output/ui-test"
 "$vmd_output/ui-test" assets/fonts/Inter-Medium.ttf "$vmd_output"
 printf 'Personal media host evidence: %s\n' "$vmd_output"

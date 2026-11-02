@@ -1,3 +1,4 @@
+#include "media/audio_formats.h"
 #include "media/media_tracks.h"
 
 #include <errno.h>
@@ -322,7 +323,7 @@ int vt_media_tracks_probe(const VtDecoderStreamFactory *factory,
 		AVStream *stream = input.format->streams[i];
 		AVCodecParameters *params = stream->codecpar;
 		if (params->codec_type == AVMEDIA_TYPE_AUDIO &&
-		    params->codec_id == AV_CODEC_ID_AAC && audio_tracks &&
+		    vmd_audio_parameters_playable(params) && audio_tracks &&
 		    *audio_count < VT_MEDIA_MAX_AUDIO_TRACKS) {
 			fill_track(&audio_tracks[(*audio_count)++], stream, (int)i);
 		} else if (params->codec_type == AVMEDIA_TYPE_SUBTITLE &&

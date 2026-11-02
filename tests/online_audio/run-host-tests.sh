@@ -6,7 +6,7 @@ vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-online-audio-check.XXXXXX")"
 cd "$vmd_repo"
 read -r -a vmd_cflags <<<"$(pkg-config --cflags libmpg123 openssl libxml-2.0)"
 read -r -a vmd_libs <<<"$(pkg-config --libs libmpg123 openssl libxml-2.0)"
-vmd_flags=(-O1 -g -Wall -Wextra -Isrc -I../vita-https/include
+vmd_flags=(-O1 -g -Wall -Wextra -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include
     -Itests/online_audio/include "-I$vmd_jansson/include" "${vmd_cflags[@]}")
 vmd_link=("$vmd_jansson/lib/libjansson.a" -lpthread "${vmd_libs[@]}")
 ffmpeg -hide_banner -loglevel error -f lavfi -i sine=frequency=440:sample_rate=44100 \

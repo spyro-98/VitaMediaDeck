@@ -156,7 +156,8 @@ static int g_default_frame_rate = VT_DEFAULT_FRAME_RATE_30;
 static int g_language = VT_LANGUAGE_AUTO;
 static uint32_t g_playback_flags = 0;
 static uint32_t g_subtitle_flags = 0;
-static uint32_t g_clock_flags;
+/* UI navigation writes this extension while background players read modes. */
+static _Atomic uint32_t g_clock_flags;
 
 static int set_playback_flag(uint32_t bit, int enabled);
 static int persist_subtitle_pair(uint32_t playback, uint32_t subtitle);
@@ -1061,6 +1062,39 @@ int vt_preferences_iptv_name_sort(void){
 int vt_preferences_set_iptv_name_sort(int enabled){
  if(!g_loaded)vt_preferences_init();
  uint32_t next=enabled?g_clock_flags|(1u<<6):g_clock_flags&~(1u<<6);
+ if(next==g_clock_flags)return 0;
+ int result=persist_record_clocks(g_default_quality,g_default_frame_rate,g_language,g_playback_flags,g_subtitle_flags,next);
+ if(!result)g_clock_flags=next;
+ return result;
+}
+
+/* V4 extension bits 7..8 were unused. Zero preserves AUTO on every upgrade;
+ * CPU clocks, IPTV layout/sort and radio density retain their shipped bits. */
+int vt_preferences_audio_decoder(void) {
+ if (!g_loaded) vt_preferences_init();
+ unsigned mode=(g_clock_flags>>7)&3u;
+ return mode<=VT_AUDIO_DECODER_SW?(int)mode:VT_AUDIO_DECODER_AUTO;
+}
+int vt_preferences_set_audio_decoder(int mode) {
+ if(mode<VT_AUDIO_DECODER_AUTO||mode>VT_AUDIO_DECODER_SW)return -1;
+ if(!g_loaded)vt_preferences_init();
+ uint32_t next=(g_clock_flags&~(3u<<7))|((uint32_t)mode<<7);
+ if(next==g_clock_flags)return 0;
+ int result=persist_record_clocks(g_default_quality,g_default_frame_rate,g_language,g_playback_flags,g_subtitle_flags,next);
+ if(!result)g_clock_flags=next;
+ return result;
+}
+
+/* Previously unused V4 extension bits 9..10; preserve decoder modes and every
+ * shipped UI/clock/layout flag. Zero remains the playlists page on upgrades. */
+int vt_preferences_iptv_last_view(void){
+ if(!g_loaded)vt_preferences_init();
+ return (int)((g_clock_flags>>9)&3u);
+}
+int vt_preferences_set_iptv_last_view(int view){
+ if(view<0||view>3)return -1;
+ if(!g_loaded)vt_preferences_init();
+ uint32_t next=(g_clock_flags&~(3u<<9))|((uint32_t)view<<9);
  if(next==g_clock_flags)return 0;
  int result=persist_record_clocks(g_default_quality,g_default_frame_rate,g_language,g_playback_flags,g_subtitle_flags,next);
  if(!result)g_clock_flags=next;

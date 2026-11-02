@@ -4,6 +4,7 @@
 #include "../iptv/ui_test.c"
 #undef main
 #include "../../src/ui/iptv_player_panel.c"
+#include "ui/decoder_options.h"
 void ui_home_tab_set(int tab){(void)tab;}
 void ui_online_audio_set_home(int home){(void)home;}
 static unsigned caption_pixels(int x,int y,int w,int h){unsigned n=0;unsigned c=UI_MENU_TEXT;
@@ -37,6 +38,17 @@ int main(int argc,char **argv){
   CHECK(caption_pixels(562,104,330,26)>30&&caption_pixels(562,156,330,26)>30);
   CHECK(pixels[172][930][0]!=5||pixels[172][930][1]!=20||pixels[172][930][2]!=41);
   snprintf(name,sizeof(name),"settings-style-r1-%d",theme);png(name);
+  UiContextAction modes[3];ui_audio_decoder_choices(modes);
+  UiContextMenu decoder_menu={.open=1,.animation=1,.cursor=2};
+  frame++;ui_context_menu_tick(&decoder_menu);vita2d_clear_screen();ui_context_menu_draw(&decoder_menu,vt_i18n_str(VT_STR_SETTINGS_AUDIO_DECODER),modes,3);
+  snprintf(name,sizeof(name),"audio-decoder-r1-%d",theme);png(name);
+  CHECK(caption_pixels(548,100,300,36)>20&&caption_pixels(548,152,300,36)>20&&caption_pixels(548,204,300,36)>20);
+  for(int mode=0;mode<3;mode++){
+   decoder_menu=(UiContextMenu){.open=1,.animation=1,.cursor=mode};unsigned pressed=SCE_CTRL_CROSS,touches=0;UiTouchEvent touch={0};
+   CHECK(ui_context_menu_input(&decoder_menu,modes,3,&pressed,0,128,&touches,&touch)==mode&&!decoder_menu.open);
+   decoder_menu=(UiContextMenu){.open=1,.animation=1};pressed=0;touches=UI_TOUCH_EVENT_TAP;touch.x=700;touch.y=110+mode*52;
+   CHECK(ui_context_menu_input(&decoder_menu,modes,3,&pressed,0,128,&touches,&touch)==mode&&!decoder_menu.open);
+  }
   /* A body canvas must preserve each alternate theme's existing scene. */
   if(theme!=VT_UI_THEME_LEGACY_VITA){vita2d_clear_screen();ui_chrome_background(VT_THEME_BG,VT_THEME_SIGNAL_BRIGHT);memcpy(first_pixels,pixels,sizeof(pixels));ui_menu_surface(0,54,960,490,1);CHECK(!memcmp(first_pixels,pixels,sizeof(pixels)));}
   float start=menu.focus.y;menu.cursor=1;frame++;ui_context_menu_tick(&menu);CHECK(menu.focus.y<146&&menu.focus.y>=start);

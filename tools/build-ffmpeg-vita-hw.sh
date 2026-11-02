@@ -64,12 +64,12 @@ env VITASDK="$vita_sdk" PATH="$vita_sdk/bin:/usr/bin:/bin" ./configure \
   --extra-ldflags="-flto -Wl,--gc-sections -L$vita_sdk/lib" \
   --disable-shared --enable-static \
   --disable-programs --disable-doc --disable-autodetect --disable-network \
-  --disable-avfilter --disable-swscale --disable-swresample --disable-avdevice \
+  --disable-avfilter --disable-swscale --enable-swresample --disable-avdevice \
   --disable-encoders \
-  --disable-decoders --enable-decoder=h264,h264_vita,aac \
+  --disable-decoders --enable-decoder=h264,h264_vita,aac,ac3,mp3float \
   --disable-demuxers --enable-demuxer=mov,matroska,mpegts,aac,h264,srt,hls,mp3,ac3,eac3 \
   --disable-muxers --enable-muxer=mov,mp4,mpegts \
-  --disable-parsers --enable-parser=aac,aac_latm,h264,mpeg4audio \
+  --disable-parsers --enable-parser=aac,aac_latm,h264,mpeg4audio,ac3,mpegaudio \
   --disable-protocols --enable-protocol=file \
   --disable-bsfs --disable-iconv --disable-lzma --disable-sdl2 --disable-xlib \
   --enable-pthreads

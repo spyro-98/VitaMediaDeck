@@ -3,7 +3,7 @@
 #include "media/iptv_program_async.h"
 #include "ui/program_time.h"
 #define GUIDE_ROWS 6
-#define GUIDE_CACHE 24
+#define GUIDE_CACHE 64
 typedef struct {
  uint64_t key,used,fetched;
  int error;
@@ -11,13 +11,24 @@ typedef struct {
 } GuideGridCache;
 static GuideGridCache guide_grid_cache[GUIDE_CACHE];
 static GuideGridCache *grid_cached(const VtIptvChannel *channel,uint64_t now){
- uint64_t key=ui_page_key(channel->url,channel->guide_url)^ui_page_key(channel->channel_id,channel->guide_name);
+ uint64_t key=ui_page_key(channel->url,channel->guide_url);
+ key=(key^ui_page_key(channel->channel_id,channel->guide_name))*1099511628211ULL;
+ key=(key^ui_page_key(channel->title,vt_i18n_language_code()))*1099511628211ULL;
+ key^=(uint64_t)(int64_t)channel->guide_shift;
  GuideGridCache *old=&guide_grid_cache[0];
  for(int i=0;i<GUIDE_CACHE;i++){
   if(guide_grid_cache[i].key==key){guide_grid_cache[i].used=now;return &guide_grid_cache[i];}
   if(guide_grid_cache[i].used<old->used)old=&guide_grid_cache[i];
  }
  memset(old,0,sizeof(*old));old->key=key;old->used=now;return old;
+}
+static int grid_cache_valid(const GuideGridCache *cache,uint64_t tick,int64_t wall){
+ if(!cache->fetched||tick<cache->fetched)return 0;
+ uint64_t ttl=cache->error?300000000ULL:
+  cache->program.guide_status==VT_IPTV_GUIDE_MISSING||cache->program.guide_status==VT_IPTV_GUIDE_NO_CHANNEL?21600000000ULL:900000000ULL;
+ if(cache->program.available&&cache->program.end<=wall)return 0;
+ if(cache->program.next_start&&cache->program.next_start<=wall)return 0;
+ return tick-cache->fetched<ttl;
 }
 static void grid_clock(int64_t when,char out[32]){
  struct tm tm;ui_program_local_time((time_t)when,&tm);
@@ -45,7 +56,7 @@ static int show_guide_grid(void){
  const float column_width=216,plot_x=76,plot_width=864,plot_y=146,plot_height=280,seconds_per_pixel=24;
  UiScrollView time_scroll={0},channel_scroll={0};UiFocusMotion focus={0};UiNavRepeat repeat={0};UiContextMenu options={0};
  SceCtrlData previous={0},controls={0};sceCtrlPeekBufferPositive(0,&previous,1);ui_touch_reset();
- int64_t now_time=time(NULL),base=now_time-now_time%1800-3600,anchor=now_time;
+ int64_t now_time=vt_iptv_time_now(),base=now_time-now_time%1800-3600,anchor=now_time;
  uint64_t previous_tick=0,next_schedule=0;int last_first=-1,result=-1,horizontal_drag=0,follow=1;
  VtIptvProgramJob *job=NULL;unsigned job_indices[GUIDE_ROWS],job_count=0,received=0;
  ProgramContext *contexts=calloc(GUIDE_ROWS,sizeof(*contexts));VtIptvProgram *completed=calloc(1,sizeof(*completed));
@@ -55,7 +66,7 @@ static int show_guide_grid(void){
  ui_scroll_tick(&channel_scroll,sceKernelGetProcessTimeWide(),1);
  for(;;){
   uint64_t tick=sceKernelGetProcessTimeWide();float dt=previous_tick?(tick-previous_tick)/1000000.f:1.f/60;
-  previous_tick=tick;if(dt>.1f)dt=.1f;now_time=time(NULL);
+  previous_tick=tick;if(dt>.1f)dt=.1f;now_time=vt_iptv_time_now();
   sceCtrlPeekBufferPositive(0,&controls,1);unsigned pressed=controls.buttons&~previous.buttons;previous=controls;
   UiTouchEvent touch;unsigned flags=ui_touch_poll(&touch);
   UiContextAction actions[]={ {TR(IPTV_GRID_NOW),NULL,0,1},{TR(UI_REFRESH),NULL,1,1},{TR(UI_BACK),NULL,2,1} };
@@ -117,23 +128,33 @@ static int show_guide_grid(void){
   if(!modal&&(pressed&SCE_CTRL_CROSS)){result=(int)channels[selected];break;}
   if(job)for(unsigned i=0;i<job_count;i++)if(!(received&(1u<<i))){
    int ready=vt_iptv_program_poll_row(job,i,completed);
-   if(ready){GuideGridCache *cache=grid_cached(&catalog.items[job_indices[i]],tick);
+   if(ready){if(ready==VT_IPTV_CANCELLED){received|=1u<<i;continue;}GuideGridCache *cache=grid_cached(&catalog.items[job_indices[i]],tick);
     if(ready>0)cache->program=*completed;
     cache->error=ready<0?ready:0;cache->fetched=tick;received|=1u<<i;}
   }
-  if(pressed&SCE_CTRL_SQUARE){for(unsigned i=0;i<GUIDE_CACHE;i++)guide_grid_cache[i].fetched=0;last_first=-1;}
-  if(first!=last_first||(job&&received==((1u<<job_count)-1))||(!job&&tick>=next_schedule)){
+  int force_refresh=!!(pressed&SCE_CTRL_SQUARE);
+  if(force_refresh){for(unsigned i=0;i<GUIDE_CACHE;i++)guide_grid_cache[i].fetched=0;last_first=-1;}
+  int switch_job=0;
+  if(job&&first!=last_first&&!force_refresh){
+   int pending_visible=0,selected_pending=0;
+   for(unsigned i=0;i<job_count;i++)if(!(received&(1u<<i))){
+    if(job_indices[i]==channels[selected])selected_pending=1;
+    for(int r=first;r<(int)count&&r<first+GUIDE_ROWS;r++)if(job_indices[i]==channels[r])pending_visible=1;
+   }
+   switch_job=!pending_visible||(!selected_pending&&!grid_cache_valid(grid_cached(&catalog.items[channels[selected]],tick),tick,now_time));
+  }
+  if(force_refresh||switch_job||(job&&received==((1u<<job_count)-1))||(!job&&(first!=last_first||tick>=next_schedule))){
    vt_iptv_program_release(job);job=NULL;last_first=first;job_count=received=0;next_schedule=tick+1000000;
    for(int r=-1;r<GUIDE_ROWS&&job_count<GUIDE_ROWS;r++){
     int index=r<0?selected:first+r;if(index<0||index>=(int)count)continue;
     unsigned channel=channels[index];int duplicate=0;for(unsigned i=0;i<job_count;i++)if(job_indices[i]==channel)duplicate=1;
     GuideGridCache *cache=grid_cached(&catalog.items[channel],tick);
-    if(duplicate||(cache->fetched&&tick-cache->fetched<(cache->error?30000000ULL:300000000ULL)))continue;
+    if(duplicate||grid_cache_valid(cache,tick,now_time))continue;
     ProgramContext *ctx=&contexts[job_count];memset(ctx,0,sizeof(*ctx));ctx->channel=catalog.items[channel];
     if(!saved_view)snprintf(ctx->playlist,sizeof(ctx->playlist),"%s",current_list.url);
     snprintf(ctx->language,sizeof(ctx->language),"%s",vt_i18n_language_code());job_indices[job_count++]=channel;
    }
-   if(job_count)job=vt_iptv_program_request_batch(load_player_program,contexts,sizeof(*contexts),job_count,0);
+   if(job_count)job=vt_iptv_program_request_batch(load_player_program,contexts,sizeof(*contexts),job_count,force_refresh);
   }
   vita2d_start_drawing();vita2d_clear_screen();ui_chrome_background(VT_THEME_BG,VT_THEME_COLD);
   ui_brand_draw_breadcrumbs(TR(IPTV_TITLE),current_list.title,TR(IPTV_GRID_TITLE));

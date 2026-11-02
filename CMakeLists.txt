@@ -30,7 +30,7 @@ option(VITAMEDIADECK_ENABLE_H264_VITA
   "Use the complete FFmpeg h264_vita hardware decoder" ON)
 if(NOT VITAMEDIADECK_ENABLE_H264_VITA)
   message(FATAL_ERROR
-    "The packaged VitaMediaDeck playback stack requires vita-hw-decoder; "
+    "The packaged VitaMediaDeck playback stack requires vita-hw-video-decoder; "
     "software fallback is selected at runtime, not as a build replacement.")
 endif()
 set(VITAMEDIADECK_H264_VITA_ROOT
@@ -40,11 +40,13 @@ set(VITAMEDIADECK_H264_VITA_ROOT
 ## Standalone packages live in independent sibling repositories by default.
 ## Override these cache paths when using submodules or an installed layout.
 set(VITAMEDIADECK_HW_DECODER_PACKAGE
-  "${CMAKE_CURRENT_SOURCE_DIR}/../vita-hw-decoder"
-  CACHE PATH "Path to the vita-hw-decoder repository")
+  "${CMAKE_CURRENT_SOURCE_DIR}/../vita-hw-video-decoder"
+  CACHE PATH "Path to the vita-hw-video-decoder repository")
 set(VITAMEDIADECK_SW_DECODER_PACKAGE
-  "${CMAKE_CURRENT_SOURCE_DIR}/../vita-sw-decoder"
-  CACHE PATH "Path to the vita-sw-decoder repository")
+  "${CMAKE_CURRENT_SOURCE_DIR}/../vita-sw-video-decoder"
+  CACHE PATH "Path to the vita-sw-video-decoder repository")
+set(VITAMEDIADECK_HW_AUDIO_PACKAGE "${CMAKE_CURRENT_SOURCE_DIR}/../vita-hw-audio-decoder" CACHE PATH "System AAC/MP3 decoder")
+set(VITAMEDIADECK_SW_AUDIO_PACKAGE "${CMAKE_CURRENT_SOURCE_DIR}/../vita-sw-audio-decoder" CACHE PATH "Software AC3/MP3 decoder")
 set(VITAMEDIADECK_HTTPS_PACKAGE
   "${CMAKE_CURRENT_SOURCE_DIR}/../vita-https"
   CACHE PATH "Path to the vita-https repository")
@@ -54,7 +56,9 @@ set(VITAMEDIADECK_HTTPS_CURL_ROOT
 foreach(package_root IN ITEMS
     "${VITAMEDIADECK_HW_DECODER_PACKAGE}"
     "${VITAMEDIADECK_SW_DECODER_PACKAGE}"
-    "${VITAMEDIADECK_HTTPS_PACKAGE}")
+    "${VITAMEDIADECK_HTTPS_PACKAGE}"
+    "${VITAMEDIADECK_HW_AUDIO_PACKAGE}"
+    "${VITAMEDIADECK_SW_AUDIO_PACKAGE}")
   if(NOT EXISTS "${package_root}/CMakeLists.txt")
     message(FATAL_ERROR "Missing VitaMediaDeck package repository: ${package_root}")
   endif()
@@ -252,16 +256,19 @@ include_directories(
 
 ## --- Sources --------------------------------------------------------------
 
-set(VITA_HW_DECODER_FFMPEG_ROOT "${VITAMEDIADECK_H264_VITA_ROOT}"
-    CACHE PATH "FFmpeg prefix consumed by vita-hw-decoder" FORCE)
-set(VITA_SW_DECODER_FFMPEG_ROOT "${VITAMEDIADECK_H264_VITA_ROOT}"
-    CACHE PATH "FFmpeg prefix consumed by vita-sw-decoder" FORCE)
+set(VITA_HW_VIDEO_DECODER_FFMPEG_ROOT "${VITAMEDIADECK_H264_VITA_ROOT}"
+    CACHE PATH "FFmpeg prefix consumed by vita-hw-video-decoder" FORCE)
+set(VITA_SW_VIDEO_DECODER_FFMPEG_ROOT "${VITAMEDIADECK_H264_VITA_ROOT}"
+    CACHE PATH "FFmpeg prefix consumed by vita-sw-video-decoder" FORCE)
 set(VITA_HTTPS_CURL_ROOT "${VITAMEDIADECK_HTTPS_CURL_ROOT}"
     CACHE PATH "curl/Mbed TLS prefix consumed by vita-https" FORCE)
+set(VITA_SW_AUDIO_DECODER_FFMPEG_ROOT "${VITAMEDIADECK_H264_VITA_ROOT}" CACHE PATH "Shared FFmpeg prefix for audio" FORCE)
+add_subdirectory("${VITAMEDIADECK_HW_AUDIO_PACKAGE}" "${CMAKE_BINARY_DIR}/packages/vita-hw-audio-decoder")
+add_subdirectory("${VITAMEDIADECK_SW_AUDIO_PACKAGE}" "${CMAKE_BINARY_DIR}/packages/vita-sw-audio-decoder")
 add_subdirectory("${VITAMEDIADECK_HW_DECODER_PACKAGE}"
-                 "${CMAKE_BINARY_DIR}/packages/vita-hw-decoder")
+                 "${CMAKE_BINARY_DIR}/packages/vita-hw-video-decoder")
 add_subdirectory("${VITAMEDIADECK_SW_DECODER_PACKAGE}"
-                 "${CMAKE_BINARY_DIR}/packages/vita-sw-decoder")
+                 "${CMAKE_BINARY_DIR}/packages/vita-sw-video-decoder")
 add_subdirectory("${VITAMEDIADECK_HTTPS_PACKAGE}"
                  "${CMAKE_BINARY_DIR}/packages/vita-https")
 
@@ -315,6 +322,7 @@ add_executable(${PROJECT_NAME}
   src/media/audio_volume.c
   src/media/avplayer_init.c
   src/media/media_tracks.c
+  src/media/audio_playback.c
   src/media/vita_decoder.c
   src/media/video_thumbnail.c
   src/media/hw_player_screen.c
@@ -385,11 +393,11 @@ if(VMD_EFFECTIVE_TEST_ID STREQUAL "")
   if(VITAMEDIADECK_VIDEO_CLOCK_PROFILE STREQUAL "stock")
     set(VMD_EFFECTIVE_TEST_ID "stock333")
   endif()
-  if(VITA_SW_DECODER_PLANAR_UPLOAD)
+  if(VITA_SW_VIDEO_DECODER_PLANAR_UPLOAD)
     set(VMD_EFFECTIVE_TEST_ID "${VMD_EFFECTIVE_TEST_ID}-planar")
   endif()
-  if(NOT VITA_SW_DECODER_CPU_THREADS STREQUAL "3" OR NOT VITA_HW_DECODER_CPU_THREADS STREQUAL "3")
-    set(VMD_EFFECTIVE_TEST_ID "${VMD_EFFECTIVE_TEST_ID}-t${VITA_HW_DECODER_CPU_THREADS}${VITA_SW_DECODER_CPU_THREADS}")
+  if(NOT VITA_SW_VIDEO_DECODER_CPU_THREADS STREQUAL "3" OR NOT VITA_HW_VIDEO_DECODER_CPU_THREADS STREQUAL "3")
+    set(VMD_EFFECTIVE_TEST_ID "${VMD_EFFECTIVE_TEST_ID}-t${VITA_HW_VIDEO_DECODER_CPU_THREADS}${VITA_SW_VIDEO_DECODER_CPU_THREADS}")
   endif()
 endif()
 string(LENGTH "${VMD_EFFECTIVE_TEST_ID}" VMD_TEST_ID_LENGTH)
@@ -406,7 +414,7 @@ if(VITAMEDIADECK_BETA)
   endif()
 endif()
 set(VMD_SW_UPLOAD "NV12_P2")
-if(VITA_SW_DECODER_PLANAR_UPLOAD)
+if(VITA_SW_VIDEO_DECODER_PLANAR_UPLOAD)
   set(VMD_SW_UPLOAD "YUV420_P3")
 endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -429,7 +437,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE VMD_ENABLE_PAF_NATIVE=1)
 target_link_options(${PROJECT_NAME} PRIVATE
   -Wl,--wrap=vita2d_start_drawing,--wrap=vita2d_end_drawing,--wrap=sceCommonDialogUpdate,--wrap=vita2d_set_clip_rectangle,--wrap=vita2d_enable_clipping,--wrap=vita2d_disable_clipping,--wrap=vita2d_draw_rectangle,--wrap=vita2d_draw_texture_scale,--wrap=vita2d_draw_texture_part_scale,--wrap=vita2d_draw_texture_scale_rotate_hotspot)
 if(VITAMEDIADECK_ENABLE_LTO)
-  foreach(vmd_lto_target IN ITEMS ${PROJECT_NAME} vita_hw_decoder vita_sw_decoder
+  foreach(vmd_lto_target IN ITEMS ${PROJECT_NAME} vita_hw_video_decoder vita_sw_video_decoder vita_hw_audio_decoder vita_sw_audio_decoder
                                    vita_https vitamediadeck_iptv_source)
     target_compile_options(${vmd_lto_target} PRIVATE -flto=4 -fuse-linker-plugin)
   endforeach()
@@ -476,8 +484,10 @@ target_link_libraries(${PROJECT_NAME}
   png
   z
   webpdecoder         # scaled, bounded WebP image decoding
-  VitaHwDecoder::VitaHwDecoder
-  VitaSwDecoder::VitaSwDecoder
+  VitaHwAudioDecoder::VitaHwAudioDecoder
+  VitaSwAudioDecoder::VitaSwAudioDecoder
+  VitaHwVideoDecoder::VitaHwVideoDecoder
+  VitaSwVideoDecoder::VitaSwVideoDecoder
   VitaHttps::VitaHttps
   vitamediadeck_avformat   # pinned FFmpeg with registered MOV/MP4 + Matroska demuxers
   vitamediadeck_avcodec    # complete h264_vita plus software H.264 fallback
@@ -569,6 +579,10 @@ vita_create_vpk(${VITAMEDIADECK_VPK_NAME} ${VITA_TITLEID} ${CMAKE_CURRENT_BINARY
   FILE assets/fonts/IBMPlexMono-Regular.ttf fonts/IBMPlexMono-Regular.ttf
   FILE assets/fonts/IBM-Plex-OFL.txt licenses/IBM-Plex-OFL.txt
   FILE LICENSE licenses/VitaMediaDeck-GPLv3.txt
+  FILE "${VITAMEDIADECK_HW_DECODER_PACKAGE}/LICENSE" licenses/vita-hw-video-decoder-GPLv3.txt
+  FILE "${VITAMEDIADECK_SW_DECODER_PACKAGE}/LICENSE" licenses/vita-sw-video-decoder-GPLv3.txt
+  FILE "${VITAMEDIADECK_HW_AUDIO_PACKAGE}/LICENSE" licenses/vita-hw-audio-decoder-GPLv3.txt
+  FILE "${VITAMEDIADECK_SW_AUDIO_PACKAGE}/LICENSE" licenses/vita-sw-audio-decoder-GPLv3.txt
   FILE THIRD_PARTY_NOTICES.md licenses/THIRD_PARTY_NOTICES.md
   FILE release/VitaMediaDeck.spdx licenses/VitaMediaDeck.spdx
   FILE "${VITAMEDIADECK_RELEASE_LICENSE_ROOT}/PROVENANCE.txt" licenses/release-provenance.txt

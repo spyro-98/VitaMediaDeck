@@ -25,8 +25,10 @@ require((build / 'CMakeCache.txt').is_file(), 'missing CMake build directory')
 require('VITAMEDIADECK_ENABLE_LTO:BOOL=ON' in (build / 'CMakeCache.txt').read_text(), 'app LTO is disabled')
 targets = {
     'vitamediadeck': build,
-    'vita_hw_decoder': build / 'packages/vita-hw-decoder',
-    'vita_sw_decoder': build / 'packages/vita-sw-decoder',
+    'vita_hw_video_decoder': build / 'packages/vita-hw-video-decoder',
+    'vita_sw_video_decoder': build / 'packages/vita-sw-video-decoder',
+    'vita_hw_audio_decoder': build / 'packages/vita-hw-audio-decoder',
+    'vita_sw_audio_decoder': build / 'packages/vita-sw-audio-decoder',
     'vita_https': build / 'packages/vita-https',
     'vitamediadeck_iptv_source': build,
 }

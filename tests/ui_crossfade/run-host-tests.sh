@@ -3,14 +3,14 @@ set -euo pipefail
 vmd_repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$vmd_repo"
 vmd_output="$(mktemp -d "${TMPDIR:-/tmp}/vmd-crossfade-check.XXXXXX")"
-vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -Isrc -I../vita-https/include)
+vmd_flags=(-O1 -g -Wall -Wextra -fsanitize=address,undefined -Isrc -I../vita-hw-audio-decoder/include -I../vita-https/include)
 clang "${vmd_flags[@]}" -Itests/iptv/include tests/ui_crossfade/page_motion_test.c -o "$vmd_output/page-motion-test"
 "$vmd_output/page-motion-test"
 clang "${vmd_flags[@]}" -Itests/ui_crossfade/include -Itests/online_audio/include \
     tests/ui_crossfade/focus_test.c src/ui/focus_glow.c src/ui/theme.c -o "$vmd_output/focus-test"
 "$vmd_output/focus-test"
 clang "${vmd_flags[@]}" -Itests/podcast_metadata/include \
-    tests/ui_crossfade/preferences_test.c -o "$vmd_output/preferences-test"
+    tests/ui_crossfade/preferences_test.c -pthread -o "$vmd_output/preferences-test"
 "$vmd_output/preferences-test"
 clang "${vmd_flags[@]}" tests/ui_crossfade/local_summary_test.c -o "$vmd_output/local-summary-test"
 "$vmd_output/local-summary-test"

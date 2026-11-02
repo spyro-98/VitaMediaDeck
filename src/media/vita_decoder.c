@@ -12,32 +12,33 @@
 #include <psp2/kernel/threadmgr.h>
 
 #include <libavutil/error.h>
-#include <vita_hw_decoder.h>
-#include <vita_sw_decoder.h>
-#include <vita_hw_decoder_live.h>
-#include <vita_sw_decoder_live.h>
+#include "media/audio_playback.h"
+#include <vita_hw_video_decoder.h>
+#include <vita_sw_video_decoder.h>
+#include <vita_hw_video_decoder_live.h>
+#include <vita_sw_video_decoder_live.h>
 
 #include "common/text_log.h"
 #include "common/playback_checkpoint.h"
 #include "media/media_tracks.h"
 #include "media/audio_gain.h"
 
-_Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaHwDecoderPlayerStatus),
+_Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaHwVideoDecoderPlayerStatus),
 	           "hardware status ABI changed");
-_Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaSwDecoderPlayerStatus),
+_Static_assert(sizeof(VtDecoderPlayerStatus) == sizeof(VitaSwVideoDecoderPlayerStatus),
 	           "software status ABI changed");
-_Static_assert(VT_DECODER_MAX_AUDIO_TRACKS <= VITA_HW_DECODER_MAX_AUDIO_TRACKS &&
-	           VT_DECODER_MAX_AUDIO_TRACKS <= VITA_SW_DECODER_MAX_AUDIO_TRACKS,
+_Static_assert(VT_DECODER_MAX_AUDIO_TRACKS <= VITA_HW_VIDEO_DECODER_MAX_AUDIO_TRACKS &&
+	           VT_DECODER_MAX_AUDIO_TRACKS <= VITA_SW_VIDEO_DECODER_MAX_AUDIO_TRACKS,
 	           "decoder audio track capacity is smaller than the app capacity");
 _Static_assert(VT_DECODER_MAX_SUBTITLE_TRACKS <=
-	               VITA_HW_DECODER_MAX_SUBTITLE_TRACKS &&
+	               VITA_HW_VIDEO_DECODER_MAX_SUBTITLE_TRACKS &&
 	           VT_DECODER_MAX_SUBTITLE_TRACKS <=
-	               VITA_SW_DECODER_MAX_SUBTITLE_TRACKS,
+	               VITA_SW_VIDEO_DECODER_MAX_SUBTITLE_TRACKS,
 	           "decoder subtitle track capacity is smaller than the app capacity");
 _Static_assert(VT_DECODER_AUDIO_CHANGE_ROLLED_BACK ==
-	               VITA_HW_DECODER_AUDIO_CHANGE_ROLLED_BACK &&
+	               VITA_HW_VIDEO_DECODER_AUDIO_CHANGE_ROLLED_BACK &&
 	           VT_DECODER_AUDIO_CHANGE_ROLLED_BACK ==
-	               VITA_SW_DECODER_AUDIO_CHANGE_ROLLED_BACK,
+	               VITA_SW_VIDEO_DECODER_AUDIO_CHANGE_ROLLED_BACK,
 	           "decoder audio rollback result differs between backends");
 
 typedef struct LocalFileCursor {
@@ -49,8 +50,8 @@ struct VtDecoderPlayer {
 	int live_input;
 	VtDecoderStreamFactory source;
 	VtDecoderPlayerConfig config;
-	VitaHwDecoderPlayer *hardware;
-	VitaSwDecoderPlayer *software;
+	VitaHwVideoDecoderPlayer *hardware;
+	VitaSwVideoDecoderPlayer *software;
 	VtDecoderTrackInfo audio_tracks[VT_DECODER_MAX_AUDIO_TRACKS];
 	VtDecoderTrackInfo subtitle_tracks[VT_DECODER_MAX_SUBTITLE_TRACKS];
 	VtDecoderStreamFactory subtitle_sources[VT_DECODER_MAX_SUBTITLE_TRACKS];
@@ -74,32 +75,32 @@ static void candidate_unlock(VtDecoderPlayer *player) {
 }
 
 static void publish_hardware_candidate(VtDecoderPlayer *player,
-	                                   VitaHwDecoderPlayer *candidate) {
+	                                   VitaHwVideoDecoderPlayer *candidate) {
 	candidate_lock(player);
 	player->hardware = candidate;
 	candidate_unlock(player);
 }
 
-static VitaHwDecoderPlayer *detach_hardware_candidate(
+static VitaHwVideoDecoderPlayer *detach_hardware_candidate(
 	VtDecoderPlayer *player) {
 	candidate_lock(player);
-	VitaHwDecoderPlayer *candidate = player->hardware;
+	VitaHwVideoDecoderPlayer *candidate = player->hardware;
 	player->hardware = NULL;
 	candidate_unlock(player);
 	return candidate;
 }
 
 static void publish_software_candidate(VtDecoderPlayer *player,
-	                                   VitaSwDecoderPlayer *candidate) {
+	                                   VitaSwVideoDecoderPlayer *candidate) {
 	candidate_lock(player);
 	player->software = candidate;
 	candidate_unlock(player);
 }
 
-static VitaSwDecoderPlayer *detach_software_candidate(
+static VitaSwVideoDecoderPlayer *detach_software_candidate(
 	VtDecoderPlayer *player) {
 	candidate_lock(player);
-	VitaSwDecoderPlayer *candidate = player->software;
+	VitaSwVideoDecoderPlayer *candidate = player->software;
 	player->software = NULL;
 	candidate_unlock(player);
 	return candidate;
@@ -157,7 +158,7 @@ void vt_decoder_file_stream_factory(const char *path,
 	factory->local_path = path;
 }
 
-static int hw_stream_open(void *opaque, VitaHwDecoderStreamHandle *out) {
+static int hw_stream_open(void *opaque, VitaHwVideoDecoderStreamHandle *out) {
 	VtDecoderStreamFactory *factory = opaque;
 	VtDecoderStreamHandle cursor = {0};
 	int result = factory && factory->open ? factory->open(factory->opaque, &cursor) : -1;
@@ -174,7 +175,7 @@ static int hw_stream_open(void *opaque, VitaHwDecoderStreamHandle *out) {
 
 static int hw_stream_open_with_cancel(void *opaque,
 	                                  volatile int *cancel_flag,
-	                                  VitaHwDecoderStreamHandle *out) {
+	                                  VitaHwVideoDecoderStreamHandle *out) {
 	VtDecoderStreamFactory *factory = opaque;
 	VtDecoderStreamHandle cursor = {0};
 	int result = factory && factory->open_cancelable
@@ -192,7 +193,7 @@ static int hw_stream_open_with_cancel(void *opaque,
 	return 0;
 }
 
-static int sw_stream_open(void *opaque, VitaSwDecoderStreamHandle *out) {
+static int sw_stream_open(void *opaque, VitaSwVideoDecoderStreamHandle *out) {
 	VtDecoderStreamFactory *factory = opaque;
 	VtDecoderStreamHandle cursor = {0};
 	int result = factory && factory->open ? factory->open(factory->opaque, &cursor) : -1;
@@ -209,7 +210,7 @@ static int sw_stream_open(void *opaque, VitaSwDecoderStreamHandle *out) {
 
 static int sw_stream_open_with_cancel(void *opaque,
 	                                  volatile int *cancel_flag,
-	                                  VitaSwDecoderStreamHandle *out) {
+	                                  VitaSwVideoDecoderStreamHandle *out) {
 	VtDecoderStreamFactory *factory = opaque;
 	VtDecoderStreamHandle cursor = {0};
 	int result = factory && factory->open_cancelable
@@ -228,7 +229,7 @@ static int sw_stream_open_with_cancel(void *opaque,
 }
 
 int vt_decoder_prepare_hardware_runtime(void) {
-	return vita_hw_decoder_prepare_runtime();
+	return vita_hw_video_decoder_prepare_runtime();
 }
 
 /* The pinned backend's diagnostics contain numeric decoder facts, not URLs.
@@ -296,7 +297,7 @@ static void append_external_subtitles(VtDecoderPlayer *player) {
 }
 
 static void copy_hw_track(VtDecoderTrackInfo *out,
-	                      const VitaHwDecoderTrackInfo *source) {
+	                      const VitaHwVideoDecoderTrackInfo *source) {
 	if (!out || !source) return;
 	memset(out, 0, sizeof(*out));
 	out->stream_index = source->stream_index;
@@ -308,7 +309,7 @@ static void copy_hw_track(VtDecoderTrackInfo *out,
 }
 
 static void copy_sw_track(VtDecoderTrackInfo *out,
-	                      const VitaSwDecoderTrackInfo *source) {
+	                      const VitaSwVideoDecoderTrackInfo *source) {
 	if (!out || !source) return;
 	memset(out, 0, sizeof(*out));
 	out->stream_index = source->stream_index;
@@ -327,13 +328,13 @@ static void snapshot_hardware_tracks(VtDecoderPlayer *player,
 	memset(player->subtitle_tracks, 0, sizeof(player->subtitle_tracks));
 	memset(player->subtitle_sources, 0, sizeof(player->subtitle_sources));
 	player->audio_track_count =
-	    vita_hw_decoder_audio_track_count(player->hardware);
+	    vita_hw_video_decoder_audio_track_count(player->hardware);
 	if (player->audio_track_count < 0) player->audio_track_count = 0;
 	if (player->audio_track_count > VT_DECODER_MAX_AUDIO_TRACKS)
 		player->audio_track_count = VT_DECODER_MAX_AUDIO_TRACKS;
 	for (int i = 0; i < player->audio_track_count; i++) {
-		VitaHwDecoderTrackInfo info;
-		if (vita_hw_decoder_audio_track_info(player->hardware, i, &info) < 0) {
+		VitaHwVideoDecoderTrackInfo info;
+		if (vita_hw_video_decoder_audio_track_info(player->hardware, i, &info) < 0) {
 			player->audio_track_count = i;
 			break;
 		}
@@ -342,13 +343,13 @@ static void snapshot_hardware_tracks(VtDecoderPlayer *player,
 	player->subtitle_track_count =
 	    player->config.external_subtitles_replace_embedded &&
 	            player->config.external_subtitle_count > 0
-	        ? 0 : vita_hw_decoder_subtitle_track_count(player->hardware);
+	        ? 0 : vita_hw_video_decoder_subtitle_track_count(player->hardware);
 	if (player->subtitle_track_count < 0) player->subtitle_track_count = 0;
 	if (player->subtitle_track_count > VT_DECODER_MAX_SUBTITLE_TRACKS)
 		player->subtitle_track_count = VT_DECODER_MAX_SUBTITLE_TRACKS;
 	for (int i = 0; i < player->subtitle_track_count; i++) {
-		VitaHwDecoderTrackInfo info;
-		if (vita_hw_decoder_subtitle_track_info(player->hardware, i, &info) < 0) {
+		VitaHwVideoDecoderTrackInfo info;
+		if (vita_hw_video_decoder_subtitle_track_info(player->hardware, i, &info) < 0) {
 			player->subtitle_track_count = i;
 			break;
 		}
@@ -375,13 +376,13 @@ static void snapshot_software_tracks(VtDecoderPlayer *player,
 	memset(player->subtitle_tracks, 0, sizeof(player->subtitle_tracks));
 	memset(player->subtitle_sources, 0, sizeof(player->subtitle_sources));
 	player->audio_track_count =
-	    vita_sw_decoder_audio_track_count(player->software);
+	    vita_sw_video_decoder_audio_track_count(player->software);
 	if (player->audio_track_count < 0) player->audio_track_count = 0;
 	if (player->audio_track_count > VT_DECODER_MAX_AUDIO_TRACKS)
 		player->audio_track_count = VT_DECODER_MAX_AUDIO_TRACKS;
 	for (int i = 0; i < player->audio_track_count; i++) {
-		VitaSwDecoderTrackInfo info;
-		if (vita_sw_decoder_audio_track_info(player->software, i, &info) < 0) {
+		VitaSwVideoDecoderTrackInfo info;
+		if (vita_sw_video_decoder_audio_track_info(player->software, i, &info) < 0) {
 			player->audio_track_count = i;
 			break;
 		}
@@ -390,13 +391,13 @@ static void snapshot_software_tracks(VtDecoderPlayer *player,
 	player->subtitle_track_count =
 	    player->config.external_subtitles_replace_embedded &&
 	            player->config.external_subtitle_count > 0
-	        ? 0 : vita_sw_decoder_subtitle_track_count(player->software);
+	        ? 0 : vita_sw_video_decoder_subtitle_track_count(player->software);
 	if (player->subtitle_track_count < 0) player->subtitle_track_count = 0;
 	if (player->subtitle_track_count > VT_DECODER_MAX_SUBTITLE_TRACKS)
 		player->subtitle_track_count = VT_DECODER_MAX_SUBTITLE_TRACKS;
 	for (int i = 0; i < player->subtitle_track_count; i++) {
-		VitaSwDecoderTrackInfo info;
-		if (vita_sw_decoder_subtitle_track_info(player->software, i, &info) < 0) {
+		VitaSwVideoDecoderTrackInfo info;
+		if (vita_sw_video_decoder_subtitle_track_info(player->software, i, &info) < 0) {
 			player->subtitle_track_count = i;
 			break;
 		}
@@ -437,13 +438,14 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	int result = -1;
 	if (preference != VT_DECODER_BACKEND_SOFTWARE) {
         if (config->backend_start) config->backend_start(config->backend_start_ctx, VT_DECODER_BACKEND_HARDWARE);
-		VitaHwDecoderPlayerConfig hardware = {
+		VitaHwVideoDecoderPlayerConfig hardware = {
 			.stream = {
 				.opaque = &player->source,
 				.open = hw_stream_open,
 				.open_with_cancel = hw_stream_open_with_cancel
 			},
 			.audio_track = player->active_audio_track,
+        .audio_driver = vt_audio_playback_driver_for_mode(config->preferred_audio_backend),
 			.expected_width = config->expected_width,
 			.expected_height = config->expected_height,
 			.expected_fps = config->expected_fps,
@@ -452,9 +454,9 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 			.volume_percent = config->volume_percent,
 			.cancel_flag = config->cancel_flag
 		};
-		VitaHwDecoderPlayer *hardware_candidate = vita_hw_decoder_create();
+		VitaHwVideoDecoderPlayer *hardware_candidate = vita_hw_video_decoder_create();
 		publish_hardware_candidate(player, hardware_candidate);
-		VitaHwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
+		VitaHwVideoDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
 		if (live && config->live_audio_sample_rate && config->live_audio_channels) {
 			live_options.version = 2;
 			live_options.audio.sample_rate = config->live_audio_sample_rate;
@@ -464,8 +466,8 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		                       config->expected_width,config->expected_height,0);
 		stage_started = sceKernelGetProcessTimeWide();
 		result = !hardware_candidate ? -1 : live
-		       ? vita_hw_decoder_open_live(hardware_candidate, &hardware, &live_options)
-		       : vita_hw_decoder_open(hardware_candidate, &hardware);
+		       ? vita_hw_video_decoder_open_live(hardware_candidate, &hardware, &live_options)
+		       : vita_hw_video_decoder_open(hardware_candidate, &hardware);
 		log_printf("decoder open: hardware=%llu us ret=%d\n",
 		           (unsigned long long)(sceKernelGetProcessTimeWide() -
 		                                stage_started),
@@ -488,7 +490,7 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		hardware_candidate = detach_hardware_candidate(player);
 		if (hardware_candidate) {
             vt_playback_checkpoint("decoder.hw.failed_close.begin",NULL,VT_DECODER_BACKEND_HARDWARE,0,0,result);
-            vita_hw_decoder_destroy(hardware_candidate);
+            vita_hw_video_decoder_destroy(hardware_candidate);
             vt_playback_checkpoint("decoder.hw.failed_close.end",NULL,VT_DECODER_BACKEND_HARDWARE,0,0,result);
         }
 		/* A user-cancelled hardware open is terminal. Falling through to software
@@ -501,13 +503,14 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	 * safely reopen after a failed hardware session. A software preference
 	 * arrives here directly without initializing the hardware backend. */
  if (config->backend_start) config->backend_start(config->backend_start_ctx, VT_DECODER_BACKEND_SOFTWARE);
-	VitaSwDecoderPlayerConfig software = {
+	VitaSwVideoDecoderPlayerConfig software = {
 		.stream = {
 			.opaque = &player->source,
 			.open = sw_stream_open,
 			.open_with_cancel = sw_stream_open_with_cancel
 		},
 		.audio_track = player->active_audio_track,
+        .audio_driver = vt_audio_playback_driver_for_mode(config->preferred_audio_backend),
 		.expected_width = config->expected_width,
 		.expected_height = config->expected_height,
 		.expected_fps = config->expected_fps,
@@ -516,9 +519,9 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 		.volume_percent = config->volume_percent,
 		.cancel_flag = config->cancel_flag
 	};
-	VitaSwDecoderPlayer *software_candidate = vita_sw_decoder_create();
+	VitaSwVideoDecoderPlayer *software_candidate = vita_sw_video_decoder_create();
 	publish_software_candidate(player, software_candidate);
-	VitaSwDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
+	VitaSwVideoDecoderLiveOptions live_options = {.size = sizeof(live_options), .version = 1};
 	if (live && config->live_audio_sample_rate && config->live_audio_channels) {
 		live_options.version = 2;
 		live_options.audio.sample_rate = config->live_audio_sample_rate;
@@ -528,8 +531,8 @@ static int decoder_open_mode(VtDecoderPlayer *player,
 	                       config->expected_width,config->expected_height,0);
 	stage_started = sceKernelGetProcessTimeWide();
 	result = !software_candidate ? -1 : live
-	       ? vita_sw_decoder_open_live(software_candidate, &software, &live_options)
-	       : vita_sw_decoder_open(software_candidate, &software);
+	       ? vita_sw_video_decoder_open_live(software_candidate, &software, &live_options)
+	       : vita_sw_video_decoder_open(software_candidate, &software);
 	log_printf("decoder open: software=%llu us ret=%d\n",
 	           (unsigned long long)(sceKernelGetProcessTimeWide() -
 	                                stage_started),
@@ -567,17 +570,18 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 		return -1;
 	if (player->software && player->backend == VT_DECODER_BACKEND_SOFTWARE)
 		return 0;
-	VitaHwDecoderPlayer *hardware_candidate =
+	VitaHwVideoDecoderPlayer *hardware_candidate =
 		detach_hardware_candidate(player);
-	if (hardware_candidate) vita_hw_decoder_destroy(hardware_candidate);
+	if (hardware_candidate) vita_hw_video_decoder_destroy(hardware_candidate);
  if (player->config.backend_start) player->config.backend_start(player->config.backend_start_ctx, VT_DECODER_BACKEND_SOFTWARE);
-	VitaSwDecoderPlayerConfig software = {
+	VitaSwVideoDecoderPlayerConfig software = {
 		.stream = {
 			.opaque = &player->source,
 			.open = sw_stream_open,
 			.open_with_cancel = sw_stream_open_with_cancel
 		},
 		.audio_track = player->active_audio_track,
+        .audio_driver = vt_audio_playback_driver_for_mode(player->config.preferred_audio_backend),
 		.expected_width = player->config.expected_width,
 		.expected_height = player->config.expected_height,
 		.expected_fps = player->config.expected_fps,
@@ -586,11 +590,11 @@ int vt_decoder_fallback_to_software(VtDecoderPlayer *player,
 		.volume_percent = player->config.volume_percent,
 		.cancel_flag = player->config.cancel_flag
 	};
-	VitaSwDecoderPlayer *software_candidate = vita_sw_decoder_create();
+	VitaSwVideoDecoderPlayer *software_candidate = vita_sw_video_decoder_create();
 	publish_software_candidate(player, software_candidate);
 	uint64_t stage_started = sceKernelGetProcessTimeWide();
 	int result = software_candidate
-	           ? vita_sw_decoder_open(software_candidate, &software) : -1;
+	           ? vita_sw_video_decoder_open(software_candidate, &software) : -1;
 	log_printf("decoder fallback: software=%llu us ret=%d\n",
 	           (unsigned long long)(sceKernelGetProcessTimeWide() -
 	                                stage_started),
@@ -607,10 +611,10 @@ void vt_decoder_destroy(VtDecoderPlayer *player) {
 	if (!player) return;
 	vt_playback_checkpoint("decoder.close.begin",NULL,player->backend,0,0,0);
 	vt_subtitle_reader_destroy(player->subtitles);
-	VitaHwDecoderPlayer *hardware = detach_hardware_candidate(player);
-	VitaSwDecoderPlayer *software = detach_software_candidate(player);
-	if (hardware) vita_hw_decoder_destroy(hardware);
-	if (software) vita_sw_decoder_destroy(software);
+	VitaHwVideoDecoderPlayer *hardware = detach_hardware_candidate(player);
+	VitaSwVideoDecoderPlayer *software = detach_software_candidate(player);
+	if (hardware) vita_hw_video_decoder_destroy(hardware);
+	if (software) vita_sw_video_decoder_destroy(software);
 	vt_playback_checkpoint("decoder.close.complete",NULL,player->backend,0,0,0);
 	free(player);
 }
@@ -622,8 +626,8 @@ void vt_decoder_request_stop(VtDecoderPlayer *player) {
 	 * the publication lock through each nonblocking signal so a loading worker
 	 * cannot detach/free the candidate between the pointer test and the call. */
 	candidate_lock(player);
-	if (player->hardware) vita_hw_decoder_request_stop(player->hardware);
-	if (player->software) vita_sw_decoder_request_stop(player->software);
+	if (player->hardware) vita_hw_video_decoder_request_stop(player->hardware);
+	if (player->software) vita_sw_video_decoder_request_stop(player->software);
 	candidate_unlock(player);
 }
 
@@ -633,9 +637,9 @@ void vt_decoder_prepare_background_restart(VtDecoderPlayer *player) {
 	 * mark every live candidate just as request_stop() does. */
 	candidate_lock(player);
 	if (player->hardware)
-		vita_hw_decoder_prepare_background_restart(player->hardware);
+		vita_hw_video_decoder_prepare_background_restart(player->hardware);
 	if (player->software)
-		vita_sw_decoder_prepare_background_restart(player->software);
+		vita_sw_video_decoder_prepare_background_restart(player->software);
 	candidate_unlock(player);
 }
 
@@ -643,9 +647,9 @@ void vt_decoder_set_paused(VtDecoderPlayer *player, int paused) {
 	if (!player) return;
 	player->config.start_paused = paused != 0;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE)
-		vita_hw_decoder_set_paused(player->hardware, paused);
+		vita_hw_video_decoder_set_paused(player->hardware, paused);
 	else if (player->backend == VT_DECODER_BACKEND_SOFTWARE)
-		vita_sw_decoder_set_paused(player->software, paused);
+		vita_sw_video_decoder_set_paused(player->software, paused);
 }
 
 void vt_decoder_set_volume(VtDecoderPlayer *player, int percent) {
@@ -653,18 +657,18 @@ void vt_decoder_set_volume(VtDecoderPlayer *player, int percent) {
 	percent = vita_audio_volume_clamp(percent);
 	player->config.volume_percent = percent;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE)
-		vita_hw_decoder_set_volume(player->hardware, percent);
+		vita_hw_video_decoder_set_volume(player->hardware, percent);
 	else if (player->backend == VT_DECODER_BACKEND_SOFTWARE)
-		vita_sw_decoder_set_volume(player->software, percent);
+		vita_sw_video_decoder_set_volume(player->software, percent);
 }
 
 int vt_decoder_seek(VtDecoderPlayer *player, uint64_t position_ms) {
 	if (!player) return -1;
 	VtDecoderBackend attempted_backend = player->backend;
 	int result = player->backend == VT_DECODER_BACKEND_HARDWARE
-	     ? vita_hw_decoder_seek(player->hardware, position_ms)
+	     ? vita_hw_video_decoder_seek(player->hardware, position_ms)
 	     : player->backend == VT_DECODER_BACKEND_SOFTWARE
-	     ? vita_sw_decoder_seek(player->software, position_ms) : -1;
+	     ? vita_sw_video_decoder_seek(player->software, position_ms) : -1;
 	if (result < 0 && attempted_backend == VT_DECODER_BACKEND_HARDWARE &&
 	    player->config.preferred_backend == VT_DECODER_BACKEND_NONE &&
 	    !(player->config.cancel_flag && *player->config.cancel_flag)) {
@@ -689,11 +693,11 @@ int vt_decoder_select_audio_track_with_cancel(
 		return -1;
 	if (audio_track == player->active_audio_track) return 0;
 	int result = player->backend == VT_DECODER_BACKEND_HARDWARE
-	           ? vita_hw_decoder_select_audio_track_with_cancel(
+	           ? vita_hw_video_decoder_select_audio_track_with_cancel(
 	                 player->hardware, audio_track, position_ms,
 	                 operation_cancel)
 	           : player->backend == VT_DECODER_BACKEND_SOFTWARE
-	           ? vita_sw_decoder_select_audio_track_with_cancel(
+	           ? vita_sw_video_decoder_select_audio_track_with_cancel(
 	                 player->software, audio_track, position_ms,
 	                 operation_cancel)
 	           : -1;
@@ -716,9 +720,9 @@ int vt_decoder_select_audio_track(VtDecoderPlayer *player, int audio_track,
 void vt_decoder_interrupt_audio_operation(VtDecoderPlayer *player) {
 	if (!player) return;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE && player->hardware)
-		vita_hw_decoder_interrupt_audio_operation(player->hardware);
+		vita_hw_video_decoder_interrupt_audio_operation(player->hardware);
 	else if (player->backend == VT_DECODER_BACKEND_SOFTWARE && player->software)
-		vita_sw_decoder_interrupt_audio_operation(player->software);
+		vita_sw_video_decoder_interrupt_audio_operation(player->software);
 }
 
 int vt_decoder_select_subtitle_track(VtDecoderPlayer *player,
@@ -802,43 +806,43 @@ int vt_decoder_subtitle_text(VtDecoderPlayer *player, uint64_t position_ms,
 int vt_decoder_present(VtDecoderPlayer *player, int fill_screen) {
 	if (!player) return -1;
 	return player->backend == VT_DECODER_BACKEND_HARDWARE
-	     ? vita_hw_decoder_present(player->hardware, fill_screen)
+	     ? vita_hw_video_decoder_present(player->hardware, fill_screen)
 	     : player->backend == VT_DECODER_BACKEND_SOFTWARE
-	     ? vita_sw_decoder_present(player->software, fill_screen) : -1;
+	     ? vita_sw_video_decoder_present(player->software, fill_screen) : -1;
 }
 
 int vt_decoder_present_rect(VtDecoderPlayer *player, float x, float y,
 	                        float width, float height, int fill_rect) {
 	if (!player) return -1;
 	return player->backend == VT_DECODER_BACKEND_HARDWARE
-	     ? vita_hw_decoder_present_rect(player->hardware, x, y, width, height,
+	     ? vita_hw_video_decoder_present_rect(player->hardware, x, y, width, height,
 	                                    fill_rect)
 	     : player->backend == VT_DECODER_BACKEND_SOFTWARE
-	     ? vita_sw_decoder_present_rect(player->software, x, y, width, height,
+	     ? vita_sw_video_decoder_present_rect(player->software, x, y, width, height,
 	                                    fill_rect) : -1;
 }
 
 void vt_decoder_discard_video_to_clock(VtDecoderPlayer *player) {
 	if (!player) return;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE && player->hardware)
-		vita_hw_decoder_discard_video_to_clock(player->hardware);
+		vita_hw_video_decoder_discard_video_to_clock(player->hardware);
 	else if (player->backend == VT_DECODER_BACKEND_SOFTWARE && player->software)
-		vita_sw_decoder_discard_video_to_clock(player->software);
+		vita_sw_video_decoder_discard_video_to_clock(player->software);
 }
 
 void vt_decoder_render_complete(VtDecoderPlayer *player) {
 	if (!player) return;
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE)
-		vita_hw_decoder_render_complete(player->hardware);
+		vita_hw_video_decoder_render_complete(player->hardware);
 	else if (player->backend == VT_DECODER_BACKEND_SOFTWARE)
-		vita_sw_decoder_render_complete(player->software);
+		vita_sw_video_decoder_render_complete(player->software);
 }
 
 int vt_decoder_presented_time(VtDecoderPlayer *player,uint64_t *pts_us){
  if(pts_us)*pts_us=0;
  if(!player||!pts_us)return 0;
- return player->backend==VT_DECODER_BACKEND_HARDWARE?vita_hw_decoder_presented_time(player->hardware,pts_us):
-        player->backend==VT_DECODER_BACKEND_SOFTWARE?vita_sw_decoder_presented_time(player->software,pts_us):0;
+ return player->backend==VT_DECODER_BACKEND_HARDWARE?vita_hw_video_decoder_presented_time(player->hardware,pts_us):
+        player->backend==VT_DECODER_BACKEND_SOFTWARE?vita_sw_video_decoder_presented_time(player->software,pts_us):0;
 }
 void vt_decoder_get_status(VtDecoderPlayer *player, VtDecoderPlayerStatus *status) {
 	if (!status) return;
@@ -849,13 +853,13 @@ void vt_decoder_get_status(VtDecoderPlayer *player, VtDecoderPlayerStatus *statu
 	 * without making the drawer or Circle wait on the subtitle worker. */
 	vt_subtitle_reader_tick(player->subtitles);
 	if (player->backend == VT_DECODER_BACKEND_HARDWARE) {
-		VitaHwDecoderPlayerStatus source;
-		vita_hw_decoder_get_status(player->hardware, &source);
+		VitaHwVideoDecoderPlayerStatus source;
+		vita_hw_video_decoder_get_status(player->hardware, &source);
 		memcpy(status, &source, sizeof(*status));
 		status->hardware_accelerated = source.hardware_accelerated;
 	} else if (player->backend == VT_DECODER_BACKEND_SOFTWARE) {
-		VitaSwDecoderPlayerStatus source;
-		vita_sw_decoder_get_status(player->software, &source);
+		VitaSwVideoDecoderPlayerStatus source;
+		vita_sw_video_decoder_get_status(player->software, &source);
 		memcpy(status, &source, sizeof(*status));
 		status->hardware_accelerated = 0;
 	}

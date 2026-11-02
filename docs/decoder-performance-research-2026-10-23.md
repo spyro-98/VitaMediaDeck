@@ -9,7 +9,7 @@ potenza della PS Vita è stata effettuata su Mac.
 
 ## Risultato dell'audit dei nostri componenti
 
-L'app collega `vita-hw-decoder` e `vita-sw-decoder` allo **stesso FFmpeg n6.0**
+L'app collega `vita-hw-video-decoder` e `vita-sw-video-decoder` allo **stesso FFmpeg n6.0**
 modificato per Vita. Lo script standalone del pacchetto software menziona 8.1.2,
 ma CMake dell'app forza entrambi alla libreria n6.0: quella è la dipendenza che
 finisce effettivamente nel VPK. Mischiare le due ABI non è un aggiornamento valido.
@@ -128,11 +128,11 @@ Opzioni riproducibili di compilazione:
 -DVITAMEDIADECK_VIDEO_CLOCK_PROFILE=stock
 
 # Nei pacchetti: file seekable; forward-only resta single-thread
--DVITA_HW_DECODER_CPU_THREADS=1  # oppure 2 o 3, default 3
--DVITA_SW_DECODER_CPU_THREADS=1  # oppure 2 o 3, default 3
+-DVITA_HW_VIDEO_DECODER_CPU_THREADS=1  # oppure 2 o 3, default 3
+-DVITA_SW_VIDEO_DECODER_CPU_THREADS=1  # oppure 2 o 3, default 3
 
 # Solo esperimento software; non attivo nella distribuzione normale
--DVITA_SW_DECODER_PLANAR_UPLOAD=ON
+-DVITA_SW_VIDEO_DECODER_PLANAR_UPLOAD=ON
 ```
 
 Le chiamate userland disponibili controllano le frequenze. Non abbiamo introdotto

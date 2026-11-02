@@ -12,10 +12,10 @@ for variant in cbr vbr; do
 done
 for sanitizer in address,undefined thread; do
  clang -O1 -g -Wall -Wextra -Werror -Wno-misleading-indentation -fsanitize="$sanitizer" \
-  -Isrc -Itests/podcast_resume/include -Itests/podcast_metadata/include \
+  -Isrc -I../vita-hw-audio-decoder/include -Itests/podcast_resume/include -Itests/podcast_metadata/include \
   tests/podcast_resume/test.c -lpthread -o "$vmd_output/test"
  "$vmd_output/test"
- clang -O1 -g -Wall -Wextra -Werror -fsanitize="$sanitizer" -Isrc -I"$vmd_output" "${mp3_flags[@]}" \
+ clang -O1 -g -Wall -Wextra -Werror -fsanitize="$sanitizer" -Isrc -I../vita-hw-audio-decoder/include -I"$vmd_output" "${mp3_flags[@]}" \
   tests/podcast_resume/mp3_test.c "${mp3_libs[@]}" -o "$vmd_output/mp3-test"
  "$vmd_output/mp3-test" "$vmd_output/cbr.mp3" "$vmd_output/vbr.mp3"
 done

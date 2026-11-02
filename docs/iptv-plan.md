@@ -109,8 +109,8 @@ does not prove Vita TLS, HW decode, audio output or long-running playback.
 ## Integrated baseline
 
 - VitaMediaDeck master: `22db28b` (includes the large-podcast-feed fix after `911b2cf`).
-- vita-hw-decoder master: `2569874`.
-- vita-sw-decoder master: `03dabef`.
+- vita-hw-video-decoder master: `2569874`.
+- vita-sw-video-decoder master: `03dabef`.
 - vita-https master: `c028d30`.
 
 The integrated preview requires matching local `feature/iptv` decoder commits:

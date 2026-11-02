@@ -9,11 +9,11 @@ static void rewrite_fixture(const char *,unsigned char **,size_t *);
 #include <stdarg.h>
 #include <libxml/parser.h>
 #include <libavutil/intreadwrite.h>
-#include "../../../vita-hw-decoder/include/vita_hw_decoder_live.h"
-#include "../../../vita-sw-decoder/include/vita_sw_decoder_live.h"
-_Static_assert(sizeof(VitaHwDecoderLiveOptions)==16,"Keep the V1 live ABI size");
-_Static_assert(sizeof(VitaSwDecoderLiveOptions)==16,"Keep the V1 live ABI size");
-_Static_assert(offsetof(VitaHwDecoderLiveOptions,audio)==offsetof(VitaHwDecoderLiveOptions,reserved),"Keep field offsets");
+#include "../../../vita-hw-video-decoder/include/vita_hw_video_decoder_live.h"
+#include "../../../vita-sw-video-decoder/include/vita_sw_video_decoder_live.h"
+_Static_assert(sizeof(VitaHwVideoDecoderLiveOptions)==16,"Keep the V1 live ABI size");
+_Static_assert(sizeof(VitaSwVideoDecoderLiveOptions)==16,"Keep the V1 live ABI size");
+_Static_assert(offsetof(VitaHwVideoDecoderLiveOptions,audio)==offsetof(VitaHwVideoDecoderLiveOptions,reserved),"Keep field offsets");
 static int shifted;
 static unsigned shifted_fragments;
 static void shift_boxes(unsigned char *bytes,size_t size,uint64_t offset) {

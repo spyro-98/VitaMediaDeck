@@ -1,19 +1,23 @@
 #ifndef VMD_UI_PROGRAM_TIME_H
 #define VMD_UI_PROGRAM_TIME_H
-#include <time.h>
+#include "common/iptv_time.h"
 #include <string.h>
-#ifdef __vita__
-#include <psp2/rtc.h>
-#endif
+/* XMLTV already supplies absolute UTC instants. Apply the console's actual
+ * displayed offset once, including its current DST setting. Country/channel
+ * metadata never changes the viewer's timezone. Read both clocks each time so
+ * changing the Vita clock/zone takes effect without restarting or refetching. */
 static inline void ui_program_local_time(time_t value,struct tm *out){
 #ifdef __vita__
- SceDateTime date;SceRtcTick utc,local;
- if(value>=0&&sceRtcSetTime64_t(&date,(SceUInt64)value)>=0&&sceRtcGetTick(&date,&utc)>=0&&
-    sceRtcConvertUtcToLocalTime(&utc,&local)>=0&&sceRtcSetTick(&date,&local)>=0){
-  memset(out,0,sizeof(*out));out->tm_year=date.year-1900;out->tm_mon=date.month-1;out->tm_mday=date.day;
-  out->tm_hour=date.hour;out->tm_min=date.minute;out->tm_sec=date.second;return;
+ SceDateTime utc,local;SceUInt64 utc_seconds,local_seconds;
+ if(sceRtcGetCurrentClock(&utc,0)>=0&&sceRtcGetCurrentClockLocalTime(&local)>=0&&
+    sceRtcGetTime64_t(&utc,&utc_seconds)>=0&&sceRtcGetTime64_t(&local,&local_seconds)>=0&&
+    utc_seconds<=INT64_MAX&&local_seconds<=INT64_MAX){
+  int64_t offset=(int64_t)local_seconds-(int64_t)utc_seconds;
+  /* The two clock reads can straddle a second. System zone offsets use minutes. */
+  offset=(offset>=0?(offset+30)/60:(offset-30)/60)*60;
+  if(offset>=-14*3600&&offset<=14*3600){time_t display=(time_t)((int64_t)value+offset);gmtime_r(&display,out);return;}
  }
- gmtime_r(&value,out);
+ if(!localtime_r(&value,out))memset(out,0,sizeof(*out));
 #else
  localtime_r(&value,out);
 #endif

@@ -242,53 +242,54 @@ int vt_library_get(const char *id, VtLibraryResult *out) {
     pthread_mutex_unlock(&mutex);
     return index >= 0;
 }
+typedef struct {char id[16],title[256];int index,provider;uint64_t order;} QueryEntry;
+static int query_name_order(const void *a,const void *b){
+ const QueryEntry *x=a,*y=b;int order=x->provider-y->provider;
+ if(!order)order=strcmp(x->title,y->title);
+ return order?order:x->index-y->index;
+}
+static int query_recent_order(const void *a,const void *b){
+ const QueryEntry *x=a,*y=b;
+ return x->order==y->order?x->index-y->index:x->order>y->order?-1:1;
+}
 static int query_items(const char *q, int view, const VtLibraryItem *parent, int search,
                        VtLibraryResult *out, int cap) {
-    int indices[VT_LIBRARY_MAX], n = 0;
-    if (!out || cap <= 0)
-        return 0;
-    pthread_mutex_lock(&mutex);
-    for (int i = 0; i < count; i++)
-        if (vt_library_matches(&slots[i].item, q) &&
-            (view != VT_LIBRARY_CONTINUE || resumable(&slots[i])) &&
-            (view != VT_LIBRARY_RECENT || slots[i].state.started) &&
-            (!parent || (slots[i].item.provider == parent->provider &&
-                         (parent->provider == VT_LIBRARY_PODCAST ||
-                          !strcmp(slots[i].item.server, parent->server)) &&
-                         !strcmp(slots[i].item.context, parent->locator) &&
-                         (parent->provider == VT_LIBRARY_IPTV || slots[i].item.mode != 2))))
-            indices[n++] = i;
-    for (int i = 1; i < n; i++) {
-        int idx = indices[i], j = i;
-        while (j > 0) {
-            Slot *a = &slots[indices[j - 1]], *b = &slots[idx];
-            int move = view == VT_LIBRARY_ALL ? (a->item.provider > b->item.provider ||
-                                                 (a->item.provider == b->item.provider &&
-                                                  strcmp(a->item.title, b->item.title) > 0))
-                                              : a->state.order < b->state.order;
-            if (!move)
-                break;
-            indices[j] = indices[j - 1];
-            j--;
+    if (!out || cap <= 0)return 0;
+    QueryEntry *entries=malloc(VT_LIBRARY_MAX*sizeof(*entries));if(!entries)return 0;
+    int n=0;
+    /* Select compact sort keys under one short lock per slot. Sorting never
+     * retains the library mutex; Home does not copy megabytes of metadata
+     * merely to find its few recent/resumable entries. */
+    for(int i=0;i<VT_LIBRARY_MAX;i++){
+        pthread_mutex_lock(&mutex);
+        if(i>=count){pthread_mutex_unlock(&mutex);break;}
+        Slot *s=&slots[i];
+        if(vt_library_matches(&s->item,q)&&(view!=VT_LIBRARY_CONTINUE||resumable(s))&&
+           (view!=VT_LIBRARY_RECENT||s->state.started)&&
+           (!parent||(s->item.provider==parent->provider&&
+             (parent->provider==VT_LIBRARY_PODCAST||!strcmp(s->item.server,parent->server))&&
+             !strcmp(s->item.context,parent->locator)&&(parent->provider==VT_LIBRARY_IPTV||s->item.mode!=2)))){
+            QueryEntry *entry=&entries[n++];memcpy(entry->id,s->item.id,sizeof(entry->id));
+            memcpy(entry->title,s->item.title,sizeof(entry->title));entry->index=i;
+            entry->provider=s->item.provider;entry->order=s->state.order;
         }
-        indices[j] = idx;
+        pthread_mutex_unlock(&mutex);
     }
-    int used[VT_LIBRARY_PROVIDER_COUNT] = {0}, written = 0;
-    for (int i = 0; i < n && written < cap; i++) {
-        Slot *s = &slots[indices[i]];
-        if (search && !parent && used[s->item.provider] >= 24)
-            continue;
-        used[s->item.provider]++;
-        out[written++] = (VtLibraryResult){.item = s->item,
-                                           .position_ms = s->state.position,
-                                           .duration_ms = s->state.duration ? s->state.duration
-                                                                            : s->item.duration_ms,
-                                           .order = s->state.order,
-                                           .started = s->state.started,
-                                           .cached = 1};
+    qsort(entries,(size_t)n,sizeof(*entries),view==VT_LIBRARY_ALL?query_name_order:query_recent_order);
+    int used[VT_LIBRARY_PROVIDER_COUNT]={0},written=0;
+    for(int i=0;i<n&&written<cap;i++){
+        QueryEntry *entry=&entries[i];
+        if(search&&!parent&&used[entry->provider]>=24)continue;
+        pthread_mutex_lock(&mutex);Slot *s=&slots[entry->index];
+        /* A concurrent eviction may reuse the index. The next revision will
+         * publish its replacement; never return an unrelated item in its place. */
+        if(strcmp(s->item.id,entry->id)){pthread_mutex_unlock(&mutex);continue;}
+        out[written++]=(VtLibraryResult){.item=s->item,.position_ms=s->state.position,
+          .duration_ms=s->state.duration?s->state.duration:s->item.duration_ms,
+          .order=s->state.order,.started=s->state.started,.cached=1};
+        pthread_mutex_unlock(&mutex);used[entry->provider]++;
     }
-    pthread_mutex_unlock(&mutex);
-    return written;
+    free(entries);return written;
 }
 int vt_library_query(const char *q, int view, VtLibraryResult *out, int cap) {
     return query_items(q, view, NULL, 0, out, cap);

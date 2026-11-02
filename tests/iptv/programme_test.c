@@ -43,7 +43,25 @@ static unsigned char *compress_guide(const void *bytes,size_t size,size_t *out_s
  CHECK(deflateInit2(&z,6,Z_DEFLATED,31,8,Z_DEFAULT_STRATEGY)==Z_OK);z.next_in=(void*)bytes;z.avail_in=(uInt)size;z.next_out=out;z.avail_out=(uInt)cap;
  CHECK(deflate(&z,Z_FINISH)==Z_STREAM_END);*out_size=z.total_out;deflateEnd(&z);return out;
 }
+static int64_t utc_instant(const char *iso){int64_t us;CHECK(!av_parse_time(&us,iso,0));return us/1000000;}
+static void timezone_programmes(void){
+ const char *xml="<tv><channel id='IT'/><channel id='US'/>"
+  "<programme channel='IT' start='20261025020000 +0200' stop='20261025030000 +0200'><title>Summer hour</title></programme>"
+  "<programme channel='IT' start='20261025020000 +01:00' stop='20261025030000 +01:00'><title>Winter hour</title></programme>"
+  "<programme channel='US' start='20261024190000 -0500' stop='20261024200000 -0500'><title>US channel</title></programme></tv>";
+ VtIptvProgram p;VtIptvGuideQuery q={.channel="IT"};int64_t now=utc_instant("2026-10-25T00:30:00Z");
+ CHECK(!vt_iptv_program_parse_channel(xml,strlen(xml),&q,now,"en",&p,NULL)&&p.available&&!strcmp(p.title,"Summer hour")&&p.end==now+1800);
+ CHECK(!vt_iptv_program_parse_channel(xml,strlen(xml),&q,now+3600,"en",&p,NULL)&&p.available&&!strcmp(p.title,"Winter hour")&&p.end==now+5400);
+ q.channel="US";CHECK(!vt_iptv_program_parse_channel(xml,strlen(xml),&q,now,"en",&p,NULL)&&p.available&&p.start==now-1800&&p.end==now+1800);
+ const char *no_zone="<tv><programme channel='x' start='20261031000000' stop='20261031010000'><title>UTC default</title></programme></tv>";
+ q=(VtIptvGuideQuery){.channel="x"};now=utc_instant("2026-10-31T00:30:00Z");
+ setenv("TZ","Europe/Rome",1);tzset();CHECK(!vt_iptv_program_parse_channel(no_zone,strlen(no_zone),&q,now,"en",&p,NULL)&&p.available&&p.start==now-1800);
+ setenv("TZ","America/New_York",1);tzset();CHECK(!vt_iptv_program_parse_channel(no_zone,strlen(no_zone),&q,now,"en",&p,NULL)&&p.available&&p.start==now-1800);
+ q.shift_seconds=3600;CHECK(!vt_iptv_program_parse_channel(no_zone,strlen(no_zone),&q,now+3600,"en",&p,NULL)&&p.available&&p.start==now+1800);
+ unsetenv("TZ");tzset();puts("XMLTV timezones: per-event DST offsets, colon/numeric zones, channels in different zones, unspecified=UTC independent of viewer TZ, and one source shift passed.");
+}
 int main(int argc,char **argv){
+ timezone_programmes();
  char work[]="/private/tmp/vmd-programme-test.XXXXXX";CHECK(mkdtemp(work)&&!chdir(work));
  int64_t us;CHECK(!av_parse_time(&us,"2026-10-28T12:30:00Z",0));int64_t now=us/1000000;
  const char *guide="<?xml version='1.0'?><!DOCTYPE tv SYSTEM 'https://invalid.test/never.dtd'><tv>"
@@ -60,6 +78,8 @@ int main(int argc,char **argv){
  CHECK(p.start==now-1800&&p.end==now+1800&&p.upcoming_count==2);
  CHECK(!strcmp(p.upcoming[0].title,"Secondo")&&p.upcoming[0].end==p.upcoming[1].start);
  CHECK(!strcmp(p.next_title,"Secondo")&&p.next_start==now+1800);
+ q.channel="Rai1.it@SD";CHECK(!vt_iptv_program_parse_channel(guide,strlen(guide),&q,now,"it",&p,&cancel)&&p.available);
+ q.channel="Rai1.es@HD";CHECK(!vt_iptv_program_parse_channel(guide,strlen(guide),&q,now,"it",&p,&cancel)&&!p.available);
  q.channel="";q.name="Rai Uno";q.title="Some catalogue label";
  CHECK(!vt_iptv_program_parse_channel(guide,strlen(guide),&q,now,"it",&p,&cancel)&&p.available);
  q.channel="Rai1.es";q.name="Rai 1";
@@ -96,6 +116,11 @@ int main(int argc,char **argv){
  CHECK(!vt_iptv_program_parse_channel(twenty,strlen(twenty),&twenty_query,now,"it",&p,&cancel)&&!p.available);
  twenty_query.title="27 Twenty Seven";twenty_query.channel="27.Twentyseven.es";
  CHECK(!vt_iptv_program_parse_channel(twenty,strlen(twenty),&twenty_query,now,"it",&p,&cancel)&&!p.available);
+ /* Quality-tag aliases aid lookup but never combine distinct declared
+  * programme schedules after an exact channel has been selected. */
+ const char *variants="<tv><channel id='Rai1.it@HD'/><channel id='Rai1.it@SD'/><programme channel='Rai1.it@SD' start='20261028120000 +0000' stop='20261028130000 +0000'><title>SD schedule</title></programme><programme channel='Rai1.it@HD' start='20261028120000 +0000' stop='20261028130000 +0000'><title>HD schedule</title></programme></tv>";
+ VtIptvGuideQuery variant_query={.channel="Rai1.it@HD"};
+ CHECK(!vt_iptv_program_parse_channel(variants,strlen(variants),&variant_query,now,"it",&p,&cancel)&&p.available&&!strcmp(p.title,"HD schedule"));
  /* On-disk cache survives calls and network failures; refresh validates before replacing it. */
  char xml[8192],a[40],b[40],c[40];int64_t wall=time(NULL);stamp(wall-600,a);stamp(wall+600,b);stamp(wall+1200,c);
  snprintf(xml,sizeof(xml),"<tv><channel id='Rai 1.it'><display-name>Rai 1</display-name></channel><programme channel='Rai 1.it' start='%s' stop='%s'><title>Current</title><desc>Real cached description</desc></programme><programme channel='Rai 1.it' start='%s' stop='%s'><title>Next</title></programme></tv>",a,b,b,c);
@@ -143,4 +168,5 @@ int main(int argc,char **argv){
   free(data);
  }
  printf("XMLTV programme integration: %u checks; aliases, unique names, country/+1 isolation, missing stop, six-entry schedule, gzip >8 MiB, cancellation, entities, persistent cache/failed refresh, public fallback, M3U quotes/shifts and provider discovery passed.\n",checks);
+ return 0;
 }

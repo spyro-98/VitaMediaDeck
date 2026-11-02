@@ -18,9 +18,13 @@ static int storage_stat(const char *path, struct stat *st) {
     }
     return stat(path, st);
 }
+static unsigned comparisons;
+static int counted_compare(const char *a,const char *b){comparisons++;return strcmp(a,b);}
+#define strcmp counted_compare
 #define stat(path, st) storage_stat(path, st)
 #include "../../src/network/artwork_cache.c"
 #undef stat
+#undef strcmp
 static unsigned requests;
 static char *fetch(const char *url, volatile int *cancel, size_t *size) {
     (void)url; (void)cancel; requests++; *size = 64;
@@ -53,5 +57,17 @@ int main(void) {
     f = fopen(ref, "wb"); assert(f); fputs("../../private.png\n", f); fclose(f);
     assert(!vt_artwork_cache_get("https://example.org/invalid-ref", restored, sizeof(restored), &cancel, fetch));
     assert(requests == 2 && strstr(restored, ROOT "/") == restored);
-    puts("Artwork startup: keyed cold-cache hit and render peek succeed while discovery I/O is blocked; no refetch, no global scan lock and unsafe reference rejection passed.");
+    /* A full cache must not cause a linear scan on each frame for an image
+     * already displayed. Count production comparisons instead of host timing. */
+    pthread_mutex_lock(&mutex);memset(entries,0,sizeof(entries));memset(hot_entries,0,sizeof(hot_entries));
+    for(unsigned i=0;i<CACHE_ITEMS;i++){
+        char url[96];snprintf(url,sizeof(url),"https://example.org/cached/%u",i);assert(!url_key(url,entries[i].key));
+        snprintf(entries[i].path,sizeof(entries[i].path),"%s",cached);
+    }
+    pthread_mutex_unlock(&mutex);
+    assert(!vt_artwork_cache_peek("https://example.org/cached/4095",restored,sizeof(restored)));
+    comparisons=0;
+    for(unsigned frame=0;frame<1000;frame++)assert(!vt_artwork_cache_peek("https://example.org/cached/4095",restored,sizeof(restored)));
+    assert(comparisons==1000);
+    puts("Artwork startup: keyed cold-cache hit and render peek succeed while discovery I/O is blocked; no refetch, no global scan lock and unsafe reference rejection and constant-cost visible hits with 4096 entries passed.");
 }

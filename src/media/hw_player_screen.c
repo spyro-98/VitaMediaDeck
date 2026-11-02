@@ -1,3 +1,4 @@
+#include "common/iptv_time.h"
 #ifdef VMD_ENABLE_PAF_NATIVE
 #include "ui/native_vita.h"
 #endif
@@ -30,6 +31,7 @@
 #include "system/performance.h"
 #include "ui/brand.h"
 #include "ui/components.h"
+#include "ui/decoder_options.h"
 #include "ui/iptv_player_panel.h"
 #include "ui/loading_screen.h"
 #include "ui/runtime.h"
@@ -48,8 +50,8 @@
 #define STICK_DEADZONE 42
 #define RIGHT_PANEL_WIDTH 430.0f
 #define RIGHT_PANEL_ROW_Y 72.0f
-#define RIGHT_PANEL_ROW_STEP 44.0f
-#define RIGHT_PANEL_ROW_HEIGHT 40.0f
+#define RIGHT_PANEL_ROW_STEP 38.0f
+#define RIGHT_PANEL_ROW_HEIGHT 34.0f
 #define RIGHT_PANEL_GROUPS ((1u<<0)|(1u<<2)|(1u<<4))
 #define RIGHT_PANEL_Y(row) ui_menu_group_focus_y((row),RIGHT_PANEL_ROW_Y,RIGHT_PANEL_ROW_STEP,right_groups)
 #define PLAYER_BACK_X (ui_theme_video_layout().back_x)
@@ -69,7 +71,7 @@ typedef struct {
     int startup_backend;
 } OpenTask;
 static int player_saved_row(const VtHwPlayerScreenSource *s,int live,int resume,int decoder){
- return s->saved?4+!!live+!!decoder+(!live&&!!resume):-1;
+ return s->saved?5+!!live+!!decoder+(!live&&!!resume):-1;
 }
 static unsigned player_right_groups(int saved_row){return saved_row>=0?(1u|(1u<<2)|(1u<<saved_row)):RIGHT_PANEL_GROUPS;}
 static void player_toggle_saved(const VtHwPlayerScreenSource *s){
@@ -268,21 +270,22 @@ static int run_seek(VtDecoderPlayer *player, UiPlayerLoadingInfo *loading,
 /* AUTO is a global policy; this is a session-only diagnostic choice. Reopen
  * the reusable stream factory at the current timeline position and roll back
  * to the active backend if the requested decoder cannot open the media. */
-static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
+static int run_decoder_change(VtDecoderPlayer **player_io, OpenTask *open,
 	                          UiPlayerLoadingInfo *loading, volatile int *cancel,
 	                          VtDecoderBackend target, uint64_t position_ms,
-	                          int audio_track, int subtitle_track) {
+	                          int audio_track, int subtitle_track, int audio) {
 	if (!player_io || !*player_io || !open || !loading) return -1;
 	VtDecoderPlayerStatus previous_status;
 	vt_decoder_get_status(*player_io, &previous_status);
 	open->config.start_paused = previous_status.paused;
-	VtDecoderBackend previous_preference = open->config.preferred_backend;
+	VtDecoderBackend previous_preference = audio?open->config.preferred_audio_backend:open->config.preferred_backend;
 	fence_decoder_frame(*player_io);
 	vt_decoder_destroy(*player_io);
 	*player_io = vt_decoder_create();
 	if (!*player_io) return -1;
 	open->player = *player_io;
-	open->config.preferred_backend = target;
+	if(audio)open->config.preferred_audio_backend=target;
+ else open->config.preferred_backend = target;
 	open->config.start_position_ms = open->live ? 0 : position_ms;
 	open->config.audio_track = audio_track;
 	open->config.subtitle_track = subtitle_track;
@@ -295,11 +298,19 @@ static int run_backend_change(VtDecoderPlayer **player_io, OpenTask *open,
 	*player_io = vt_decoder_create();
 	if (!*player_io) return ret;
 	open->player = *player_io;
-	open->config.preferred_backend = previous_preference;
+	if(audio)open->config.preferred_audio_backend=previous_preference;
+ else open->config.preferred_backend = previous_preference;
 	loading->cancel_ctx = *player_io;
 	if (cancel) *cancel = 0;
 	return ui_player_loading_run(loading, open_task_run, open, cancel, NULL, NULL) >= 0
 	     ? 1 : ret;
+}
+
+static int run_backend_change(VtDecoderPlayer **player,OpenTask *open,UiPlayerLoadingInfo *loading,volatile int *cancel,VtDecoderBackend target,uint64_t position,int audio_track,int subtitle_track){
+ return run_decoder_change(player,open,loading,cancel,target,position,audio_track,subtitle_track,0);
+}
+static int run_audio_backend_change(VtDecoderPlayer **player,OpenTask *open,UiPlayerLoadingInfo *loading,volatile int *cancel,VtDecoderBackend target,uint64_t position,int audio_track,int subtitle_track){
+ return run_decoder_change(player,open,loading,cancel,target,position,audio_track,subtitle_track,1);
 }
 
 static int run_track_change(VtDecoderPlayer *player,
@@ -682,21 +693,21 @@ static void draw_hud(const VtHwPlayerScreenSource *source,
 	}
 }
 
-static void draw_buffering_overlay(float opacity, uint64_t now) {
+static void draw_buffering_overlay(float opacity, uint64_t now,const char *title) {
 	if (opacity <= 0.01f) return;
-	const float x = 330.0f, y = 238.0f, width = 300.0f, height = 68.0f;
+	const float x = 270.0f, y = 226.0f, width = 420.0f, height = 92.0f;
 	vita2d_draw_rectangle(x - 4, y - 4, width + 8, height + 8,
 	                      fade_color(RGBA8(0, 0, 0, 92), opacity));
 	vita2d_draw_rectangle(x, y, width, height,
 	                      fade_color(VT_THEME_GLASS_A(232), opacity));
 	vita2d_draw_rectangle(x, y, 4, height,
 	                      fade_color(VT_THEME_BLUE_LIGHT, opacity));
-	if (opacity > 0.16f) ui_draw_spinner_compact(x + 38, y + 34, now);
+	if (opacity > 0.16f) ui_draw_spinner_compact(x + 38, y + 46, now);
 	vita2d_font *small = ui_runtime_font(UI_FONT_SMALL);
-	if (small)
-		ui_font_draw_text(small, (int)x + 70, (int)y + 41,
-		                  fade_color(VT_THEME_TEXT, opacity), UI_FONT_SMALL,
-		                  vt_i18n_str(VT_STR_PLAYER_BUFFERING));
+ if(small){
+  ui_text_line(x+70,y+34,width-86,title?title:"",fade_color(VT_THEME_TEXT,opacity),UI_FONT_SMALL);
+  ui_text_line(x+70,y+66,width-86,vt_i18n_str(VT_STR_PLAYER_BUFFERING),fade_color(VT_THEME_TEXT_MUTED,opacity),UI_FONT_SMALL);
+ }
 }
 
 
@@ -707,10 +718,10 @@ static void player_program_start(PlayerProgram *state,const VtHwPlayerScreenSour
  if(live!=1||!source->iptv_program||source->quality_trial)return;
  state->job=vt_iptv_program_request(source->iptv_program,source->iptv_program_ctx,source->iptv_program_ctx_size,refresh);
  panel->program_loading=state->job!=NULL;panel->program_error=state->job==NULL;
- if(!state->job)state->refresh_at=time(NULL)+60;
+ if(!state->job)state->refresh_at=vt_iptv_time_now()+60;
 }
 static void player_program_tick(PlayerProgram *state,const VtHwPlayerScreenSource *source,UiIptvPlayerPanel *panel,int live){
- int64_t now=time(NULL);
+ int64_t now=vt_iptv_time_now();
  if(!state->job){if(state->refresh_at&&now>=state->refresh_at)player_program_start(state,source,panel,live,0);return;}
  VtIptvProgram result;int r=vt_iptv_program_poll(state->job,&result);if(!r)return;
  panel->program_loading=0;panel->program_error=r<0;
@@ -738,7 +749,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	                                  const VtDecoderPlayer *player,
 	                                  const VtDecoderPlayerStatus *status,
 	                                  int resume_available,
-	                                  int decoder_switch_visible,
+	                                  int decoder_switch_visible, int audio_mode,
 	                                  int pending_audio_track,
 	                                  int pending_subtitle_track, int live,
                                       const VtHwPlayerScreenSource *source,UiIptvPlayerPanel *live_panel) {
@@ -754,6 +765,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	ui_menu_surface(x,0,width,SCREEN_HEIGHT,1);
 	vita2d_draw_rectangle(x, 0, 1, SCREEN_HEIGHT, VT_THEME_BORDER);
 	vita2d_draw_rectangle(x + 4, 0, width - 4, 1, VT_THEME_BORDER);
+    ui_menu_text(x+28,70,width-56,source->title,UI_MENU_ACCENT,UI_FONT_SMALL);
     if(live&&live_panel->page){
         ui_iptv_player_panel_draw(live_panel,x,source->iptv_options,source->iptv_selection);
 #ifdef VMD_ENABLE_PAF_NATIVE
@@ -774,7 +786,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		                  UI_MENU_TEXT,
 		                  UI_FONT_SMALL, UI_PAD_R1);
 	}
-	const char *labels[7] = {
+	const char *labels[8] = {
 		vt_i18n_str(VT_STR_PLAYER_FILL_SCREEN),
 		vt_i18n_str(VT_STR_PLAYER_LOOP),
 		vt_i18n_str(VT_STR_PLAYER_AUDIO_TRACK),
@@ -794,7 +806,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	         subtitle_state == VT_DECODER_SUBTITLE_FAILED)
 		snprintf(subtitle_value, sizeof(subtitle_value), "%s",
 		         vt_i18n_str(VT_STR_PLAYER_SUBTITLE_FAILED));
-	const char *values[7] = {
+	const char *values[8] = {
 		vt_i18n_str(vt_preferences_fill_screen() ? VT_STR_PLAYER_ON
 		                                             : VT_STR_PLAYER_OFF),
 		vt_i18n_str(vt_preferences_loop_enabled() ? VT_STR_PLAYER_ON
@@ -812,10 +824,12 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 		values[1] = "";
 	}
 	if (decoder_switch_visible) {
-		labels[row_count] = vt_i18n_str(VT_STR_PLAYER_DECODER);
+		labels[row_count] = vt_i18n_str(VT_STR_SETTINGS_VIDEO_DECODER);
 		values[row_count++] = vt_i18n_str(status->hardware_accelerated
 		    ? VT_STR_PLAYER_DECODER_HARDWARE : VT_STR_PLAYER_DECODER_SOFTWARE);
 	}
+	labels[row_count]=vt_i18n_str(VT_STR_SETTINGS_AUDIO_DECODER);
+ values[row_count++]=ui_decoder_mode_label(audio_mode);
 	if (!live && resume_available) {
 		labels[row_count] = vt_i18n_str(VT_STR_PLAYER_RESTART_FROM_BEGINNING);
 		values[row_count++] = "00:00";
@@ -834,11 +848,11 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 	for (int i = 0; i < row_count; i++) {
 		float y = RIGHT_PANEL_Y(i);
 		if (small) {
-			ui_menu_text(x+34,y+28,i==saved_row?width-68:180,labels[i],UI_MENU_TEXT,UI_FONT_SMALL);
+			ui_menu_text(x+34,y+25,i==saved_row?width-68:180,labels[i],UI_MENU_TEXT,UI_FONT_SMALL);
 			const char *value = values[i];
 			int value_w = ui_font_text_width(small, UI_FONT_SMALL, value);
 			if (value_w > 170) {
-				static char fitted_values[7][96];
+				static char fitted_values[8][96];
 				ui_font_fit_text(small, UI_FONT_SMALL, value, fitted_values[i],
 				                 sizeof(fitted_values[i]), 170);
 				value = fitted_values[i];
@@ -857,7 +871,7 @@ static void draw_player_right_sidebar(float animation, float focus_position,
 			         subtitle_state == VT_DECODER_SUBTITLE_FAILED)
 				value_color = VT_THEME_DANGER;
 			ui_font_draw_text_exact(small, (int)x + (int)width - value_w - 34,
-			                  (int)y + 28,
+			                  (int)y + 25,
 			                  value_color,
 			                  UI_FONT_SMALL, value);
 		}
@@ -941,6 +955,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 	           sizeof(open.config.external_subtitles[0]));
 	int decoder_preference = vt_preferences_video_decoder();
 	VtDecoderBackend session_backend_override = VT_DECODER_BACKEND_NONE;
+	open.config.preferred_audio_backend=(VtDecoderBackend)vt_preferences_audio_decoder();
 	open.config.preferred_backend =
 	    decoder_preference == VT_VIDEO_DECODER_HW_H264
 	        ? VT_DECODER_BACKEND_HARDWARE
@@ -1042,6 +1057,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
     player_program_start(&program_state,source,&live_panel,live,0);
 	VtIptvQualityMeter quality_meter={0};uint64_t quality_started=sceKernelGetProcessTimeWide();
 	int right_open = 0;
+ UiContextMenu audio_decoder_menu={0};
+ UiContextAction audio_decoder_choices[3];ui_audio_decoder_choices(audio_decoder_choices);
 	int right_cursor = 0;
 	int pending_audio_track = vt_decoder_active_audio_track(player);
 	int pending_subtitle_track = vt_decoder_active_subtitle_track(player);
@@ -1224,7 +1241,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			pressed |= SCE_CTRL_LTRIGGER;
 		}
 		if (pressed & right_toggle) {
-			right_open = !right_open;live_panel.page=0;
+			right_open = !right_open;live_panel.page=0;audio_decoder_menu.open=0;
 			right_cursor = 0;
 			right_focus_position = 0.0f;
 			pending_audio_track = vt_decoder_active_audio_track(player);
@@ -1240,7 +1257,23 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 				ret = VT_HW_PLAYER_ACTION_SECTION_BASE + section;
 				break;
 			}
-		} else if (right_open) {
+		} else if (right_open && audio_decoder_menu.open) {
+            int choice=ui_context_menu_input(&audio_decoder_menu,audio_decoder_choices,3,&pressed,controls.buttons,controls.ly,&touch_flags,&touch);
+            ui_context_menu_tick(&audio_decoder_menu);
+            if(choice>=0&&(VtDecoderBackend)choice!=open.config.preferred_audio_backend){
+                loading.status=vt_i18n_str(VT_STR_PLAYER_CHANGE_DECODER);
+                open.config.volume_percent=vt_audio_volume_percent();
+                uint64_t relative=status.position_ms>=source->timeline_offset_ms?status.position_ms-source->timeline_offset_ms:0;
+                int changed=run_audio_backend_change(&player,&open,&loading,&cancel,(VtDecoderBackend)choice,relative,vt_decoder_active_audio_track(player),vt_decoder_active_subtitle_track(player));
+                loading.status=opening_status;
+                if(changed<0){ret=changed;break;}
+                if(changed==1)ui_message_show(vt_i18n_str(VT_STR_SETTINGS_AUDIO_DECODER),vt_i18n_str(VT_STR_PLAYER_BACKEND_RETAINED),2200);
+                else if(vt_preferences_set_audio_decoder(choice)<0)ui_message_show(vt_i18n_str(VT_STR_SETTINGS_SAVE_FAILED_TITLE),vt_i18n_str(VT_STR_SETTINGS_SAVE_FAILED_DETAIL),2600);
+                pending_audio_track=vt_decoder_active_audio_track(player);pending_subtitle_track=vt_decoder_active_subtitle_track(player);
+                vt_decoder_set_paused(player,paused);
+                now=resync_after_blocking_action(&controls,&previous,&left_seek_direction,&left_seek_repeat_at);hud_deadline=now+3500000ULL;
+            }
+        } else if (right_open) {
             /* IPTV touch and controller use the same rows and commit path. */
             if(live&&(touch_flags&UI_TOUCH_EVENT_TAP)){
                 int panel_x=SCREEN_WIDTH-RIGHT_PANEL_WIDTH*right_animation;
@@ -1249,8 +1282,8 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
                     else if(live_panel.page<3){int row=(int)floorf((touch.y-76+live_panel.viewport.position)/56);
                         if(touch.y>=76&&touch.y<468&&row>=0&&touch.x>=panel_x+18&&touch.x<panel_x+412){live_panel.cursor=row;pressed|=SCE_CTRL_CROSS;}}
                 }else {int row=-1;
-                    for(int i=0;i<7;i++)if(touch.y>=RIGHT_PANEL_Y(i)&&touch.y<RIGHT_PANEL_Y(i)+RIGHT_PANEL_ROW_HEIGHT)row=i;
-                    int rows=5+(decoder_preference==VT_VIDEO_DECODER_AUTO)+(saved_row>=0);
+                    for(int i=0;i<8;i++)if(touch.y>=RIGHT_PANEL_Y(i)&&touch.y<RIGHT_PANEL_Y(i)+RIGHT_PANEL_ROW_HEIGHT)row=i;
+                    int rows=6+(decoder_preference==VT_VIDEO_DECODER_AUTO)+(saved_row>=0);
                     if(touch.x<panel_x)right_open=0;
                     else if(touch.y>=RIGHT_PANEL_ROW_Y&&row>=0&&row<rows&&touch.x>=panel_x+18&&touch.x<panel_x+412){right_cursor=row;pressed|=SCE_CTRL_CROSS;}}
                 if(live_panel.viewport.dragging)ui_scroll_drag_end(&live_panel.viewport,vt_preferences_reduce_motion());
@@ -1293,12 +1326,13 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
             }else {
 
 			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? (live?5:4) : -1;
-			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
+			int audio_decoder_row=4+!!live+(decoder_row>=0);
+            int restart_row = 5 + (decoder_row >= 0 ? 1 : 0);
 			unsigned right_navigation = ui_nav_repeat_update(
 			    &right_nav_repeat, pressed, controls.buttons, controls.lx,
 			    controls.ly, SCE_CTRL_UP | SCE_CTRL_DOWN);
 			if ((right_navigation & SCE_CTRL_UP) && right_cursor > 0) right_cursor--;
-			int right_row_count = (live ? 5+(decoder_row>=0) : restart_row + (resume_available ? 1 : 0))+(saved_row>=0);
+			int right_row_count = (live ? 6+(decoder_row>=0) : restart_row + (resume_available ? 1 : 0))+(saved_row>=0);
 			if ((right_navigation & SCE_CTRL_DOWN) &&
 			    right_cursor + 1 < right_row_count) right_cursor++;
 			if (!live && right_cursor == 2 &&
@@ -1357,7 +1391,10 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					    &left_seek_repeat_at);
 					hud_deadline = now + 3500000ULL;
 					continue;
-				} else if (right_cursor == decoder_row) {
+				} else if (right_cursor == audio_decoder_row) {
+                    audio_decoder_menu=(UiContextMenu){.open=1,.animation=1,.cursor=open.config.preferred_audio_backend};
+                    pressed=touch_flags=0;
+                } else if (right_cursor == decoder_row) {
                     if(source->requested_seek_ms&&source->session_backend){
                         *source->session_backend=status.hardware_accelerated?VT_DECODER_BACKEND_SOFTWARE:VT_DECODER_BACKEND_HARDWARE;
                         ret=player_seek(source,player,&loading,&cancel,status.position_ms);break;
@@ -1510,8 +1547,9 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 			int track_change_failed = 0;
 			int track_change_completed = 0;
 			int decoder_row = decoder_preference == VT_VIDEO_DECODER_AUTO ? (live?5:4) : -1;
-			int restart_row = 4 + (decoder_row >= 0 ? 1 : 0);
-			int right_row_count = (live ? 5+(decoder_row>=0) : restart_row + (resume_available ? 1 : 0))+(saved_row>=0);
+			int audio_decoder_row=4+!!live+(decoder_row>=0);
+            int restart_row = 5 + (decoder_row >= 0 ? 1 : 0);
+			int right_row_count = (live ? 6+(decoder_row>=0) : restart_row + (resume_available ? 1 : 0))+(saved_row>=0);
 			for (int i = 0; i < right_row_count; i++) {
 				if (!ui_touch_hit_rect(touch.x, touch.y, panel_x + 18,
 				                       (int)(RIGHT_PANEL_Y(i)),
@@ -1545,7 +1583,10 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 					}
 					track_change_failed = ret < 0;
 					track_change_completed = ret >= 0;
-				} else if (i == decoder_row) {
+				} else if (i == audio_decoder_row) {
+                    audio_decoder_menu=(UiContextMenu){.open=1,.animation=1,.cursor=open.config.preferred_audio_backend};
+                    touch_flags=0;
+                } else if (i == decoder_row) {
                     if(source->requested_seek_ms&&source->session_backend){
                         *source->session_backend=status.hardware_accelerated?VT_DECODER_BACKEND_SOFTWARE:VT_DECODER_BACKEND_HARDWARE;
                         ret=player_seek(source,player,&loading,&cancel,status.position_ms);break;
@@ -1774,7 +1815,7 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 				         hud_opacity, volume_opacity, dragging, drag_fraction, live);
 			else if (vt_preferences_player_status_always_visible())
 				ui_brand_draw_status_indicators_alpha(1.0f);
-			draw_buffering_overlay(buffering_opacity, now);
+			draw_buffering_overlay(buffering_opacity, now,source->title);
 			if (source->favorite && hud_opacity>.01f) {
 				int starred=source->favorite(source->favorite_ctx,0)>0;
 				vita2d_draw_rectangle(744,76,192,40,fade_color(VT_THEME_SURFACE,hud_opacity));
@@ -1789,10 +1830,11 @@ static int player_screen_run(const VtHwPlayerScreenSource *source,
 #endif
 			if (sidebar.animation > 0.01f)
 				ui_sections_sidebar_draw(&sidebar);
-			draw_player_right_sidebar(right_animation, right_focus_position,
+			if(audio_decoder_menu.open)ui_context_menu_draw(&audio_decoder_menu,vt_i18n_str(VT_STR_SETTINGS_AUDIO_DECODER),audio_decoder_choices,3);
+            else draw_player_right_sidebar(right_animation, right_focus_position,
 			                          right_cursor, player, &status,
 			                          resume_available,
-			                          decoder_preference == VT_VIDEO_DECODER_AUTO,
+			                          decoder_preference == VT_VIDEO_DECODER_AUTO,open.config.preferred_audio_backend,
 			                          pending_audio_track,
 			                          pending_subtitle_track, live, source, &live_panel);
 		}

@@ -177,7 +177,10 @@ static char g_cover_parent[512];
 static volatile int g_cover_cancel,g_cover_done;
 static volatile int g_action_cancel;
 static int cover_worker(SceSize args,void *ctx) {
-	(void)args;(void)ctx;
+#ifdef __vita__
+    sceKernelChangeThreadPriority(sceKernelGetThreadId(),191);
+#endif
+    (void)args;(void)ctx;
     if(g_cover_force)vt_online_refresh_cover(&g_cover_item,g_cover_parent,&g_cover_cancel);
     else vt_online_fetch_cover(&g_cover_item,&g_cover_cancel);
 	__sync_synchronize();g_cover_done=1;return sceKernelExitThread(0);
@@ -278,7 +281,10 @@ static void library_query_cache(const VtOnlineQuery *q) {
     }
 }
 static int lazy_worker(SceSize args, void *ctx) {
-	(void)args;(void)ctx;
+#ifdef __vita__
+    sceKernelChangeThreadPriority(sceKernelGetThreadId(),191);
+#endif
+    (void)args;(void)ctx;
     if(g_lazy_direction==2) {
         g_lazy.count=vt_online_load_saved(g_lazy.items,VT_ONLINE_MAX);
         g_lazy_result=g_lazy.count<0?-1:0;

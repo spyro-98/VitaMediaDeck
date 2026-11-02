@@ -534,38 +534,42 @@ static void rebuild_snapshot(unsigned gen) {
         pthread_mutex_unlock(&snapshot_mutex);
         return;
     }
-    for (int i = 0; i < live_count; i++) {
+    int published_live_count=live_count;
+    pthread_mutex_unlock(&search_mutex);
+    for (int i = 0; i < published_live_count; i++) {
+        pthread_mutex_lock(&search_mutex);
+        if(gen!=generation||stopping){pthread_mutex_unlock(&search_mutex);pthread_mutex_unlock(&snapshot_mutex);return;}
+        VtLibraryItem item=live[i];pthread_mutex_unlock(&search_mutex);
         int found = -1;
         for (int k = 0; k < count; k++)
-            if (!strcmp(out[k].item.id, live[i].id)) {
+            if (!strcmp(out[k].item.id, item.id)) {
                 found = k;
                 break;
             }
         if (found < 0) {
             int in_provider = 0;
             for (int k = 0; k < count; k++)
-                if (out[k].item.provider == live[i].provider)
+                if (out[k].item.provider == item.provider)
                     in_provider++;
             if (count < capacity && (scope_active || in_provider < 24))
                 out[count++] =
-                    (VtLibraryResult){.item = live[i], .duration_ms = live[i].duration_ms};
+                    (VtLibraryResult){.item = item, .duration_ms = item.duration_ms};
             else {
                 int replace = -1;
                 for (int k = count - 1; k >= 0; k--)
-                    if (out[k].cached && out[k].item.provider == live[i].provider) {
+                    if (out[k].cached && out[k].item.provider == item.provider) {
                         replace = k;
                         break;
                     }
                 if (replace >= 0)
                     out[replace] =
-                        (VtLibraryResult){.item = live[i], .duration_ms = live[i].duration_ms};
+                        (VtLibraryResult){.item = item, .duration_ms = item.duration_ms};
             }
         } else {
-            out[found].item = live[i];
+            out[found].item = item;
             out[found].cached = 0;
         }
     }
-    pthread_mutex_unlock(&search_mutex);
 
     /* Stable provider grouping. UI restores focus by identity on every refresh. */
     qsort(out, (size_t)count, sizeof(*out), compare_results);

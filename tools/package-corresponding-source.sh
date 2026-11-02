@@ -19,8 +19,10 @@ snapshot_worktree() {
 }
 
 snapshot_worktree "$repo_root" VitaMediaDeck
-snapshot_worktree "${VITAMEDIADECK_HW_DECODER_PACKAGE:-$repo_root/../vita-hw-decoder}" vita-hw-decoder
-snapshot_worktree "${VITAMEDIADECK_SW_DECODER_PACKAGE:-$repo_root/../vita-sw-decoder}" vita-sw-decoder
+snapshot_worktree "${VITAMEDIADECK_HW_DECODER_PACKAGE:-$repo_root/../vita-hw-video-decoder}" vita-hw-video-decoder
+snapshot_worktree "${VITAMEDIADECK_SW_DECODER_PACKAGE:-$repo_root/../vita-sw-video-decoder}" vita-sw-video-decoder
+snapshot_worktree "${VITAMEDIADECK_HW_AUDIO_PACKAGE:-$repo_root/../vita-hw-audio-decoder}" vita-hw-audio-decoder
+snapshot_worktree "${VITAMEDIADECK_SW_AUDIO_PACKAGE:-$repo_root/../vita-sw-audio-decoder}" vita-sw-audio-decoder
 snapshot_worktree "${VITAMEDIADECK_HTTPS_PACKAGE:-$repo_root/../vita-https}" vita-https
 
 copy_tree() {

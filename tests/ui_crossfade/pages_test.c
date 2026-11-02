@@ -16,7 +16,11 @@ static int theme_write_failure,theme_prepares;
 int vt_preferences_interface_theme(void){return ui_theme_id();}
 int vt_preferences_set_interface_theme(int theme){(void)theme;settings_writes++;return theme_write_failure?-1:0;}
 void ui_runtime_prepare_theme(void){theme_prepares++;}
-PREF(video_decoder,0) PREF(fill_screen,0) PREF(loop_enabled,0)
+static int mock_video_decoder,mock_audio_decoder;
+int vt_preferences_video_decoder(void){return mock_video_decoder;}
+int vt_preferences_audio_decoder(void){return mock_audio_decoder;}
+int vt_preferences_set_video_decoder(int mode){mock_video_decoder=mode;settings_writes++;return 0;}
+int vt_preferences_set_audio_decoder(int mode){mock_audio_decoder=mode;settings_writes++;return 0;} PREF(fill_screen,0) PREF(loop_enabled,0)
 PREF(music_keep_display_awake,1)
 static int guide_swapped;
 int vt_preferences_player_swap_shoulders(void){return guide_swapped;}
@@ -127,6 +131,15 @@ int main(int argc,char **argv) {
  CHECK(apply_row(TAB_INTERFACE, 4, 1) < 0 && vt_ui_theme_legacy_layout(ui_theme_id()) &&
        theme_prepares == VT_UI_THEME_COUNT);
  theme_write_failure=0;
+ for(int mode=0;mode<3;mode++){
+  mock_video_decoder=mode;mock_audio_decoder=mode;SettingRow rows[9];CHECK(rows_for_tab(TAB_PLAYBACK,rows)==5);
+  CHECK(rows[0].kind==ROW_DECODER&&rows[1].kind==ROW_AUDIO_DECODER&&rows[1].value==mode);
+  CHECK(strlen(ui_decoder_formats(0,mode))>0&&strlen(ui_decoder_formats(1,mode))>0);
+  CHECK(!apply_row(TAB_PLAYBACK,1,1)&&mock_audio_decoder==(mode+1)%3&&mock_video_decoder==mode);
+  CHECK(!apply_row(TAB_PLAYBACK,1,-1)&&mock_audio_decoder==mode);
+  CHECK(!apply_row(TAB_PLAYBACK,0,1)&&mock_video_decoder==(mode+1)%3&&mock_audio_decoder==mode);
+ }
+ mock_video_decoder=mock_audio_decoder=0;
  for(int theme=0;theme<VT_UI_THEME_COUNT;theme++)for(language=0;language<2;language++)for(int mini=0;mini<2;mini++)for(int tab=0;tab<TAB_COUNT;tab++){
   ui_theme_apply(theme);face=theme==VT_UI_THEME_DECK_90?mono:inter;mini_top=mini?472:544;
   UiSectionsSidebar sidebar;ui_sections_sidebar_init(&sidebar,UI_SECTION_SETTINGS);

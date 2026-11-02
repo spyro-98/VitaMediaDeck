@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 #include <time.h>
 #ifdef __vita__
+#include <psp2/kernel/threadmgr.h>
+#endif
+#ifdef __vita__
 #include <mbedtls/sha256.h>
 #else
 #include <openssl/sha.h>
@@ -22,6 +25,13 @@ static pthread_once_t initialized=PTHREAD_ONCE_INIT;
 static const char *extensions[]={"jpg","png","webp","gif","bmp"};
 typedef struct {char key[65],path[192];size_t bytes;time_t fetched,used,retry;} Entry;
 static Entry entries[CACHE_ITEMS];
+/* Visible logos repeat every frame. A tiny direct-mapped hot index avoids a
+ * 4096-entry scan for each draw; collisions/evictions fall back safely. */
+static Entry *hot_entries[256];
+static unsigned hot_index(const char *key){
+ unsigned a=(unsigned char)key[0],b=(unsigned char)key[1];
+ a=a<='9'?a-'0':a-'a'+10;b=b<='9'?b-'0':b-'a'+10;return (a*16+b)&255;
+}
 static int encoding(const unsigned char *p,size_t n){
  if(n>=3&&p[0]==255&&p[1]==216&&p[2]==255)return 0;
  if(n>=8&&!memcmp(p,"\x89PNG\r\n\x1a\n",8))return 1;
@@ -42,10 +52,14 @@ static int url_key(const char *url,char key[65]){
  for(int i=0;i<32;i++)snprintf(key+i*2,3,"%02x",d[i]);
  return 0;
 }
-static Entry *find(const char *key){for(unsigned i=0;i<CACHE_ITEMS;i++)if(!strcmp(entries[i].key,key))return &entries[i];return NULL;}
+static Entry *find(const char *key){
+ unsigned h=hot_index(key);Entry *e=hot_entries[h];if(e&&!strcmp(e->key,key))return e;
+ for(unsigned i=0;i<CACHE_ITEMS;i++)if(!strcmp(entries[i].key,key)){hot_entries[h]=&entries[i];return &entries[i];}
+ return NULL;
+}
 static Entry *slot(const char *key){
  Entry *e=find(key);if(e)return e;
- for(unsigned i=0;i<CACHE_ITEMS;i++)if(!entries[i].key[0]){snprintf(entries[i].key,sizeof(entries[i].key),"%s",key);return &entries[i];}
+ for(unsigned i=0;i<CACHE_ITEMS;i++)if(!entries[i].key[0]){snprintf(entries[i].key,sizeof(entries[i].key),"%s",key);hot_entries[hot_index(key)]=&entries[i];return &entries[i];}
  return NULL;
 }
 static int known_file(const char *name){
@@ -92,7 +106,15 @@ static void initialize(void){
  /* Filesystem discovery is background-only. Publish each completed entry in a
   * short critical section so visible cache hits survive a slow card scan. */
  DIR *dir=opendir(ROOT);if(!dir)return;struct dirent *d;
+ unsigned scanned=0;
  while((d=readdir(dir))){
+#ifdef __vita__
+  /* Discovery is optional prefetch. Leave storage and CPU gaps for visible
+   * cache reads/input instead of continuously walking thousands of files. */
+  if(!(scanned++%8))sceKernelDelayThread(2000);
+#else
+  (void)scanned;
+#endif
   if(!known_file(d->d_name))continue;
   char path[192],key[65];snprintf(path,sizeof(path),ROOT "/%.90s",d->d_name);
   struct stat st;if(stat(path,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>ITEM_LIMIT||!valid_file(path))continue;

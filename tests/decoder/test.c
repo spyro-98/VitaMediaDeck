@@ -11,12 +11,12 @@
 #define AV_PIX_FMT_VITA_NV12 AV_PIX_FMT_NV12
 #define AV_PIX_FMT_VITA_YUV420P AV_PIX_FMT_YUV420P
 #ifdef TEST_HW
-#include "../../../vita-hw-decoder/src/internal/software_video.c"
+#include "../../../vita-hw-video-decoder/src/internal/software_video.c"
 #define api_start vita_hw_software_video_start
 #define api_join vita_hw_software_video_join
 #define api_fence vita_hw_software_video_render_complete
 #else
-#include "../../../vita-sw-decoder/src/internal/software_video.c"
+#include "../../../vita-sw-video-decoder/src/internal/software_video.c"
 #define api_start vita_sw_software_video_start
 #define api_join vita_sw_software_video_join
 #define api_fence vita_sw_software_video_render_complete
@@ -35,8 +35,8 @@ int sceKernelDelayThread(unsigned us){atomic_fetch_add(&poll_delays,1);usleep(us
 int sceKernelGetThreadCurrentPriority(void){return 65;}
 SceUID sceKernelGetThreadId(void){return 1;}
 int sceKernelChangeThreadPriority(SceUID id,int pri){(void)id;(void)pri;return 0;}
-int vita_hw_decoder_runtime_prepare(void){return 0;}
-int vita_sw_decoder_runtime_prepare(void){return 0;}
+int vita_hw_video_decoder_runtime_prepare(void){return 0;}
+int vita_sw_video_decoder_runtime_prepare(void){return 0;}
 void log_printf(const char *format,...){(void)format;}
 SceUID sceKernelCreateEventFlag(const char *n,int a,int bits,void *o){(void)n;(void)a;(void)o;pthread_mutex_lock(&event_mutex);assert(!event_live);event_live=1;event_bits=bits;pthread_mutex_unlock(&event_mutex);return 3;}
 int sceKernelDeleteEventFlag(SceUID id){assert(id==3);pthread_mutex_lock(&event_mutex);assert(event_live);event_live=event_bits=0;pthread_mutex_unlock(&event_mutex);return 0;}
